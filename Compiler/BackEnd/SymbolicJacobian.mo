@@ -1904,7 +1904,7 @@ algorithm
       jacRemovedEqs = BackendEquation.emptyEqns();
       jacInitialEqs = BackendEquation.emptyEqns();
       functions = DAEUtil.avlTreeNew();
-      jacEventInfo = BackendDAE.EVENT_INFO({}, {}, {}, {}, {}, 0);
+      jacEventInfo = BackendDAEUtil.emptyEventInfo();
       jacExtObjClasses = {};
 
       jacobian = BackendDAE.DAE({BackendDAE.EQSYSTEM(jacOrderedVars, jacOrderedEqs, NONE(), NONE(), BackendDAE.NO_MATCHING(), {}, BackendDAE.UNKNOWN_PARTITION())}, BackendDAE.SHARED(jacKnownVars, jacExternalObjects, jacAliasVars, jacInitialEqs, jacRemovedEqs, {}, {}, cache, graph, functions, jacEventInfo, jacExtObjClasses,BackendDAE.JACOBIAN(),{},ei));
@@ -1953,7 +1953,7 @@ algorithm
       jacOrderedEqs = BackendEquation.listEquation(derivedEquations);
       jacRemovedEqs = BackendEquation.emptyEqns();
       jacInitialEqs = BackendEquation.emptyEqns();
-      jacEventInfo = BackendDAE.EVENT_INFO({}, {}, {}, {}, {}, 0);
+      jacEventInfo = BackendDAEUtil.emptyEventInfo();
       jacExtObjClasses = {};
 
       jacobian = BackendDAE.DAE(BackendDAE.EQSYSTEM(jacOrderedVars, jacOrderedEqs, NONE(), NONE(), BackendDAE.NO_MATCHING(), {}, BackendDAE.UNKNOWN_PARTITION())::{}, BackendDAE.SHARED(jacKnownVars, jacExternalObjects, jacAliasVars, jacInitialEqs, jacRemovedEqs, {}, {}, cache, graph, DAE.emptyFuncTree, jacEventInfo, jacExtObjClasses, BackendDAE.JACOBIAN(),{}, ei));
@@ -2584,7 +2584,7 @@ algorithm
         backendDAE = BackendDAE.DAE({BackendDAE.EQSYSTEM(dependentVars, eqns, NONE(), NONE(), BackendDAE.NO_MATCHING(), {}, BackendDAE.UNKNOWN_PARTITION())},
           BackendDAE.SHARED(knvars, emptyVars, emptyVars,
             emptyEqns, emptyEqns, {}, {},
-            cache, graph, funcs, BackendDAE.EVENT_INFO({}, {}, {}, {}, {}, 0),
+            cache, graph, funcs, BackendDAEUtil.emptyEventInfo(),
             {}, BackendDAE.ALGEQSYSTEM(), {}, einfo));
 
         backendDAE = BackendDAEUtil.transformBackendDAE(backendDAE, SOME((BackendDAE.NO_INDEX_REDUCTION(), BackendDAE.EXACT())), NONE(), NONE());

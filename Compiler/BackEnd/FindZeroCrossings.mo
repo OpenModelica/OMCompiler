@@ -129,6 +129,7 @@ protected
   BackendDAE.Variables vars_;
   BackendDAE.EquationArray eqns_;
   BackendDAE.ExtraInfo info;
+  array<DAE.ClockKind> clocks;
 algorithm
   BackendDAE.DAE(systs, shared) := inDAE;
   BackendDAE.SHARED(knownVars=knownVars,
@@ -151,7 +152,8 @@ algorithm
                         zeroCrossingLst=zeroCrossingLst,
                         sampleLst=sampleLst,
                         relationsLst=relationsLst,
-                        numberMathEvents=numberMathEvents) := eventInfo;
+                        numberMathEvents=numberMathEvents,
+                        clocks=clocks) := eventInfo;
 
   ht := HashTableExpToIndex.emptyHashTable();
 
@@ -172,7 +174,8 @@ algorithm
                                      zeroCrossingLst,
                                      sampleLst,
                                      relationsLst,
-                                     numberMathEvents);
+                                     numberMathEvents,
+                                     clocks);
   shared := BackendDAE.SHARED(knownVars,
                               externalObjects,
                               aliasVars,
@@ -715,10 +718,11 @@ protected
   BackendDAE.StateSets stateSets;
   BackendDAE.ExtraInfo ei;
   BackendDAE.BaseClockPartitionKind partitionKind;
+  array<DAE.ClockKind> clocks;
 algorithm
   BackendDAE.EQSYSTEM(vars, eqns, m, mT, matching, stateSets, partitionKind) := inSyst;
   BackendDAE.SHARED(knvars, exobj, av, inieqns, remeqns, constrs, clsAttrs,
-    cache, graph, funcs, BackendDAE.EVENT_INFO(timeEvents=timeEvents, zeroCrossingLst=zero_crossings,
+    cache, graph, funcs, BackendDAE.EVENT_INFO(timeEvents=timeEvents, zeroCrossingLst=zero_crossings, clocks=clocks,
     sampleLst=sampleLst, whenClauseLst=whenclauses, relationsLst=relations, numberMathEvents=countMathFunctions),
     eoc, btp, symjacs, ei) := inShared;
 
@@ -730,7 +734,7 @@ algorithm
     print("findZeroCrossings1 sample index: " + intString(listLength(sampleLst)) + "\n");
   end if;
   eqns1 := BackendEquation.listEquation(eqs_lst1);
-  einfo1 := BackendDAE.EVENT_INFO(timeEvents, whenclauses, zero_crossings, sampleLst, relations, countMathFunctions);
+  einfo1 := BackendDAE.EVENT_INFO(timeEvents, whenclauses, zero_crossings, sampleLst, relations, countMathFunctions, clocks);
   outSyst := BackendDAE.EQSYSTEM(vars, eqns1, m, mT, matching, stateSets, partitionKind);
   outShared := BackendDAE.SHARED(knvars, exobj, av, inieqns, remeqns, constrs, clsAttrs, cache, graph, funcs, einfo1, eoc, btp, symjacs, ei);
 end findZeroCrossings1;
