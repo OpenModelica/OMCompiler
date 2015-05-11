@@ -98,6 +98,19 @@ typedef struct CHATTERING_INFO
   int messageEmitted;
 } CHATTERING_INFO;
 
+typedef struct SUBCLOCK_INFO
+{
+  double factor;
+  double shift;
+  const char* solverMethod;
+} SUBCLOCK_INFO;
+
+typedef CLOCK_INFO
+{
+  long* subClocks;
+  long nSubClocks;
+} CLOCK_INFO;
+
 typedef struct CALL_STATISTICS
 {
   long functionODE;
@@ -456,6 +469,11 @@ typedef struct MODEL_DATA
   long nInputVars;
   long nOutputVars;
 
+  CLOCK_INFO* clocks;
+  long nClocks;
+  SUBCLOCK_INFO* subClocks;
+  long nSubClocks;
+
   long nZeroCrossings;
   long nRelations;
   long nMathEvents;                    /* number of math triggering functions e.g. cail, floor, integer */
@@ -510,6 +528,8 @@ typedef struct SIMULATION_INFO
   double *nextSampleTimes;             /* array of next sample time */
   modelica_boolean *samples;           /* array of the current value for all sample-calls */
 
+  LIST clockTimers;
+
   modelica_real* zeroCrossings;
   modelica_real* zeroCrossingsPre;
   modelica_real* zeroCrossingsBackup;  /* used by bisection in event.c */
@@ -561,6 +581,12 @@ typedef struct SIMULATION_INFO
   CALL_STATISTICS callStatistics;      /* used to store the number of function evaluations */
 } SIMULATION_INFO;
 
+typedef struct CLOCK_DATA
+{
+  double* clocksIntvls;
+  double* prevTimePoint;
+}
+
 /* collects all dynamic model data like the variabel-values */
 typedef struct SIMULATION_DATA
 {
@@ -570,6 +596,7 @@ typedef struct SIMULATION_DATA
   modelica_integer* integerVars;
   modelica_boolean* booleanVars;
   modelica_string* stringVars;
+
 
   modelica_real* inlineVars;           /* needed for the inline solver */
 
