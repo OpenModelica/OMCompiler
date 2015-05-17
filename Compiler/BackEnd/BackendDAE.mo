@@ -44,6 +44,7 @@ public import SCode;
 public import Values;
 public import HashTable3;
 public import HashTableCG;
+public import MMath;
 
 public
 type Type = .DAE.Type
