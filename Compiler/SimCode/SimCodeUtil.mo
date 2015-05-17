@@ -1558,8 +1558,8 @@ algorithm
 
       Option<SimCode.FmiModelStructure> modelStruct;
       list<SimCodeVar.SimVar> mixedArrayVars;
-      HashTableCrIListArray.HashTable varToArrayIndexMapping; //maps each variable to an array position
-
+      HashTableCrIListArray.HashTable varToArrayIndexMapping; //maps each array-variable to a array of positions
+      HashTableCrILst.HashTable varToIndexMapping; //maps each variable to an array position
     case (dlow, class_, _, fileDir, _,_, _, _, _, _, _, _, _) equation
       System.tmpTickReset(0);
       uniqueEqIndex = 1;
@@ -1569,6 +1569,7 @@ algorithm
         // prepare the equations
         dlow = BackendDAEUtil.mapEqSystem(dlow, Vectorization.prepareVectorizedDAE0);
       end if;
+
 
       backendMapping = setUpBackendMapping(inBackendDAE);
       if Flags.isSet(Flags.VISUAL_XML) then
@@ -1731,7 +1732,7 @@ algorithm
 
       modelStruct = createFMIModelStructure(symJacs, modelInfo);
 
-      varToArrayIndexMapping = createVarToArrayIndexMapping(modelInfo);
+      (varToArrayIndexMapping, varToIndexMapping) = createVarToArrayIndexMapping(modelInfo);
       //print("HASHTABLE MAPPING\n\n");
       //BaseHashTable.dumpHashTable(varToArrayIndexMapping);
       //print("\n\n");
@@ -1773,6 +1774,7 @@ algorithm
                                 filenamePrefix,
                                 HpcOmSimCode.emptyHpcomData,
                                 varToArrayIndexMapping,
+                                varToIndexMapping,
                                 crefToSimVarHT,
                                 SOME(backendMapping),
                                 modelStruct);
@@ -9575,7 +9577,7 @@ algorithm
     case (_, _, _, {}) then {};
     case (_, _, _, _)
       equation
-        SCode.MOD(binding = SOME((Absyn.STRING(str), _))) =
+        SCode.MOD(binding = SOME(Absyn.STRING(str))) =
           Mod.getUnelabedSubMod(inMod, "IncludeDirectory");
         str = CevalScript.getFullPathFromUri(program, str, false);
         istr = "\"-I"+str+"\"";
@@ -9612,7 +9614,7 @@ algorithm
         str := matchcontinue inMod
           case _
             equation
-              SCode.MOD(binding = SOME((Absyn.STRING(str), _))) = Mod.getUnelabedSubMod(inMod, "LibraryDirectory");
+              SCode.MOD(binding = SOME(Absyn.STRING(str))) = Mod.getUnelabedSubMod(inMod, "LibraryDirectory");
             then str;
           else "modelica://" + Absyn.pathFirstIdent(path) + "/Resources/Library";
         end matchcontinue;
@@ -9660,7 +9662,7 @@ algorithm
       Boolean isLinux;
     case (_, _, _)
       equation
-        SCode.MOD(binding = SOME((Absyn.STRING(str), _))) =
+        SCode.MOD(binding = SOME(Absyn.STRING(str))) =
           Mod.getUnelabedSubMod(inMod, "LibraryDirectory");
         str = CevalScript.getFullPathFromUri(program, str, false);
         platform1 = System.openModelicaPlatform();
@@ -9835,28 +9837,28 @@ algorithm
       Absyn.Exp exp;
     case ("msvc",_)
       equation
-        SCode.MOD(binding = SOME((Absyn.ARRAY(arr), _))) =
+        SCode.MOD(binding = SOME(Absyn.ARRAY(arr))) =
           Mod.getUnelabedSubMod(inMod, "Library");
         (libsList, namesList) = List.map_2(arr, getLibraryStringInMSVCFormat);
       then
         (List.flatten(libsList), List.flatten(namesList));
     case ("msvc",_)
       equation
-        SCode.MOD(binding = SOME((exp, _))) =
+        SCode.MOD(binding = SOME(exp)) =
           Mod.getUnelabedSubMod(inMod, "Library");
         (libs,names) = getLibraryStringInMSVCFormat(exp);
       then
         (libs,names);
     case (_,_)
       equation
-        SCode.MOD(binding = SOME((Absyn.ARRAY(arr), _))) =
+        SCode.MOD(binding = SOME(Absyn.ARRAY(arr))) =
           Mod.getUnelabedSubMod(inMod, "Library");
         (libsList, namesList) = List.map_2(arr, getLibraryStringInGccFormat);
       then
         (List.flatten(libsList), List.flatten(namesList));
     case (_,_)
       equation
-        SCode.MOD(binding = SOME((exp, _))) =
+        SCode.MOD(binding = SOME(exp)) =
           Mod.getUnelabedSubMod(inMod, "Library");
         (libs,names) = getLibraryStringInGccFormat(exp);
       then
@@ -9876,7 +9878,7 @@ algorithm
       String str,fileName;
     case (_)
       equation
-        SCode.MOD(binding = SOME((Absyn.STRING(inc), _)), info = SOURCEINFO(fileName=fileName,lineNumberStart=lineNumberStart)) =
+        SCode.MOD(binding = SOME(Absyn.STRING(inc)), info = SOURCEINFO(fileName=fileName,lineNumberStart=lineNumberStart)) =
           Mod.getUnelabedSubMod(inMod, "Include");
         str = "#line "+intString(lineNumberStart)+" \""+fileName+"\"";
         inc_1 = System.unescapedString(inc);
@@ -9895,7 +9897,7 @@ algorithm
       Boolean b;
     case (_)
       equation
-        SCode.MOD(binding = SOME((Absyn.BOOL(b), _))) =
+        SCode.MOD(binding = SOME((Absyn.BOOL(b)))) =
           Mod.getUnelabedSubMod(inMod, "DynamicLoad");
       then
         b;
@@ -11946,6 +11948,7 @@ algorithm
       SimCode.Files files "all the files from SourceInfo and DAE.ELementSource";
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       Option<SimCode.FmiModelStructure> modelStruct;
       Option<SimCode.BackendMapping> backendMapping;
       list<BackendDAE.BaseClockPartitionKind> partitionsKind;
@@ -11960,7 +11963,7 @@ algorithm
                           useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations,
                           minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                           jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars, extObjInfo,
-                          makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, crefToSimVarHT,
+                          makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT,
                           backendMapping, modelStruct )
       equation
         SimCode.MODELINFO(name, description, directory, varInfo, vars, functions, labels) = modelInfo;
@@ -11980,7 +11983,7 @@ algorithm
                          useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations, minValueEquations,
                          maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings, jacobianEquations, stateSets,
                          constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars, extObjInfo, makefileParams, delayedExps,
-                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, crefToSimVarHT,backendMapping, modelStruct );
+                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
 
     else
       equation
@@ -12274,6 +12277,7 @@ algorithm
       A a;
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       Option<SimCode.FmiModelStructure> modelStruct;
       Option<SimCode.BackendMapping> backendMapping;
       list<BackendDAE.BaseClockPartitionKind> partitionsKind;
@@ -12284,7 +12288,7 @@ algorithm
                            minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                            jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                            extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData,
-                           varToArrayIndexMapping, crefToSimVarHT, backendMapping, modelStruct ), _, a)
+                           varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ), _, a)
       equation
         (literals, a) = List.mapFold(literals, func, a);
         (allEquations, a) = traverseExpsEqSystems(allEquations, func, a, {});
@@ -12310,7 +12314,7 @@ algorithm
                              minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                              jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                              extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                             crefToSimVarHT, backendMapping,modelStruct ), a);
+                             varToIndexMapping, crefToSimVarHT, backendMapping,modelStruct ), a);
   end match;
 end traverseExpsSimCode;
 
@@ -12498,6 +12502,7 @@ algorithm
       SimCode.HashTableCrefToSimVar crefToSimVarHT "hidden from typeview - used by cref2simvar() for cref -> SIMVAR lookup available in templates.";
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       Option<SimCode.FmiModelStructure> modelStruct;
       Option<SimCode.BackendMapping> backendMapping;
       list<BackendDAE.BaseClockPartitionKind> partitionsKind;
@@ -12508,13 +12513,13 @@ algorithm
                            minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                            jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                            extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                           crefToSimVarHT, backendMapping, modelStruct ), _)
+                           varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ), _)
       then SimCode.SIMCODE( modelInfo, literals, recordDecls, externalFunctionIncludes, allEquations, odeEquations, algebraicEquations,partitionsKind, baseClocks,
                            useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations,
                            minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,equationsForZeroCrossings,
                            jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                            extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                           crefToSimVarHT, backendMapping, modelStruct );
+                           varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
   end match;
 end setSimCodeLiterals;
 
@@ -12557,6 +12562,7 @@ protected function createVarToArrayIndexMapping "author: marcusw
   Creates a mapping for each array-cref to the array dimensions (int list) and to the indices (for the code generation) used to store the array content."
   input SimCode.ModelInfo iModelInfo;
   output HashTableCrIListArray.HashTable oVarToArrayIndexMapping;
+  output HashTableCrILst.HashTable oVarToIndexMapping; //same as oVarToArrayIndexMapping, but does not merge array variables into one list
 protected
   list<SimCodeVar.SimVar> stateVars;
   list<SimCodeVar.SimVar> derivativeVars;
@@ -12587,14 +12593,14 @@ protected
   HashTableCrIListArray.HashTable varArrayIndexMappingHashTable;
   tuple<Integer,Integer,Integer> currentVarIndices;
 algorithm
-  oVarToArrayIndexMapping := match(iModelInfo)
+  (oVarToArrayIndexMapping,oVarToIndexMapping) := match(iModelInfo)
     case(SimCode.MODELINFO(vars = SimCodeVar.SIMVARS(stateVars=stateVars,derivativeVars=derivativeVars,algVars=algVars,discreteAlgVars=discreteAlgVars,
         intAlgVars=intAlgVars,boolAlgVars=boolAlgVars,aliasVars=aliasVars,intAliasVars=intAliasVars,boolAliasVars=boolAliasVars,paramVars=paramVars,
         intParamVars=intParamVars,boolParamVars=boolParamVars,inputVars=inputVars,outputVars=outputVars, constVars=constVars, intConstVars=intConstVars, boolConstVars=boolConstVars,
         realOptimizeConstraintsVars=realOptimizeConstraintsVars, realOptimizeFinalConstraintsVars=realOptimizeFinalConstraintsVars)))
       equation
-        varArrayIndexMappingHashTable = HashTableCrIListArray.emptyHashTable();
-        varIndexMappingHashTable = HashTableCrILst.emptyHashTable();
+        varArrayIndexMappingHashTable = HashTableCrIListArray.emptyHashTableSized(BaseHashTable.biggerBucketSize);
+        varIndexMappingHashTable = HashTableCrILst.emptyHashTableSized(BaseHashTable.biggerBucketSize);
         currentVarIndices = (1,1,1); //0 is reserved for unused variables
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(stateVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(derivativeVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
@@ -12616,9 +12622,9 @@ algorithm
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(aliasVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(intAliasVars, function addVarToArrayIndexMapping(iVarType=2), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(boolAliasVars, function addVarToArrayIndexMapping(iVarType=3), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
-      then varArrayIndexMappingHashTable;
+      then (varArrayIndexMappingHashTable, varIndexMappingHashTable);
     else
-      then HashTableCrIListArray.emptyHashTable();
+      then (HashTableCrIListArray.emptyHashTableSized(0), HashTableCrILst.emptyHashTableSized(0));
   end match;
 end createVarToArrayIndexMapping;
 
@@ -12664,11 +12670,11 @@ algorithm
             ((arrayDimensions,varIndices)) = BaseHashTable.get(arrayName, tmpVarToArrayIndexMapping);
           else
             //print("Try to calculate array dimensions out of " + intString(listLength(numArrayElement)) + " array elements " + "\n");
-            arrayDimensions = List.map(List.lastN(numArrayElement,listLength(ComponentReference.crefLastSubs(name))), stringInt);
+            arrayDimensions = List.map(List.lastN(numArrayElement,listLength(arraySubscripts)), stringInt);
             varIndices = arrayCreate(List.fold(arrayDimensions, intMul, 1), 0);
           end if;
           //print("Num of array elements {" + stringDelimitList(List.map(arrayDimensions, intString), ",") + "} : " + intString(listLength(arraySubscripts)) + "\n");
-          ((arrayIndex,_,_)) = List.fold(arraySubscripts, getUnrolledArrayIndex, (0, 1, arrayDimensions));
+          ((arrayIndex,_,_)) = List.fold(listReverse(arraySubscripts), getUnrolledArrayIndex, (0, 1, listReverse(arrayDimensions)));
           arrayIndex = arrayIndex + 1;
           //print("VarIndices: " + intString(arrayLength(varIndices)) + " arrayIndex: " + intString(arrayIndex) + " varIndex: " + intString(varIdx) + "\n");
           varIndices = arrayUpdate(varIndices, arrayIndex, varIdx);
@@ -12865,6 +12871,7 @@ algorithm
           index = subscriptIndex;
           currentOffset = head;
         else
+          //print("getUnrolledArrayIndex: index = " + intString(index) + " + " + intString(currentOffset) + " * " + intString(subscriptIndex) + "\n");
           index = index + intMul(currentOffset, subscriptIndex);
           currentOffset = intMul(currentOffset, head);
         end if;
@@ -13957,6 +13964,7 @@ protected
       SimCode.Files files;
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       list<SimCodeVar.SimVar> stateVars,derivativeVars,algVars,discreteAlgVars,intAlgVars,boolAlgVars,inputVars,outputVars,aliasVars,intAliasVars,boolAliasVars,paramVars,intParamVars,boolParamVars,stringAlgVars,stringParamVars,stringAliasVars,extObjVars,constVars,intConstVars,boolConstVars,stringConstVars,jacobianVars,realOptimizeConstraintsVars, realOptimizeFinalConstraintsVars;
       Option<SimCode.FmiModelStructure> modelStruct;
       list<SimCodeVar.SimVar> mixedArrayVars;
@@ -13970,7 +13978,7 @@ algorithm
                              minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                              jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                              extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                             crefToSimVarHT, backendMapping, modelStruct ))
+                             varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ))
       equation
         SimCode.MODELINFO(name=name, description=description, directory=directory, varInfo=varInfo, vars=vars, functions=functions, labels=labels) = modelInfo;
         SimCodeVar.SIMVARS( stateVars=stateVars, derivativeVars=derivativeVars, algVars=algVars, discreteAlgVars=discreteAlgVars, intAlgVars=intAlgVars,
@@ -13990,7 +13998,7 @@ algorithm
                          useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations, minValueEquations,
                          maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings, jacobianEquations, stateSets,
                          constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars, extObjInfo, makefileParams, delayedExps,
-                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
+                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
   end match;
 end addSimVarToAlgVars;
 
@@ -14032,6 +14040,7 @@ protected
       SimCode.Files files;
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       Option<SimCode.FmiModelStructure> modelStruct;
       Option<SimCode.BackendMapping> backendMapping;
       list<BackendDAE.BaseClockPartitionKind> partitionsKind;
@@ -14043,7 +14052,7 @@ algorithm
                                minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                                jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                                extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                               crefToSimVarHT, backendMapping, modelStruct ))
+                               varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ))
       equation
         odes = listGet(odeEquations,sysIdx);
         odes = listAppend({simEqSys},odes);
@@ -14054,7 +14063,7 @@ algorithm
                          useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations, minValueEquations,
                          maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings, jacobianEquations, stateSets,
                          constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars, extObjInfo, makefileParams, delayedExps,
-                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, crefToSimVarHT,backendMapping, modelStruct );
+                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT,backendMapping, modelStruct );
   end match;
 end addSimEqSysToODEquations;
 
@@ -14095,6 +14104,7 @@ protected
       SimCode.Files files;
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       Option<SimCode.FmiModelStructure> modelStruct;
       Option<SimCode.BackendMapping> backendMapping;
       list<BackendDAE.BaseClockPartitionKind> partitionsKind;
@@ -14105,7 +14115,7 @@ algorithm
                              useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations,
                              minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                              jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars, extObjInfo,
-                             makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, crefToSimVarHT,
+                             makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT,
                              backendMapping, modelStruct ))
       equation
         initialEquations = listAppend(initialEquations,{simEqSys});
@@ -14114,7 +14124,7 @@ algorithm
                          useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations, minValueEquations,
                          maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings, jacobianEquations, stateSets,
                          constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars, extObjInfo, makefileParams, delayedExps,
-                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
+                         jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
   end match;
 end addSimEqSysToInitialEquations;
 
@@ -14156,6 +14166,7 @@ protected
       SimCode.Files files;
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       Option<SimCode.FmiModelStructure> modelStruct;
       Option<SimCode.BackendMapping> backendMapping;
       list<BackendDAE.BaseClockPartitionKind> partitionsKind;
@@ -14167,14 +14178,14 @@ algorithm
                                minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                                jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                                extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                               crefToSimVarHT, backendMapping, modelStruct ))
+                               varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ))
       then
         SimCode.SIMCODE( modelInfo, literals, recordDecls, externalFunctionIncludes, allEqs, odeEqs, algebraicEquations, partitionsKind, baseClocks,
                          useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations,
                          minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                          jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                          extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                         crefToSimVarHT,backendMapping, modelStruct );
+                         varToIndexMapping, crefToSimVarHT,backendMapping, modelStruct );
   end match;
 end replaceODEandALLequations;
 
@@ -14217,6 +14228,7 @@ algorithm
       SimCode.Files files;
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
+      HashTableCrILst.HashTable varToIndexMapping;
       Option<SimCode.FmiModelStructure> modelStruct;
       Option<SimCode.BackendMapping> backendMapping;
       list<BackendDAE.BaseClockPartitionKind> partitionsKind;
@@ -14226,14 +14238,14 @@ algorithm
                              nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
                              equationsForZeroCrossings, jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses,
                              discreteModelVars, extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData,
-                             varToArrayIndexMapping, crefToSimVarHT, backendMapping, modelStruct))
+                             varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct))
       then
         SimCode.SIMCODE( modelInfoIn, literals, recordDecls, externalFunctionIncludes, allEquations, odeEquations, algebraicEquations, partitionsKind, baseClocks,
                          useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations, nominalValueEquations,
                          minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
                          jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses, discreteModelVars,
                          extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                         crefToSimVarHT,backendMapping, modelStruct);
+                         varToIndexMapping, crefToSimVarHT,backendMapping, modelStruct);
   end match;
 end replaceModelInfo;
 

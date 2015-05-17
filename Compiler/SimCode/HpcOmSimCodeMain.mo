@@ -183,9 +183,8 @@ algorithm
       Option<SimCode.FmiModelStructure> modelStruct;
       list<SimCodeVar.SimVar> mixedArrayVars;
       HpcOmSimCode.HpcOmData hpcomData;
-      Option<HashTableCrIListArray.HashTable> optVarToArrayIndexMapping;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
-
+      HashTableCrILst.HashTable varToIndexMapping;
     case (BackendDAE.DAE(eqs=eqs), _, _, _, _,_, _, _, _, _, _, _, _) equation
       //Initial System
       //--------------
@@ -204,7 +203,7 @@ algorithm
                        nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
                        zeroCrossingsEquations, jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses,
                        discreteModelVars, extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, _,
-                       varToArrayIndexMapping, crefToSimVarHT, backendMapping ) = simCode;
+                       varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping ) = simCode;
 
       //print("Number of literals pre: " + intString(listLength(simCodeLiterals)) + "\n");
 
@@ -350,7 +349,7 @@ algorithm
                        nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
                        zeroCrossingsEquations, jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses,
                        discreteModelVars, extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, _, varToArrayIndexMapping,
-                       crefToSimVarHT, backendMapping, modelStruct ) = simCode;
+                       varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ) = simCode;
 
       //(schedule,numProc) = repeatScheduleWithOtherNumProc(taskGraphSimplified,taskGraphDataSimplified,sccSimEqMapping,filenamePrefix,cpCostsWoC,schedule,numProc,numFixed);
       numProc = Flags.getConfigInt(Flags.NUM_PROC);
@@ -378,11 +377,8 @@ algorithm
 
       //Create Memory-Map and Sim-Code
       //------------------------------
-      (optTmpMemoryMap,optVarToArrayIndexMapping) = HpcOmMemory.createMemoryMap(modelInfo, taskGraphOdeSimplified, BackendDAEUtil.transposeMatrix(taskGraphOdeSimplified,arrayLength(taskGraphOdeSimplified)), taskGraphDataOdeSimplified, eqs, filenamePrefix, schedulerInfo, scheduleOde, sccSimEqMapping, criticalPaths, criticalPathsWoC, criticalPathInfo, numProc, allComps);
-      if(Util.isSome(optVarToArrayIndexMapping)) then
-        SOME(varToArrayIndexMapping) = optVarToArrayIndexMapping;
-        //BaseHashTable.dumpHashTable(varToArrayIndexMapping);
-      end if;
+      (optTmpMemoryMap, varToArrayIndexMapping, varToIndexMapping) = HpcOmMemory.createMemoryMap(modelInfo, varToArrayIndexMapping, varToIndexMapping, taskGraphOdeSimplified, BackendDAEUtil.transposeMatrix(taskGraphOdeSimplified,arrayLength(taskGraphOdeSimplified)), taskGraphDataOdeSimplified, eqs, filenamePrefix, schedulerInfo, scheduleOde, sccSimEqMapping, criticalPaths, criticalPathsWoC, criticalPathInfo, numProc, allComps);
+      //BaseHashTable.dumpHashTable(varToArrayIndexMapping);
 
       SimCodeUtil.execStat("hpcom create memory map");
 
@@ -392,7 +388,7 @@ algorithm
                                  nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
                                  zeroCrossingsEquations, jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses,
                                  discreteModelVars, extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData,
-                                 varToArrayIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
+                                 varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
 
       //print("Number of literals post: " + intString(listLength(simCodeLiterals)) + "\n");
 
