@@ -284,7 +284,8 @@ algorithm
   print("\nBackendDAEType: ");
   printBackendDAEType(backendDAEType);
   print("\n\n");
-  dumpClocks(clocks, "Base clocks");
+
+
   dumpVariables(knownVars, "Known Variables (constants)");
   dumpVariables(externalObjects, "External Objects");
   dumpExternalObjectClasses(extObjClasses, "Classes of External Objects");
