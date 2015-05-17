@@ -108,7 +108,14 @@ algorithm
   BackendDAE.EQSYSTEM(orderedVars=vars) := syst;
 
   (contSysts, clockedSysts) := baseClockPartitioning(syst, inShared);
-  BackendDAE.DAE({syst}, _) := BackendDAEOptimize.collapseIndependentBlocks(BackendDAE.DAE(contSysts, inShared));
+
+  if listLength(contSysts) == 0
+    then
+      syst := BackendDAEUtil.createEqSystem( BackendVariable.emptyVars(), BackendEquation.emptyEqns(),
+                                             {}, BackendDAE.CONTINUOUS_TIME_PARTITION() );
+    else
+      BackendDAE.DAE({syst}, _) := BackendDAEOptimize.collapseIndependentBlocks(BackendDAE.DAE(contSysts, inShared));
+  end if;
   (syst, holdComps) := removeHoldExpsSyst(syst);
 
   (clockedSysts, baseClocks) := subClockPartitioning1(clockedSysts, inShared, holdComps);
@@ -185,7 +192,13 @@ algorithm
     arrayUpdate(outClocks, i, clock);
     i := i + 1;
   end for;
-  hasHoldOperator := arrayCreate(listLength(tpls), false);
+
+  i := 0;
+  for tpls1 in tpls loop
+    i := i + listLength(tpls1);
+  end for;
+  hasHoldOperator := arrayCreate(i, false);
+
   i := 1;
   for tpls1 in tpls loop
     for tpl in tpls1 loop
@@ -197,10 +210,12 @@ algorithm
       i := i + 1;
     end for;
   end for;
+
   for cr in inHoldComps loop
     i := BaseHashTable.get(cr, varsPartition);
     arrayUpdate(hasHoldOperator, i, true);
   end for;
+
   i := 1; j := 1;
   for tpls1 in tpls loop
     for tpl in tpls1 loop
@@ -281,6 +296,7 @@ protected
   array<Integer> subclksCnt;
   list<BackendDAE.EqSystem> systs;
 algorithm
+
   funcs := BackendDAEUtil.getFunctions(inShared);
   BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs) := inEqSystem;
 
@@ -318,10 +334,9 @@ algorithm
   i := 1;
   for syst in systs loop
     BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs) := syst;
-    i := i + 1;
     outTpl := (vars, eqs, arrayGet(subclocks, i))::outTpl;
+    i := i + 1;
   end for;
-
 end subClockPartitioning;
 
 protected function resolveClocks
