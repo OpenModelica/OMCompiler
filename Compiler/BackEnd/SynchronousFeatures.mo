@@ -108,11 +108,9 @@ algorithm
   BackendDAE.EQSYSTEM(orderedVars=vars) := syst;
 
   (contSysts, clockedSysts) := baseClockPartitioning(syst, inShared);
-
   BackendDAE.DAE({syst}, _) := BackendDAEOptimize.collapseIndependentBlocks(BackendDAE.DAE(contSysts, inShared));
   (syst, holdComps) := removeHoldExpsSyst(syst);
 
-  baseClocks := arrayCreate(listLength(clockedSysts), DAE.INFERRED_CLOCK());
   (clockedSysts, baseClocks) := subClockPartitioning1(clockedSysts, inShared, holdComps);
 
   systs := syst::clockedSysts;
@@ -267,7 +265,6 @@ protected function subClockPartitioning
   input BackendDAE.Shared inShared;
   output list<UnresolvedPartitionData> outTpl = {};
   output DAE.ClockKind outClock;
-
 protected
   DAE.FunctionTree funcs;
   BackendDAE.EquationArray eqs, clockEqs;
@@ -315,6 +312,7 @@ algorithm
       {syst};
 
   (subclocks, outClock) := resolveClocks(clockVars, clockEqs, clockComps);
+
   subclocks := collectSubClocks(clockVars, partitionsCnt, partitions, contPartitions, subclksCnt, subclocks);
 
   i := 1;
@@ -343,7 +341,7 @@ protected
   BackendDAE.StrongComponent comp;
   Integer eqIdx, varIdx;
 algorithm
-  outSubClocks := arrayCreate(BackendVariable.varsSize(inVars), BackendDAE.SUBCLOCK(rat1, rat1, NONE()));
+  outSubClocks := arrayCreate(BackendVariable.varsSize(inVars), BackendDAE.SUBCLOCK(rat0, rat0, NONE()));
   for comp in inComps loop
     outClockKind := matchcontinue comp
       case BackendDAE.SINGLEEQUATION(eqIdx, varIdx)
@@ -366,6 +364,7 @@ algorithm
   end for;
 end resolveClocks;
 
+protected constant MMath.Rational rat0 = MMath.RATIONAL(0, 1);
 protected constant MMath.Rational rat1 = MMath.RATIONAL(1, 1);
 
 protected function getSubClock
@@ -393,7 +392,7 @@ algorithm
         (clockKind, BackendDAE.SUBCLOCK(factor, shift, _)) := getSubClock(e1, inVars, inSubClocks);
       then (clockKind, BackendDAE.SUBCLOCK(factor, shift, SOME(solverMethodStr)));
     case DAE.CLKCONST(outClockKind)
-      then (outClockKind, BackendDAE.SUBCLOCK(rat1, rat1, NONE()));
+      then (outClockKind, BackendDAE.SUBCLOCK(rat1, rat0, NONE()));
     case DAE.CALL(path = Absyn.IDENT("subSample"), expLst = {e1, e2})
       algorithm
         (clockKind, BackendDAE.SUBCLOCK(factor, shift, solverMethod)) := getSubClock(e1, inVars, inSubClocks);
@@ -486,7 +485,7 @@ protected
   array<Option<BackendDAE.SubClock>> subClocks;
 algorithm
   subClocks := arrayCreate(inPartitionsCnt, NONE());
-  outSubClocks := arrayCreate(inPartitionsCnt, BackendDAE.SUBCLOCK(rat1, rat1, NONE()));
+  outSubClocks := arrayCreate(inPartitionsCnt, BackendDAE.SUBCLOCK(rat0, rat0, NONE()));
   for i in 1:inPartitionsCnt loop
     partClocksCnt := arrayGet(clocksCnt, i) - 1;
     assert(partClocksCnt > 0, "Internal error -- Function SynchronousFeatures.collectSubClocks failed");
@@ -536,19 +535,35 @@ algorithm
   outSubClk := match oldSubClk
     local
       MMath.Rational oldFactor, oldShift, newFactor, newShift;
-      Option<String> oldSolverMethod, newSolverMethod, solverMethod;
+      Option<String> oldSolverMethod, newSolverMethod;
     case NONE() then newSubClk;
     case SOME(BackendDAE.SUBCLOCK(oldFactor, oldShift, oldSolverMethod))
       algorithm
         BackendDAE.SUBCLOCK(newFactor, newShift, newSolverMethod) := newSubClk;
-        if not MMath.equals(oldFactor, newFactor) or not MMath.equals(oldShift, newShift) then
+        newFactor := setFactorOrShift(oldFactor, newFactor);
+        newShift := setFactorOrShift(oldShift, newShift);
+        newSolverMethod := setSolverMethod(oldSolverMethod, newSolverMethod);
+      then BackendDAE.SUBCLOCK(newFactor, newShift, newSolverMethod);
+  end match;
+end setSubClock;
+
+protected function setFactorOrShift
+  input MMath.Rational oldVal;
+  input MMath.Rational newVal;
+  output MMath.Rational outVal;
+algorithm
+  outVal := match (oldVal, newVal)
+    case (MMath.RATIONAL(0, _), _) then newVal;
+    case (_, MMath.RATIONAL(0, _)) then oldVal;
+    else
+      algorithm
+        if not MMath.equals(oldVal, newVal) then
           Error.addMessage(Error.SUBCLOCK_CONFLICT, {});
           fail();
         end if;
-        solverMethod := setSolverMethod(oldSolverMethod, newSolverMethod);
-      then BackendDAE.SUBCLOCK(newFactor, newShift, solverMethod);
+     then newVal;
   end match;
-end setSubClock;
+end setFactorOrShift;
 
 protected function collectSubclkInfoExp
   input DAE.Exp inExp;
@@ -653,10 +668,8 @@ protected function collectSubclkInfoCall
   output list<BackendDAE.Equation> outNewEqs;
   output list<BackendDAE.Var> outNewVars;
   output Integer outClkCnt;
-protected
-  DAE.Exp e1, e2, e3;
 algorithm
-  (outExp, outNewEqs, outNewVars, outClkCnt) := match (inPath, inExpLst)
+  (outExp, outNewEqs, outNewVars, outClkCnt) := match (inPath, listLength(inExpLst))
     local
       BackendDAE.Var var;
       BackendDAE.Equation eq;
@@ -690,7 +703,7 @@ algorithm
         setContClockedPartition(true, inPartitionIdx, inContPartitions, source);
       then
         (DAE.CALL(inPath, inExpLst, inAttr), inNewEqs, inNewVars, inClkCnt);
-    case (Absyn.IDENT("sample"), {e1, e2, e3})
+    case (Absyn.IDENT("sample"), 3)
       algorithm
         setContClockedPartition(true, inPartitionIdx, inContPartitions, source);
       then
@@ -727,38 +740,69 @@ algorithm
       then
         (DAE.CALL(inPath, inExpLst, inAttr), inNewEqs, inNewVars, inClkCnt);
 
-    case (Absyn.IDENT("sample"), {e1, e2})
+    case (Absyn.IDENT("sample"), 2)
       algorithm
-        (var, eq) := createSubClock(inPartitionIdx, inClkCnt, e2);
+        (var, eq) := createSubClock(inPartitionIdx, inClkCnt, listGet(inExpLst, 2));
       then
-        (substGetPartition(e1), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
-    case (Absyn.IDENT("subSample"), {e1, e2})
-      algorithm
-        (var, eq) := createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
+        (substGetPartition(listGet(inExpLst, 1)), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
+    case (Absyn.IDENT("subSample"), 2)
       then
-        (substGetPartition(e1), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
-    case (Absyn.IDENT("superSample"), {e1, e2})
-      algorithm
-        (var, eq) := createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
+        createSubClockVarFactor( inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr,
+                                 inPartitions, inVars, mT, inNewEqs, inNewVars );
+    case (Absyn.IDENT("superSample"), 2)
       then
-        (substGetPartition(e1), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
-    case (Absyn.IDENT("shiftSample"), {e1, e2, e3})
-      algorithm
-        (var, eq) := createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
+        createSubClockVarFactor( inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr,
+                                 inPartitions, inVars, mT, inNewEqs, inNewVars );
+    case (Absyn.IDENT("shiftSample"), 3)
+      equation
+        (var, eq) = createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
       then
-        (substGetPartition(e1), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
-    case (Absyn.IDENT("backSample"), {e1, e2, e3})
-      algorithm
-        (var, eq) := createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
+        (substGetPartition(listGet(inExpLst, 1)), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
+    case (Absyn.IDENT("backSample"), 3)
+      equation
+        (var, eq) = createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
       then
-        (substGetPartition(e1), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
-    case (Absyn.IDENT("noClock"), {e1})
+        (substGetPartition(listGet(inExpLst, 1)), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
+    case (Absyn.IDENT("noClock"), 1)
       then
-        (substGetPartition(e1), inNewEqs, inNewVars, inClkCnt);
+        (substGetPartition(listGet(inExpLst, 1)), inNewEqs, inNewVars, inClkCnt);
     else
       (DAE.CALL(inPath, inExpLst, inAttr), inNewEqs, inNewVars, inClkCnt);
   end match;
 end collectSubclkInfoCall;
+
+protected function createSubClockVarFactor
+  input Integer inPartitionIdx;
+  input Integer inClkCnt;
+  input Absyn.Path inPath;
+  input list<DAE.Exp> inExpLst;
+  input DAE.CallAttributes inAttr;
+  input array<Integer> inPartitions;
+  input BackendDAE.Variables inVars;
+  input BackendDAE.IncidenceMatrix mT;
+  input list<BackendDAE.Equation> inNewEqs;
+  input list<BackendDAE.Var> inNewVars;
+  output DAE.Exp outExp;
+  output list<BackendDAE.Equation> outNewEqs;
+  output list<BackendDAE.Var> outNewVars;
+  output Integer outClkCnt;
+protected
+  DAE.Exp e;
+algorithm
+  e := substGetPartition(List.first(inExpLst));
+  (outExp, outNewEqs, outNewVars, outClkCnt) := match listGet(inExpLst, 2)
+    local
+      BackendDAE.Var var;
+      BackendDAE.Equation eq;
+    case DAE.ICONST(0)
+      then (e, inNewEqs, inNewVars, inClkCnt);
+    else
+      equation
+        (var, eq) = createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
+      then
+        (e, eq::inNewEqs, var::inNewVars, inClkCnt + 1);
+    end match;
+end createSubClockVarFactor;
 
 protected function substGetPartition
   input DAE.Exp inExp;
