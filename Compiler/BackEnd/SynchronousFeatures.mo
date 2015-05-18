@@ -105,10 +105,10 @@ protected
   array<Integer> varsPartition;
 algorithm
   syst := substituteParitionOpExps(inSyst);
-  BackendDAE.EQSYSTEM(orderedVars=vars) := syst;
 
   (contSysts, clockedSysts) := baseClockPartitioning(syst, inShared);
 
+//All continuous-time partitions are collected together and form “the” continuous-time partition
   if listLength(contSysts) == 0
     then
       syst := BackendDAEUtil.createEqSystem( BackendVariable.emptyVars(), BackendEquation.emptyEqns(),
@@ -120,6 +120,7 @@ algorithm
 
   (clockedSysts, baseClocks) := subClockPartitioning1(clockedSysts, inShared, holdComps);
 
+  //Continuous system always first in equation systems list
   systs := syst::clockedSysts;
   outDAE := BackendDAE.DAE(systs, setClocks(inShared, baseClocks));
 
@@ -164,6 +165,7 @@ end setClocks;
 protected type UnresolvedPartitionData = tuple<BackendDAE.Variables, BackendDAE.EquationArray, BackendDAE.SubClock>;
 
 protected function subClockPartitioning1
+"Do subclock partitioning and inferencing and create clocked partitions and base clocks array."
   input list<BackendDAE.EqSystem> inSysts;
   input BackendDAE.Shared inShared;
   input list<DAE.ComponentRef> inHoldComps;
@@ -192,13 +194,13 @@ algorithm
     arrayUpdate(outClocks, i, clock);
     i := i + 1;
   end for;
-
+  //Get count of subpartitions
   i := 0;
   for tpls1 in tpls loop
     i := i + listLength(tpls1);
   end for;
   hasHoldOperator := arrayCreate(i, false);
-
+  //Create hash cr -> subpartition index
   i := 1;
   for tpls1 in tpls loop
     for tpl in tpls1 loop
@@ -210,7 +212,7 @@ algorithm
       i := i + 1;
     end for;
   end for;
-
+  //Detect subpartitions whose variables are used in hold operator
   for cr in inHoldComps loop
     i := BaseHashTable.get(cr, varsPartition);
     arrayUpdate(hasHoldOperator, i, true);
@@ -229,6 +231,8 @@ algorithm
 end subClockPartitioning1;
 
 protected function removeHoldExpsSyst
+"Collect clocked variable, which used in continuous partition.
+ Replace expression hold(expr_i) -> $getPart(expr_i)."
   input BackendDAE.EqSystem inSyst;
   output BackendDAE.EqSystem outEqSystem;
   output list<DAE.ComponentRef> outHoldComps = {};
@@ -276,6 +280,8 @@ algorithm
 end removeHoldExp;
 
 protected function subClockPartitioning
+"Do sub-partitioning for base partition and get base clock
+ and vars, equations and subclocks of subpartitions."
   input BackendDAE.EqSystem inEqSystem;
   input BackendDAE.Shared inShared;
   output list<UnresolvedPartitionData> outTpl = {};
@@ -308,6 +314,8 @@ algorithm
   (syst, m, mT) := BackendDAEUtil.getIncidenceMatrixfromOption(syst, BackendDAE.SUBCLOCK_IDX(), SOME(funcs));
   partitions := arrayCreate(arrayLength(m), 0);
   partitionsCnt := partitionIndependentBlocks0(m, mT, partitions);
+
+  //Detect clocked continuous partitions and create new subclock equations
   (eqs, newClockEqs, newClockVars, contPartitions, subclksCnt)
       := collectSubclkInfo(eqs, partitionsCnt, partitions, vars, mT);
 
@@ -315,6 +323,7 @@ algorithm
   clockVars := BackendVariable.addVars(newClockVars, clockVars);
   clockSyst := BackendDAEUtil.createEqSystem(clockVars, clockEqs, {});
 
+  //Solve clock equations
   BackendDAE.DAE({clockSyst}, _) := BackendDAEUtil.transformBackendDAE (
                                       BackendDAE.DAE({clockSyst}, inShared), NONE(), NONE(), NONE() );
   BackendDAE.EQSYSTEM( orderedVars=clockVars, orderedEqs=clockEqs,
@@ -328,7 +337,6 @@ algorithm
       {syst};
 
   (subclocks, outClock) := resolveClocks(clockVars, clockEqs, clockComps);
-
   subclocks := collectSubClocks(clockVars, partitionsCnt, partitions, contPartitions, subclksCnt, subclocks);
 
   i := 1;
@@ -340,6 +348,7 @@ algorithm
 end subClockPartitioning;
 
 protected function resolveClocks
+"Get from clock equation system array subclocks[varIdx] and base clock."
   input BackendDAE.Variables inVars;
   input BackendDAE.EquationArray inEqs;
   input BackendDAE.StrongComponents inComps;
@@ -383,6 +392,7 @@ protected constant MMath.Rational rat0 = MMath.RATIONAL(0, 1);
 protected constant MMath.Rational rat1 = MMath.RATIONAL(1, 1);
 
 protected function getSubClock
+"Get base clock and subclock from expression"
   input DAE.Exp inExp;
   input BackendDAE.Variables inVars;
   input array<BackendDAE.SubClock> inSubClocks;
@@ -857,6 +867,21 @@ algorithm
 end createSubClock;
 
 protected function collectSubclkInfo
+"Create new clock equations and variables from equations:
+  - r = sample(e, clk) -- clockVar: $subclki_n; clockEq: $subclki_n = clk; eq: r = $getPart(e);
+  - r = subSample(e, e1) -- clockVar: $subclki_n; clockEq: $subclki_n = subSample($subclkj_1, e1); eq: r = $getPart(e);
+  - r = shiftSample(e, e1, e2) -- clockVar: $subclki_n; clockEq: $subclki_n = shiftSample($subclkj_1, e1, e2); eq: r = $getPart(e);
+  - r = backSample(e, e1, e2) -- clockVar: $subclki_n; clockEq: $subclki_n = backSample($subclkj_1, e1, e2); eq: r = $getPart(e);
+  - r = noClock(e) -- eq: r = $getPart(e);
+  where subclki_n -- n subclock of partition, which r expression belongs;
+        subclkj_n -- n subclock of partition, which e expression belongs;
+        clockVar, clockEq -- new clock variables and equations;
+        eq -- replaced equation.
+ Detect clocked continuous partitions according the rule:
+  If equation contains operator der, delay, spatialDistribution, event related operators
+  , or when clause, it is a clocked continuous equation.
+  If a clocked partition is not a clocked continuous partition and it contains operator previous
+  , or interval, it is a clocked discrete equation."
   input BackendDAE.EquationArray inEqs;
   input Integer inPartitionCnt;
   input array<Integer> inPartitions;
@@ -884,7 +909,6 @@ algorithm
   outContPartitions := arrayCreate(inPartitionCnt, NONE());
   oClksCnt := arrayCreate(inPartitionCnt, 1);
   whenClocks := arrayCreate(eqsSize, 0);
-  partitionsWhenClocks := arrayCreate(inPartitionCnt, {});
   for i in 1 : eqsSize loop
     eq := BackendEquation.equationNth1(outEqs, i);
     eqAttr := BackendEquation.getEquationAttributes(eq);
@@ -894,7 +918,7 @@ algorithm
         Boolean diff;
         BackendDAE.LoopInfo loopInfo;
       case BackendDAE.EQUATION_ATTRIBUTES(diff, BackendDAE.CLOCKED_EQUATION(whenIdx), loopInfo)
-        algorithm arrayUpdate(whenClocks, i, whenIdx);
+        algorithm arrayUpdate(whenClocks, i, whenIdx) "Set when clock no for equation";
         then BackendDAE.EQUATION_ATTRIBUTES(diff, BackendDAE.DYNAMIC_EQUATION(), loopInfo);
       else eqAttr;
     end match;
@@ -907,6 +931,7 @@ algorithm
                                          oClksCnt,  partitionIdx, inPartitions, inVars, mT ) );
     BackendEquation.setAtIndex(outEqs, i, eq);
     j := arrayGet(whenClocks, i);
+    partitionsWhenClocks := arrayCreate(inPartitionCnt, {});
     partitionWhenClocks := arrayGet(partitionsWhenClocks, partitionIdx);
     if j <> 0 and List.notMember(j, partitionWhenClocks) then
       arrayUpdate(partitionsWhenClocks, partitionIdx, j::partitionWhenClocks);
@@ -914,6 +939,7 @@ algorithm
   end for;
   for i in 1:inPartitionCnt loop
     for j in arrayGet(partitionsWhenClocks, i) loop
+      //For each when clock j in partition i create equation "$subclki_n = $whenclkj"
       cnt := arrayGet(oClksCnt, i);
       cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(j), DAE.T_CLOCK_DEFAULT, {});
       (var, eq) := createSubClock(i, cnt, DAE.CREF(cr, DAE.T_CLOCK_DEFAULT));
@@ -921,6 +947,7 @@ algorithm
       outNewVars := var::outNewVars;
       arrayUpdate(oClksCnt, i, cnt + 1);
     end for;
+    //If no subclock for partition i is detected, create new one "$subclki_1 = Clock()"
     if arrayGet(oClksCnt, i) == 1 then
       (var, eq) := createSubClock(i, 1, DAE.CLKCONST(DAE.INFERRED_CLOCK()));
       outNewEqs := eq::outNewEqs;
@@ -983,8 +1010,9 @@ algorithm
 end splitClockVars;
 
 protected function substituteParitionOpExps
-"Substitute expressions in first arguments of clock partitioning operators with variables
-and extract variables of the clock partitioning operators"
+"Each non-trivial expression (non-literal, non-constant, non-parameter, non-variable), expr_i, appearing
+ as first argument of any clock conversion operator or Boolean clock is recursively replaced by a unique variable, $var_i,
+ and the equation $var_i = expr_i is added to the equation set."
   input BackendDAE.EqSystem inSyst;
   output BackendDAE.EqSystem outSyst;
 protected
@@ -1187,6 +1215,7 @@ algorithm
 end getVars;
 
 protected function baseClockPartitioning
+"Do base clock partitioning and detect kind of new partitions(clocked or continuous)."
   input BackendDAE.EqSystem inSyst;
   input BackendDAE.Shared inShared;
   output list<BackendDAE.EqSystem> outContSysts = {};
@@ -1212,10 +1241,9 @@ protected
   SourceInfo info;
 algorithm
   funcs := BackendDAEUtil.getFunctions(inShared);
+
   (syst, m, mT) := BackendDAEUtil.getIncidenceMatrixfromOption(inSyst, BackendDAE.BASECLOCK_IDX(), SOME(funcs));
-
   BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs) := syst;
-
   eqsPartition := arrayCreate(arrayLength(m), 0);
   partitionCnt := partitionIndependentBlocks0(m, mT, eqsPartition);
   systs :=
@@ -1223,12 +1251,11 @@ algorithm
       partitionIndependentBlocksSplitBlocks(partitionCnt, syst, eqsPartition, mT, false)
     else
       {syst};
-
+  //Partition finished
   clockedEqs := arrayCreate(BackendDAEUtil.equationArraySize(eqs), NONE());
   clockedVars := arrayCreate(BackendVariable.varsSize(vars), NONE());
   clockedPartitions := arrayCreate(if partitionCnt > 0 then partitionCnt else 1, NONE());
-
-
+  //Detect clocked equations and variables
   for j in 1:BackendDAEUtil.equationArraySize(eqs) loop
     eq := BackendEquation.equationNth1(eqs, j);
     (partitionType, refsInfo) := detectEqPatition(eq);
@@ -1242,7 +1269,7 @@ algorithm
       end for;
     end for;
   end for;
-
+  //Clocked vars should belong to clocked equation
   for i in 1:arrayLength(clockedVars) loop
     partitionType := arrayGet(clockedVars, i);
     cr := BackendVariable.varCref(BackendVariable.getVarAt(vars, i));
@@ -1251,7 +1278,7 @@ algorithm
       arrayUpdate(clockedEqs, j, setClockedPartition(partitionType, arrayGet(clockedEqs, j), SOME(cr), info));
     end for;
   end for;
-
+  //Detect clocked partitions (clocked equations should belong to clocked partitions)
   for i in 1:arrayLength(clockedEqs) loop
     partitionType := arrayGet(clockedEqs, i);
     info := BackendEquation.equationInfo(BackendEquation.equationNth1(eqs, i));
@@ -1264,13 +1291,14 @@ algorithm
     (outContSysts, outClockedSysts) := match arrayGet(clockedPartitions, i)
       case SOME(false)
         then (setSystPartition(syst, BackendDAE.CONTINUOUS_TIME_PARTITION()) :: outContSysts, outClockedSysts);
+      /* Other partitions where none of the variables in the partition are associated with any of the operators above have an
+       * unspecified partition kind and are considered continuous-time partitions. */
       case NONE()
         then (setSystPartition(syst, BackendDAE.UNSPECIFIED_PARTITION()) :: outContSysts, outClockedSysts);
       case SOME(true) then (outContSysts, syst :: outClockedSysts);
     end match;
     i := i + 1;
   end for;
-
 end baseClockPartitioning;
 
 protected function isClockExp
@@ -1323,6 +1351,11 @@ algorithm
 end isClockEquation;
 
 protected function detectEqPatition
+"Detect clocked equation and variables according the rule:
+ - variable u in sample(u) and a variable y in y = hold(ud) is in a continuous-time partition;
+ - variables u and y in y = sample(uc), y = subSample(u), y = superSample(u), y =
+   shiftSample(u), y = backSample(u), y = previous(u), are in a clocked partition;
+ - equations in a clocked when clause in a clocked partition;"
   input BackendDAE.Equation inEq;
   output Option<Boolean> outPartitionType;
   output list<tuple<DAE.ComponentRef, Boolean>> refsInfo;
