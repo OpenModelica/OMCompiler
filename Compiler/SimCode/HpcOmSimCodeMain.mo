@@ -1194,8 +1194,8 @@ algorithm
     case(SimCode.SES_ARRAY_CALL_ASSIGN(index=index)) then index;
     case(SimCode.SES_IFEQUATION(index=index)) then index;
     case(SimCode.SES_ALGORITHM(index=index)) then index;
-    case(SimCode.SES_LINEAR(index=index)) then index;
-    case(SimCode.SES_NONLINEAR(index=index)) then index;
+    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index=index))) then index;
+    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index))) then index;
     case(SimCode.SES_MIXED(index=index)) then index;
     case(SimCode.SES_WHEN(index=index)) then index;
     else fail();
@@ -1281,9 +1281,6 @@ algorithm
     print("There are simCode-equations multiple times in the graph structure.\n");
   end if;
   targetSize := listLength(List.flatten(iOdeEqs));
-  if (intEq(targetSize,1) and SimCodeUtil.isDummyEq(listHead(listHead(iOdeEqs)))) then
-    targetSize := 0;
-  end if;
   oIsCorrect := intEq(targetSize,actualSize);
   if(oIsCorrect) then
     print("the ODE-system size is correct("+intString(actualSize)+")\n");
