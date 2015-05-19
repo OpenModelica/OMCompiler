@@ -1883,7 +1883,7 @@ algorithm
     case DAE.NORETCALL(exp=e, source=source)::xs
       equation
         (e, source, _, _) = Inline.inlineExp(e, fns, source);
-        whenOp = BackendDAE.TERMINATE(e, source);
+        whenOp = BackendDAE.NORETCALL(e, source);
         (eqnl, reinit) = lowerWhenEqn2(xs, inCond, functionTree, iEquationLst, whenOp::iReinitStatementLst);
       then
         (eqnl, reinit);
