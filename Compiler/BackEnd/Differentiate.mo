@@ -2892,11 +2892,12 @@ protected function lowerVarsElementVars
   input DAE.FunctionTree functions;
   output list< BackendDAE.Var> varsLst;
   output list< BackendDAE.Equation> eqnsLst;
+  output list< BackendDAE.Equation> reqnsLst;
 protected
   list<BackendDAE.Var> vars, knvars, exvars;
 algorithm
   try
-    (vars, knvars, exvars, eqnsLst) :=
+    (vars, knvars, exvars, eqnsLst, reqnsLst) :=
       BackendDAECreate.lowerVars(inElementLstVars, functions);
     varsLst := listAppend(exvars, listAppend(vars, knvars));
   else

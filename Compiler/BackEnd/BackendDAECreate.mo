@@ -213,8 +213,8 @@ algorithm
       // variables
       case DAE.VAR()
         algorithm
-          (outVars, outKnVars, outExVars, outEqns, outInlineHT) :=
-            lowerVar(el, inFunctions, outVars, outKnVars, outExVars, outEqns, outInlineHT);
+          (outVars, outKnVars, outExVars, outEqns, outREqns, outInlineHT) :=
+            lowerVar(el, inFunctions, outVars, outKnVars, outExVars, outEqns, outREqns, outInlineHT);
         then
           ();
 
@@ -489,10 +489,12 @@ public function lowerVars
   input list<BackendDAE.Var> inKnVars = {} "The time independend Variables";
   input list<BackendDAE.Var> inExVars = {} "The external Variables";
   input list<BackendDAE.Equation> inEqns = {} "The dynamic Equations/Algoritms";
+  input list<BackendDAE.Equation> inREqns = {};
   output list<BackendDAE.Var> outVars = inVars;
   output list<BackendDAE.Var> outKnVars = inKnVars;
   output list<BackendDAE.Var> outExVars = inExVars;
   output list<BackendDAE.Equation> outEqns = inEqns;
+  output list<BackendDAE.Equation> outREqns = inREqns;
 protected
   DAE.ComponentRef cr;
   DAE.Type arr_ty;
@@ -506,11 +508,11 @@ algorithm
       crefs := ComponentReference.expandCref(cr, false);
       el := DAEUtil.replaceTypeInVar(arr_ty, el);
       new_vars := list(DAEUtil.replaceCrefInVar(c, el) for c in crefs);
-      (outVars, outKnVars, outExVars, outEqns) :=
-        lowerVars(new_vars, functionTree, outVars, outKnVars, outExVars, outEqns);
+      (outVars, outKnVars, outExVars, outEqns, outREqns) :=
+        lowerVars(new_vars, functionTree, outVars, outKnVars, outExVars, outEqns, outREqns);
     else
-      (outVars, outKnVars, outExVars, outEqns) := lowerVar(el, functionTree,
-        outVars, outKnVars, outExVars, outEqns, inline_ht);
+      (outVars, outKnVars, outExVars, outEqns, outREqns) := lowerVar(el, functionTree,
+        outVars, outKnVars, outExVars, outEqns, outREqns, inline_ht);
     end try;
   end for;
 end lowerVars;
@@ -522,11 +524,13 @@ protected function lowerVar
   input list<BackendDAE.Var> inKnVars;
   input list<BackendDAE.Var> inExVars;
   input list<BackendDAE.Equation> inEqns;
+  input list<BackendDAE.Equation> inREqns;
   input HashTableExpToExp.HashTable inInlineHT;
   output list<BackendDAE.Var> outVars = inVars;
   output list<BackendDAE.Var> outKnVars = inKnVars;
   output list<BackendDAE.Var> outExVars = inExVars;
   output list<BackendDAE.Equation> outEqns = inEqns;
+  output list<BackendDAE.Equation> outREqns = inREqns;
   output HashTableExpToExp.HashTable outInlineHT = inInlineHT;
 algorithm
   _ := matchcontinue(inElement)
@@ -567,7 +571,7 @@ algorithm
     // known variables: parameters and constants
     case DAE.VAR()
       algorithm
-        (var, outInlineHT, outEqns) :=
+        (var, outInlineHT, outREqns) :=
           lowerKnownVar(inElement, inFunctions, outInlineHT, outEqns);
         outKnVars := var :: outKnVars;
       then
