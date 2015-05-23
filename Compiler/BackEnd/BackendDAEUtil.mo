@@ -7125,6 +7125,9 @@ algorithm
         // check singular system
         nvars = BackendVariable.daenumVariables(syst);
         neqns = systemSize(syst);
+        if neqns == 0 then
+          BackendDump.dumpEqSystem(isyst, "DUMP");
+        end if;
         syst = Causalize.singularSystemCheck(nvars,neqns,syst,match_opts,matchingAlgorithm,arg,ishared);
         // SimCodeUtil.execStat("transformDAE -> singularSystemCheck " + mAmethodstr);
         // match the system and reduce index if neccessary

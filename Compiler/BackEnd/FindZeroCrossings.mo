@@ -730,7 +730,7 @@ algorithm
       BackendDAE.EqSystem syst;
       BackendDAE.Shared shared;
     //No zero crossing for clocked discrete partitions;
-    case BackendDAE.CLOCKED_PARTITION(subClock=BackendDAE.SUBCLOCK(solver=SOME(_)))
+    case BackendDAE.CLOCKED_PARTITION(subClock=BackendDAE.SUBCLOCK(solver=NONE()))
       then (inSyst, inShared);
     else
       algorithm
