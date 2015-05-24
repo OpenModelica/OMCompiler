@@ -1,4 +1,7 @@
 #pragma once
+/** @addtogroup math
+ *   @{
+*/
 
 #include <math.h>                        ///< mathematical expressions
 #include <stdlib.h>
@@ -255,3 +258,4 @@ struct floatCompare {
     }
 
 };
+/** @} */ // end of math

@@ -1,5 +1,9 @@
+/** @addtogroup coreSystem
+ *
+ *  @{
+ */
 #include <Core/ModelicaDefine.h>
- #include <Core/Modelica.h>
+#include <Core/Modelica.h>
 
 #include <Core/System/FactoryExport.h>
 #include <Core/System/SimVars.h>
@@ -231,12 +235,7 @@ bool* SimVars::initBoolArrayVar(size_t size, size_t start_index)
  */
 void SimVars::initRealAliasArray(int indices[], size_t n, double* ref_data[])
 {
-  for(int i = 0; i < n; i++)
-  {
-    int index = indices[i];
-    double* refToVar =  SimVars::getRealVar(index);
-    ref_data[i] = refToVar;
-  }
+   std::transform(indices,indices+n,ref_data,boost::lambda::bind(&SimVars::getRealVar,this,boost::lambda::_1));
 }
 
 void SimVars::initRealAliasArray(std::vector<int> indices, double* ref_data[])
@@ -389,3 +388,4 @@ bool* SimVars::getBoolVar(size_t i)
   else
     throw std::runtime_error("Wrong variable index");
 }
+/** @} */ // end of coreSystem

@@ -1,4 +1,8 @@
 #pragma once
+/** @addtogroup coreSimulationSettings
+ *
+ *  @{
+ */
 
 /* Klasse zur Kapselung der Parameter (Einstellungen) für den SimManagerSettings.*/
 
@@ -49,3 +53,4 @@ public:
     IGlobalSettings*
         _globalSettings;        ///< Zeiger auf Globale Simulations Einstellungen
 };
+/** @} */ // end of coreSimulationSettings

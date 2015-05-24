@@ -1,4 +1,8 @@
 #pragma once
+/** @defgroup math Core.Math
+ *  Module for array operations and math functions
+ *  @{
+ */
 
 /**
 * forward declaration
@@ -2034,3 +2038,4 @@ public:
  private:
   boost::multi_array<T, 3> &_multi_array; // refers to base class
 };
+/** @} */ // end of math

@@ -36,6 +36,9 @@
 #include <math.h>
 
 #define smooth(P,EXP)    (EXP)
+/** @addtogroup math
+ *   @{
+*/
 
 
 /* fmod in math.h does not work in the same way as mod defined by modelica, so
@@ -52,3 +55,4 @@ static inline int modelica_mod_integer(int x, int y)
 
 
 #endif
+/** @} */ // end of math

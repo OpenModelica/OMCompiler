@@ -32,6 +32,9 @@
  */
 
 #include "Array.h"
+/** @addtogroup math
+ *   @{
+*/
 
 /**
  * Modelica slice.
@@ -344,3 +347,4 @@ class ArraySlice: public ArraySliceConst<T> {
     return processed;
   }
 };
+/** @} */ // end of math
