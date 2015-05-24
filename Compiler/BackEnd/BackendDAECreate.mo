@@ -572,7 +572,7 @@ algorithm
     case DAE.VAR()
       algorithm
         (var, outInlineHT, outREqns) :=
-          lowerKnownVar(inElement, inFunctions, outInlineHT, outEqns);
+          lowerKnownVar(inElement, inFunctions, outInlineHT, outREqns);
         outKnVars := var :: outKnVars;
       then
         ();
