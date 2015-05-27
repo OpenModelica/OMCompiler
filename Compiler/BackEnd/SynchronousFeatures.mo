@@ -107,21 +107,11 @@ algorithm
   syst := substituteParitionOpExps(inSyst);
 
   (contSysts, clockedSysts) := baseClockPartitioning(syst, inShared);
-
-//All continuous-time partitions are collected together and form “the” continuous-time partition
-  if listLength(contSysts) == 0
-    then
-      syst := BackendDAEUtil.createEqSystem( BackendVariable.emptyVars(), BackendEquation.emptyEqns(),
-                                             {}, BackendDAE.CONTINUOUS_TIME_PARTITION() );
-    else
-      BackendDAE.DAE({syst}, _) := BackendDAEOptimize.collapseIndependentBlocks(BackendDAE.DAE(contSysts, inShared));
-  end if;
-  (syst, holdComps) := removeHoldExpsSyst(syst);
-
+  (contSysts, holdComps) := removeHoldExpsSyst(contSysts);
   (clockedSysts, baseClocks) := subClockPartitioning1(clockedSysts, inShared, holdComps);
 
   //Continuous system always first in equation systems list
-  systs := syst::clockedSysts;
+  systs := listAppend(contSysts, clockedSysts);
   outDAE := BackendDAE.DAE(systs, setClocks(inShared, baseClocks));
 
   if Flags.isSet(Flags.DUMP_SYNCHRONOUS) then
@@ -233,24 +223,29 @@ end subClockPartitioning1;
 protected function removeHoldExpsSyst
 "Collect clocked variable, which used in continuous partition.
  Replace expression hold(expr_i) -> $getPart(expr_i)."
-  input BackendDAE.EqSystem inSyst;
-  output BackendDAE.EqSystem outEqSystem;
+  input list<BackendDAE.EqSystem> inSysts;
+  output list<BackendDAE.EqSystem> outSysts = {};
   output list<DAE.ComponentRef> outHoldComps = {};
 protected
   BackendDAE.EquationArray eqs;
   BackendDAE.Variables vars;
   BackendDAE.Equation eq;
-  list<BackendDAE.Equation> lstEqs = {};
+  list<BackendDAE.Equation> lstEqs;
   Integer i;
+  BackendDAE.EqSystem syst;
+  BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs) := inSyst;
-  for i in 1:BackendDAEUtil.equationArraySize(eqs) loop
-    eq := BackendEquation.equationNth1(eqs, i);
-    (eq, outHoldComps) := BackendEquation.traverseExpsOfEquation(eq, removeHoldExp1, outHoldComps);
-    lstEqs := eq::lstEqs;
+  for syst in inSysts loop
+    lstEqs := {};
+    BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs, partitionKind = partitionKind) := syst;
+    for i in 1:BackendDAEUtil.equationArraySize(eqs) loop
+      eq := BackendEquation.equationNth1(eqs, i);
+      (eq, outHoldComps) := BackendEquation.traverseExpsOfEquation(eq, removeHoldExp1, outHoldComps);
+      lstEqs := eq::lstEqs;
+    end for;
+    outSysts := BackendDAEUtil.createEqSystem( vars, BackendEquation.listEquation(listReverse(lstEqs)),
+                                                  {}, partitionKind ) :: outSysts;
   end for;
-  outEqSystem := BackendDAEUtil.createEqSystem( vars, BackendEquation.listEquation(lstEqs),
-                                                {}, BackendDAE.CONTINUOUS_TIME_PARTITION() );
 end removeHoldExpsSyst;
 
 protected function removeHoldExp1
@@ -1033,7 +1028,7 @@ algorithm
         BackendEquation.traverseExpsOfEquation(eq, substituteParitionOpExp, (newEqs, newVars, cnt));
     newEqs := eq::newEqs;
   end for;
-  eqs := BackendEquation.listEquation(newEqs);
+  eqs := BackendEquation.listEquation(listReverse(newEqs));
   vars := BackendVariable.addVars(newVars, vars);
   outSyst := BackendDAEUtil.createEqSystem(vars, eqs);
 end substituteParitionOpExps;
