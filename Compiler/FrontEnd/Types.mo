@@ -813,7 +813,8 @@ algorithm
   end match;
 end integerOrReal;
 
-public function isArray "Returns true if Type is an array."
+public function isNonscalarArray
+  "Returns true if Type is an nonscalar array (array of arrays)."
   input DAE.Type inType;
   input DAE.Dimensions inDims;
   output Boolean outBoolean;
@@ -828,14 +829,27 @@ algorithm
     // if the type is an array, then is an array
     case (DAE.T_ARRAY(),_) then true;
     // if is a type extending basic type
-    case (DAE.T_SUBTYPE_BASIC(complexType = t),_) then isArray(t, {});
+    case (DAE.T_SUBTYPE_BASIC(complexType = t),_) then isNonscalarArray(t, {});
     case (DAE.T_TUPLE(types = tys), _)
       equation
-        b = List.applyAndFold1(tys, boolOr, isArray, {}, false);
+        b = List.applyAndFold1(tys, boolOr, isNonscalarArray, {}, false);
       then
         b;
     else false;
   end matchcontinue;
+end isNonscalarArray;
+
+public function isArray
+  "Returns true if the given type is an array type."
+  input DAE.Type inType;
+  output Boolean outIsArray;
+algorithm
+  outIsArray := match inType
+    case DAE.T_ARRAY() then true;
+    case DAE.T_SUBTYPE_BASIC() then isArray(inType.complexType);
+    case DAE.T_FUNCTION() then isArray(inType.funcResultType);
+    else false;
+  end match;
 end isArray;
 
 public function isEmptyArray
@@ -876,7 +890,7 @@ algorithm
     local Type ty;
     case ty
       equation
-        true = isArray(ty, {});
+        true = isArray(ty);
       then
         true;
     case ty
@@ -3753,7 +3767,7 @@ protected
   Type t;
 algorithm
   t := getPropType(p);
-  b := isArray(t, {});
+  b := isArray(t);
 end isPropArray;
 
 public function propTupleFirstProp
@@ -4455,7 +4469,7 @@ algorithm
         true = Expression.dimensionsKnownAndEqual(dim1, dim2);
         elist_1 = typeConvertArray(elist,ty1,ty2,printFailtrace);
         at = simplifyType(ty0);
-        a = isArray(ty2, {});
+        a = isArray(ty2);
         sc = boolNot(a);
       then
         (DAE.ARRAY(at,sc,elist_1),DAE.T_ARRAY(ty2, {dim1}, ts));
@@ -4485,7 +4499,7 @@ algorithm
         true = Expression.dimensionKnown(dim1);
         elist_1 = typeConvertArray(elist,ty1,ty2,printFailtrace);
         dims = Expression.arrayDimension(simplifyType(ty1));
-        a = isArray(ty2,{});
+        a = isArray(ty2);
         sc = boolNot(a);
         dims = dim1 :: dims;
         ty2 = arrayElementType(ty2);
@@ -5068,7 +5082,7 @@ algorithm
           DAE.PROP(type_ = DAE.T_ARRAY(dims = {DAE.DIM_INTEGER(1)},ty = t2, source = ts2),constFlag = c2),
           havereal)
       equation
-        false = isArray(t1,{});
+        false = isArray(t1);
         DAE.PROP(t,c) = matchWithPromote(DAE.PROP(t1,c1), DAE.PROP(t2,c2), havereal);
       then
         DAE.PROP(DAE.T_ARRAY(t, {DAE.DIM_INTEGER(1)},ts2),c);
@@ -5077,7 +5091,7 @@ algorithm
           DAE.PROP(type_ = DAE.T_ARRAY(dims = {dim as DAE.DIM_ENUM(size=1)},ty = t2, source = ts2),constFlag = c2),
           havereal)
       equation
-        false = isArray(t1,{});
+        false = isArray(t1);
         DAE.PROP(t,c) = matchWithPromote(DAE.PROP(t1,c1), DAE.PROP(t2,c2), havereal);
       then
         DAE.PROP(DAE.T_ARRAY(t,{dim},ts2),c);
@@ -5086,7 +5100,7 @@ algorithm
           DAE.PROP(type_ = DAE.T_ARRAY(dims = {dim as DAE.DIM_BOOLEAN()},ty = t2, source = ts2),constFlag = c2),
           havereal)
       equation
-        false = isArray(t1,{});
+        false = isArray(t1);
         DAE.PROP(t,c) = matchWithPromote(DAE.PROP(t1,c1), DAE.PROP(t2,c2), havereal);
       then
         DAE.PROP(DAE.T_ARRAY(t,{dim},ts2),c);
@@ -5094,7 +5108,7 @@ algorithm
     case (DAE.PROP(type_ = DAE.T_ARRAY(dims = {DAE.DIM_INTEGER(1)},ty = t1, source = ts),constFlag = c1),
           DAE.PROP(type_ = t2,constFlag = c2),havereal)
       equation
-        false = isArray(t2,{});
+        false = isArray(t2);
         DAE.PROP(t,c) = matchWithPromote(DAE.PROP(t1,c1), DAE.PROP(t2,c2), havereal);
       then
         DAE.PROP(DAE.T_ARRAY(t,{DAE.DIM_INTEGER(1)},ts),c);
@@ -5102,7 +5116,7 @@ algorithm
     case (DAE.PROP(type_ = DAE.T_ARRAY(dims = {dim as DAE.DIM_ENUM(size=1)},ty = t1, source = ts),constFlag = c1),
           DAE.PROP(type_ = t2,constFlag = c2),havereal)
       equation
-        false = isArray(t2,{});
+        false = isArray(t2);
         DAE.PROP(t,c) = matchWithPromote(DAE.PROP(t1,c1), DAE.PROP(t2,c2), havereal);
       then
         DAE.PROP(DAE.T_ARRAY(t,{dim},ts),c);
@@ -5110,7 +5124,7 @@ algorithm
     case (DAE.PROP(type_ = DAE.T_ARRAY(dims = {dim as DAE.DIM_BOOLEAN()},ty = t1, source = ts),constFlag = c1),
           DAE.PROP(type_ = t2,constFlag = c2),havereal)
       equation
-        false = isArray(t2,{});
+        false = isArray(t2);
         DAE.PROP(t,c) = matchWithPromote(DAE.PROP(t1,c1), DAE.PROP(t2,c2), havereal);
       then
         DAE.PROP(DAE.T_ARRAY(t,{dim},ts),c);
@@ -5118,8 +5132,8 @@ algorithm
     case (DAE.PROP(type_ = t1,constFlag = c1),
           DAE.PROP(type_ = t2,constFlag = c2),false)
       equation
-        false = isArray(t1,{});
-        false = isArray(t2,{});
+        false = isArray(t1);
+        false = isArray(t2);
         equality(t1 = t2);
         c = constAnd(c1, c2);
       then

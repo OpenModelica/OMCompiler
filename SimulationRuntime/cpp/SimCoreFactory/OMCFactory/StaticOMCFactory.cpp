@@ -39,3 +39,4 @@ std::pair<boost::shared_ptr<ISimController>,SimSettings> StaticOMCFactory::creat
     return std::make_pair(simcontroller,settings);
 }
 /** @} */ // end of simcorefactoryOMCFactory
+

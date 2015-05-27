@@ -359,7 +359,7 @@ algorithm
 
       fileName = ("taskGraph"+filenamePrefix+"ODE_schedule.graphml");
       HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphOdeScheduled, taskGraphDataOdeScheduled, inBackendDAE, fileName, criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(true,false,true,true));
-      //HpcOmScheduler.printSchedule(schedule);
+      //HpcOmScheduler.printSchedule(scheduleOde);
 
       SimCodeUtil.execStat("hpcom dump schedule TaskGraph");
 
@@ -382,7 +382,7 @@ algorithm
 
       SimCodeUtil.execStat("hpcom create memory map");
 
-      hpcomData = HpcOmSimCode.HPCOMDATA(SOME(scheduleDae), SOME(scheduleOde), optTmpMemoryMap);
+      hpcomData = HpcOmSimCode.HPCOMDATA(SOME((scheduleOde, scheduleDae)), optTmpMemoryMap);
       simCode = SimCode.SIMCODE( modelInfo, simCodeLiterals, simCodeRecordDecls, simCodeExternalFunctionIncludes, allEquations, odeEquations, algebraicEquations,
                                  partitionsKind, baseClocks, useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations,
                                  nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
@@ -1153,7 +1153,7 @@ public function getSimCodeEqByIndex "function getSimCodeEqByIndex
   author: marcusw
   Returns the SimEqSystem which has the given Index. This method is called from susan."
   input list<SimCode.SimEqSystem> iEqs; //All SimEqSystems
-  input Integer iIdx; //The index of the wanted system
+  input Integer iIdx; //The index of the required system
   output SimCode.SimEqSystem oEq;
 
 protected
