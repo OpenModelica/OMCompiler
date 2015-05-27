@@ -8235,7 +8235,7 @@ public function createEqSystem
   input BackendDAE.Variables inVars;
   input BackendDAE.EquationArray inEqs;
   input BackendDAE.StateSets inStateSets = {};
-  input BackendDAE.BaseClockPartitionKind inPartitionKind = BackendDAE.UNSPECIFIED_PARTITION();
+  input BackendDAE.BaseClockPartitionKind inPartitionKind = BackendDAE.UNKNOWN_PARTITION();
   output BackendDAE.EqSystem outSyst;
 algorithm
   outSyst := BackendDAE.EQSYSTEM( inVars, inEqs, NONE(), NONE(), BackendDAE.NO_MATCHING(),
