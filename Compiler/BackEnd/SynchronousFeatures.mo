@@ -115,18 +115,7 @@ algorithm
   outDAE := BackendDAE.DAE(systs, setClocks(inShared, baseClocks));
 
   if Flags.isSet(Flags.DUMP_SYNCHRONOUS) then
-    print( "\n" + BackendDump.BORDER + "\nclock partitioning (" +
-           intString(listLength(systs)) + " partitions)\n" + BackendDump.BORDER + "\n\n" );
-    for syst in systs loop
-      BackendDAE.EQSYSTEM(orderedEqs = eqs, orderedVars = vars, partitionKind = partitionKind) := syst;
-      print("\n" + BackendDump.partitionKindString(partitionKind) + "\n" + BackendDump.UNDERLINE + "\n");
-      BackendDump.dumpVariables(vars, "Variables");
-      BackendDump.dumpEquationArray(eqs, "Equations");
-      print("\n");
-    end for;
-    print("\n" + BackendDump.BORDER + "\n");
-    BackendDump.dumpClocks(baseClocks, "Base clocks");
-    print("\n");
+    BackendDump.dumpEqSystems(systs, "base-clock partitioning");
   end if;
 end clockPartitioning1;
 
