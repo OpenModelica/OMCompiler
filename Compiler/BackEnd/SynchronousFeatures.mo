@@ -266,7 +266,7 @@ end removeHoldExp;
 
 protected function subClockPartitioning
 "Do sub-partitioning for base partition and get base clock
- and vars, equations and subclocks of subpartitions."
+ and vars, equations and sub-clocks of subpartitions."
   input BackendDAE.EqSystem inEqSystem;
   input BackendDAE.Shared inShared;
   output list<UnresolvedPartitionData> outTpl = {};
@@ -333,7 +333,7 @@ algorithm
 end subClockPartitioning;
 
 protected function resolveClocks
-"Get from clock equation system array subclocks[varIdx] and base clock."
+"Get from clock equation system array sub-clocks[varIdx] and base clock."
   input BackendDAE.Variables inVars;
   input BackendDAE.EquationArray inEqs;
   input BackendDAE.StrongComponents inComps;

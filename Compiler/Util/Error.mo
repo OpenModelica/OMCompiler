@@ -820,7 +820,7 @@ public constant Message CLOCKED_DSICRETE_CONT_CONFLICT = MESSAGE(568, TRANSLATIO
 public constant Message INVALID_CLOCK_EQUATION = MESSAGE(569, TRANSLATION(), ERROR(),
   Util.gettext("Inalid form of clock equation"));
 public constant Message SUBCLOCK_CONFLICT = MESSAGE(570, TRANSLATION(), ERROR(),
-  Util.gettext("Partition have different subclocks."));
+  Util.gettext("Partition have different sub-clocks."));
 public constant Message CLOCK_CONFLICT = MESSAGE(571, TRANSLATION(), ERROR(),
   Util.gettext("Partition have different base clocks."));
 
