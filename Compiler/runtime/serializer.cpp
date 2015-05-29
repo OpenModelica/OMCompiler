@@ -666,6 +666,20 @@ void Serializer_outputFile(modelica_metatype input_object,char* filename){
     fs.close();
 }
 
+
+modelica_metatype Serializer_inputFile(char* filename){
+    std::string buffer;
+    std::ifstream input_file(filename,std::ifstream::in | std::ifstream::binary);
+
+    input_file.seekg(0, std::ios::end);
+    buffer.reserve(input_file.tellg());
+    input_file.seekg(0, std::ios::beg);
+
+    buffer.assign((std::istreambuf_iterator<char>(input_file)),
+                std::istreambuf_iterator<char>());
+    return deserialize(buffer);
+}
+
 modelica_metatype Serializer_bypass(modelica_metatype input_object){
     std::string buffer;
     serialize(input_object,buffer);

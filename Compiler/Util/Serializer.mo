@@ -44,11 +44,18 @@ encapsulated package Serializer
 
 
 public function outputFile<T> "
-Prints the structure of the object."
+Serializes the value to a file."
   input T object;
   input String filename;
   external "C" Serializer_outputFile(object,filename) annotation(Library = {"omcruntime"});
 end outputFile;
+
+public function inputFile<T> "
+Reads a serialized value from a file."
+  input String filename;
+  output T object;
+  external "C" object = Serializer_inputFile(filename) annotation(Library = {"omcruntime"});
+end inputFile;
 
 public function bypass<T> "
 Serializes the object and reads it back. This function is used for testing purposes."

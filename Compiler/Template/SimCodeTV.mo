@@ -140,13 +140,6 @@ package builtin
     output Real z;
   end realDiv;
 
-  function listGet
-    replaceable type TypeVar subtypeof Any;
-    input list<TypeVar> lst;
-    input Integer index;
-    output TypeVar result;
-  end listGet;
-
   function stringLength
     input String str;
     output Integer length;
@@ -456,29 +449,13 @@ package SimCode
     end SES_ALGORITHM;
 
     record SES_LINEAR
-      Integer index;
-      Boolean partOfMixed;
-
-      list<SimCodeVar.SimVar> vars;
-      list<DAE.Exp> beqs;
-      list<tuple<Integer, Integer, SimEqSystem>> simJac;
-      /* solver linear tearing system */
-      list<SimEqSystem> residual;
-      Option<JacobianMatrix> jacobianMatrix;
-
-      list<DAE.ElementSource> sources;
-      Integer indexLinearSystem;
+      LinearSystem lSystem;
+      Option<LinearSystem> alternativeTearing;
     end SES_LINEAR;
 
     record SES_NONLINEAR
-      Integer index;
-      list<SimEqSystem> eqs;
-      list<DAE.ComponentRef> crefs;
-      Integer indexNonLinearSystem;
-      Option<JacobianMatrix> jacobianMatrix;
-      Boolean linearTearing;
-      Boolean homotopySupport;
-      Boolean mixedSystem;
+      NonlinearSystem nlSystem;
+      Option<NonlinearSystem> alternativeTearing;
     end SES_NONLINEAR;
 
     record SES_MIXED
@@ -509,6 +486,34 @@ package SimCode
       DAE.ElementSource source;
     end SES_FOR_LOOP;
   end SimEqSystem;
+
+  uniontype LinearSystem
+    record LINEARSYSTEM
+      Integer index;
+      Boolean partOfMixed;
+      list<SimCodeVar.SimVar> vars;
+      list<DAE.Exp> beqs;
+      list<tuple<Integer, Integer, SimEqSystem>> simJac;
+      /* solver linear tearing system */
+      list<SimEqSystem> residual;
+      Option<JacobianMatrix> jacobianMatrix;
+      list<DAE.ElementSource> sources;
+      Integer indexLinearSystem;
+    end LINEARSYSTEM;
+  end LinearSystem;
+
+  uniontype NonlinearSystem
+    record NONLINEARSYSTEM
+      Integer index;
+      list<SimEqSystem> eqs;
+      list<DAE.ComponentRef> crefs;
+      Integer indexNonLinearSystem;
+      Option<JacobianMatrix> jacobianMatrix;
+      Boolean linearTearing;
+      Boolean homotopySupport;
+      Boolean mixedSystem;
+    end NONLINEARSYSTEM;
+  end NonlinearSystem;
 
   uniontype StateSet
     record SES_STATESET
@@ -541,6 +546,7 @@ package SimCode
       SimCodeVar.SimVars vars;
       list<Function> functions;
       list<String> labels;
+      Integer maxDer;
     end MODELINFO;
   end ModelInfo;
 
@@ -3509,8 +3515,7 @@ end HpcOmSimCodeMain;
 package HpcOmSimCode
   uniontype HpcOmData
     record HPCOMDATA
-      Option<Schedule> daeSchedule;
-      Option<Schedule> odeSchedule;
+      Option<tuple<HpcOmSimCode.Schedule, HpcOmSimCode.Schedule>> schedules;
       Option<MemoryMap> hpcOmMemory;
     end HPCOMDATA;
   end HpcOmData;
@@ -3567,6 +3572,7 @@ package HpcOmSimCode
       list<tuple<Task,list<Integer>>> tasks;
     end TASKDEPSCHEDULE;
     record EMPTYSCHEDULE
+      TaskList tasks;
     end EMPTYSCHEDULE;
   end Schedule;
 
@@ -3581,9 +3587,10 @@ end HpcOmSimCode;
 
 package HpcOmScheduler
   function convertFixedLevelScheduleToTaskLists
-    input HpcOmSimCode.Schedule iSchedule;
+    input HpcOmSimCode.Schedule iOdeSchedule;
+    input HpcOmSimCode.Schedule iDaeSchedule;
     input Integer iNumOfThreads;
-    output array<list<list<HpcOmSimCode.Task>>> oThreadLevelTasks;
+    output array<tuple<list<list<HpcOmSimCode.Task>>,list<list<HpcOmSimCode.Task>>>> oThreadLevelTasks;
   end convertFixedLevelScheduleToTaskLists;
 end HpcOmScheduler;
 
