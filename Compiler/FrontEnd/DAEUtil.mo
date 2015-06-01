@@ -2814,7 +2814,17 @@ algorithm
   outExp:= Expression.makeCrefExp(inComponentRef,DAE.T_UNKNOWN_DEFAULT);
 end crefToExp;
 
-public function verifyDAE
+public function verifyEquationsDAE "
+  Perform some checks for DAE equations:
+  1. Assert equations should be used only inside when equations;
+  2. Bolean when equation should not:
+    2.1 contain nested clocked or boolean when equations;
+    2.2 have clocked else-when parts;
+  3. Clocked when equation should not:
+    3.1 contain nested clocked when equations;
+    3.2 contain else-when parts;
+    3.3 contain reinit equation(?).
+"
   input DAE.DAElist dae;
 protected
   DAE.Exp cond;
@@ -2838,7 +2848,7 @@ algorithm
       else ();
     end match;
   end for;
-end verifyDAE;
+end verifyEquationsDAE;
 
 protected function verifyWhenEquation
   input DAE.Exp cond;
