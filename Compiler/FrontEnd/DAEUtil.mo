@@ -2817,13 +2817,16 @@ end crefToExp;
 public function verifyEquationsDAE "
   Perform some checks for DAE equations:
   1. Assert equations should be used only inside when equations;
-  2. Bolean when equation should not:
-    2.1 contain nested clocked or boolean when equations;
-    2.2 have clocked else-when parts;
+  2. Bolean when equation should:
+    2.1 not contain nested clocked or boolean when equations;
+    2.2 not have clocked else-when parts;
+    2.3 have component references on left side of its equations, and
+        for each branch the set of left hand references should be same;
   3. Clocked when equation should not:
     3.1 contain nested clocked when equations;
     3.2 contain else-when parts;
-    3.3 contain reinit equation(?).
+    3.3 contain reinit equation(?);
+  4. Initial when equation should not contain assert equation.
 "
   input DAE.DAElist dae;
 protected
