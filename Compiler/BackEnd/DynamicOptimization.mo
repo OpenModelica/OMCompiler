@@ -574,16 +574,16 @@ algorithm
       DAE.ComponentRef cr;
       DAE.FunctionTree funcs;
       BackendDAE.JacobianType jacType;
-      Boolean linear, force_linear = Flags.isSet(Flags.EXTENDS_NL_DYN_OPT);
+      Boolean linear, force_break = not Flags.isSet(Flags.EXTENDS_NL_DYN_OPT);
 
     case (BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns,stateSets=stateSets,partitionKind=partitionKind),shared,(BackendDAE.EQUATIONSYSTEM(eqns=eindex,vars=vindx, jacType=jacType)))
-    guard not force_linear or not isConstOrlinear(jacType)
+    guard force_break or not isConstOrlinear(jacType)
     equation
       (eqns,vars,shared) = res2Con(eqns, vars, eindex, vindx,shared);
     then (BackendDAE.EQSYSTEM(vars, eqns, NONE(), NONE(), BackendDAE.NO_MATCHING(), stateSets, partitionKind), shared);
 
     case (BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns,stateSets=stateSets,partitionKind=partitionKind),shared,(BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(residualequations=eindex,tearingvars=vindx),linear=linear)))
-    guard not force_linear or not linear
+    guard force_break or not linear
     equation
       (eqns,vars,shared) = res2Con(eqns, vars, eindex, vindx,shared);
     then (BackendDAE.EQSYSTEM(vars, eqns, NONE(), NONE(), BackendDAE.NO_MATCHING(), stateSets, partitionKind), shared);
