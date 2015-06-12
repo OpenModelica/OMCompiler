@@ -4606,6 +4606,10 @@ algorithm
       BackendDAE.StrongComponents comps;
     // no stateSet
     case (BackendDAE.EQSYSTEM(stateSets={}), _) then (isyst, inTpl);
+    // static selection
+    case(_,_)
+    guard Flags.getConfigString(Flags.INDEX_REDUCTION_METHOD) == "dummyDerivatives"
+    then (isyst, inTpl);
     // sets
     case (BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns, m=m, mT=mT, matching=matching as BackendDAE.MATCHING(comps=comps), stateSets=stateSets, partitionKind=partitionKind),
          (equations, uniqueEqIndex, tempvars, numStateSets))
@@ -4661,7 +4665,6 @@ algorithm
       equation
         // get state names
         crstates = List.map(statevars, BackendVariable.varCref);
-
         // add vars for A
         vars = BackendVariable.addVars(aVars, iVars);
 
@@ -4680,9 +4683,14 @@ algorithm
       then
         (vars, simequations, uniqueEqIndex, tempvars, numStateSets);
     else
-      equation
-        errorMessage = "function createStateSetsSets failed.";
+      algorithm
+        BackendDAE.STATESET(rang=rang, state=crset, crA=crA, varA=aVars, statescandidates=statevars,   jacobian=jacobian)::sets := iStateSets;
+        errorMessage := "function createStateSetsSets failed.\nFor StateSets = " + intString(iNumStateSets) + "\ncrA = " + ComponentReference.printComponentRefStr(crA);
+        for var in statevars loop
+          errorMessage :=  errorMessage + "\nvar " + BackendDump.varString(var);
+        end for;
         Error.addInternalError(errorMessage, sourceInfo());
+        print(errorMessage);
       then
         fail();
   end matchcontinue;
