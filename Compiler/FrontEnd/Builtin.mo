@@ -154,7 +154,7 @@ protected constant SCode.Element strType = SCode.CLASS("StringType",commonPrefix
 protected constant SCode.Element boolType = SCode.CLASS("BooleanType",commonPrefixes,SCode.NOT_ENCAPSULATED(),SCode.NOT_PARTIAL(),SCode.R_PREDEFINED_BOOLEAN(),
           SCode.PARTS({},{},{},{},{},{},{},NONE()),SCode.noComment,Absyn.dummyInfo);
 
-protected constant SCode.Element enumType = SCode.CLASS("EnumType",commonPrefixes,SCode.NOT_ENCAPSULATED(),SCode.NOT_PARTIAL(),SCode.R_PREDEFINED_ENUMERATION(),
+protected constant SCode.Element enumType = SCode.CLASS("$EnumType",commonPrefixes,SCode.NOT_ENCAPSULATED(),SCode.NOT_PARTIAL(),SCode.R_PREDEFINED_ENUMERATION(),
           SCode.PARTS({},{},{},{},{},{},{},NONE()),SCode.noComment,Absyn.dummyInfo);
 
 protected constant SCode.Element unit = SCode.COMPONENT("unit",commonPrefixes,
@@ -225,11 +225,11 @@ protected constant SCode.Element distribution = SCode.COMPONENT("distribution",c
 
 protected constant list<SCode.Element> uncertaintyComps = {
           SCode.COMPONENT("given",commonPrefixes,
-          attrConst,Absyn.TPATH(Absyn.IDENT("EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),Absyn.dummyInfo),
+          attrConst,Absyn.TPATH(Absyn.IDENT("$EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),Absyn.dummyInfo),
           SCode.COMPONENT("sought",commonPrefixes,
-          attrConst,Absyn.TPATH(Absyn.IDENT("EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),Absyn.dummyInfo),
+          attrConst,Absyn.TPATH(Absyn.IDENT("$EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),Absyn.dummyInfo),
           SCode.COMPONENT("refine",commonPrefixes,
-          attrConst,Absyn.TPATH(Absyn.IDENT("EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),Absyn.dummyInfo)} "The Uncertainty enumeration" ;
+          attrConst,Absyn.TPATH(Absyn.IDENT("$EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),Absyn.dummyInfo)} "The Uncertainty enumeration" ;
 
 protected constant SCode.Element uncertaintyType = SCode.CLASS("Uncertainty",commonPrefixes,SCode.NOT_ENCAPSULATED(),SCode.NOT_PARTIAL(),SCode.R_ENUMERATION(),
           SCode.PARTS(uncertaintyComps,{},{},{},{},{},{},NONE()),SCode.noComment,Absyn.dummyInfo) "The Uncertainty Type";

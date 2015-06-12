@@ -180,12 +180,6 @@ match classDef
     let mod_str = dumpModifier(modifications,options)
     let attr_str = dumpAttributes(attributes)
     '= <%attr_str%><%type_str%><%mod_str%>'
-  case ENUMERATION(__) then
-    let enum_str = if enumLst then
-        (enumLst |> enum => dumpEnumLiteral(enum, options) ;separator=", ")
-      else
-        ':'
-    '= enumeration(<%enum_str%>)'
   case PDER(__) then
     let func_str = AbsynDumpTpl.dumpPath(functionPath)
     '= der(<%func_str%>, <%derivedVariables ;separator=", "%>)'
@@ -198,7 +192,6 @@ template dumpClassFooter(SCode.ClassDef classDef, String cdefStr, String name, S
 ::=
 match classDef
   case DERIVED(__) then '<%cdefStr%><%cmt%><%ann%><%cc_str%>'
-  case ENUMERATION(__) then '<%cdefStr%><%cmt%><%ann%><%cc_str%>'
   case PDER(__) then cdefStr
   case _ then
     let annstr = if ann then '<%ann%>; ' else ''

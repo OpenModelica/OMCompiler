@@ -919,13 +919,6 @@ algorithm
       then
         env;
 
-    case (_, SCode.ENUMERATION(enumLst = enums), _, _, _)
-      equation
-        path = Absyn.IDENT(inClassName);
-        env = extendEnvWithEnumLiterals(enums, path, 1, inEnv, inInfo);
-      then
-        env;
-
     else inEnv;
   end match;
 end extendEnvWithClassComponents;

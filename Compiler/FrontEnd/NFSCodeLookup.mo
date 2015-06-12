@@ -226,7 +226,6 @@ public constant SCode.Element BUILTIN_STATESELECT_ALWAYS = SCode.COMPONENT(
   "always", BUILTIN_PREFIXES, BUILTIN_CONST_ATTRIBUTES, BUILTIN_ENUMTYPE_SPEC,
   SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
 
-
 // Environments for the builtin types:
 public constant Env BUILTIN_REAL_ENV = {NFSCodeEnv.FRAME(SOME("Real"),
   NFSCodeEnv.NORMAL_SCOPE(),
@@ -352,16 +351,18 @@ public constant Item BUILTIN_STRING = NFSCodeEnv.CLASS(
       SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()),
       SCode.noComment, Absyn.dummyInfo), BUILTIN_STRING_ENV, NFSCodeEnv.BASIC_TYPE());
 
+public constant Item BUILTIN_ENUM = NFSCodeEnv.CLASS(
+  BUILTIN_ENUMTYPE, {}, NFSCodeEnv.BASIC_TYPE());
+
+protected constant list<SCode.Element> stateSelectEnumLst = {
+  BUILTIN_STATESELECT_NEVER, BUILTIN_STATESELECT_AVOID, BUILTIN_STATESELECT_DEFAULT,
+  BUILTIN_STATESELECT_PREFER, BUILTIN_STATESELECT_ALWAYS
+};
 public constant Item BUILTIN_STATESELECT = NFSCodeEnv.CLASS(
   SCode.CLASS("StateSelect",  SCode.defaultPrefixes,
-      SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_CLASS(),
-      SCode.ENUMERATION({
-        SCode.ENUM("never", SCode.noComment),
-        SCode.ENUM("avoid", SCode.noComment),
-        SCode.ENUM("default", SCode.noComment),
-        SCode.ENUM("prefer", SCode.noComment),
-        SCode.ENUM("always", SCode.noComment)}),
-      SCode.noComment, Absyn.dummyInfo), BUILTIN_STATESELECT_ENV, NFSCodeEnv.BASIC_TYPE());
+      SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_ENUMERATION(),
+      SCode.PARTS(stateSelectEnumLst, {}, {}, {}, {}, {}, {}, NONE()), SCode.noComment, Absyn.dummyInfo),
+      BUILTIN_STATESELECT_ENV, NFSCodeEnv.BASIC_TYPE());
 
 public constant Item BUILTIN_EXTERNALOBJECT = NFSCodeEnv.CLASS(
   SCode.CLASS("ExternalObject", SCode.defaultPrefixes,
@@ -1292,7 +1293,7 @@ algorithm
     case "$IntegerType" then BUILTIN_INTEGERTYPE_ITEM;
     case "$BooleanType" then BUILTIN_BOOLEANTYPE_ITEM;
     case "$StringType" then BUILTIN_STRINGTYPE_ITEM;
-    case "$EnumType" then BUILTIN_ENUMTYPE_ITEM;
+    case "$EnumType" then BUILTIN_ENUM;
   end match;
 end lookupBuiltinType;
 

@@ -134,9 +134,8 @@ algorithm
 
     case (_, _, _, _, _, g)
       equation
-        cls = SCodeUtil.expandEnumerationClass(inClass);
-        SCode.CLASS(name = name) = cls;
-        (g, n) = FGraph.node(g, name, {inParentRef}, FCore.CL(cls, inPrefix, inMod, inKind, FCore.CLS_UNTYPED()));
+        SCode.CLASS(name = name) = inClass;
+        (g, n) = FGraph.node(g, name, {inParentRef}, FCore.CL(inClass, inPrefix, inMod, inKind, FCore.CLS_UNTYPED()));
         nr = FNode.toRef(n);
         FNode.addChildRef(inParentRef, name, nr);
         // g = mkRefNode(FNode.refNodeName, {}, nr, g);

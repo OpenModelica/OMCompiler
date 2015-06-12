@@ -429,10 +429,6 @@ package SCode
       Attributes attributes;
     end DERIVED;
 
-    record ENUMERATION
-      list<Enum> enumLst;
-    end ENUMERATION;
-
     record OVERLOAD
       list<Absyn.Path> pathLst;
     end OVERLOAD;

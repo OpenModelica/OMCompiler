@@ -327,13 +327,6 @@ algorithm
       then
         ((SCode.CLASS(cn,SCode.PREFIXES(vis,redecl,fi,io,repl),enc,p,restr,SCode.DERIVED(tp1,mod,attr1),cmt,i),emod));
 
-    // replaceable type E=enumeration(e1,...,en), E=enumeration(:)
-    case(_,_,_,_,_,
-      SCode.CLASS(cn,
-        SCode.PREFIXES(vis,redecl,fi,io,repl),enc,p,restr,SCode.ENUMERATION(enumLst),cmt,i),_,_,_)
-      then
-        ((SCode.CLASS(cn,SCode.PREFIXES(vis,redecl,fi,io,repl),enc,p,restr,SCode.ENUMERATION(enumLst),cmt,i),DAE.NOMOD()));
-
     // redeclare of component declaration
     case(cache,env,ih,pre,_,SCode.COMPONENT(compname,prefixes as SCode.PREFIXES(vis,redecl,fi,io,repl),attr,tp,mod,cmt,cond,i),_,_,_)
       equation

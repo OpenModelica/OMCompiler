@@ -3189,23 +3189,6 @@ algorithm
       list<SCode.Element> elementLst;
       SourceInfo info1, info2;
 
-    //   Special cases for checking enumerations which can be represented differently
-    case(SCode.CLASS(classDef=SCode.ENUMERATION(enumLst=enumLst)), SCode.CLASS(restriction=SCode.R_ENUMERATION(),classDef=SCode.PARTS(elementLst=elementLst)))
-      equation
-        sl1=List.map(enumLst,SCode.enumName);
-        sl2=List.map(elementLst,SCode.elementName);
-        List.threadMapAllValue(sl1,sl2,stringEq,true);
-      then
-        ();
-
-    case(SCode.CLASS(restriction=SCode.R_ENUMERATION(),classDef=SCode.PARTS(elementLst=elementLst)), SCode.CLASS(classDef=SCode.ENUMERATION(enumLst=enumLst)))
-      equation
-        sl1=List.map(enumLst,SCode.enumName);
-        sl2=List.map(elementLst,SCode.elementName);
-        List.threadMapAllValue(sl1,sl2,stringEq,true);
-      then
-        ();
-
     // try equality first!
     case(oldCl,newCl)
       equation

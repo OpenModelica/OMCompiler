@@ -243,14 +243,6 @@ algorithm
       then
         res;
 
-    case SCode.CLASS(name = n, partialPrefix = pp, prefixes = SCode.PREFIXES(innerOuter = io, redeclarePrefix = rdp, replaceablePrefix = rpp),
-                     classDef = SCode.ENUMERATION())
-      equation
-        ioStr = Dump.unparseInnerouterStr(io) + redeclareStr(rdp) + replaceablePrefixStr(rpp) + partialStr(pp);
-        res = stringAppendList({ioStr, "class ",n," enumeration;"});
-      then
-        res;
-
     case SCode.CLASS(name = n, partialPrefix = pp, prefixes = SCode.PREFIXES(innerOuter = io, redeclarePrefix = rdp, replaceablePrefix = rpp))
       equation
         ioStr = Dump.unparseInnerouterStr(io) + redeclareStr(rdp) + replaceablePrefixStr(rpp) + partialStr(pp);
@@ -485,6 +477,17 @@ algorithm
 
   end match;
 end prefixesStr;
+
+public function printElements
+  input list<SCode.Element> elts;
+  input String sep = "\n";
+ protected
+  SCode.Element el;
+algorithm
+  for el in elts loop
+    print(unparseElementStr(el) + "\n");
+  end for;
+end printElements;
 
 public function filterElements
   input list<SCode.Element> elements;

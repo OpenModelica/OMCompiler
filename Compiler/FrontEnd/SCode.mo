@@ -196,10 +196,6 @@ uniontype ClassDef
     Attributes attributes   "the element attributes";
   end DERIVED;
 
-  record ENUMERATION "an enumeration"
-    list<Enum> enumLst      "if the list is empty it means :, the supertype of all enumerations";
-  end ENUMERATION;
-
   record OVERLOAD "an overloaded function"
     list<Absyn.Path> pathLst "the path lists";
   end OVERLOAD;
@@ -1247,12 +1243,6 @@ protected function classDefEqual
        then
          true;
 
-     case (ENUMERATION(elst1),ENUMERATION(elst2))
-       equation
-         List.threadMapAllValue(elst1,elst2,enumEqual,true);
-       then
-         true;
-
      case (CLASS_EXTENDS(bcName1,mod1,PARTS(elts1,eqns1,ieqns1,algs1,ialgs1,_,_,_)),
            CLASS_EXTENDS(bcName2,mod2,PARTS(elts2,eqns2,ieqns2,algs2,ialgs2,_,_,_)))
        equation
@@ -1897,7 +1887,7 @@ algorithm
   ENUM(literal = literal, comment = comment) := inEnum;
   NFSCodeCheck.checkValidEnumLiteral(literal, inInfo);
   outEnumType := COMPONENT(literal, defaultPrefixes, defaultConstAttr,
-    Absyn.TPATH(Absyn.IDENT("EnumType"), NONE()),
+    Absyn.TPATH(Absyn.IDENT("$EnumType"), NONE()),
     NOMOD(), comment, NONE(), inInfo);
 end makeEnumType;
 

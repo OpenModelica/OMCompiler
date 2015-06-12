@@ -696,13 +696,6 @@ algorithm
       then
         (cache,env,ih,elt,eq,ieq,alg,ialg,mod);
 
-    case (cache,env,ih,mod,pre,SCode.CLASS(name=n, classDef = SCode.ENUMERATION(enumLst), cmt = cmt, info = info),impl,_,false,_)
-      equation
-        c = SCodeUtil.expandEnumeration(n, enumLst, cmt, info);
-        (cache,env,ih,elt,eq,ieq,alg,ialg,mod) = instDerivedClassesWork(cache, env, ih, mod, pre, c, impl,info, numIter >= Global.recursionDepthLimit, numIter+1);
-      then
-        (cache,env,ih,elt,eq,ieq,alg,ialg,mod);
-
     case (_,_,_,_,_,_,_,_,true,_)
       equation
         str1 = SCodeDump.unparseElementStr(inClass,SCodeDump.defaultOptions);
@@ -1168,7 +1161,6 @@ algorithm
         (cache,mod) = fixModifications(cache,env,mod,ht);
       then (cache,SCode.DERIVED(ts,mod,attr));
 
-    case (cache,_,cd as SCode.ENUMERATION(),_) then (cache,cd);
     case (cache,_,cd as SCode.OVERLOAD(),_) then (cache,cd);
     case (cache,_,cd as SCode.PDER(),_) then (cache,cd);
 
