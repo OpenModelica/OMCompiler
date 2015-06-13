@@ -1,6 +1,6 @@
 #include <Core/ModelicaDefine.h>
 /** @addtogroup solverCvode
- *  
+ *
  *  @{
  */
 #include <Core/Modelica.h>
