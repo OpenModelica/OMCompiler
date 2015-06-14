@@ -89,6 +89,7 @@ algorithm
         (NFSCodeEnv.CLASS(env = {cls_env}, classType = cls_ty), _) =
           NFSCodeLookup.lookupInClass(name, inEnv);
         env = NFSCodeEnv.enterFrame(cls_env, inEnv);
+
         (cdef, cls_env :: env) = flattenClassDef(cdef, env, info);
         cls = SCode.setElementClassDefinition(cdef, inClass);
         item = NFSCodeEnv.newClassItem(cls, {cls_env}, cls_ty);
@@ -528,7 +529,6 @@ protected function flattenRedeclare
   input Env inEnv;
   output SCode.Element outElement;
 algorithm
-
   outElement := match inElement
     local
       SCode.Ident name;
@@ -544,7 +544,6 @@ algorithm
     case SCode.CLASS(name, prefixes, ep, pp, res,
           cdef as SCode.DERIVED(), cmt, info)
       equation
-
         cdef2 = flattenDerivedClassDef(cdef, inEnv, info);
       then
         SCode.CLASS(name, prefixes, ep, pp, res, cdef2, cmt, info);

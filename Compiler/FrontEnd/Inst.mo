@@ -2241,6 +2241,7 @@ algorithm
         // BTH: Search for Modelica State Machine states and update ih correspondingly.
         statesOfSM2 = InstSection.getSMStatesInContext(eqs_1);
         ih = List.fold1(statesOfSM2, InnerOuter.updateSMHierarchy, inPrefix3, ih);
+
         (cache,env5,ih,store,dae1,csets,ci_state2,vars,graph) =
           instElementList(cache, env4, ih, store, mods, pre, ci_state1,
             compelts_2, inst_dims, impl, callscope, graph, csets, true);

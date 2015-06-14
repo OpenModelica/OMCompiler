@@ -1192,7 +1192,6 @@ algorithm
       equation
         // fprintln(Flags.TRANSLATE, "translating local class: " + n);
         re_1 = translateRestriction(cl, re); // uniontype will not get translated!
-
         (de_1,cmt) = translateClassdef(de,i);
         (_, redecl) = translateRedeclarekeywords(repl);
         sRed = SCode.boolRedeclare(redecl);

@@ -119,12 +119,12 @@ algorithm
         System.tmpTickResetIndex(1, NFSCodeEnv.extendsTickIndex);
         // TODO: Enable this when NFSCodeEnv.tmpTickIndex is removed.
         //System.tmpTickResetIndex(0, NFSCodeEnv.tmpTickIndex);
+
         env = NFSCodeEnv.buildInitialEnv();
         env = NFSCodeEnv.extendEnvWithClasses(prog, env);
         env = NFEnvExtends.update(env);
 
         (prog, env) = NFSCodeDependency.analyse(inClassName, env, prog);
-//        print(SCodeDump.programStr(prog) + "\n");
         checkForCardinality(env);
         (prog, env) = NFSCodeFlattenImports.flattenProgram(prog, env);
 

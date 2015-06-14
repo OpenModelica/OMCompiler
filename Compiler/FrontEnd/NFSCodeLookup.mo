@@ -226,6 +226,7 @@ public constant SCode.Element BUILTIN_STATESELECT_ALWAYS = SCode.COMPONENT(
   "always", BUILTIN_PREFIXES, BUILTIN_CONST_ATTRIBUTES, BUILTIN_ENUMTYPE_SPEC,
   SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
 
+
 // Environments for the builtin types:
 public constant Env BUILTIN_REAL_ENV = {NFSCodeEnv.FRAME(SOME("Real"),
   NFSCodeEnv.NORMAL_SCOPE(),
