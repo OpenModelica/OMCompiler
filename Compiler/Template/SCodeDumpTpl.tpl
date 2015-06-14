@@ -160,7 +160,7 @@ match class
     let header_str = dumpClassHeader(classDef, name, cmt_str, options)
     let footer_str = dumpClassFooter(classDef, cdef_str, name, cmt_str, ann_str, cc_str)
     <<
-    <%prefixes_str%><%res_str%> <%header_str%> <%footer_str%>
+    <%prefixes_str%><%res_str%> <%header_str%><%footer_str%>
     >>
 end dumpClass;
 
@@ -170,8 +170,11 @@ match classDef
   case CLASS_EXTENDS(__)
     then
     let mod_str = dumpModifier(modifications, options)
-    'extends <%name%><%mod_str%> <%cmt%>'
-  case PARTS(__) then '<%name%> <%cmt%>'
+    let mod1 = if mod_str then ' <%mod_str%>' else ''
+    let cmt1 = if cmt then ' <%cmt%>' else ''
+    'extends <%name%><%mod_str%><%cmt1%>'
+  case PARTS(__)
+    then if cmt then '<%name%> <%cmt%>' else '<%name%>'
   else '<%name%>'
 end dumpClassHeader;
 
@@ -212,22 +215,25 @@ match classDef
     let type_str = AbsynDumpTpl.dumpTypeSpec(typeSpec)
     let mod_str = dumpModifier(modifications,options)
     let attr_str = dumpAttributes(attributes)
-    '= <%attr_str%><%type_str%><%mod_str%>'
+    ' = <%attr_str%><%type_str%><%mod_str%>'
   case PDER(__) then
     let func_str = AbsynDumpTpl.dumpPath(functionPath)
-    '= der(<%func_str%>, <%derivedVariables ;separator=", "%>)'
+    ' = der(<%func_str%>, <%derivedVariables ;separator=", "%>)'
   case OVERLOAD(__) then
-    '= overload(<%pathLst |> path => AbsynDumpTpl.dumpPath(path); separator=", "%>)'
+    ' = overload(<%pathLst |> path => AbsynDumpTpl.dumpPath(path); separator=", "%>)'
   else errorMsg("SCodeDump.dumpClassDef: Unknown class definition.")
 end dumpClassDef;
 
 template dumpClassFooter(SCode.ClassDef classDef, String cdefStr, String name, String cmt, String ann, String cc_str)
 ::=
 match classDef
-  case DERIVED(__) then '<%cdefStr%><%cmt%><%ann%><%cc_str%>'
+  case DERIVED(__) then
+    let cmt1 = if cmt then ' <%cmt%>' else ''
+    let ann1 = if ann then ' <%ann%>' else ''
+    '<%cdefStr%><%cmt1%><%ann1%><%cc_str%>'
   case PDER(__) then cdefStr
   case _ then
-    let annstr = if ann then '<%ann%>; ' else ''
+    let annstr = if ann then '<%ann%>;' else ''
     if cdefStr then
       <<
 
@@ -237,7 +243,7 @@ match classDef
       >>
     else
       <<
-      <%annstr%>end <%name%><%cc_str%>
+       <%annstr%><%if annstr then " "%>end <%name%><%cc_str%>
       >>
 end dumpClassFooter;
 
@@ -848,7 +854,7 @@ template dumpAnnotation(SCode.Annotation annotation, SCodeDumpOptions options)
   match annotation
     case ANNOTATION(__) then
      let modifStr = dumpAnnotationModifier(modification,options)
-     if modifStr then '<%\ %>annotation<%modifStr%>'
+     if modifStr then 'annotation<%modifStr%>'
 end dumpAnnotation;
 
 template dumpAnnotationElement(SCode.Annotation annotation, SCodeDumpOptions options)
@@ -871,8 +877,9 @@ let res = match externalDecl
     let func_str = if func_name_str then ' <%func_name_str%>(<%func_args_str%>)'
     let lang_str = match lang case SOME(l) then ' "<%l%>"'
     let ann_str = dumpAnnotationOpt(annotation_, options)
+    let ann_str1 = if ann_str then ' <%ann_str%>' else ''
     let output_str = match output_ case SOME(name) then ' <%AbsynDumpTpl.dumpCref(name)%> ='
-    'external<%lang_str%><%output_str%><%func_str%><%ann_str%>;'
+    'external<%lang_str%><%output_str%><%func_str%><%ann_str1%>;'
 match externalDecl
   case EXTERNALDECL(lang=SOME("builtin")) then res
   else match options case OPTIONS(stripExternalDecl=false) then res
@@ -887,14 +894,15 @@ template dumpComment(SCode.Comment comment, SCodeDumpOptions options)
   match comment
     case COMMENT(__) then
       let ann_str = dumpAnnotationOpt(annotation_, options)
+      let ann_str1 = if ann_str then ' <%ann_str%>' else ''
       let cmt_str = dumpCommentStr(comment, options)
-      '<%cmt_str%><%ann_str%>'
+      ' <%cmt_str%><%ann_str1%>'
 end dumpComment;
 
 template dumpCommentStr(Option<String> comment, SCodeDumpOptions options)
 ::=
 match options case OPTIONS(stripStringComments=false) then
-match comment case SOME(cmt) then '<%\ %>"<%System.escapedString(cmt,false)%>"'
+match comment case SOME(cmt) then '"<%System.escapedString(cmt,false)%>"'
 end dumpCommentStr;
 
 template errorMsg(String errMessage)
