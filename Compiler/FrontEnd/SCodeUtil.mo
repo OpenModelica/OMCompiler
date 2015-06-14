@@ -321,7 +321,8 @@ algorithm
 
     case (_,Absyn.R_OPERATOR()) then SCode.R_OPERATOR();
 
-    case (_,Absyn.R_TYPE()) then SCode.R_TYPE();
+    case (Absyn.CLASS(body=Absyn.ENUMERATION()), Absyn.R_TYPE()) then SCode.R_ENUMERATION();
+    case (_, Absyn.R_TYPE()) then SCode.R_TYPE();
     case (_,Absyn.R_PACKAGE()) then SCode.R_PACKAGE();
     case (_,Absyn.R_ENUMERATION()) then SCode.R_ENUMERATION();
     case (_,Absyn.R_PREDEFINED_INTEGER()) then SCode.R_PREDEFINED_INTEGER();
@@ -445,8 +446,7 @@ algorithm
       Option<SCode.ExternalDecl> decl;
       list<Absyn.ClassPart> parts;
       list<String> vars;
-      list<SCode.Enum> lst_1;
-      list<Absyn.EnumLiteral> lst;
+      list<Absyn.EnumLiteral> enumLiterals;
       SCode.Comment scodeCmt;
       String name;
       Absyn.Path path;
@@ -483,20 +483,13 @@ algorithm
       then
         (SCode.PARTS(els,eqs,initeqs,als,initals,cos,classAttrs,decl),scodeCmt);
 
-    case (Absyn.ENUMERATION(Absyn.ENUMLITERALS(enumLiterals = lst), cmt),_)
-      equation
-        // fprintln(Flags.TRANSLATE, "translating enumerations");
-        lst_1 = translateEnumlist(lst);
-        scodeCmt = translateComment(cmt);
+    case (Absyn.ENUMERATION(Absyn.ENUMLITERALS(enumLiterals = enumLiterals), cmt),_)
       then
-        (SCode.ENUMERATION(lst_1), scodeCmt);
+        translateEnum(enumLiterals, cmt, info);
 
     case (Absyn.ENUMERATION(Absyn.ENUM_COLON(), cmt),_)
-      equation
-        // fprintln(Flags.TRANSLATE, "translating enumeration of ':'");
-        scodeCmt = translateComment(cmt);
       then
-        (SCode.ENUMERATION({}),scodeCmt);
+        translateEnum({}, cmt, info);
 
     case (Absyn.OVERLOAD(pathLst,cmt),_)
       equation
@@ -535,6 +528,18 @@ algorithm
         fail();
   end match;
 end translateClassdef;
+
+public function translateEnum
+  input list<Absyn.EnumLiteral> enumLiterals;
+  input Option<Absyn.Comment> cmt;
+  input SourceInfo info;
+  output tuple<SCode.ClassDef, SCode.Comment> outClassDef;
+protected
+  list<SCode.Element> els;
+algorithm
+  els := translateEnumlist(enumLiterals, info);
+  outClassDef := (SCode.PARTS(els, {}, {}, {}, {}, {}, {}, NONE()), translateComment(cmt));
+end translateEnum;
 
 protected function translateAlternativeExternalAnnotation
 "first class annotation instead, since it is very common that an element
@@ -591,11 +596,12 @@ protected function translateEnumlist
 "Convert an EnumLiteral list to an Ident list.
   Comments are lost."
   input list<Absyn.EnumLiteral> inAbsynEnumLiteralLst;
-  output list<SCode.Enum> outEnumLst;
+  input SourceInfo info;
+  output list<SCode.Element> outEnumLst;
 algorithm
   outEnumLst := match (inAbsynEnumLiteralLst)
     local
-      list<SCode.Enum> res;
+      list<SCode.Element> res;
       String id;
       Option<Absyn.Comment> cmtOpt;
       SCode.Comment cmt;
@@ -605,9 +611,9 @@ algorithm
     case ((Absyn.ENUMLITERAL(id, cmtOpt) :: rest))
       equation
         cmt = translateComment(cmtOpt);
-        res = translateEnumlist(rest);
+        res = translateEnumlist(rest, info);
       then
-        (SCode.ENUM(id, cmt) :: res);
+        (SCode.makeEnumType(SCode.ENUM(id, cmt), info) :: res);
   end match;
 end translateEnumlist;
 
@@ -2552,66 +2558,6 @@ algorithm
     else SCode.NOMOD();
   end match;
 end getConstrainedByModifiers;
-
-public function expandEnumerationClass
-"@author: PA, adrpo
- this function expands the enumeration from a list into a class with components
- if the class is not an enumeration is kept as it is"
-  input SCode.Element inElement;
-  output SCode.Element outElement;
-algorithm
-  outElement := match(inElement)
-    local
-      SCode.Ident n;
-      list<SCode.Enum> l;
-      SCode.Comment cmt;
-      SourceInfo info;
-      SCode.Element c;
-
-    case SCode.CLASS(name = n,restriction = SCode.R_TYPE(),
-                     classDef = SCode.ENUMERATION(enumLst=l),cmt=cmt,info = info)
-      equation
-        c = expandEnumeration(n, l, cmt, info);
-      then
-        c;
-
-    else inElement;
-
-  end match;
-end expandEnumerationClass;
-
-public function expandEnumeration
-"author: PA
-  This function takes an Ident and list of strings, and returns an enumeration class."
-  input SCode.Ident n;
-  input list<SCode.Enum> l;
-  input SCode.Comment cmt;
-  input SourceInfo info;
-  output SCode.Element outClass;
-protected
-  list<SCode.Element> comp;
-algorithm
-  comp := makeEnumComponents(l, info);
-  outClass :=
-    SCode.CLASS(
-     n,
-     SCode.defaultPrefixes,
-     SCode.NOT_ENCAPSULATED(),
-     SCode.NOT_PARTIAL(),
-     SCode.R_ENUMERATION(),
-     SCode.PARTS(comp,{},{},{},{},{},{},NONE()),
-     cmt,
-     info);
-end expandEnumeration;
-
-public function makeEnumComponents
-  "Translates a list of Enums to a list of elements of type EnumType."
-  input list<SCode.Enum> inEnumLst;
-  input SourceInfo info;
-  output list<SCode.Element> outSCodeElementLst;
-algorithm
-  outSCodeElementLst := List.map1(inEnumLst, SCode.makeEnumType, info);
-end makeEnumComponents;
 
 public function getElementWithPathCheckBuiltin
 "returns the element from the program having the name as the id.

@@ -580,7 +580,6 @@ algorithm
         ();
 
     // Other cases which doesn't need to be analysed.
-    case (SCode.ENUMERATION(), _, _, _, _) then ();
     case (SCode.OVERLOAD(pathLst = paths), _, _, _, _)
       equation
         List.map2_0(paths,analyseClass,inEnv,inInfo);
@@ -1990,7 +1989,7 @@ algorithm
         {class_frame} = NFSCodeEnv.getItemEnv(resolved_item);
         enclosing_env = NFSCodeEnv.enterScope(inEnv, name);
         (cdef, class_env) =
-          collectUsedClassDef(cdef, enclosing_env, class_frame, inClassName, inAccumPath);
+          collectUsedClassDef(cdef, res, enclosing_env, class_frame, inClassName, inAccumPath);
 
         cls = SCode.CLASS(name, prefixes, ep, pp, res, cdef, cmt, info);
         resolved_item = updateItemEnv(resolved_item, cls, class_env);
@@ -2011,7 +2010,7 @@ algorithm
         {class_frame} = NFSCodeEnv.getItemEnv(item);
         enclosing_env = NFSCodeEnv.enterScope(inEnv, name);
         (cdef, class_env) =
-          collectUsedClassDef(cdef, enclosing_env, class_frame, inClassName, inAccumPath);
+          collectUsedClassDef(cdef, res, enclosing_env, class_frame, inClassName, inAccumPath);
         // Add the class to the new environment.
         cls = SCode.CLASS(name, prefixes, ep, pp, res, cdef, cmt, info);
         item = updateItemEnv(item, cls, class_env);
@@ -2061,6 +2060,7 @@ end updateItemEnv;
 protected function collectUsedClassDef
   "Collects the contents of a class definition."
   input SCode.ClassDef inClassDef;
+  input SCode.Restriction inRes;
   input Env inEnv;
   input NFSCodeEnv.Frame inClassEnv;
   input Absyn.Path inClassName;
@@ -2086,7 +2086,7 @@ algorithm
     case (SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl), _, _, _, _)
       equation
         (el, env) =
-          collectUsedElements(el, inEnv, inClassEnv, inClassName, inAccumPath);
+          collectUsedElements(el, inRes, inEnv, inClassEnv, inClassName, inAccumPath);
       then
         (SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl), env);
 
@@ -2094,13 +2094,10 @@ algorithm
         SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl)), _, _, _, _)
       equation
         (el, env) =
-          collectUsedElements(el, inEnv, inClassEnv, inClassName, inAccumPath);
+          collectUsedElements(el, inRes, inEnv, inClassEnv, inClassName, inAccumPath);
       then
         (SCode.CLASS_EXTENDS(bc, mods,
           SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl)), env);
-
-    case (SCode.ENUMERATION(), _, _, _, _)
-      then (inClassDef, {inClassEnv});
 
     else (inClassDef, {inClassEnv});
   end match;
@@ -2109,6 +2106,7 @@ end collectUsedClassDef;
 protected function collectUsedElements
   "Collects a class definition's elements."
   input list<SCode.Element> inElements;
+  input SCode.Restriction inRes;
   input Env inEnv;
   input NFSCodeEnv.Frame inClassEnv;
   input Absyn.Path inClassName;
@@ -2125,7 +2123,7 @@ algorithm
     NFSCodeEnv.removeClsAndVarsFromFrame(inClassEnv);
   // Collect all constants in the top class, even if they're not used.
   // This makes it easier to write test cases.
-  collect_constants := Absyn.pathEqual(inClassName, inAccumPath);
+  collect_constants := Absyn.pathEqual(inClassName, inAccumPath) or valueEq(inRes, SCode.R_ENUMERATION());
   (outUsedElements, outNewEnv) :=
     collectUsedElements2(inElements, inEnv, cls_and_vars, {}, {empty_class_env},
       inClassName, inAccumPath, collect_constants);

@@ -429,10 +429,6 @@ package SCode
       Attributes attributes;
     end DERIVED;
 
-    record ENUMERATION
-      list<Enum> enumLst;
-    end ENUMERATION;
-
     record OVERLOAD
       list<Absyn.Path> pathLst;
     end OVERLOAD;
@@ -789,6 +785,12 @@ package SCode
     record INITIAL end INITIAL;
     record NON_INITIAL end NON_INITIAL;
   end Initial;
+
+  function isEnumeration
+    input Element inEnum;
+    output Boolean outBoolean;
+  end isEnumeration;
+
 end SCode;
 
 package SCodeDump

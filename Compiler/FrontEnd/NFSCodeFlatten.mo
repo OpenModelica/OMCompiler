@@ -98,6 +98,8 @@ algorithm
   {outClass} := flattenProgram({inClass});
 end flattenClass;
 
+protected import SCodeDump;
+protected import Lookup;
 public function flattenClassInProgram
   "Flattens a specific class in a program."
   input Absyn.Path inClassName;

@@ -196,10 +196,6 @@ uniontype ClassDef
     Attributes attributes   "the element attributes";
   end DERIVED;
 
-  record ENUMERATION "an enumeration"
-    list<Enum> enumLst      "if the list is empty it means :, the supertype of all enumerations";
-  end ENUMERATION;
-
   record OVERLOAD "an overloaded function"
     list<Absyn.Path> pathLst "the path lists";
   end OVERLOAD;
@@ -942,6 +938,16 @@ algorithm
   end match;
 end enumName;
 
+public function isEnumeration
+  input Element inEnum;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match(inEnum)
+    case CLASS(restriction = R_ENUMERATION()) then true;
+    else false;
+  end match;
+end isEnumeration;
+
 public function isRecord
 "Return true if Class is a record."
   input Element inClass;
@@ -1244,12 +1250,6 @@ protected function classDefEqual
          true = Absyn.typeSpecEqual(tySpec1, tySpec2);
          true = modEqual(mod1,mod2);
          true = attributesEqual(attr1, attr2);
-       then
-         true;
-
-     case (ENUMERATION(elst1),ENUMERATION(elst2))
-       equation
-         List.threadMapAllValue(elst1,elst2,enumEqual,true);
        then
          true;
 
@@ -1897,7 +1897,7 @@ algorithm
   ENUM(literal = literal, comment = comment) := inEnum;
   NFSCodeCheck.checkValidEnumLiteral(literal, inInfo);
   outEnumType := COMPONENT(literal, defaultPrefixes, defaultConstAttr,
-    Absyn.TPATH(Absyn.IDENT("EnumType"), NONE()),
+    Absyn.TPATH(Absyn.IDENT("$EnumType"), NONE()),
     NOMOD(), comment, NONE(), inInfo);
 end makeEnumType;
 

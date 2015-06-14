@@ -130,13 +130,12 @@ algorithm
 
     case (_, _, _, g)
       equation
-        cls = SCodeUtil.expandEnumerationClass(inClass);
-        SCode.CLASS(name = name, classDef = cdef) = cls;
-        (g, n) = FGraph.node(g, name, {inParentRef}, FCore.CL(cls, Prefix.NOPRE(), DAE.NOMOD(), inKind, FCore.VAR_UNTYPED()));
+        SCode.CLASS(name = name, classDef = cdef) = inClass;
+        (g, n) = FGraph.node(g, name, {inParentRef}, FCore.CL(inClass, Prefix.NOPRE(), DAE.NOMOD(), inKind, FCore.VAR_UNTYPED()));
         nr = FNode.toRef(n);
         FNode.addChildRef(inParentRef, name, nr);
         // add constrained by node
-        g = mkConstrainClass(cls, nr, inKind, g);
+        g = mkConstrainClass(inClass, nr, inKind, g);
         g = mkClassChildren(cdef, nr, inKind, g);
       then
         g;

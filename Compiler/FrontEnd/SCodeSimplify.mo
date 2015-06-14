@@ -136,11 +136,6 @@ algorithm
       then
         inClassDef;
 
-    // handle enumeration, just return the same
-    case (SCode.ENUMERATION())
-      then
-        inClassDef;
-
     // handle overload
     case (SCode.OVERLOAD())
       then

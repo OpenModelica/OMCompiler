@@ -529,7 +529,7 @@ protected function flattenRedeclare
   input Env inEnv;
   output SCode.Element outElement;
 algorithm
-  outElement := match(inElement, inEnv)
+  outElement := match inElement
     local
       SCode.Ident name;
       SCode.Prefixes prefixes;
@@ -541,18 +541,17 @@ algorithm
       SCode.ClassDef cdef,cdef2;
       SCode.Comment cmt;
 
-    case (SCode.CLASS(name, prefixes, ep, pp, res,
-          cdef as SCode.DERIVED(), cmt, info), _)
+    case SCode.CLASS(name, prefixes, ep, pp, res,
+          cdef as SCode.DERIVED(), cmt, info)
       equation
         cdef2 = flattenDerivedClassDef(cdef, inEnv, info);
       then
         SCode.CLASS(name, prefixes, ep, pp, res, cdef2, cmt, info);
 
-    case (SCode.CLASS(classDef = SCode.ENUMERATION()), _)
-      then
-        inElement;
+    case SCode.CLASS(classDef = SCode.PARTS(), restriction = SCode.R_ENUMERATION())
+      then inElement;
 
-    case (SCode.COMPONENT(), _)
+    case SCode.COMPONENT()
       equation
         element = flattenComponent(inElement, inEnv);
       then
