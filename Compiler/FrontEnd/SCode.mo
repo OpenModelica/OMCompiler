@@ -938,6 +938,16 @@ algorithm
   end match;
 end enumName;
 
+public function isEnumeration
+  input Element inEnum;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match(inEnum)
+    case CLASS(restriction = R_ENUMERATION()) then true;
+    else false;
+  end match;
+end isEnumeration;
+
 public function isRecord
 "Return true if Class is a record."
   input Element inClass;
