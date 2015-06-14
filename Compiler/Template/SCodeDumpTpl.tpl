@@ -63,7 +63,11 @@ match element
     match visibility
       case PROTECTED(__) then (match options case OPTIONS(stripProtectedImports=true) then "" else dumpImport(element)) else dumpImport(element)
   case EXTENDS(__) then dumpExtends(element,options)
-  case CLASS(__) then dumpClass(element, each, options)
+  case CLASS(__) then
+    match restriction
+      case R_ENUMERATION() then dumpEnumeration(element, each, options)
+      else dumpClass(element, each, options)
+    end match
   case COMPONENT(__) then dumpComponent(element, each, options)
   case DEFINEUNIT(__) then dumpDefineUnit(element)
   else errorMsg("SCodeDump.dumpElement: Unknown element.")
@@ -118,15 +122,37 @@ match extends
     '<%visibility_str%>extends <%bc_str%><%mod_str%><%ann_str%>'
 end dumpExtends;
 
+template dumpClassPrefixes(SCode.Prefixes prefixes, String each, SCode.Encapsulated enc, SCode.Partial part)
+::=
+  let prefix_str = dumpPrefixes(prefixes, each)
+  let enc_str = dumpEncapsulated(enc)
+  let partial_str = dumpPartial(part)
+  '<%prefix_str%><%enc_str%><%partial_str%>'
+end dumpClassPrefixes;
+
+template dumpEnumeration(SCode.Element class, String each, SCodeDumpOptions options)
+::=
+match class
+  case CLASS(__) then
+    let prefix_str = dumpClassPrefixes(prefixes, each, encapsulatedPrefix, partialPrefix)
+    let cmt_str = dumpClassComment(cmt, options)
+    let ann_str = dumpClassAnnotation(cmt, options)
+    let cc_str = dumpReplaceableConstrainClass(prefixes, options)
+    let ann_str1 = if ann_str then ' <%ann_str%>' else ''
+    let literals_str = match classDef
+      case PARTS(__) then
+        (elementLst |> elt => '<%dumpEnumClassLiteral(elt, options)%>'; separator=", ")
+    end match
+    '<%prefix_str%>type <%name%> = enumeration(<%literals_str%>) <%cmt_str%><%ann_str1%>'
+end match
+end dumpEnumeration;
+
 template dumpClass(SCode.Element class, String each, SCodeDumpOptions options)
 ::=
 match class
   case CLASS(__) then
-    let prefix_str = dumpPrefixes(prefixes, each)
-    let enc_str = dumpEncapsulated(encapsulatedPrefix)
-    let partial_str = dumpPartial(partialPrefix)
+    let prefixes_str = dumpClassPrefixes(prefixes, each, encapsulatedPrefix, partialPrefix)
     let res_str = dumpRestriction(restriction)
-    let prefixes_str = '<%prefix_str%><%enc_str%><%partial_str%><%res_str%>'
     let cdef_str = dumpClassDef(classDef, options)
     let cmt_str = dumpClassComment(cmt, options)
     let ann_str = dumpClassAnnotation(cmt, options)
@@ -134,7 +160,7 @@ match class
     let header_str = dumpClassHeader(classDef, name, cmt_str, options)
     let footer_str = dumpClassFooter(classDef, cdef_str, name, cmt_str, ann_str, cc_str)
     <<
-    <%prefixes_str%> <%header_str%> <%footer_str%>
+    <%prefixes_str%><%res_str%> <%header_str%> <%footer_str%>
     >>
 end dumpClass;
 
@@ -148,6 +174,13 @@ match classDef
   case PARTS(__) then '<%name%> <%cmt%>'
   else '<%name%>'
 end dumpClassHeader;
+
+template dumpEnumClassLiteral(SCode.Element literals, SCodeDumpOptions options)
+::=
+match literals
+  case COMPONENT(__)
+    then '<%name%><%dumpComment(comment, options)%>'
+end dumpEnumClassLiteral;
 
 template dumpClassDef(SCode.ClassDef classDef, SCodeDumpOptions options)
 ::=
