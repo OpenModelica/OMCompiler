@@ -4693,7 +4693,7 @@ algorithm
 
     case BackendDAE.EQSYSTEM(orderedVars, orderedEqs, _, _, _, stateSets, partitionKind) equation
       (orderedEqs, _) = BackendEquation.traverseEquationArray_WithUpdate(orderedEqs, addTimeAsState2, inFoo);
-    then BackendDAE.EQSYSTEM(orderedVars, orderedEqs, NONE(), NONE(), BackendDAE.NO_MATCHING(), stateSets, partitionKind);
+    then BackendDAEUtil.createEqSystem(orderedVars, orderedEqs, stateSets, partitionKind);
 
     else inSystem;
   end matchcontinue;
