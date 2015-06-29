@@ -54,7 +54,6 @@ public import SCode;
 public import UnitAbsyn;
 
 protected import Lookup;
-protected import MetaUtil;
 protected import Inst;
 protected import InstBinding;
 protected import InstVar;
