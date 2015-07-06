@@ -215,6 +215,7 @@ protected
   list<list<SimCode.SimEqSystem>> odeEquations;         // --> functionODE
   list<tuple<Integer, tuple<DAE.Exp, DAE.Exp, DAE.Exp>>> delayedExps;
   list<tuple<Integer,Integer>> equationSccMapping, eqBackendSimCodeMapping;
+  BackendDAE.EventInfo eventInfo;
 algorithm
   try
     dlow := inBackendDAE;
@@ -258,19 +259,19 @@ algorithm
     dlow := BackendDAEOptimize.addInitialStmtsToAlgorithms(dlow);
 
     BackendDAE.DAE(shared=shared as BackendDAE.SHARED(knownVars=knownVars,
-                                                      removedEqs=removedEqs,
                                                       constraints=constraints,
                                                       classAttrs=classAttributes,
                                                       symjacs=symJacs,
                                                       partitionsInfo=BackendDAE.PARTITIONS_INFO(baseClocks),
-                                                      eventInfo=BackendDAE.EVENT_INFO(timeEvents=timeEvents))) := dlow;
+                                                      eventInfo=eventInfo)) := dlow;
 
-    // created event suff e.g. zeroCrossings, samples, ...
-    whenClauses := createSimWhenClauses(dlow);
-    zeroCrossings := if ifcpp then FindZeroCrossings.getRelations(dlow) else FindZeroCrossings.getZeroCrossings(dlow);
-    relations := FindZeroCrossings.getRelations(dlow);
-    sampleZC := FindZeroCrossings.getSamples(dlow);
-    zeroCrossings := if ifcpp then listAppend(zeroCrossings, sampleZC) else zeroCrossings;
+ // created event suff e.g. zeroCrossings, samples, ...
+      timeEvents := eventInfo.timeEvents;
+      whenClauses := createSimWhenClauses(dlow);
+      zeroCrossings := if ifcpp then eventInfo.relationsLst else eventInfo.zeroCrossingLst;
+      relations := eventInfo.relationsLst;
+      sampleZC := eventInfo.sampleLst;
+      zeroCrossings := if ifcpp then listAppend(zeroCrossings, sampleZC) else zeroCrossings;
 
     // equation generation for euler, dassl2, rungekutta
     ( uniqueEqIndex, odeEquations, algebraicEquations, allEquations, equationsForZeroCrossings, tempvars,
