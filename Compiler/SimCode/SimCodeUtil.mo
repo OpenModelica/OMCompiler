@@ -473,7 +473,9 @@ algorithm
     then (simCode, (highestSimEqIndex, equationSccMapping));
 
     else equation
-      Error.addInternalError("function createSimCode failed [Transformation from optimised DAE to simulation code structure failed]", sourceInfo());
+      if Flags.isSet(Flags.FAILTRACE) then
+        Error.addInternalError("function createSimCode failed [Transformation from optimised DAE to simulation code structure failed]", sourceInfo());
+      end if;
     then fail();
   end matchcontinue;
 end createSimCode;
