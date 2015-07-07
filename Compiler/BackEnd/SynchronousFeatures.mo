@@ -102,15 +102,25 @@ protected
   BackendDAE.BaseClockPartitionKind partitionKind;
   list<DAE.ComponentRef> holdComps;
   array<Integer> varsPartition;
+  list<BackendDAE.Equation> unpartRemEqs;
 algorithm
   syst := substituteParitionOpExps(inSyst);
 
-  (contSysts, clockedSysts) := baseClockPartitioning(syst, inShared);
+  (contSysts, clockedSysts, unpartRemEqs) := baseClockPartitioning(syst, inShared);
   (contSysts, holdComps) := removeHoldExpsSyst(contSysts);
   (clockedSysts, baseClocks) := subClockPartitioning1(clockedSysts, inShared, holdComps);
 
   //Continuous system always first in equation systems list
-  systs := listAppend(contSysts, clockedSysts);
+  if listLength(contSysts) == 0 then
+    syst := BackendDAEUtil.createEqSystem (
+                  BackendVariable.emptyVars(), BackendEquation.emptyEqns(), {},
+                  BackendDAE.CONTINUOUS_TIME_PARTITION(), BackendEquation.listEquation(unpartRemEqs) );
+  else
+    BackendDAE.DAE(eqs={syst}) := BackendDAEOptimize.collapseIndependentBlocks(BackendDAE.DAE(contSysts, inShared));
+    syst.partitionKind := BackendDAE.CONTINUOUS_TIME_PARTITION();
+    syst.removedEqs := BackendEquation.addEquations(unpartRemEqs, syst.removedEqs);
+  end if;
+  systs := syst::clockedSysts;
   outDAE := BackendDAE.DAE(systs, setClocks(inShared, baseClocks));
 
   if Flags.isSet(Flags.DUMP_SYNCHRONOUS) then
@@ -1209,6 +1219,7 @@ protected function baseClockPartitioning
   input BackendDAE.Shared inShared;
   output list<BackendDAE.EqSystem> outContSysts = {};
   output list<BackendDAE.EqSystem> outClockedSysts = {};
+  output list<BackendDAE.Equation> outUnpartRemEqs;
 protected
   BackendDAE.Variables vars;
   BackendDAE.EquationArray eqs;
@@ -1238,11 +1249,11 @@ algorithm
   eqsPartition := arrayCreate(arrayLength(m), 0);
   reqsPartition := arrayCreate(arrayLength(rm), 0);
   partitionCnt := partitionIndependentBlocks0(m, mT, rm, rmT, eqsPartition, reqsPartition);
-  systs :=
-    if partitionCnt > 1 then
-      partitionIndependentBlocksSplitBlocks(partitionCnt, syst, eqsPartition, reqsPartition, mT, false)
-    else
-      {syst};
+  if partitionCnt > 1 then
+    (systs, outUnpartRemEqs) := partitionIndependentBlocksSplitBlocks(partitionCnt, syst, eqsPartition, reqsPartition, mT, false);
+  else
+    (systs, outUnpartRemEqs) := ({syst}, {});
+  end if;
 
   //Partition finished
   clockedEqs := arrayCreate(BackendDAEUtil.equationArraySize(eqs), NONE());
@@ -1617,6 +1628,7 @@ public function partitionIndependentBlocksSplitBlocks
   input BackendDAE.IncidenceMatrix mT;
   input Boolean throwNoError;
   output list<BackendDAE.EqSystem> systs = {};
+  output list<BackendDAE.Equation> unpartRemovedEqs = {};
 protected
   array<list<BackendDAE.Equation>> ea, rea;
   array<list<BackendDAE.Var>> va;
@@ -1642,7 +1654,7 @@ algorithm
 
   rest := partitionEquations(BackendDAEUtil.equationArraySize(inSyst.orderedEqs), inSyst.orderedEqs, ixs, ea);
   assert(listLength(rest) == 0, "Equations partitioning failure in SynchronousFeatures.partitionIndependentBlocksSplitBlocks");
-  rest := partitionEquations(BackendDAEUtil.equationArraySize(inSyst.removedEqs), inSyst.removedEqs, rixs, rea);
+  unpartRemovedEqs := partitionEquations(BackendDAEUtil.equationArraySize(inSyst.removedEqs), inSyst.removedEqs, rixs, rea);
   partitionVars(i2, inSyst.orderedEqs, inSyst.orderedVars, ixs, mT, va);
 
   for i in 1:n loop
@@ -1652,12 +1664,6 @@ algorithm
   end for;
   true := throwNoError or b1;
   systs := listReverse(systs);
-
-  if listLength(rest) <> 0 then
-    syst := BackendDAEUtil.createEqSystem( BackendVariable.emptyVars(), BackendEquation.emptyEqns(),
-                                            {}, BackendDAE.UNSPECIFIED_PARTITION(), BackendEquation.listEquation(rest) );
-    systs := syst::systs;
-  end if;
 
 end partitionIndependentBlocksSplitBlocks;
 
