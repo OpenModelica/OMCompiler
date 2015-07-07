@@ -587,7 +587,6 @@ algorithm
   print("\n");
 end dumpClocks;
 
-
 public function dumpVariables "function dumpVariables"
   input BackendDAE.Variables inVars;
   input String heading;
