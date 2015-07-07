@@ -360,16 +360,20 @@ ENDIF(USE_SUNDIALS)
 if(BUILD_DOCUMENTATION)
   FIND_PACKAGE(Doxygen)
   if (NOT DOXYGEN_FOUND)
-    message(FATAL_ERROR
-      "Doxygen is needed to build the documentation. Please install it correctly")
+    message(FATAL_ERROR "Doxygen is needed to build the documentation. Please install it correctly")
   endif()
-   MESSAGE(STATUS "Build the documentation with Doxygen")
+
+  if (${DOXYGEN_VERSION} VERSION_LESS "1.8.0")
+    message(FATAL_ERROR "Doxygen version 1.8 or higher is needed to build the documentation.")
+  endif()
+
+  MESSAGE(STATUS "Build the documentation with Doxygen")
   #-- Configure the Template Doxyfile for our specific project
-  configure_file(cppruntimedoc.config.in
-                 ${PROJECT_BINARY_DIR}/cppruntimedoc.config  @ONLY IMMEDIATE)
+  configure_file(Doc/CppRuntimeDoc.config.in
+                 ${PROJECT_BINARY_DIR}/Doc/CppRuntimeDoc.config  @ONLY IMMEDIATE)
   #-- Add a custom target to run Doxygen when ever the project is built
   add_custom_target (Docs ALL
-                     ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/cppruntimedoc.config
+                     ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doc/CppRuntimeDoc.config
                      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
                      COMMENT "Generating API documentation with Doxygen" VERBATIM
                     )
