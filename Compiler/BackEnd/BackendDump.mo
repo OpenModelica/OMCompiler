@@ -104,11 +104,11 @@ algorithm
   BackendDAE.DAE(eqs, shared) := inBackendDAE;
   List.map_0(eqs, printEqSystem);
   print("\n");
-  printShared(eqs, shared);
+  printShared(shared);
 end printBackendDAE;
 
 public function printEqSystem "This function prints the BackendDAE.EqSystem representation to stdout."
-  input BackendDAE.EqSystem inEqSystem;
+  input BackendDAE.EqSystem inSyst;
 protected
   BackendDAE.Variables orderedVars;
   BackendDAE.EquationArray orderedEqs;
@@ -118,23 +118,16 @@ protected
   BackendDAE.StateSets stateSets;
   BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=orderedVars,
-                      orderedEqs=orderedEqs,
-                      m=m,
-                      mT=mT,
-                      matching=matching,
-                      stateSets=stateSets,
-                      partitionKind=partitionKind) := inEqSystem;
-
-  print("\n" + partitionKindString(partitionKind) + "\n" + UNDERLINE + "\n");
-  dumpVariables(orderedVars, "Variables");
-  dumpEquationArray(orderedEqs, "Equations");
-  dumpStateSets(stateSets, "State Sets");
-  dumpOption(m, dumpIncidenceMatrix);
-  dumpOption(mT, dumpIncidenceMatrixT);
+  print("\n" + partitionKindString(inSyst.partitionKind) + "\n" + UNDERLINE + "\n");
+  dumpVariables(inSyst.orderedVars, "Variables");
+  dumpEquationArray(inSyst.orderedEqs, "Equations");
+  dumpEquationArray(inSyst.removedEqs, "Simple Equations");
+  dumpStateSets(inSyst.stateSets, "State Sets");
+  dumpOption(inSyst.m, dumpIncidenceMatrix);
+  dumpOption(inSyst.mT, dumpIncidenceMatrixT);
 
   print("\n");
-  dumpFullMatching(matching);
+  dumpFullMatching(inSyst.matching);
   print("\n");
 end printEqSystem;
 
@@ -256,7 +249,6 @@ public function printClassAttributes "This unction print the  Optimica ClassAttr
 end printClassAttributes;
 
 public function printShared "This function dumps the BackendDAE.Shared representation to stdout."
-  input BackendDAE.EqSystems inSysts "for backward compatibility";
   input BackendDAE.Shared inShared;
 protected
   BackendDAE.Variables knownVars, externalObjects, aliasVars;
@@ -279,7 +271,7 @@ algorithm
                     extObjClasses=extObjClasses,
                     backendDAEType=backendDAEType,
                     symjacs=symjacs) := inShared;
-  removedEqs := BackendDAEUtil.collapseRemovedEqs(inSysts);
+
   print("\nBackendDAEType: ");
   printBackendDAEType(backendDAEType);
   print("\n\n");
@@ -288,7 +280,6 @@ algorithm
   dumpVariables(externalObjects, "External Objects");
   dumpExternalObjectClasses(extObjClasses, "Classes of External Objects");
   dumpVariables(aliasVars, "Alias Variables");
-  dumpEquationArray(removedEqs, "Simple Equations");
   dumpEquationArray(initialEqs, "Initial Equations");
   dumpZeroCrossingList(zeroCrossingLst, "Zero Crossings");
   dumpZeroCrossingList(relationsLst, "Relations");
@@ -3268,7 +3259,7 @@ algorithm
       print(headerline + ":\n");
       List.map_0(eqs, printEqSystem);
       print("\n");
-      printShared(eqs, shared);
+      printShared(shared);
     then ();
   end matchcontinue;
 end bltdump;

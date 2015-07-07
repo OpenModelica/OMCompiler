@@ -3610,6 +3610,15 @@ algorithm
   osyst := BackendDAEUtil.setEqSystMatrices(syst, SOME(outM), SOME(outMT));
 end getIncidenceMatrixScalar;
 
+public function removedIncidenceMatrix
+  input BackendDAE.EqSystem inSyst;
+  input BackendDAE.IndexType inIndxType;
+  input Option<DAE.FunctionTree> inFunctionTree;
+  output BackendDAE.IncidenceMatrix outM;
+  output BackendDAE.IncidenceMatrix outMT;
+algorithm
+  (outM, outMT) := incidenceMatrixDispatch(inSyst.orderedVars, inSyst.removedEqs, inIndxType, inFunctionTree);
+end removedIncidenceMatrix;
 
 protected function traverseStmts "Author: Frenkel TUD 2012-06
   traverese DAE.Statement without change possibility."
@@ -7587,13 +7596,8 @@ end mapEqSystem;
 public function nonEmptySystem
   input BackendDAE.EqSystem syst;
   output Boolean nonEmpty;
-protected
-  Integer num;
-  BackendDAE.Variables vars;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars) := syst;
-  num := BackendVariable.varsSize(vars);
-  nonEmpty := num <> 0;
+  nonEmpty := BackendVariable.varsSize(syst.orderedVars) <> 0 or BackendDAEUtil.equationArraySize(syst.removedEqs) <> 0;
 end nonEmptySystem;
 
 public function filterEmptySystems
@@ -8182,7 +8186,7 @@ protected
   list<BackendDAE.Equation> eqsLst;
 algorithm
   eqsLst := List.fold(inSysts, collapseRemovedEqs1, {});
-  outEqns := BackendEquation.listEquation(eqsLst);
+  outEqns := BackendEquation.listEquation(listReverse(eqsLst));
 end collapseRemovedEqs;
 
 protected function collapseRemovedEqs1
