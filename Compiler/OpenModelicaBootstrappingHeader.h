@@ -2200,7 +2200,7 @@ static void *Absyn__EACH = MMC_REFSTRUCTLIT(Absyn__EACH__struct);
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_ElementAttributes_ATTR__desc_added
 #define Absyn_ElementAttributes_ATTR__desc_added
-ADD_METARECORD_DEFINITIONS const char* Absyn_ElementAttributes_ATTR__desc__fields[6] = {"flowPrefix","streamPrefix","parallelism","variability","direction","arrayDim"};
+ADD_METARECORD_DEFINITIONS const char* Absyn_ElementAttributes_ATTR__desc__fields[7] = {"flowPrefix","streamPrefix","parallelism","variability","direction","isField","arrayDim"};
 ADD_METARECORD_DEFINITIONS struct record_description Absyn_ElementAttributes_ATTR__desc = {
   "Absyn_ElementAttributes_ATTR",
   "Absyn.ElementAttributes.ATTR",
@@ -2210,8 +2210,40 @@ ADD_METARECORD_DEFINITIONS struct record_description Absyn_ElementAttributes_ATT
 #else /* Only use the file as a header */
 extern struct record_description Absyn_ElementAttributes_ATTR__desc;
 #endif
-#define Absyn__ATTR_3dBOX6 3
-#define Absyn__ATTR(flowPrefix,streamPrefix,parallelism,variability,direction,arrayDim) (mmc_mk_box7(3,&Absyn_ElementAttributes_ATTR__desc,flowPrefix,streamPrefix,parallelism,variability,direction,arrayDim))
+#define Absyn__ATTR_3dBOX7 3
+#define Absyn__ATTR(flowPrefix,streamPrefix,parallelism,variability,direction,isField,arrayDim) (mmc_mk_box8(3,&Absyn_ElementAttributes_ATTR__desc,flowPrefix,streamPrefix,parallelism,variability,direction,isField,arrayDim))
+#ifdef ADD_METARECORD_DEFINITIONS
+#ifndef Absyn_IsField_FIELD__desc_added
+#define Absyn_IsField_FIELD__desc_added
+ADD_METARECORD_DEFINITIONS const char* Absyn_IsField_FIELD__desc__fields[1] = {"no fields"};
+ADD_METARECORD_DEFINITIONS struct record_description Absyn_IsField_FIELD__desc = {
+  "Absyn_IsField_FIELD",
+  "Absyn.IsField.FIELD",
+  Absyn_IsField_FIELD__desc__fields
+};
+#endif
+#else /* Only use the file as a header */
+extern struct record_description Absyn_IsField_FIELD__desc;
+#endif
+#define Absyn__FIELD_3dBOX0 4
+static const MMC_DEFSTRUCTLIT(Absyn__FIELD__struct,1,4) {&Absyn_IsField_FIELD__desc}};
+static void *Absyn__FIELD = MMC_REFSTRUCTLIT(Absyn__FIELD__struct);
+#ifdef ADD_METARECORD_DEFINITIONS
+#ifndef Absyn_IsField_NONFIELD__desc_added
+#define Absyn_IsField_NONFIELD__desc_added
+ADD_METARECORD_DEFINITIONS const char* Absyn_IsField_NONFIELD__desc__fields[1] = {"no fields"};
+ADD_METARECORD_DEFINITIONS struct record_description Absyn_IsField_NONFIELD__desc = {
+  "Absyn_IsField_NONFIELD",
+  "Absyn.IsField.NONFIELD",
+  Absyn_IsField_NONFIELD__desc__fields
+};
+#endif
+#else /* Only use the file as a header */
+extern struct record_description Absyn_IsField_NONFIELD__desc;
+#endif
+#define Absyn__NONFIELD_3dBOX0 3
+static const MMC_DEFSTRUCTLIT(Absyn__NONFIELD__struct,1,3) {&Absyn_IsField_NONFIELD__desc}};
+static void *Absyn__NONFIELD = MMC_REFSTRUCTLIT(Absyn__NONFIELD__struct);
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_Parallelism_NON__PARALLEL__desc_added
 #define Absyn_Parallelism_NON__PARALLEL__desc_added
