@@ -163,7 +163,6 @@ public function createSimCode "entry point to create SimCode from BackendDAE."
 protected
   BackendDAE.BackendDAE dlow;
   BackendDAE.BackendDAE initDAE;
-  BackendDAE.EqSystems systs;
   BackendDAE.EquationArray removedEqs;
   BackendDAE.Shared shared;
   BackendDAE.SymbolicJacobians symJacs;
@@ -215,6 +214,7 @@ protected
   list<list<SimCode.SimEqSystem>> odeEquations;         // --> functionODE
   list<tuple<Integer, tuple<DAE.Exp, DAE.Exp, DAE.Exp>>> delayedExps;
   list<tuple<Integer,Integer>> equationSccMapping, eqBackendSimCodeMapping;
+  BackendDAE.EventInfo eventInfo;
 algorithm
   try
     dlow := inBackendDAE;
@@ -227,7 +227,6 @@ algorithm
       // prepare the equations
       dlow := BackendDAEUtil.mapEqSystem(dlow, Vectorization.prepareVectorizedDAE0);
     end if;
-
 
     backendMapping := setUpBackendMapping(inBackendDAE);
     if Flags.isSet(Flags.VISUAL_XML) then
@@ -258,19 +257,20 @@ algorithm
     dlow := BackendDAEOptimize.addInitialStmtsToAlgorithms(dlow);
 
     BackendDAE.DAE(shared=shared as BackendDAE.SHARED(knownVars=knownVars,
-                                                      removedEqs=removedEqs,
                                                       constraints=constraints,
                                                       classAttrs=classAttributes,
                                                       symjacs=symJacs,
                                                       partitionsInfo=BackendDAE.PARTITIONS_INFO(baseClocks),
-                                                      eventInfo=BackendDAE.EVENT_INFO(timeEvents=timeEvents))) := dlow;
+                                                      eventInfo=eventInfo)) := dlow;
+      removedEqs := BackendDAEUtil.collapseRemovedEqs(dlow.eqs);
 
-    // created event suff e.g. zeroCrossings, samples, ...
-    whenClauses := createSimWhenClauses(dlow);
-    zeroCrossings := if ifcpp then FindZeroCrossings.getRelations(dlow) else FindZeroCrossings.getZeroCrossings(dlow);
-    relations := FindZeroCrossings.getRelations(dlow);
-    sampleZC := FindZeroCrossings.getSamples(dlow);
-    zeroCrossings := if ifcpp then listAppend(zeroCrossings, sampleZC) else zeroCrossings;
+ // created event suff e.g. zeroCrossings, samples, ...
+      timeEvents := eventInfo.timeEvents;
+      whenClauses := createSimWhenClauses(dlow);
+      zeroCrossings := if ifcpp then eventInfo.relationsLst else eventInfo.zeroCrossingLst;
+      relations := eventInfo.relationsLst;
+      sampleZC := eventInfo.sampleLst;
+      zeroCrossings := if ifcpp then listAppend(zeroCrossings, sampleZC) else zeroCrossings;
 
     // equation generation for euler, dassl2, rungekutta
     ( uniqueEqIndex, odeEquations, algebraicEquations, allEquations, equationsForZeroCrossings, tempvars,
@@ -1317,8 +1317,9 @@ algorithm
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings, uniqueEqIndex, tempvars, tmpEqSccMapping, tmpEqBackendSimCodeMapping, tmpBackendMapping);
 
     // A single array equation
-    case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns),
-          BackendDAE.SHARED(info = ei), BackendDAE.SINGLEARRAY(eqn=e), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings)
+    case ( _, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns),
+           BackendDAE.SHARED(info = ei), BackendDAE.SINGLEARRAY(eqn=e), _, _, _, _, _, _, odeEquations,
+           algebraicEquations, allEquations, equationsforZeroCrossings )
       equation
         // block is dynamic, belong in dynamic section
         bdynamic = BackendDAEUtil.blockIsDynamic({e}, stateeqnsmark);
@@ -1342,7 +1343,8 @@ algorithm
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings, uniqueEqIndex, tempvars, tmpEqSccMapping, tmpEqBackendSimCodeMapping, tmpBackendMapping);
 
     // A single algorithm section for several variables.
-    case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, BackendDAE.SINGLEALGORITHM(eqn=e), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings)
+    case ( _, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, BackendDAE.SINGLEALGORITHM(eqn=e), _, _, _,
+           _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings )
       equation
         // block is dynamic, belong in dynamic section
         bdynamic = BackendDAEUtil.blockIsDynamic({e}, stateeqnsmark);
@@ -1365,7 +1367,8 @@ algorithm
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings, uniqueEqIndex, itempvars, tmpEqSccMapping, tmpEqBackendSimCodeMapping, tmpBackendMapping);
 
     // A single complex equation
-    case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), BackendDAE.SHARED(info = ei), BackendDAE.SINGLECOMPLEXEQUATION(eqn=e), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings)
+    case ( _, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), BackendDAE.SHARED(info = ei),
+           BackendDAE.SINGLECOMPLEXEQUATION(eqn=e), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings )
       equation
         // block is dynamic, belong in dynamic section
         bdynamic = BackendDAEUtil.blockIsDynamic({e}, stateeqnsmark);
@@ -1389,7 +1392,8 @@ algorithm
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings, uniqueEqIndex, tempvars, tmpEqSccMapping, tmpEqBackendSimCodeMapping, tmpBackendMapping);
 
     // A single when equation
-    case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, BackendDAE.SINGLEWHENEQUATION(eqn=e), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings)
+    case ( _, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns),
+           _, BackendDAE.SINGLEWHENEQUATION(eqn=e), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings )
       equation
         // block is dynamic, belong in dynamic section
         _ = BackendDAEUtil.blockIsDynamic({e}, stateeqnsmark);
@@ -1410,7 +1414,8 @@ algorithm
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings, uniqueEqIndex, tempvars, tmpEqSccMapping, tmpEqBackendSimCodeMapping, tmpBackendMapping);
 
     // A single if equation
-    case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, BackendDAE.SINGLEIFEQUATION(eqn=e), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings)
+    case ( _, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, BackendDAE.SINGLEIFEQUATION(eqn=e), _, _, _, _, _, _,
+           odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings )
       equation
         // block is dynamic, belong in dynamic section
         bdynamic = BackendDAEUtil.blockIsDynamic({e}, stateeqnsmark);
@@ -1434,7 +1439,8 @@ algorithm
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings, uniqueEqIndex, tempvars, tmpEqSccMapping, tmpEqBackendSimCodeMapping, tmpBackendMapping);
 
     // EQUATIONSYSTEM size 1 -> single equation
-    case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, (BackendDAE.EQUATIONSYSTEM(eqns={index}, vars={vindex})), _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings)
+    case ( _, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, (BackendDAE.EQUATIONSYSTEM(eqns={index}, vars={vindex})),
+           _, _, _, _, _, _, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings )
       equation
         eqn = BackendEquation.equationNth1(eqns, index);
         // ignore when equations if we should not generate them
@@ -5191,11 +5197,13 @@ protected
   BackendDAE.Shared shared;
   BackendDAE.Variables knvars, aliasVars;
 algorithm
-  BackendDAE.DAE(systs, shared as BackendDAE.SHARED(knownVars=knvars, aliasVars=aliasVars, removedEqs=removedEqs)) := inInitDAE;
+  BackendDAE.DAE(systs, shared as BackendDAE.SHARED(knownVars=knvars, aliasVars=aliasVars)) := inInitDAE;
+  removedEqs := BackendDAEUtil.collapseRemovedEqs(systs);
   // generate equations from the known unfixed variables
   ((uniqueEqIndex, allEquations)) := BackendVariable.traverseBackendDAEVars(knvars, traverseKnVarsToSimEqSystem, (iuniqueEqIndex, {}));
   // generate equations from the solved systems
-  (uniqueEqIndex, _, _, solvedEquations, _, tempvars, _, _, _) := createEquationsForSystems(systs, shared, uniqueEqIndex, {}, {}, {}, {}, {}, itempvars, 0, {}, {}, SimCode.NO_MAPPING());
+  (uniqueEqIndex, _, _, solvedEquations, _, tempvars, _, _, _) :=
+      createEquationsForSystems(systs, shared, uniqueEqIndex, {}, {}, {}, {}, {}, itempvars, 0, {}, {}, SimCode.NO_MAPPING());
   allEquations := listAppend(allEquations, solvedEquations);
   // generate equations from the removed equations
   ((uniqueEqIndex, removedEquations)) := BackendEquation.traverseEquationArray(removedEqs, traversedlowEqToSimEqSystem, (uniqueEqIndex, {}));

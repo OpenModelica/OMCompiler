@@ -108,7 +108,7 @@ algorithm
 end printBackendDAE;
 
 public function printEqSystem "This function prints the BackendDAE.EqSystem representation to stdout."
-  input BackendDAE.EqSystem inEqSystem;
+  input BackendDAE.EqSystem inSyst;
 protected
   BackendDAE.Variables orderedVars;
   BackendDAE.EquationArray orderedEqs;
@@ -118,23 +118,16 @@ protected
   BackendDAE.StateSets stateSets;
   BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=orderedVars,
-                      orderedEqs=orderedEqs,
-                      m=m,
-                      mT=mT,
-                      matching=matching,
-                      stateSets=stateSets,
-                      partitionKind=partitionKind) := inEqSystem;
-
-  print("\n" + partitionKindString(partitionKind) + "\n" + UNDERLINE + "\n");
-  dumpVariables(orderedVars, "Variables");
-  dumpEquationArray(orderedEqs, "Equations");
-  dumpStateSets(stateSets, "State Sets");
-  dumpOption(m, dumpIncidenceMatrix);
-  dumpOption(mT, dumpIncidenceMatrixT);
+  print("\n" + partitionKindString(inSyst.partitionKind) + "\n" + UNDERLINE + "\n");
+  dumpVariables(inSyst.orderedVars, "Variables");
+  dumpEquationArray(inSyst.orderedEqs, "Equations");
+  dumpEquationArray(inSyst.removedEqs, "Simple Equations");
+  dumpStateSets(inSyst.stateSets, "State Sets");
+  dumpOption(inSyst.m, dumpIncidenceMatrix);
+  dumpOption(inSyst.mT, dumpIncidenceMatrixT);
 
   print("\n");
-  dumpFullMatching(matching);
+  dumpFullMatching(inSyst.matching);
   print("\n");
 end printEqSystem;
 
@@ -272,23 +265,21 @@ algorithm
                     externalObjects=externalObjects,
                     aliasVars=aliasVars,
                     initialEqs=initialEqs,
-                    removedEqs=removedEqs,
                     constraints=constraints,
                     eventInfo=BackendDAE.EVENT_INFO( timeEvents=timeEvents, relationsLst=relationsLst, zeroCrossingLst=zeroCrossingLst,
                                                      sampleLst=sampleLst, whenClauseLst=whenClauseLst ),
                     extObjClasses=extObjClasses,
                     backendDAEType=backendDAEType,
                     symjacs=symjacs) := inShared;
+
   print("\nBackendDAEType: ");
   printBackendDAEType(backendDAEType);
   print("\n\n");
-
 
   dumpVariables(knownVars, "Known Variables (constants)");
   dumpVariables(externalObjects, "External Objects");
   dumpExternalObjectClasses(extObjClasses, "Classes of External Objects");
   dumpVariables(aliasVars, "Alias Variables");
-  dumpEquationArray(removedEqs, "Simple Equations");
   dumpEquationArray(initialEqs, "Initial Equations");
   dumpZeroCrossingList(zeroCrossingLst, "Zero Crossings");
   dumpZeroCrossingList(relationsLst, "Relations");
@@ -595,7 +586,6 @@ algorithm
   printClocks(clocks);
   print("\n");
 end dumpClocks;
-
 
 public function dumpVariables "function dumpVariables"
   input BackendDAE.Variables inVars;
@@ -3309,7 +3299,8 @@ protected
   DumpCompShortTornTpl tornTpl;
   BackendDAE.BackendDAEType backendDAEType;
 algorithm
-  BackendDAE.DAE(systs, BackendDAE.SHARED(removedEqs=removedEqs, backendDAEType=backendDAEType)) := inDAE;
+  BackendDAE.DAE(systs, BackendDAE.SHARED(backendDAEType=backendDAEType)) := inDAE;
+  removedEqs := BackendDAEUtil.collapseRemovedEqs(systs);
   daeType := printBackendDAEType2String(backendDAEType);
 
   HS := HashSet.emptyHashSet();

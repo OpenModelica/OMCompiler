@@ -3541,10 +3541,9 @@ algorithm
     local
       BackendDAE.Variables knvars;
       BackendDAE.Variables aliasVars;
-      BackendDAE.EquationArray remeqns, inieqns, remeqns1;
+      BackendDAE.EquationArray inieqns;
       list<DAE.Constraint> constraintsLst;
       list<DAE.ClassAttributes> clsAttrsLst;
-      list<BackendDAE.WhenClause> whenClauseLst;
 
       BackendDAE.EqSystems systs, systs1;
       list<BackendDAE.Equation> eqnslst;
@@ -3555,8 +3554,7 @@ algorithm
 
     case (false, _) then inDAE;
     case (true, BackendDAE.DAE(systs, shared as BackendDAE.SHARED( knownVars=knvars, aliasVars=aliasVars, initialEqs=inieqns,
-                                                         removedEqs=remeqns, constraints=constraintsLst, classAttrs=clsAttrsLst,
-                                                         eventInfo=eventInfo as BackendDAE.EVENT_INFO(whenClauseLst=whenClauseLst) )))
+                                                                   constraints=constraintsLst, classAttrs=clsAttrsLst, eventInfo=eventInfo )))
       equation
         if Flags.isSet(Flags.DUMP_REPL) then
           BackendVarTransform.dumpReplacements(repl);
@@ -3573,13 +3571,8 @@ algorithm
         ((_, eqnslst, b1)) = BackendEquation.traverseEquationArray(inieqns, replaceEquationTraverser, (repl, {}, false));
         shared.initialEqs = if b1 then BackendEquation.listEquation(eqnslst) else inieqns;
 
-        ((_, eqnslst, b1)) = BackendEquation.traverseEquationArray(remeqns, replaceEquationTraverser, (repl, {}, false));
-        remeqns1 = if b1 then BackendEquation.listEquation(eqnslst) else remeqns;
-        // remove asserts with condition=true from removed equations
-        shared.removedEqs = BackendEquation.listEquation(List.select(BackendEquation.equationList(remeqns1), assertWithCondTrue));
-
         (eventInfo.whenClauseLst, _) =
-            BackendVarTransform.replaceWhenClauses(whenClauseLst, repl, SOME(BackendVarTransform.skipPreChangeEdgeOperator));
+            BackendVarTransform.replaceWhenClauses(eventInfo.whenClauseLst, repl, SOME(BackendVarTransform.skipPreChangeEdgeOperator));
         shared.eventInfo = eventInfo;
 
         (constraintsLst, clsAttrsLst) = replaceOptimicaExps(constraintsLst, clsAttrsLst, repl);
@@ -3705,16 +3698,21 @@ algorithm
       Option<BackendVarTransform.VariableReplacements> statesetrepl1;
 
     case ({}, _, _, _, _) then inSysts1;
-    case ((syst as BackendDAE.EQSYSTEM(orderedVars=v, orderedEqs=eqns, stateSets=stateSets))::rest, _, _, _, _)
+    case (syst::rest, _, _, _, _)
       algorithm
-        ((_, eqnslst, b)) := BackendEquation.traverseEquationArray(eqns, replaceEquationTraverser, (repl, {}, false));
-        (stateSets, b1, statesetrepl1) := removeAliasVarsStateSets(stateSets, statesetrepl, v, aliasVars, {}, false);
+        ((_, eqnslst, b)) := BackendEquation.traverseEquationArray(syst.orderedEqs, replaceEquationTraverser, (repl, {}, false));
+        (stateSets, b1, statesetrepl1) := removeAliasVarsStateSets(syst.stateSets, statesetrepl, syst.orderedVars, aliasVars, {}, false);
         if b or b1 then
           eqns := BackendEquation.listEquation(listReverse(eqnslst));
           syst.stateSets := stateSets;
           syst.orderedEqs := eqns;
           syst := BackendDAEUtil.clearEqSyst(syst);
         end if;
+
+        ((_, eqnslst, _)) := BackendEquation.traverseEquationArray(syst.removedEqs, replaceEquationTraverser, (repl, {}, false));
+        // remove asserts with condition=true from removed equations
+        eqnslst := List.select(eqnslst, assertWithCondTrue);
+        syst.removedEqs := BackendEquation.listEquation(eqnslst);
       then
         removeSimpleEquationsShared1(rest, syst::inSysts1, repl, statesetrepl1, aliasVars);
     end match;
@@ -4368,8 +4366,8 @@ algorithm
       Boolean b1;
       BackendVarTransform.VariableReplacements repl;
 
-    case ( syst as BackendDAE.EQSYSTEM(orderedVars=orderedVars, orderedEqs=orderedEqs),
-           shared as BackendDAE.SHARED( knownVars=knvars, aliasVars=aliasVars, initialEqs=inieqns, removedEqs=remeqns,
+    case ( syst as BackendDAE.EQSYSTEM(orderedVars=orderedVars, orderedEqs=orderedEqs, removedEqs=remeqns),
+           shared as BackendDAE.SHARED( knownVars=knvars, aliasVars=aliasVars, initialEqs=inieqns,
                                        eventInfo=eventInfo as BackendDAE.EVENT_INFO(whenClauseLst=whenClauseLst )) )
       equation
 
@@ -4452,6 +4450,7 @@ algorithm
       end if;
       //SimCodeUtil.execStat("FINDSIMPLE6: ");
 
+      syst.removedEqs = remeqns;
       syst.orderedVars = orderedVars;
       syst.orderedEqs = orderedEqs;
 
@@ -4460,7 +4459,6 @@ algorithm
       shared.knownVars = knvars;
       shared.aliasVars = aliasVars;
       shared.initialEqs = inieqns;
-      shared.removedEqs = remeqns;
 
     then (BackendDAEUtil.clearEqSyst(syst), shared);
     else (inSystem, inShared);
