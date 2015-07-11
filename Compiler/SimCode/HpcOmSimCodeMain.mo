@@ -80,343 +80,263 @@ public function createSimCode "function createSimCode
   input tuple<Integer, HashTableExpToIndex.HashTable, list<DAE.Exp>> literals;
   input Absyn.FunctionArgs args;
   output SimCode.SimCode simCode;
+protected
+  Option<BackendDAE.BackendDAE> initDAE;
+  Integer lastEqMappingIdx, highestSccIdx, graphOps, numProc;
+  list<tuple<Integer,Integer>> equationSccMapping;
+  BackendDAE.StrongComponents allComps;
+  array<Integer> simeqCompMapping; //Maps each simEq to the scc
+  HpcOmTaskGraph.TaskGraph taskGraph, taskGraphDae, taskGraphOde, taskGraphZeroFuncs,
+                           taskGraphOdeSimplified, taskGraphOdeScheduled;
+  HpcOmTaskGraph.TaskGraphMeta taskGraphData, taskGraphDataDae, taskGraphDataOde,
+                               taskGraphDataZeroFuncs, taskGraphDataOdeSimplified, taskGraphDataOdeScheduled;
+  array<list<Integer>> sccSimEqMapping, daeSccSimEqMapping; //Maps each scc to a list of simEqs
+  array<tuple<Integer, Integer, Real>> schedulerInfo; //maps each Task to <threadId, orderId, startCalcTime>
+  Boolean taskGraphMetaValid;
+  list<Integer> zeroFuncsSimEqIdc;
+  list<list<Integer>> criticalPaths, criticalPathsWoC;
+  Real cpCosts, cpCostsWoC, graphCosts;
+  String fileName, criticalPathInfo;
+  list<HpcOmSimCode.Task> scheduledTasksOde, scheduledTasksDae, scheduledTasksZeroFunc;
+  array<list<SimCodeVar.SimVar>> simVarMapping; //maps each backend variable to a list of simVars
+  HpcOmSimCode.Schedule scheduleOde, scheduleDae, scheduleZeroFunc;
+  Option<HpcOmSimCode.MemoryMap> optTmpMemoryMap;
+  HashTableCrIListArray.HashTable varToArrayIndexMapping;
+  HashTableCrILst.HashTable varToIndexMapping;
 algorithm
-  simCode := matchcontinue (inBackendDAE, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs, libPaths,simSettingsOpt, recordDecls, literals, args)
-    local
-      String fileDir, cname;
-      Integer lastEqMappingIdx, maxDelayedExpIndex, uniqueEqIndex, numberofEqns, numberOfInitialEquations, numberOfInitialAlgorithms, numStateSets;
-      Integer numberofLinearSys, numberofNonLinearSys, numberofMixedSys;
-      BackendDAE.BackendDAE dlow, dlow2;
-      Option<BackendDAE.BackendDAE> initDAE;
-      BackendDAE.IncidenceMatrix incidenceMatrix;
-      DAE.FunctionTree functionTree;
-      BackendDAE.SymbolicJacobians symJacs;
-      Absyn.Path class_;
+  try
+    //Initial System
+    //--------------
+    //(initDAE, _, _) := Initialization.solveInitialSystem(inBackendDAE);
+    //createAndExportInitialSystemTaskGraph(initDAE, filenamePrefix);
 
-      // new variables
-      SimCode.ModelInfo modelInfo;
-      list<SimCode.SimEqSystem> allEquations;
-      list<list<SimCode.SimEqSystem>> odeEquations;         // --> functionODE
-      list<list<SimCode.SimEqSystem>> algebraicEquations;   // --> functionAlgebraics
-      list<SimCode.SimEqSystem> residuals;                  // --> initial_residual
-      Boolean useHomotopy;                                  // true if homotopy(...) is used during initialization
-      list<SimCode.SimEqSystem> initialEquations;           // --> initial_equations
-      list<SimCode.SimEqSystem> removedInitialEquations;    // --> functionRemovedInitialEquations
-      list<SimCode.SimEqSystem> startValueEquations;        // --> updateBoundStartValues
-      list<SimCode.SimEqSystem> nominalValueEquations;      // --> updateBoundNominalValues
-      list<SimCode.SimEqSystem> minValueEquations;          // --> updateBoundMinValues
-      list<SimCode.SimEqSystem> maxValueEquations;          // --> updateBoundMaxValues
-      list<SimCode.SimEqSystem> parameterEquations;         // --> updateBoundParameters
-      list<SimCode.SimEqSystem> removedEquations;
-      list<SimCode.SimEqSystem> algorithmAndEquationAsserts;
-      list<SimCode.SimEqSystem> jacobianEquations;
-      list<SimCode.SimEqSystem> zeroCrossingsEquations;
-      //list<DAE.Statement> algorithmAndEquationAsserts;
-      list<DAE.Constraint> constraints;
-      list<DAE.ClassAttributes> classAttributes;
-      list<BackendDAE.ZeroCrossing> zeroCrossings, sampleZC, relations;
-      list<SimCode.SimWhenClause> whenClauses;
-      list<DAE.ComponentRef> discreteModelVars;
-      SimCode.ExtObjInfo extObjInfo;
-      SimCode.MakefileParams makefileParams;
-      SimCode.DelayedExpression delayedExps;
-      BackendDAE.Variables knownVars;
-      list<BackendDAE.Var> varlst;
-      list<BackendDAE.BaseClockPartitionKind> partitionsKind;
-      list<DAE.ClockKind> baseClocks;
+    //Setup
+    System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_HPCOM_MODULES);
 
-      list<SimCode.JacobianMatrix> LinearMatrices, SymbolicJacs, SymbolicJacsTemp, SymbolicJacsStateSelect;
-      SimCode.HashTableCrefToSimVar crefToSimVarHT;
-      Boolean ifcpp;
-      BackendDAE.EqSystems eqs;
-      BackendDAE.Shared shared;
-      BackendDAE.EquationArray removedEqs;
-      list<DAE.Constraint> constrsarr;
-      list<DAE.ClassAttributes> clsattrsarra;
+    (simCode,(lastEqMappingIdx,equationSccMapping)) :=
+        SimCodeUtil.createSimCode( inBackendDAE, inClassName, filenamePrefix, inString11, functions,
+                                   externalFunctionIncludes, includeDirs, libs,libPaths, simSettingsOpt,
+                                   recordDecls, literals, args );
+    //print("Number of literals pre: " + intString(listLength(simCode.literals)) + "\n");
+    //print("Number of zero crossings: " + intString(listLength(simCode.zeroCrossings)) + "\n");
 
-      list<DAE.Exp> lits;
-      list<SimCodeVar.SimVar> tempvars;
+    SOME(SimCode.BACKENDMAPPING(simVarMapping=simVarMapping)) := simCode.backendMapping;
 
-      SimCode.JacobianMatrix jacG;
-      Integer highestSccIdx, compCountPlusDummy;
-      Option<BackendDAE.BackendDAE> inlineDAE;
-      list<SimCode.StateSet> stateSets;
-      array<Integer> systemIndexMap;
-      list<tuple<Integer,Integer>> equationSccMapping, equationSccMapping1; //Maps each simEq to the scc
-      array<list<Integer>> sccSimEqMapping, daeSccSimEqMapping; //Maps each scc to a list of simEqs
-      array<Integer> simeqCompMapping; //Maps each simEq to the scc
-      list<BackendDAE.TimeEvent> timeEvents;
-      BackendDAE.StrongComponents allComps, initComps;
+    //get SCC to simEqSys-mappping
+    (allComps, _) := HpcOmTaskGraph.getSystemComponents(inBackendDAE);
+    //print("All components size: " + intString(listLength(allComps)) + "\n");
+    highestSccIdx := findHighestSccIdxInMapping(equationSccMapping, -1);
+    //the mapping can contain a dummy state as first scc
+    equationSccMapping := if intEq(highestSccIdx, listLength(allComps) + 1)
+                          then removeDummyStateFromMapping(equationSccMapping)
+                          else equationSccMapping;
+    sccSimEqMapping := convertToSccSimEqMapping(equationSccMapping, listLength(allComps));
 
-      HpcOmTaskGraph.TaskGraph taskGraph, taskGraphDae, taskGraphOde, taskGraphZeroFuncs, taskGraphOdeSimplified, taskGraphDaeSimplified, taskGraphZeroFuncSimplified, taskGraphOdeScheduled, taskGraphDaeScheduled, taskGraphZeroFuncScheduled, taskGraphInit;
-      HpcOmTaskGraph.TaskGraphMeta taskGraphData, taskGraphDataDae, taskGraphDataOde, taskGraphDataZeroFuncs, taskGraphDataOdeSimplified, taskGraphDataDaeSimplified, taskGraphDataZeroFuncSimplified, taskGraphDataOdeScheduled, taskGraphDataDaeScheduled, taskGraphDataZeroFuncScheduled, taskGraphDataInit;
-      String fileName, fileNamePrefix;
-      Integer numProc;
-      list<list<Integer>> parallelSets;
-      list<list<Integer>> criticalPaths, criticalPathsWoC;
-      Real cpCosts, cpCostsWoC, serTime, parTime, speedUp, speedUpMax;
-      list<HpcOmSimCode.Task> scheduledTasksOde, scheduledTasksDae, scheduledTasksZeroFunc;
-      list<Integer> scheduledDAENodes;
-      list<Integer> zeroFuncsSimEqIdc;
+    simeqCompMapping := convertToSimeqCompMapping(equationSccMapping, lastEqMappingIdx);
+    getSimEqIdxSimEqMapping(simCode.allEquations, arrayLength(simeqCompMapping));
 
-      //Additional informations to append SimCode
-      list<DAE.Exp> simCodeLiterals;
-      list<SimCode.JacobianMatrix> jacobianMatrixes;
-      Option<SimCode.SimulationSettings> simulationSettingsOpt;
-      list<SimCode.RecordDeclaration> simCodeRecordDecls;
-      list<String> simCodeExternalFunctionIncludes;
+    //dumpSimEqSCCMapping(simeqCompMapping);
+    //dumpSccSimEqMapping(sccSimEqMapping);
+    SimCodeFunctionUtil.execStat("hpcom setup");
 
-      Boolean taskGraphMetaValid, numFixed;
-      String criticalPathInfo;
-      array<tuple<Integer,Integer,Real>> schedulerInfo; //maps each Task to <threadId, orderId, startCalcTime>
-      HpcOmSimCode.Schedule scheduleOde, scheduleDae, scheduleZeroFunc;
-      array<tuple<Integer,Integer,Integer>> eqCompMapping, varCompMapping;
-      Real graphCosts;
-      Integer graphOps;
-      Option<SimCode.BackendMapping> backendMapping;
-      Option<HpcOmSimCode.MemoryMap> optTmpMemoryMap;
-      list<SimCode.SimEqSystem> equationsForConditions;
-      array<Option<SimCode.SimEqSystem>> simEqIdxSimEqMapping;
+    //Get small DAE System (without removed equations)
+    (taskGraph, taskGraphData) := HpcOmTaskGraph.createTaskGraph(inBackendDAE);
 
-      array<list<SimCodeVar.SimVar>> simVarMapping; //maps each backend variable to a list of simVars
-      Option<SimCode.FmiModelStructure> modelStruct;
-      list<SimCodeVar.SimVar> mixedArrayVars;
-      HpcOmSimCode.HpcOmData hpcomData;
-      HashTableCrIListArray.HashTable varToArrayIndexMapping;
-      HashTableCrILst.HashTable varToIndexMapping;
-    case (BackendDAE.DAE(eqs=eqs), _, _, _, _,_, _, _, _, _, _, _, _) equation
-      //Initial System
-      //--------------
-      //(initDAE, _, _) = Initialization.solveInitialSystem(inBackendDAE);
-      //removedInitialEquations = {};
-      //createAndExportInitialSystemTaskGraph(initDAE, filenamePrefix);
+    //Get complete DAE System
+    //HpcOmTaskGraph.printTaskGraph(taskGraph);
+    //HpcOmTaskGraph.printTaskGraphMeta(taskGraphData);
 
-      //Setup
-      //-----
-      System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_HPCOM_MODULES);
-      (simCode,(lastEqMappingIdx,equationSccMapping)) =
-          SimCodeUtil.createSimCode( inBackendDAE, inClassName, filenamePrefix, inString11, functions,
-                                     externalFunctionIncludes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args );
-      SimCode.SIMCODE( modelInfo, simCodeLiterals, simCodeRecordDecls, simCodeExternalFunctionIncludes, allEquations, odeEquations, algebraicEquations,
-                       partitionsKind, baseClocks, useHomotopy, initialEquations, removedInitialEquations, startValueEquations,
-                       nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
-                       zeroCrossingsEquations, jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses,
-                       discreteModelVars, extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, _,
-                       varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping ) = simCode;
+    taskGraphDae := arrayCopy(taskGraph);
+    taskGraphDataDae := HpcOmTaskGraph.copyTaskGraphMeta(taskGraphData);
+    (taskGraphDae, taskGraphDataDae) := HpcOmTaskGraph.appendRemovedEquations(inBackendDAE, taskGraphDae, taskGraphDataDae);
 
-      //print("Number of literals pre: " + intString(listLength(simCodeLiterals)) + "\n");
-      //print("Number of zero crossings: " + intString(listLength(zeroCrossings)) + "\n");
+    daeSccSimEqMapping := listArray(List.map(SimCodeUtil.getRemovedEquationSimEqSysIdxes(simCode), List.create));
+    daeSccSimEqMapping := arrayAppend(sccSimEqMapping, daeSccSimEqMapping);
+    schedulerInfo := arrayCreate(arrayLength(taskGraphDae), (-1, -1, -1.0));
+    SimCodeUtil.execStat("hpcom create DAE TaskGraph");
 
-      SOME(SimCode.BACKENDMAPPING(simVarMapping=simVarMapping)) = backendMapping;
+    checkTaskGraphMetaConsistency(taskGraphDae, taskGraphDataDae, "DAE system");
+    SimCodeUtil.execStat("hpcom validate DAE TaskGraph");
 
-      //get SCC to simEqSys-mappping
-      //----------------------------
-      (allComps,_) = HpcOmTaskGraph.getSystemComponents(inBackendDAE);
-      //print("All components size: " + intString(listLength(allComps)) + "\n");
-      highestSccIdx = findHighestSccIdxInMapping(equationSccMapping,-1);
-      compCountPlusDummy = listLength(allComps)+1;
-      equationSccMapping1 = removeDummyStateFromMapping(equationSccMapping);
-      //the mapping can contain a dummy state as first scc
-      equationSccMapping = if intEq(highestSccIdx, compCountPlusDummy) then equationSccMapping1 else equationSccMapping;
-      sccSimEqMapping = convertToSccSimEqMapping(equationSccMapping, listLength(allComps));
+    //Create Costs
+    taskGraphDataDae := HpcOmTaskGraph.createCosts( inBackendDAE, filenamePrefix + "_eqs_prof",
+                                                    simeqCompMapping, taskGraphDataDae );
+    taskGraphData := HpcOmTaskGraph.copyCosts(taskGraphDataDae, taskGraphData);
+    SimCodeUtil.execStat("hpcom create costs");
+    //print cost estimation infos
+    //outputTimeBenchmark(taskGraphData, inBackendDAE);
 
-      simeqCompMapping = convertToSimeqCompMapping(equationSccMapping, lastEqMappingIdx);
-      _ = getSimEqIdxSimEqMapping(allEquations, arrayLength(simeqCompMapping));
+    //Get ODE System
+    taskGraphOde := arrayCopy(taskGraph);
+    taskGraphDataOde := HpcOmTaskGraph.copyTaskGraphMeta(taskGraphData);
+    (taskGraphOde, taskGraphDataOde) := HpcOmTaskGraph.getOdeSystem(taskGraphOde, taskGraphDataOde, inBackendDAE);
+    SimCodeFunctionUtil.execStat("hpcom create ODE TaskGraph");
 
-      //dumpSimEqSCCMapping(simeqCompMapping);
-      //dumpSccSimEqMapping(sccSimEqMapping);
-      SimCodeFunctionUtil.execStat("hpcom setup");
+    taskGraphMetaValid := HpcOmTaskGraph.validateTaskGraphMeta(taskGraphDataOde, inBackendDAE);
+    if boolNot(taskGraphMetaValid) then
+      print("TaskgraphMeta ODE invalid\n");
+    end if;
+    SimCodeUtil.execStat("hpcom validate ODE TaskGraph");
 
-      //Get small DAE System (without removed equations)
-      //------------------------------------------------
-      (taskGraph,taskGraphData) = HpcOmTaskGraph.createTaskGraph(inBackendDAE);
+    //print("ODE Task Graph Informations\n");
+    //HpcOmTaskGraph.printTaskGraph(taskGraphOde);
+    //HpcOmTaskGraph.printTaskGraphMeta(taskGraphDataOde);
 
-      //Get complete DAE System
-      //-----------------------
-      //HpcOmTaskGraph.printTaskGraph(taskGraph);
-      //HpcOmTaskGraph.printTaskGraphMeta(taskGraphData);
+    //Mark all ODE nodes in the DAE Task Graph
+    taskGraphDataDae := HpcOmTaskGraph.markSystemComponents(taskGraphOde, taskGraphDataOde, (false, true, false), taskGraphDataDae);
 
-      taskGraphDae = arrayCopy(taskGraph);
-      taskGraphDataDae = HpcOmTaskGraph.copyTaskGraphMeta(taskGraphData);
-      (taskGraphDae,taskGraphDataDae) = HpcOmTaskGraph.appendRemovedEquations(inBackendDAE,taskGraphDae,taskGraphDataDae);
+    //Get Zero Funcs System
+    taskGraphZeroFuncs := arrayCopy(taskGraphDae);
+    taskGraphDataZeroFuncs := HpcOmTaskGraph.copyTaskGraphMeta(taskGraphDataDae);
+    zeroFuncsSimEqIdc := List.map(simCode.equationsForZeroCrossings, SimCodeUtil.simEqSystemIndex);
+    (taskGraphZeroFuncs, taskGraphDataZeroFuncs) :=
+        HpcOmTaskGraph.getZeroFuncsSystem( taskGraphZeroFuncs,taskGraphDataZeroFuncs, inBackendDAE,
+                                           arrayLength(daeSccSimEqMapping), zeroFuncsSimEqIdc, simeqCompMapping );
 
-      daeSccSimEqMapping = listArray(List.map(SimCodeUtil.getRemovedEquationSimEqSysIdxes(simCode),List.create));
-      daeSccSimEqMapping = arrayAppend(sccSimEqMapping,daeSccSimEqMapping);
-      schedulerInfo = arrayCreate(arrayLength(taskGraphDae), (-1,-1,-1.0));
-      SimCodeUtil.execStat("hpcom create DAE TaskGraph");
+    fileName := ("taskGraph" + filenamePrefix + "_ZeroFuncs.graphml");
+    schedulerInfo := arrayCreate(arrayLength(taskGraphZeroFuncs), (-1, -1, -1.0));
+    HpcOmTaskGraph.dumpAsGraphMLSccLevel( taskGraphZeroFuncs, taskGraphDataZeroFuncs, fileName, "", {}, {}, daeSccSimEqMapping,
+                                          schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false, false, true, true) );
+    SimCodeUtil.execStat("hpcom create and dump zeroFuncs TaskGraph");
 
-      _ = checkTaskGraphMetaConsistency(taskGraphDae, taskGraphDataDae, "DAE system");
-      SimCodeUtil.execStat("hpcom validate DAE TaskGraph");
+    //Mark all event nodes in the DAE Task Graph
+    taskGraphDataDae := HpcOmTaskGraph.markSystemComponents( taskGraphZeroFuncs, taskGraphDataZeroFuncs,
+                                                             (true, false, false), taskGraphDataDae );
 
-      //Create Costs
-      //------------
-      taskGraphDataDae = HpcOmTaskGraph.createCosts(inBackendDAE, filenamePrefix + "_eqs_prof" , simeqCompMapping, taskGraphDataDae);
-      taskGraphData = HpcOmTaskGraph.copyCosts(taskGraphDataDae, taskGraphData);
-      SimCodeUtil.execStat("hpcom create costs");
-      //print cost estimation infos
-      //outputTimeBenchmark(taskGraphData,inBackendDAE);
+    checkTaskGraphMetaConsistency(taskGraphZeroFuncs, taskGraphDataZeroFuncs, "ZeroFunc system");
+    checkEquationCount(taskGraphDataZeroFuncs, "ZeroFunc system", listLength(zeroFuncsSimEqIdc), sccSimEqMapping);
 
-      //Get ODE System
-      //--------------
-      taskGraphOde = arrayCopy(taskGraph);
-      taskGraphDataOde = HpcOmTaskGraph.copyTaskGraphMeta(taskGraphData);
-      (taskGraphOde,taskGraphDataOde) = HpcOmTaskGraph.getOdeSystem(taskGraphOde,taskGraphDataOde,inBackendDAE);
-      SimCodeFunctionUtil.execStat("hpcom create ODE TaskGraph");
+    //Dump DAE Task Graph
+    //print("DAE\n");
+    //HpcOmTaskGraph.printTaskGraph(taskGraphDae);
+    //HpcOmTaskGraph.printTaskGraphMeta(taskGraphDataDae);
 
-      taskGraphMetaValid = HpcOmTaskGraph.validateTaskGraphMeta(taskGraphDataOde, inBackendDAE);
-      if boolNot(taskGraphMetaValid) then
-        print("TaskgraphMeta ODE invalid\n");
-      end if;
-      SimCodeUtil.execStat("hpcom validate ODE TaskGraph");
+    fileName := ("taskGraph" + filenamePrefix + "DAE.graphml");
+    schedulerInfo := arrayCreate(arrayLength(taskGraphDae), (-1, -1, -1.0));
+    HpcOmTaskGraph.dumpAsGraphMLSccLevel( taskGraphDae, taskGraphDataDae, fileName, "", {}, {}, daeSccSimEqMapping,
+                                          schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false, false, true, true) );
+    SimCodeUtil.execStat("hpcom dump DAE TaskGraph");
 
-      //print("ODE Task Graph Informations\n");
-      //HpcOmTaskGraph.printTaskGraph(taskGraphOde);
-      //HpcOmTaskGraph.printTaskGraphMeta(taskGraphDataOde);
+    //Get critical path
+    ((criticalPaths, cpCosts), (criticalPathsWoC, cpCostsWoC)) := HpcOmTaskGraph.getCriticalPaths(taskGraphOde, taskGraphDataOde);
+    criticalPathInfo := HpcOmTaskGraph.dumpCriticalPathInfo((criticalPaths, cpCosts), (criticalPathsWoC, cpCostsWoC));
+    (graphOps, graphCosts) := HpcOmTaskGraph.sumUpExeCosts(taskGraphOde, taskGraphDataOde);
+    graphCosts := HpcOmTaskGraph.roundReal(graphCosts, 2);
+    criticalPathInfo := criticalPathInfo + " sum: (" + realString(graphCosts) + " ; " + intString(graphOps) + ")";
+    fileName := ("taskGraph" + filenamePrefix + "ODE.graphml");
+    schedulerInfo := arrayCreate(arrayLength(taskGraphOde), (-1,-1,-1.0));
+    SimCodeUtil.execStat("hpcom assign levels / get crit. path");
+    HpcOmTaskGraph.dumpAsGraphMLSccLevel( taskGraphOde, taskGraphDataOde, fileName, criticalPathInfo,
+                                          HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)),
+                                          HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)),
+                                          sccSimEqMapping, schedulerInfo,
+                                          HpcOmTaskGraph.GRAPHDUMPOPTIONS(true, false, true, true) );
+    SimCodeUtil.execStat("hpcom dump ODE TaskGraph");
 
-      //Mark all ODE nodes in the DAE Task Graph
-      taskGraphDataDae = HpcOmTaskGraph.markSystemComponents(taskGraphOde, taskGraphDataOde, (false, true, false), taskGraphDataDae);
+    if Flags.isSet(Flags.HPCOM_DUMP) then
+      print("Critical Path successfully calculated\n");
+    end if;
 
-      //Get Zero Funcs System
-      //---------------------
-      taskGraphZeroFuncs = arrayCopy(taskGraphDae);
-      taskGraphDataZeroFuncs = HpcOmTaskGraph.copyTaskGraphMeta(taskGraphDataDae);
-      zeroFuncsSimEqIdc = List.map(zeroCrossingsEquations, SimCodeUtil.simEqSystemIndex);
-      (taskGraphZeroFuncs,taskGraphDataZeroFuncs) = HpcOmTaskGraph.getZeroFuncsSystem(taskGraphZeroFuncs,taskGraphDataZeroFuncs, inBackendDAE, arrayLength(daeSccSimEqMapping), zeroFuncsSimEqIdc, simeqCompMapping);
+    // Analyse Systems of Equations
+    scheduledTasksDae := {};
+    (scheduledTasksOde, _) := HpcOmEqSystems.parallelizeTornSystems( taskGraphOde, taskGraphDataOde, sccSimEqMapping,
+                                                                     simVarMapping,inBackendDAE );
+    scheduledTasksZeroFunc := {};
 
-      fileName = ("taskGraph"+filenamePrefix+"_ZeroFuncs.graphml");
-      schedulerInfo = arrayCreate(arrayLength(taskGraphZeroFuncs), (-1,-1,-1.0));
-      HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphZeroFuncs, taskGraphDataZeroFuncs, fileName, "", {}, {}, daeSccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,true,true));
-      SimCodeUtil.execStat("hpcom create and dump zeroFuncs TaskGraph");
+    //Apply filters
+    (taskGraphDae, taskGraphDataDae) := applyGRS(taskGraphDae, taskGraphDataDae);
+    (taskGraphOdeSimplified, taskGraphDataOdeSimplified) := applyGRS(taskGraphOde, taskGraphDataOde);
+    (taskGraphZeroFuncs, taskGraphDataZeroFuncs) := applyGRS(taskGraphZeroFuncs, taskGraphDataZeroFuncs);
+    SimCodeUtil.execStat("hpcom GRS");
 
-      //Mark all event nodes in the DAE Task Graph
-      taskGraphDataDae = HpcOmTaskGraph.markSystemComponents(taskGraphZeroFuncs, taskGraphDataZeroFuncs, (true, false, false), taskGraphDataDae);
+    fileName := ("taskGraph" + filenamePrefix + "ODE_merged.graphml");
+    HpcOmTaskGraph.dumpAsGraphMLSccLevel( taskGraphOdeSimplified, taskGraphDataOdeSimplified, fileName, criticalPathInfo,
+                                          HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)),
+                                          HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)),
+                                          sccSimEqMapping, schedulerInfo,
+                                          HpcOmTaskGraph.GRAPHDUMPOPTIONS(true, false, true, true) );
+    SimCodeUtil.execStat("hpcom dump simplified TaskGraph");
 
-      _ = checkTaskGraphMetaConsistency(taskGraphZeroFuncs, taskGraphDataZeroFuncs, "ZeroFunc system");
-      _ = checkEquationCount(taskGraphDataZeroFuncs, "ZeroFunc system", listLength(zeroFuncsSimEqIdc), sccSimEqMapping);
+    if Flags.isSet(Flags.HPCOM_DUMP) then
+      print( "Filter successfully applied. Merged " +
+             intString(intSub(arrayLength(taskGraphOde),arrayLength(taskGraphOdeSimplified))) + " tasks.\n" );
+   end if;
 
-      //Dump DAE Task Graph
-      //-------------------
-      //print("DAE\n");
-      //HpcOmTaskGraph.printTaskGraph(taskGraphDae);
-      //HpcOmTaskGraph.printTaskGraphMeta(taskGraphDataDae);
+    //Create schedule
+    numProc := Flags.getConfigInt(Flags.NUM_PROC);
+    (numProc, _) := setNumProc(numProc, cpCostsWoC, taskGraphDataOde);//in case n-flag is not set
 
-      fileName = ("taskGraph"+filenamePrefix+"DAE.graphml");
-      schedulerInfo = arrayCreate(arrayLength(taskGraphDae), (-1,-1,-1.0));
-      HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphDae, taskGraphDataDae, fileName, "", {}, {}, daeSccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,true,true));
-      SimCodeUtil.execStat("hpcom dump DAE TaskGraph");
+    (scheduleDae, simCode, taskGraphDae, taskGraphDataDae, sccSimEqMapping) :=
+        createSchedule( taskGraphDae, taskGraphDataDae, daeSccSimEqMapping, simVarMapping,
+                        filenamePrefix, numProc, simCode, scheduledTasksDae, "DAE system",
+                        Flags.getConfigString(Flags.HPCOM_SCHEDULER) );
+    //criticalPathInfo := HpcOmScheduler.analyseScheduledTaskGraph(scheduleDae,numProc,taskGraphDae,taskGraphDataDae,"DAE system");
+    //schedulerInfo := HpcOmScheduler.convertScheduleStrucToInfo(scheduleDae,arrayLength(taskGraphDae));
+    //HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphDae, taskGraphDataDae, fileName+"_schedDAE.graphml", criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,false,false));
 
-      //Get critical path
-      //----------------------------------
-      ((criticalPaths,cpCosts),(criticalPathsWoC,cpCostsWoC)) = HpcOmTaskGraph.getCriticalPaths(taskGraphOde,taskGraphDataOde);
-      criticalPathInfo = HpcOmTaskGraph.dumpCriticalPathInfo((criticalPaths,cpCosts),(criticalPathsWoC,cpCostsWoC));
-      ((graphOps,graphCosts)) = HpcOmTaskGraph.sumUpExeCosts(taskGraphOde,taskGraphDataOde);
-      graphCosts = HpcOmTaskGraph.roundReal(graphCosts,2);
-      criticalPathInfo = criticalPathInfo + " sum: (" + realString(graphCosts) + " ; " + intString(graphOps) + ")";
-      fileName = ("taskGraph"+filenamePrefix+"ODE.graphml");
-      schedulerInfo = arrayCreate(arrayLength(taskGraphOde), (-1,-1,-1.0));
-      SimCodeUtil.execStat("hpcom assign levels / get crit. path");
-      HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphOde, taskGraphDataOde, fileName, criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(true,false,true,true));
-      SimCodeUtil.execStat("hpcom dump ODE TaskGraph");
+    (scheduleOde, simCode, taskGraphOdeScheduled, taskGraphDataOdeScheduled, sccSimEqMapping) :=
+        createSchedule( taskGraphOdeSimplified, taskGraphDataOdeSimplified, sccSimEqMapping, simVarMapping, filenamePrefix,
+                        numProc, simCode, scheduledTasksOde, "ODE system", Flags.getConfigString(Flags.HPCOM_SCHEDULER) );
+    //criticalPathInfo := HpcOmScheduler.analyseScheduledTaskGraph(scheduleOde,numProc,taskGraphOdeScheduled,taskGraphDataOdeScheduled,"DAE system");
+    //schedulerInfo := HpcOmScheduler.convertScheduleStrucToInfo(scheduleOde,arrayLength(taskGraphOdeScheduled));
+    //HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphOdeScheduled, taskGraphDataOdeScheduled, fileName+"_schedODE.graphml", criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,false,false));
 
-      if Flags.isSet(Flags.HPCOM_DUMP) then
-        print("Critical Path successfully calculated\n");
-      end if;
+    (scheduleZeroFunc, simCode, taskGraphZeroFuncs, taskGraphDataZeroFuncs, sccSimEqMapping) :=
+      createSchedule( taskGraphZeroFuncs, taskGraphDataZeroFuncs, daeSccSimEqMapping, simVarMapping,
+                      filenamePrefix, numProc, simCode, scheduledTasksZeroFunc, "ZeroFunc system",
+                      Flags.getConfigString(Flags.HPCOM_SCHEDULER) );
+    //criticalPathInfo := HpcOmScheduler.analyseScheduledTaskGraph(scheduleZeroFunc,numProc,taskGraphZeroFuncs,taskGraphDataZeroFuncs,"DAE system");
+    //schedulerInfo := HpcOmScheduler.convertScheduleStrucToInfo(scheduleZeroFunc,arrayLength(taskGraphZeroFuncs));
+    //HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphZeroFuncs, taskGraphDataZeroFuncs, fileName+"_schedZE.graphml", criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,false,false));
 
-      // Analyse Systems of Equations
-      //-----------------------------
-      scheduledTasksDae = {};
-      (scheduledTasksOde,_) = HpcOmEqSystems.parallelizeTornSystems(taskGraphOde,taskGraphDataOde,sccSimEqMapping,simVarMapping,inBackendDAE);
-      scheduledTasksZeroFunc = {};
+    //(schedule,numProc) := repeatScheduleWithOtherNumProc(taskGraphSimplified,taskGraphDataSimplified,sccSimEqMapping,filenamePrefix,cpCostsWoC,schedule,numProc,numFixed);
+    numProc := Flags.getConfigInt(Flags.NUM_PROC);
+    criticalPathInfo := HpcOmScheduler.analyseScheduledTaskGraph( scheduleOde, numProc, taskGraphOdeScheduled,
+                                                                taskGraphDataOdeScheduled, "ODE system" );
+    schedulerInfo := HpcOmScheduler.convertScheduleStrucToInfo(scheduleOde,arrayLength(taskGraphOdeScheduled));
+    SimCodeFunctionUtil.execStat("hpcom create schedule");
 
-      //Apply filters
-      //-------------
-      (taskGraphDaeSimplified,taskGraphDataDaeSimplified) = applyGRS(taskGraphDae,taskGraphDataDae);
-      (taskGraphOdeSimplified,taskGraphDataOdeSimplified) = applyGRS(taskGraphOde,taskGraphDataOde);
-      (taskGraphZeroFuncSimplified,taskGraphDataZeroFuncSimplified) = applyGRS(taskGraphZeroFuncs,taskGraphDataZeroFuncs);
-      SimCodeUtil.execStat("hpcom GRS");
+    fileName := ("taskGraph"+filenamePrefix+"ODE_schedule.graphml");
+    HpcOmTaskGraph.dumpAsGraphMLSccLevel( taskGraphOdeScheduled, taskGraphDataOdeScheduled, fileName, criticalPathInfo,
+                                          HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)),
+                                          HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)),
+                                          sccSimEqMapping, schedulerInfo,
+                                          HpcOmTaskGraph.GRAPHDUMPOPTIONS(true, false, true, true) );
+    //HpcOmScheduler.printSchedule(scheduleOde);
+    SimCodeUtil.execStat("hpcom dump schedule TaskGraph");
 
-      fileName = ("taskGraph"+filenamePrefix+"ODE_merged.graphml");
-      HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphOdeSimplified, taskGraphDataOdeSimplified, fileName, criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(true,false,true,true));
-      SimCodeUtil.execStat("hpcom dump simplified TaskGraph");
+    if Flags.isSet(Flags.HPCOM_DUMP) then
+      print("Schedule created\n");
+    end if;
 
-      if Flags.isSet(Flags.HPCOM_DUMP) then
-        print("Filter successfully applied. Merged "+intString(intSub(arrayLength(taskGraphOde),arrayLength(taskGraphOdeSimplified)))+" tasks.\n");
-      end if;
+    //Check ODE-System size
+    System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_HPCOM_MODULES);
+    //HpcOmTaskGraph.printTaskGraphMeta(taskGraphDataScheduled);
 
-      //Create schedule
-      //---------------
-      numProc = Flags.getConfigInt(Flags.NUM_PROC);
-      (numProc,_) = setNumProc(numProc,cpCostsWoC,taskGraphDataOde);//in case n-flag is not set
+    checkOdeSystemSize(taskGraphDataOdeScheduled, simCode.odeEquations, sccSimEqMapping);
+    SimCodeFunctionUtil.execStat("hpcom check ODE system size");
 
-      (scheduleDae,simCode,taskGraphDaeScheduled,taskGraphDataDaeScheduled,sccSimEqMapping) = createSchedule(taskGraphDaeSimplified,taskGraphDataDaeSimplified,daeSccSimEqMapping,simVarMapping,filenamePrefix,numProc,simCode,scheduledTasksDae,"DAE system",Flags.getConfigString(Flags.HPCOM_SCHEDULER));
-           //criticalPathInfo = HpcOmScheduler.analyseScheduledTaskGraph(scheduleDae,numProc,taskGraphDaeScheduled,taskGraphDataDaeScheduled,"DAE system");
-           //schedulerInfo = HpcOmScheduler.convertScheduleStrucToInfo(scheduleDae,arrayLength(taskGraphDaeScheduled));
-           //HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphDaeScheduled, taskGraphDataDaeScheduled, fileName+"_schedDAE.graphml", criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,false,false));
+    //Create Memory-Map and Sim-Code
+    (optTmpMemoryMap, varToArrayIndexMapping, varToIndexMapping) :=
+        HpcOmMemory.createMemoryMap( simCode.modelInfo, simCode.varToArrayIndexMapping, simCode.varToIndexMapping, taskGraphOdeSimplified,
+                                     BackendDAEUtil.transposeMatrix(taskGraphOdeSimplified,arrayLength(taskGraphOdeSimplified)),
+                                     taskGraphDataOdeSimplified, inBackendDAE.eqs, filenamePrefix, schedulerInfo, scheduleOde,
+                                     sccSimEqMapping, criticalPaths, criticalPathsWoC, criticalPathInfo, numProc, allComps );
+    //BaseHashTable.dumpHashTable(varToArrayIndexMapping);
+    simCode.varToArrayIndexMapping := varToArrayIndexMapping;
+    simCode.varToIndexMapping := varToIndexMapping;
 
-      (scheduleOde,simCode,taskGraphOdeScheduled,taskGraphDataOdeScheduled,sccSimEqMapping) = createSchedule(taskGraphOdeSimplified,taskGraphDataOdeSimplified,sccSimEqMapping,simVarMapping,filenamePrefix,numProc,simCode,scheduledTasksOde,"ODE system",Flags.getConfigString(Flags.HPCOM_SCHEDULER));
-           //criticalPathInfo = HpcOmScheduler.analyseScheduledTaskGraph(scheduleOde,numProc,taskGraphOdeScheduled,taskGraphDataOdeScheduled,"DAE system");
-           //schedulerInfo = HpcOmScheduler.convertScheduleStrucToInfo(scheduleOde,arrayLength(taskGraphOdeScheduled));
-           //HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphOdeScheduled, taskGraphDataOdeScheduled, fileName+"_schedODE.graphml", criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,false,false));
+    SimCodeFunctionUtil.execStat("hpcom create memory map");
 
-      (scheduleZeroFunc,simCode,taskGraphZeroFuncScheduled,taskGraphDataZeroFuncScheduled,sccSimEqMapping) = createSchedule(taskGraphZeroFuncSimplified,taskGraphDataZeroFuncSimplified,daeSccSimEqMapping,simVarMapping,filenamePrefix,numProc,simCode,scheduledTasksZeroFunc,"ZeroFunc system",Flags.getConfigString(Flags.HPCOM_SCHEDULER));
-            //criticalPathInfo = HpcOmScheduler.analyseScheduledTaskGraph(scheduleZeroFunc,numProc,taskGraphZeroFuncScheduled,taskGraphDataZeroFuncScheduled,"DAE system");
-            //schedulerInfo = HpcOmScheduler.convertScheduleStrucToInfo(scheduleZeroFunc,arrayLength(taskGraphZeroFuncScheduled));
-            //HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphZeroFuncScheduled, taskGraphDataZeroFuncScheduled, fileName+"_schedZE.graphml", criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,false,false));
+    simCode.hpcomData := HpcOmSimCode.HPCOMDATA(SOME((scheduleOde, scheduleDae, scheduleZeroFunc)), optTmpMemoryMap);
+    //print("Number of literals post: " + intString(listLength(simCodeLiterals)) + "\n");
 
-      SimCode.SIMCODE( modelInfo, simCodeLiterals, simCodeRecordDecls, simCodeExternalFunctionIncludes, allEquations, odeEquations, algebraicEquations,
-                       partitionsKind, baseClocks, useHomotopy, initialEquations, removedInitialEquations, startValueEquations,
-                       nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
-                       zeroCrossingsEquations, jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses,
-                       discreteModelVars, extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, _, varToArrayIndexMapping,
-                       varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ) = simCode;
-
-      //(schedule,numProc) = repeatScheduleWithOtherNumProc(taskGraphSimplified,taskGraphDataSimplified,sccSimEqMapping,filenamePrefix,cpCostsWoC,schedule,numProc,numFixed);
-      numProc = Flags.getConfigInt(Flags.NUM_PROC);
-      criticalPathInfo = HpcOmScheduler.analyseScheduledTaskGraph(scheduleOde,numProc,taskGraphOdeScheduled,taskGraphDataOdeScheduled,"ODE system");
-      schedulerInfo = HpcOmScheduler.convertScheduleStrucToInfo(scheduleOde,arrayLength(taskGraphOdeScheduled));
-      SimCodeFunctionUtil.execStat("hpcom create schedule");
-
-      fileName = ("taskGraph"+filenamePrefix+"ODE_schedule.graphml");
-      HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraphOdeScheduled, taskGraphDataOdeScheduled, fileName, criticalPathInfo, HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPaths)), HpcOmTaskGraph.convertNodeListToEdgeTuples(listHead(criticalPathsWoC)), sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(true,false,true,true));
-      //HpcOmScheduler.printSchedule(scheduleOde);
-      SimCodeUtil.execStat("hpcom dump schedule TaskGraph");
-
-      if Flags.isSet(Flags.HPCOM_DUMP) then
-        print("Schedule created\n");
-      end if;
-
-      //Check ODE-System size
-      //---------------------
-      System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_HPCOM_MODULES);
-      //HpcOmTaskGraph.printTaskGraphMeta(taskGraphDataScheduled);
-
-      checkOdeSystemSize(taskGraphDataOdeScheduled,odeEquations,sccSimEqMapping);
-      SimCodeFunctionUtil.execStat("hpcom check ODE system size");
-
-      //Create Memory-Map and Sim-Code
-      //------------------------------
-      (optTmpMemoryMap, varToArrayIndexMapping, varToIndexMapping) = HpcOmMemory.createMemoryMap(modelInfo, varToArrayIndexMapping, varToIndexMapping, taskGraphOdeSimplified, BackendDAEUtil.transposeMatrix(taskGraphOdeSimplified,arrayLength(taskGraphOdeSimplified)), taskGraphDataOdeSimplified, eqs, filenamePrefix, schedulerInfo, scheduleOde, sccSimEqMapping, criticalPaths, criticalPathsWoC, criticalPathInfo, numProc, allComps);
-      //BaseHashTable.dumpHashTable(varToArrayIndexMapping);
-
-      SimCodeFunctionUtil.execStat("hpcom create memory map");
-
-      hpcomData = HpcOmSimCode.HPCOMDATA(SOME((scheduleOde, scheduleDae, scheduleZeroFunc)), optTmpMemoryMap);
-      simCode = SimCode.SIMCODE( modelInfo, simCodeLiterals, simCodeRecordDecls, simCodeExternalFunctionIncludes, allEquations, odeEquations, algebraicEquations,
-                                 partitionsKind, baseClocks, useHomotopy, initialEquations, removedInitialEquations, startValueEquations,
-                                 nominalValueEquations, minValueEquations, maxValueEquations, parameterEquations, removedEquations, algorithmAndEquationAsserts,
-                                 zeroCrossingsEquations, jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings, relations, timeEvents, whenClauses,
-                                 discreteModelVars, extObjInfo, makefileParams, delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData,
-                                 varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
-
-      //print("Number of literals post: " + intString(listLength(simCodeLiterals)) + "\n");
-
-      SimCodeFunctionUtil.execStat("hpcom other");
-      print("HpcOm is still under construction.\n");
-      then simCode;
-    else equation
-      Error.addMessage(Error.INTERNAL_ERROR, {"function createSimCode failed."});
-    then fail();
-  end matchcontinue;
+    SimCodeFunctionUtil.execStat("hpcom other");
+    print("HpcOm is still under construction.\n");
+  else
+    Error.addMessage(Error.INTERNAL_ERROR, {"function createSimCode failed."});
+    fail();
+  end try;
 end createSimCode;
 
 protected function createAndExportInitialSystemTaskGraph "author: marcusw
