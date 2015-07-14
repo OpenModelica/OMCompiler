@@ -2314,15 +2314,19 @@ protected function printConfigFlagName
 algorithm
   (outString,longName) := match(inFlag)
     local
-      String name, shortname;
+      String name, shortname, str;
 
     case CONFIG_FLAG(name = name, shortname = SOME(shortname))
       equation
-        shortname = if sphinx then "-" + shortname else Util.stringPadLeft("-" + shortname, 4, " ");
-      then (stringAppendList({shortname, ", --", name}), name);
+        if sphinx then
+          str = "``-" + shortname + "``, ``--" + name + "``";
+        else
+          str = Util.stringPadLeft("-" + shortname, 4, " ") + ", --" + name;
+        end if;
+      then (str, name);
 
     case CONFIG_FLAG(name = name, shortname = NONE())
-      then ((if sphinx then "--" else "      --") + name, name);
+      then ((if sphinx then "``--" + name + "``" else "      --" + name), name);
 
   end match;
 end printConfigFlagName;
