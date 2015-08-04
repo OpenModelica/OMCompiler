@@ -41,6 +41,7 @@ encapsulated package Patternm
 
 public import Absyn;
 public import AvlTreeString;
+public import Ceval;
 public import ClassInf;
 public import ConnectionGraph;
 public import DAE;
@@ -59,7 +60,6 @@ protected import BaseHashTable;
 protected import ComponentReference;
 protected import Connect;
 protected import DAEUtil;
-protected import Debug;
 protected import Expression;
 protected import ExpressionDump;
 protected import Error;
@@ -198,6 +198,10 @@ algorithm
       FCore.Cache cache;
       Absyn.Exp lhs;
       DAE.Attributes attr;
+      DAE.Exp elabExp;
+      DAE.Properties prop;
+      DAE.Const const;
+      Values.Value val;
 
     case (cache,_,Absyn.INTEGER(i),_,_,_)
       equation
@@ -287,6 +291,15 @@ algorithm
       equation
         (cache,pattern) = elabPatternCall(cache,env,Absyn.crefToPath(fcr),fargs,utPath,info,lhs);
       then (cache,pattern);
+
+    case (cache,_,Absyn.CREF(),ty1,_,_) guard Types.isEnumeration(Types.unboxedType(ty1))
+      equation
+        (cache,elabExp,DAE.PROP(type_=ty2, constFlag=const),_) = Static.elabExp(cache,env,inLhs,false,NONE(),false,Prefix.NOPRE(),info);
+        et = validPatternType(ty1,ty2,inLhs,info);
+        true = Types.isConstant(const);
+        (cache, val) = Ceval.ceval(cache, env, elabExp, false, inMsg = Absyn.MSG(info));
+        elabExp = ValuesUtil.valueExp(val);
+      then (cache, DAE.PAT_CONSTANT(et, elabExp));
 
     case (cache,_,Absyn.AS(id,exp),ty2,_,_)
       equation
@@ -692,7 +705,7 @@ algorithm
     case (cache,env,Absyn.MATCHEXP(matchTy=matchTy,inputExp=inExp,localDecls=decls,cases=cases),_,st,_,pre,_,_)
       equation
         // First do inputs
-        inExps = MetaUtil.extractListFromTuple(inExp, 0);
+        inExps = convertExpToPatterns(inExp);
         (inExps,inputAliases,inputAliasesAndCrefs) = List.map_3(inExps,getInputAsBinding);
         (cache,elabExps,elabProps,st) = Static.elabExpList(cache,env,inExps,impl,st,performVectorization,pre,info);
         // Then add locals
@@ -1997,7 +2010,7 @@ algorithm
     case (cache,env,Absyn.CASE(pattern=pattern,patternGuard=patternGuard,patternInfo=patternInfo,localDecls=decls,classPart=cp,result=result,resultInfo=resultInfo,info=info),_,_,_,_,st,_,_)
       equation
         (cache,SOME((env,DAE.DAE(caseDecls),caseLocalTree))) = addLocalDecls(cache,env,decls,FCore.caseScopeName,impl,info);
-        patterns = MetaUtil.extractListFromTuple(pattern, 0);
+        patterns = convertExpToPatterns(pattern);
         patterns = if listLength(tys)==1 then {pattern} else patterns;
         (cache,elabPatterns) = elabPatternTuple(cache, env, patterns, tys, patternInfo, pattern);
         // open a pattern type scope
@@ -2297,6 +2310,39 @@ algorithm
       then (cases,a);
   end match;
 end traverseCases;
+
+public function traverseCasesTopDown<A>
+  input list<DAE.MatchCase> inCases;
+  input FuncExpType func;
+  input A inA;
+  output list<DAE.MatchCase> cases = {};
+  output A a = inA;
+  partial function FuncExpType
+    input DAE.Exp inExp;
+    input A inTypeA;
+    output DAE.Exp outExp;
+    output Boolean cont;
+    output A outA;
+  end FuncExpType;
+protected
+  list<DAE.Pattern> patterns;
+  list<DAE.Element> decls;
+  list<DAE.Statement> body,body1;
+  Option<DAE.Exp> result,result1,patternGuard,patternGuard1;
+  Integer jump;
+  SourceInfo resultInfo,info;
+  tuple<FuncExpType,A> tpl;
+algorithm
+  for c in inCases loop
+    DAE.CASE(patterns,patternGuard,decls,body,result,resultInfo,jump,info) := c;
+    tpl := (func,a);
+    (body1,(_,a)) := DAEUtil.traverseDAEEquationsStmts(body,Expression.traverseSubexpressionsTopDownHelper,tpl); // TODO: Enable with new tarball
+    (patternGuard1,a) := Expression.traverseExpOptTopDown(patternGuard,func,a);
+    (result1,a) := Expression.traverseExpOptTopDown(result,func,a);
+    cases := DAE.CASE(patterns,patternGuard1,decls,body1,result1,resultInfo,jump,info)::cases;
+  end for;
+  cases := listReverse(cases); // TODO: in-place reverse?
+end traverseCasesTopDown;
 
 protected function filterEmptyPattern
   input tuple<DAE.Pattern,String,DAE.Type> tpl;
@@ -2897,6 +2943,19 @@ algorithm
     else (inExp,inType);
   end match;
 end makeTupleFromMetaTuple;
+
+protected function convertExpToPatterns
+  "Converts an expression to a list of patterns. If the expression is a tuple
+   then the contents of the tuple are returned, otherwise the expression itself
+   is returned as a list."
+  input Absyn.Exp inExp;
+  output list<Absyn.Exp> outInputs;
+algorithm
+  outInputs := match inExp
+    case Absyn.TUPLE() then inExp.expressions;
+    else {inExp};
+  end match;
+end convertExpToPatterns;
 
 annotation(__OpenModelica_Interface="frontend");
 end Patternm;

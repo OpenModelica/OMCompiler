@@ -123,12 +123,6 @@ int (*function_storeDelayed)(DATA *data);
  */
 int (*updateBoundVariableAttributes)(DATA *data);
 
-/*! \var useSymbolicInitialization
- *
- * is 1 if a system to solve the initial problem symbolically is generated, otherwise 0
- */
-const int useSymbolicInitialization;
-
 /*! \var useHomotopy
  *
  * is 1 if homotopy(...) is used during initialization, otherwise 0
@@ -269,7 +263,8 @@ int (*lagrange)(DATA* data, modelica_real** res, short *, short *);
  * and pick up the bounds of inputs. In case it's not present
  * a dummy function is added which return -1.
  */
-int (*pickUpBoundsForInputsInOptimization)(DATA* data, modelica_real* min, modelica_real* max, modelica_real*nominal, modelica_boolean *useNominal, char ** name, modelica_real * start, modelica_real * startTimeOpt);
+int (*pickUpBoundsForInputsInOptimization)(DATA* data, modelica_real* min, modelica_real* max, modelica_real*nominal,
+                                           modelica_boolean *useNominal, char ** name, modelica_real * start, modelica_real * startTimeOpt);
 
 /*
  * This function is used only for optimization purpose
@@ -293,6 +288,20 @@ int (*getTimeGrid)(DATA *data, modelica_integer * nsi, modelica_real**t);
 
 int (*symEulerUpdate)(DATA * data, modelica_real dt);
 
+/*
+ * initialize clocks and subclocks info in modelData
+ */
+void (*function_initSynchronous)(DATA * data);
+
+/*
+ * Check if clock is fired. In that case function updates base clock's timepoint and interval in CLOCK_DATA struct.
+ */
+modelica_boolean (*function_updateSynchronous)(DATA *data, long i);
+
+/*
+ * Sub-partition's equations
+ */
+modelica_boolean (*function_equationsSynchronous)(DATA *data, long i);
 };
 
 #ifdef __cplusplus

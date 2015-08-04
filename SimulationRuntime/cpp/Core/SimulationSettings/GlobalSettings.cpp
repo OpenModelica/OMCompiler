@@ -19,9 +19,7 @@ GlobalSettings::GlobalSettings()
   , _selected_nonlin_solver("Newton")
   , _resultsfile_name("results.csv")
   , _endless_sim(false)
-  , _outputFormat(EMPTY)
-  , _outputPointType(ALL)
-  , _log_type(OFF)
+  , _outputPointType(OPT_ALL)
   , _alarm_time(0)
 {
 }
@@ -73,16 +71,6 @@ void GlobalSettings::useEndlessSim(bool endles)
   _endless_sim = endles;
 }
 
-OutputFormat GlobalSettings::getOutputFormat()
-{
-  return _outputFormat;
-}
-
-void GlobalSettings::setOutputFormat(OutputFormat format)
-{
-  _outputFormat = format;
-}
-
 OutputPointType GlobalSettings::getOutputPointType()
 {
   return _outputPointType;
@@ -93,14 +81,14 @@ void GlobalSettings::setOutputPointType(OutputPointType type)
   _outputPointType = type;
 }
 
-LogType GlobalSettings::getLogType()
+LogSettings GlobalSettings::getLogSettings()
 {
-  return _log_type;
+  return _log_settings;
 }
 
-void GlobalSettings::setLogType(LogType type)
+void GlobalSettings::setLogSettings(LogSettings set)
 {
-  _log_type = type;
+  _log_settings = set;
 }
 
 ///< Write out results ([false,true]; default: true)

@@ -2309,82 +2309,25 @@ algorithm
 end componentElts;
 
 public function addClassdefsToEnv
-"author: PA
-
-  This function adds classdefinitions and
-  import statements to the  environment."
+  "This function adds class definitions and import statements to the environment."
   input FCore.Cache inCache;
   input FCore.Graph inEnv;
   input InnerOuter.InstHierarchy inIH;
   input Prefix.Prefix inPrefix;
-  input list<SCode.Element> inSCodeElementLst;
-  input Boolean inBoolean;
-  input Option<DAE.Mod> redeclareMod;
-  output FCore.Cache outCache;
-  output FCore.Graph outEnv;
-  output InnerOuter.InstHierarchy outIH;
+  input list<SCode.Element> inClasses;
+  input Boolean inImpl;
+  input Option<DAE.Mod> inRedeclareMod;
+  output FCore.Cache outCache = inCache;
+  output FCore.Graph outEnv = inEnv;
+  output InnerOuter.InstHierarchy outIH = inIH;
 algorithm
-  (outCache,outEnv,outIH) := matchcontinue (inCache,inEnv,inIH,inPrefix,inSCodeElementLst,inBoolean,redeclareMod)
-    local
-      FCore.Cache cache;
-      FCore.Graph env,env_1,env_2;
-      list<SCode.Element> els;
-      Boolean impl;
-      Prefix.Prefix pre;
-      InstanceHierarchy ih;
-
-    case (cache,env,ih,pre,els,impl,_)
-      equation
-        (cache,env_1,ih) = addClassdefsToEnv2(cache,env,ih,pre,els,impl,redeclareMod);
-        env_2 = env_1 //env_2 = Env.updateEnvClasses(env_1,env_1)
-        "classes added with correct env.
-        This is needed to store the correct env in Env.CLASS.
-        It is required to get external objects to work";
-       then (cache,env_2,ih);
-
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.trace("- InstUtil.addClassdefsToEnv failed\n");
-      then fail();
-
-  end matchcontinue;
+  for c in inClasses loop
+    (outCache, outEnv, outIH) :=
+      addClassdefToEnv(outCache, outEnv, outIH, inPrefix, c, inImpl, inRedeclareMod);
+  end for;
 end addClassdefsToEnv;
 
-protected function addClassdefsToEnv2
-"author: PA
-  Helper relation to addClassdefsToEnv"
-  input FCore.Cache inCache;
-  input FCore.Graph inEnv;
-  input InnerOuter.InstHierarchy inIH;
-  input Prefix.Prefix inPrefix;
-  input list<SCode.Element> inSCodeElementLst;
-  input Boolean inBoolean;
-  input Option<DAE.Mod> redeclareMod;
-  output FCore.Cache outCache;
-  output FCore.Graph outEnv;
-  output InnerOuter.InstHierarchy outIH;
-algorithm
-  (outCache,outEnv,outIH) := match (inCache,inEnv,inIH,inPrefix,inSCodeElementLst,inBoolean,redeclareMod)
-    local
-      FCore.Cache cache;
-      FCore.Graph env;
-      SCode.Element elt;
-      list<SCode.Element> xs;
-      Boolean impl;
-      InstanceHierarchy ih;
-      Prefix.Prefix pre;
-
-    case (cache,env,ih,_,{},_,_) then (cache,env,ih);
-    case (cache,env,ih,_,elt::xs,_,_)
-      equation
-        (cache,env,ih) = addClassdefToEnv2(cache,env,ih,inPrefix,elt,inBoolean,redeclareMod);
-        (cache,env,ih) = addClassdefsToEnv2(cache,env,ih,inPrefix,xs,inBoolean,redeclareMod);
-      then (cache,env,ih);
-  end match;
-end addClassdefsToEnv2;
-
-protected function addClassdefToEnv2
+protected function addClassdefToEnv
 "author: PA
   Helper relation to addClassdefsToEnv"
   input FCore.Cache inCache;
@@ -2398,7 +2341,7 @@ protected function addClassdefToEnv2
   output FCore.Graph outEnv;
   output InnerOuter.InstHierarchy outIH;
 algorithm
-  (outCache,outEnv,outIH) := matchcontinue (inCache,inEnv,inIH,inPrefix,inSCodeElement,inBoolean,redeclareMod)
+  (outCache,outEnv,outIH) := matchcontinue (inCache,inEnv,inIH,inPrefix,inSCodeElement,redeclareMod)
     local
       FCore.Cache cache;
       FCore.Graph env,env_1;
@@ -2415,7 +2358,7 @@ algorithm
       DAE.Mod m;
 
     // we do have a redeclaration of class.
-    case (cache,env,ih,pre,( (sel1 as SCode.CLASS())),_,SOME(m))
+    case (cache,env,ih,pre,( (sel1 as SCode.CLASS())),SOME(m))
       equation
         m = Mod.lookupCompModification(m, sel1.name);
         false = valueEq(m, DAE.NOMOD());
@@ -2427,7 +2370,7 @@ algorithm
         (cache,env_1,ih);
 
     // otherwise, extend frame with in class.
-    case (cache,env,ih,pre,(sel1 as SCode.CLASS()),_,_)
+    case (cache,env,ih,pre,(sel1 as SCode.CLASS()),_)
       equation
         // Debug.traceln("Extend frame " + FGraph.printGraphPathStr(env) + " with " + SCode.className(cl));
         env_1 = FGraph.mkClassNode(env, sel1, pre, DAE.NOMOD());
@@ -2438,13 +2381,13 @@ algorithm
     // adrpo: we should have no imports after SCodeFlatten!
     // unfortunately we do because of the way we evaluate
     // programs for interactive evaluation
-    case (cache,env,ih,_,(imp as SCode.IMPORT()),_,_)
+    case (cache,env,ih,_,(imp as SCode.IMPORT()),_)
       equation
         env_1 = FGraph.mkImportNode(env, imp);
       then
         (cache,env_1,ih);
 
-    case(cache,env,ih,_,((elt as SCode.DEFINEUNIT())), _,_)
+    case(cache,env,ih,_,((elt as SCode.DEFINEUNIT())),_)
       equation
         env_1 = FGraph.mkDefunitNode(env,elt);
       then (cache,env_1,ih);
@@ -2456,7 +2399,7 @@ algorithm
       then
         fail();
   end matchcontinue;
-end addClassdefToEnv2;
+end addClassdefToEnv;
 
 protected function checkCompEnvPathVsCompTypePath
 "fails if the comp env path is NOT a prefix of comp type path"
@@ -2579,7 +2522,6 @@ algorithm
       SCode.Final finalPrefix;
       Boolean impl;
       SCode.Attributes attr;
-      Absyn.TypeSpec t;
       SCode.Mod m;
       SCode.Comment comment;
       list<tuple<SCode.Element, DAE.Mod>> allcomps;
@@ -2618,7 +2560,7 @@ algorithm
 
     /* A TPATH component */
     case (cache,env,ih,mod,pre,cistate,
-        (((SCode.COMPONENT(name = n,
+        (((comp as SCode.COMPONENT(name = n,
                                    prefixes = pf as SCode.PREFIXES(
                                      finalPrefix = finalPrefix
                                    ),
@@ -2631,11 +2573,11 @@ algorithm
         _,_,instdims,impl)
       equation
         compModLocal = Mod.lookupModificationP(mod, tpp);
-        m = traverseModAddFinal(m, finalPrefix);
-
-        (cache,env,ih,selem,smod) = Inst.redeclareType(cache,env,ih,compModLocal,
-        /*comp,*/ SCode.COMPONENT(n,pf,attr,tss,m,comment,aExp, aInfo),
-        pre, cistate, impl,cmod);
+        if SCode.finalBool(finalPrefix) then
+          m = traverseModAddFinal(m);
+          comp = SCode.COMPONENT(n,pf,attr,tss,m,comment,aExp,aInfo);
+        end if;
+        (cache,env,ih,selem,smod) = Inst.redeclareType(cache, env, ih, compModLocal, comp, pre, cistate, impl,cmod);
         // Debug.traceln(" adding comp: " + n + " " + Mod.printModStr(mod) + " cmod: " + Mod.printModStr(cmod) + " cmL: " + Mod.printModStr(compModLocal) + " smod: " + Mod.printModStr(smod));
         // print(" \t comp: " + n + " " + "selem: " + SCodeDump.printElementStr(selem) + " smod: " + Mod.printModStr(smod) + "\n");
         (cache,env_1,ih) = addComponentsToEnv2(cache, env, ih, mod, pre, cistate, {(selem,smod)}, instdims, impl);
@@ -2649,16 +2591,21 @@ algorithm
                                      finalPrefix = finalPrefix
                                    ),
                                    attributes = attr,
-                                   typeSpec = (t as Absyn.TCOMPLEX(_,_,_)),
+                                   typeSpec = (tss as Absyn.TCOMPLEX(tpp,_,_)),
                                    modifications = m,
                                    comment = comment,
                                    condition = aExp,
-                                   info = aInfo)),cmod as DAE.NOMOD())),
+                                   info = aInfo)),cmod)),
         _,_,instdims,impl)
       equation
-        m = traverseModAddFinal(m, finalPrefix);
-        comp = SCode.COMPONENT(n,pf,attr,t,m,comment,aExp,aInfo);
-        (cache,env_1,ih) = addComponentsToEnv2(cache, env, ih, mod, pre, cistate, {(comp,cmod)}, instdims, impl);
+        // TODO: cmod was enforced to be NOMOD earlier. A problem to change it?
+        compModLocal = Mod.lookupModificationP(mod, tpp);
+        if SCode.finalBool(finalPrefix) then
+          m = traverseModAddFinal(m);
+          comp = SCode.COMPONENT(n,pf,attr,tss,m,comment,aExp,aInfo);
+        end if;
+        (cache,env,ih,selem,smod) = Inst.redeclareType(cache, env, ih, compModLocal, comp, pre, cistate, impl,cmod);
+        (cache,env_1,ih) = addComponentsToEnv2(cache, env, ih, mod, pre, cistate, {(selem,cmod)}, instdims, impl);
       then
         (cache,env_1,ih);
 
@@ -2679,7 +2626,7 @@ algorithm
     else
       equation
         true = Flags.isSet(Flags.FAILTRACE);
-        Debug.traceln("- InstUtil.addComponentToEnv failed");
+        Debug.traceln("- " + getInstanceName() + " failed\n");
       then
         fail();
   end matchcontinue;
@@ -5233,7 +5180,7 @@ public function checkFunctionInputUsed
 protected
   list<DAE.Element> invars,vars,algs;
 algorithm
-  (vars,_,_,_,algs,_,_,_) := DAEUtil.splitElements(elts);
+  (vars,_,_,_,algs,_,_,_,_) := DAEUtil.splitElements(elts);
   invars := List.filterOnTrue(vars,DAEUtil.isInputVar);
   invars := List.select(invars,checkInputUsedAnnotation);
   invars := checkExternalDeclInputUsed(invars,decl);
@@ -5378,7 +5325,7 @@ algorithm
       equation
         // Some weird functions pass the same output twice so we cannot check for exactly 1 occurance
         // Interfacing with LAPACK routines is fun, fun, fun :)
-        if not (List.isMemberOnTrue(v,arg::args,extArgCrefEq) or Util.isSome(binding)) then
+        if not (List.isMemberOnTrue(v,arg::args,extArgCrefEq) or isSome(binding)) then
           str = ComponentReference.printComponentRefStr(cr);
           Error.addSourceMessage(Error.EXTERNAL_NOT_SINGLE_RESULT,{str,name},DAEUtil.getElementSourceFileInfo(source));
           fail();
@@ -6993,31 +6940,6 @@ algorithm (omod,restmods) := matchcontinue( smod , name , premod)
 end extractCorrectClassMod2;
 
 public function traverseModAddFinal
-"This function takes a modifer and a bool
- to represent wheter it is final or not.
- If it is final, traverses down in the
- modifier setting all final elements to true."
-  input SCode.Mod imod;
-  input SCode.Final finalPrefix;
-  output SCode.Mod omod;
-algorithm
-  omod := matchcontinue(imod,finalPrefix)
-    local SCode.Mod mod;
-    case(mod, SCode.NOT_FINAL()) then mod;
-    case(mod, SCode.FINAL())
-      equation
-        mod = traverseModAddFinal2(mod);
-      then
-        mod;
-    else
-      equation
-        print(" we failed with traverseModAddFinal\n");
-      then
-        fail();
-  end matchcontinue;
-end traverseModAddFinal;
-
-protected function traverseModAddFinal2
 "Helper function for traverseModAddFinal"
   input SCode.Mod mod;
   output SCode.Mod mod2;
@@ -7046,12 +6968,11 @@ algorithm
 
     else
       equation
-        print(" we failed with traverseModAddFinal2\n");
-      then
-        fail();
+        Error.addInternalError(getInstanceName(), sourceInfo());
+      then fail();
 
   end matchcontinue;
-end traverseModAddFinal2;
+end traverseModAddFinal;
 
 protected function traverseModAddFinal3
 "Helper function for traverseModAddFinal2"
@@ -7074,7 +6995,7 @@ algorithm
 
     case SCode.COMPONENT(name,prefixes,attr,tySpec,oldmod,cmt,cond,info)
       equation
-        mod = traverseModAddFinal2(oldmod);
+        mod = traverseModAddFinal(oldmod);
       then
         SCode.COMPONENT(name,prefixes,attr,tySpec,mod,cmt,cond,info);
 
@@ -7083,9 +7004,8 @@ algorithm
 
     case SCode.EXTENDS(p,vis,mod,ann,info)
       equation
-        mod = traverseModAddFinal2(mod);
-      then
-        SCode.EXTENDS(p,vis,mod,ann,info);
+        mod = traverseModAddFinal(mod);
+      then SCode.EXTENDS(p,vis,mod,ann,info);
 
     else
       equation
@@ -7110,7 +7030,7 @@ algorithm osubs:= matchcontinue(subs)
   case((SCode.NAMEMOD(ident,mod))::rest )
     equation
       rest = traverseModAddFinal4(rest);
-      mod = traverseModAddFinal2(mod);
+      mod = traverseModAddFinal(mod);
     then
       SCode.NAMEMOD(ident,mod)::rest;
   else
@@ -7838,13 +7758,13 @@ algorithm
       SourceInfo info;
     case (SCode.COMMENT(SOME(SCode.ANNOTATION(SCode.MOD(subModLst=mods1,info=info))),str1),SCode.COMMENT(SOME(SCode.ANNOTATION(SCode.MOD(subModLst=mods2))),str2))
       equation
-        str = if Util.isSome(str1) then str1 else str2;
+        str = if isSome(str1) then str1 else str2;
         mods = listAppend(mods1,mods2);
       then SCode.COMMENT(SOME(SCode.ANNOTATION(SCode.MOD(SCode.NOT_FINAL(),SCode.NOT_EACH(),mods,NONE(),info))),str);
     case (SCode.COMMENT(ann1,str1),SCode.COMMENT(ann2,str2))
       equation
-        str = if Util.isSome(str1) then str1 else str2;
-        ann = if Util.isSome(ann1) then ann1 else ann2;
+        str = if isSome(str1) then str1 else str2;
+        ann = if isSome(ann1) then ann1 else ann2;
       then SCode.COMMENT(ann,str);
   end matchcontinue;
 end mergeClassComments;
@@ -8549,8 +8469,6 @@ algorithm
         ((_,b,unbound)) = List.fold1(stmts, checkFunctionDefUseStmt, true, (false,false,unbound));
       then ((b,b,unbound));
     case (DAE.STMT_ASSERT(cond=DAE.BCONST(false),source=source),_,(_,_,_)) // TODO: Re-write these earlier from assert(false,msg) to terminate(msg)
-      equation
-        _ = DAEUtil.getElementSourceFileInfo(source);
       then ((true,true,{}));
     case (DAE.STMT_ASSERT(cond=exp1,msg=exp2,source=source),_,(_,_,unbound))
       equation
@@ -8563,6 +8481,8 @@ algorithm
         info = DAEUtil.getElementSourceFileInfo(source);
         (_,(unbound,_)) = Expression.traverseExpTopDown(exp,findUnboundVariableUse,(unbound,info));
       then ((true,true,unbound));
+    case (DAE.STMT_NORETCALL(exp=DAE.CALL(path=Absyn.IDENT("fail"),expLst={}),source=source),_,(_,_,unbound))
+      then ((true,true,{}));
     case (DAE.STMT_NORETCALL(exp=exp,source=source),_,(_,_,unbound))
       equation
         info = DAEUtil.getElementSourceFileInfo(source);

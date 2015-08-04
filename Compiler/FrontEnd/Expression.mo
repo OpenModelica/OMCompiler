@@ -653,6 +653,10 @@ algorithm
     case(DAE.BINARY(e1,op,e2)) guard(isSub(op))
     then DAE.BINARY(e2,op,e1);
 
+    case e // -0 = 0
+    guard isZero(e)
+    then e;
+
     case (DAE.ICONST(i))
       equation
         i_1 = 0 - i;
@@ -668,21 +672,16 @@ algorithm
 
     case(e)
       equation
-        if isZero(e) // -0 = 0
-        then
-          outExp = e;
+        t = typeof(e);
+        outExp = match (t)
+        case (DAE.T_BOOL()) // not e
+          then DAE.LUNARY(DAE.NOT(t),e);
         else
-          t = typeof(e);
-          outExp = match (t)
-            case (DAE.T_BOOL()) // not e
-              then DAE.LUNARY(DAE.NOT(t),e);
-            else
-              equation
-                b = DAEUtil.expTypeArray(t);
-                op = if b then DAE.UMINUS_ARR(t) else DAE.UMINUS(t);
-              then DAE.UNARY(op,e);
-          end match;
-        end if;
+          equation
+            b = DAEUtil.expTypeArray(t);
+            op = if b then DAE.UMINUS_ARR(t) else DAE.UMINUS(t);
+          then DAE.UNARY(op,e);
+        end match;
       then
         outExp;
 
@@ -1548,6 +1547,23 @@ algorithm
   end match;
 end expInt;
 
+public function getClockIntvl
+  input DAE.ClockKind inClk;
+  output DAE.Exp outIntvl;
+protected
+  DAE.Exp e;
+  Integer res;
+algorithm
+  outIntvl := match inClk
+    case DAE.INFERRED_CLOCK()
+      then DAE.RCONST(1.0);
+    case DAE.REAL_CLOCK(e)
+      then e;
+    case DAE.INTEGER_CLOCK(e, res)
+      then DAE.BINARY(e, DAE.DIV(DAE.T_REAL_DEFAULT), DAE.ICONST(res));
+  end match;
+end getClockIntvl;
+
 public function expArrayIndex
   "Returns the array index that an expression represents as an integer."
   input DAE.Exp inExp;
@@ -1590,6 +1606,20 @@ algorithm
     case(DAE.TYPES_VAR(ty = tp)) then tp;
   end match;
 end varType;
+
+public function expOrDerCref
+"Returns the componentref if DAE.Exp is a CREF or DER(CREF)"
+  input DAE.Exp inExp;
+  output DAE.ComponentRef outComponentRef;
+  output Boolean isDer;
+algorithm
+  (outComponentRef, isDer) :=
+  match (inExp)
+    local ComponentRef cr;
+    case DAE.CREF(componentRef = cr) then (cr, false);
+    case DAE.CALL(path = Absyn.IDENT(name = "der"),expLst={DAE.CREF(cr,_)}) then (cr, true);
+  end match;
+end expOrDerCref;
 
 public function expCref
 "Returns the componentref if DAE.Exp is a CREF,"
@@ -1681,6 +1711,25 @@ algorithm
   end match;
 end getArrayOrMatrixContents;
 
+protected function makeASUBsForDimension"makes all asubs for the complete dimension of the exp."
+  input DAE.Exp eIn;
+  output list<DAE.Exp> eLstOut={};
+protected
+  Integer size;
+  DAE.Dimensions dims;
+algorithm
+  dims := expDimensions(eIn);
+  try
+    {DAE.DIM_INTEGER(integer=size)} := dims;
+    for i in List.intRange(size) loop
+      eLstOut := makeASUBSingleSub(eIn,DAE.ICONST(i))::eLstOut;
+    end for;
+    eLstOut := listReverse(eLstOut);
+  else
+    eLstOut := {};
+  end try;
+end makeASUBsForDimension;
+
 public function getComplexContents "returns the list of expressions from a complex structure like array,record,call,tuple...
 author:Waurich TUD 2014-04"
   input DAE.Exp e;
@@ -1690,8 +1739,9 @@ algorithm
     local
       Boolean noArr;
       DAE.ComponentRef cref;
-      DAE.Exp exp;
-      list<DAE.Exp> expLst;
+      DAE.Exp exp, exp1, exp2;
+      DAE.Type ty;
+      list<DAE.Exp> expLst, expLst1, expLst2;
       list<list<DAE.Exp>> expLstLst;
       list<DAE.ComponentRef> crefs;
     case(DAE.CREF())
@@ -1703,6 +1753,26 @@ algorithm
         expLst = if noArr then {} else expLst;
       then
         expLst;
+
+    case(DAE.BINARY(exp1=exp1,operator=DAE.ADD_ARR(),exp2=exp2))
+      equation
+        if isArray(exp1) then
+          expLst1 = getComplexContents(exp1);
+        else
+          expLst1 = makeASUBsForDimension(exp1);
+        end if;
+        if isArray(exp2) then
+          expLst2 = getComplexContents(exp2);
+        else
+          expLst2 = makeASUBsForDimension(exp2);
+        end if;
+          //print("complexed expLst1:\n"+ExpressionDump.printExpListStr(expLst1)+"\n");
+          //print("complexed expLst2:\n"+ExpressionDump.printExpListStr(expLst2)+"\n");
+        ty = typeof(listHead(expLst1));
+        expLst = List.threadMap(expLst1,expLst2,function makeBinaryExp(inOp=DAE.ADD(ty)));
+      then
+        expLst;
+
     case(DAE.CALL(expLst=expLst))
       equation
          expLstLst = List.map(expLst,getComplexContentsInCall);
@@ -1955,6 +2025,8 @@ algorithm
     case DAE.MATRIX(ty = tp) then arrayDimension(tp);
     case DAE.LUNARY(exp = e) then expDimensions(e);
     case DAE.LBINARY(exp1 = e) then expDimensions(e);
+    case DAE.CALL(attr=DAE.CALL_ATTR(ty = tp)) then arrayDimension(tp);
+
   end match;
 end expDimensions;
 
@@ -2215,6 +2287,7 @@ algorithm
       then
         tp;
     case (DAE.TSUB(ty = tp)) then tp;
+    case DAE.RSUB() then inExp.ty;
     case (DAE.CODE(ty = tp)) then tp;
       /* array reduction with known size */
     case (DAE.REDUCTION(iterators={DAE.REDUCTIONITER(exp=e,guardExp=NONE())},reductionInfo=DAE.REDUCTIONINFO(exprType=ty as DAE.T_ARRAY(dims=dim::_),path = Absyn.IDENT("array"))))
@@ -2617,6 +2690,19 @@ algorithm
     else {inExp};
   end matchcontinue;
 end allTerms;
+
+
+public function termsExpandUnary
+  "Returns the terms of the expression if any as a list of expressions"
+  input DAE.Exp inExp;
+  output list<DAE.Exp> outExpLst;
+algorithm
+  outExpLst := match inExp
+                local DAE.Exp e;
+                case (DAE.UNARY(operator = DAE.UMINUS(),exp=e)) then List.map(terms(e), negate);
+                else terms(inExp);
+               end match;
+end termsExpandUnary;
 
 public function terms
   "Returns the terms of the expression if any as a list of expressions"
@@ -3660,6 +3746,7 @@ makeSum => a + (b + c)
 
 
   input list<DAE.Exp> inExpLst;
+  input Boolean simplify = false;
   output DAE.Exp outExp;
 protected
   DAE.Exp e1,e2;
@@ -3668,7 +3755,7 @@ algorithm
             case({}) then DAE.RCONST(0.0);
             case({e1}) then e1;
             case({e1,e2}) then expAdd(e1,e2);
-            case(_)then makeSumWork(inExpLst);
+            case(_)then makeSumWork(inExpLst, simplify);
             else
               equation
                if Flags.isSet(Flags.FAILTRACE) then
@@ -3684,13 +3771,14 @@ protected function makeSumWork
 "Takes a list of expressions an makes a sum
   expression adding all elements in the list."
   input list<DAE.Exp> inExpLst;
+  input Boolean simplify = false;
   output DAE.Exp outExp;
 
 protected
   Type tp;
   list<DAE.Exp> rest;
   DAE.Exp eLst;
-  Operator op;
+  DAE.Operator op;
 
 algorithm
   eLst :: rest := inExpLst;
@@ -3699,7 +3787,7 @@ algorithm
 
   outExp := eLst;
   for elem in rest loop
-    outExp := if isZero(elem) then outExp elseif isZero(outExp) then elem else DAE.BINARY(outExp, op, elem);
+    outExp := if isZero(elem) then outExp elseif isZero(outExp) then elem elseif simplify then ExpressionSimplify.simplify1(DAE.BINARY(outExp, op, elem)) else DAE.BINARY(outExp, op, elem);
   end for;
 
 end makeSumWork;
@@ -4633,7 +4721,7 @@ protected function replaceExpWork
   output Boolean cont;
   output tuple<DAE.Exp,DAE.Exp,Integer> otpl;
 algorithm
-  (outExp,cont,otpl) := matchcontinue (inExp,inTpl) /* TODO: match */
+  (outExp,cont,otpl) := match(inExp,inTpl)
     local
       tuple<DAE.Exp,DAE.Exp,Integer> tpl;
       DAE.Exp expr,source,target;
@@ -4641,17 +4729,11 @@ algorithm
       DAE.ComponentRef cr;
       DAE.Type ty;
     case (_,(source,target,c))
-      equation
-        true = expEqual(inExp, source);
+      guard expEqual(inExp, source)
       then (target,false,(source,target,c+1));
 
-    case (DAE.CREF(cr,ty),tpl)
-      equation
-        (cr,tpl) = traverseExpTopDownCrefHelper(cr,replaceExpWork,tpl);
-      then (DAE.CREF(cr,ty),false,tpl);
-
     else (inExp,true,inTpl);
-  end matchcontinue;
+  end match;
 end replaceExpWork;
 
 public function expressionCollector
@@ -4664,6 +4746,16 @@ algorithm
   outExps := exp::acc;
 end expressionCollector;
 
+
+public function replaceCrefBottomUp
+  input DAE.Exp inExp;
+  input DAE.ComponentRef inSourceExp;
+  input DAE.Exp inTargetExp;
+  output DAE.Exp exp;
+algorithm
+  (exp,_) := traverseExpBottomUp(inExp,replaceCref,(inSourceExp,inTargetExp));
+end replaceCrefBottomUp;
+
 public function replaceCref
 "Replace a componentref with a expression"
   input DAE.Exp inExp;
@@ -4671,17 +4763,16 @@ public function replaceCref
   output DAE.Exp outExp;
   output tuple<DAE.ComponentRef,DAE.Exp> otpl;
 algorithm
-  (outExp,otpl) := matchcontinue (inExp,inTpl)
+  (outExp,otpl) := match (inExp,inTpl)
     local
       DAE.Exp target;
       DAE.ComponentRef cr,cr1;
     case (DAE.CREF(componentRef=cr),(cr1,target))
-      equation
-        true = ComponentReference.crefEqualNoStringCompare(cr, cr1);
+      guard ComponentReference.crefEqualNoStringCompare(cr, cr1)
       then
         (target,(cr1,target));
     else (inExp,inTpl);
-  end matchcontinue;
+  end match;
 end replaceCref;
 
 public function containsInitialCall "public function containsInitialCall
@@ -4921,6 +5012,15 @@ algorithm
       (e, ext_arg) = inFunc(e, ext_arg);
     then (e, ext_arg);
 
+    case e1 as DAE.RSUB()
+      algorithm
+        (e1_1, ext_arg) := traverseExpBottomUp(e1.exp, inFunc, inExtArg);
+        if not referenceEq(e1.exp, e1_1) then
+          e1.exp := e1_1;
+        end if;
+        (e1, ext_arg) := inFunc(e1, ext_arg);
+      then (e1, ext_arg);
+
     case DAE.SIZE(exp=e1, sz=NONE()) equation
       (e1_1, ext_arg) = traverseExpBottomUp(e1, inFunc, inExtArg);
       e = if referenceEq(e1, e1_1) then inExp else DAE.SIZE(e1_1, NONE());
@@ -5097,7 +5197,7 @@ end traverseSubexpressionsDummyHelper;
 
 public function traverseSubexpressionsTopDownHelper
 "This function is used as input to a traverse function that does not traverse all subexpressions.
-The extra argument is a tuple of the actul function to call on each subexpression and the extra argument."
+The extra argument is a tuple of the actual function to call on each subexpression and the extra argument."
   replaceable type Type_a subtypeof Any;
   input DAE.Exp inExp;
   input tuple<FuncExpType2,Type_a> itpl;
@@ -5461,6 +5561,14 @@ algorithm
         (e1_1,ext_arg_1) = traverseExpTopDown(e1, rel, ext_arg);
       then (DAE.TSUB(e1_1,i,tp),ext_arg_1);
 
+    case (_,e1 as DAE.RSUB(),rel,ext_arg)
+      algorithm
+        (e1_1,ext_arg_1) := traverseExpTopDown(e1.exp, rel, ext_arg);
+        if not referenceEq(e1.exp, e1_1) then
+          e1.exp := e1_1;
+        end if;
+      then (e1,ext_arg_1);
+
     case (_,(DAE.SIZE(exp = e1,sz = NONE())),rel,ext_arg)
       equation
         (e1_1,ext_arg_1) = traverseExpTopDown(e1, rel, ext_arg);
@@ -5505,7 +5613,7 @@ algorithm
     case (_,DAE.MATCHEXPRESSION(matchType,expl,aliases,localDecls,cases,et),rel,ext_arg)
       equation
         (expl,ext_arg) = traverseExpListTopDown(expl,rel,ext_arg);
-        // TODO: Traverse cases
+        (cases, ext_arg) = Patternm.traverseCasesTopDown(cases, rel, ext_arg);
       then (DAE.MATCHEXPRESSION(matchType,expl,aliases,localDecls,cases,et),ext_arg);
 
     case (_,DAE.METARECORDCALL(fn,expl,fieldNames,i),rel,ext_arg)
@@ -5541,7 +5649,7 @@ algorithm
     else
       equation
         str = ExpressionDump.printExpStr(inExp);
-        str = "Expression.traverseExpTopDown1 not implemented correctly: " + str;
+        str = getInstanceName() + " or " + System.dladdr(func) + "not implemented correctly: " + str;
         Error.addMessage(Error.INTERNAL_ERROR, {str});
       then fail();
   end match;
@@ -5949,6 +6057,7 @@ algorithm
       then (inExp, false, crefs);
     case (DAE.CALL(path = Absyn.IDENT(name = "der")), _) then (inExp, false, inCrefs);
     case (DAE.CALL(path = Absyn.IDENT(name = "pre")), _) then (inExp, false, inCrefs);
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous")), _) then (inExp, false, inCrefs);
     else (inExp,true,inCrefs);
   end match;
 end traversingComponentRefFinderNoPreDer;
@@ -6123,6 +6232,9 @@ algorithm
     case (DAE.CALL(path = Absyn.IDENT(name = "pre")), _)
       then (inExp,false,inTpl);
 
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous")), _)
+      then (inExp,false,inTpl);
+
     case (DAE.CREF(componentRef = cr1), (cr,false))
       equation
         b = ComponentReference.crefEqualNoStringCompare(cr,cr1);
@@ -6178,6 +6290,8 @@ algorithm
       DAE.ComponentRef cr,cr1;
 
     case (DAE.CALL(path = Absyn.IDENT(name = "pre")), _)
+      then (inExp,false,inTpl);
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous")), _)
       then (inExp,false,inTpl);
     case (DAE.CALL(path = Absyn.IDENT(name = "change")), _)
       then (inExp,false,inTpl);
@@ -6643,7 +6757,7 @@ algorithm
         localDecls = match_decls, cases = match_cases, et = ty)
       equation
         (expl, arg) = traverseExpListBidir(expl, inEnterFunc, inExitFunc, inArg);
-        /* TODO: Implement traverseMatchCase! */
+        Error.addSourceMessage(Error.COMPILER_NOTIFICATION, {getInstanceName() + " not yet implemented for match expressions. Called using: " + System.dladdr(inEnterFunc) + " " + System.dladdr(inExitFunc)}, sourceInfo());
         //(cases, tup) = List.mapFold(cases, traverseMatchCase, tup);
       then
         (DAE.MATCHEXPRESSION(match_ty, expl, aliases, match_decls, match_cases, ty), arg);
@@ -6665,9 +6779,7 @@ algorithm
 
     else
       equation
-        error_msg = "in Expression.traverseExpBidirSubExps - Unknown expression: ";
-        error_msg = error_msg + ExpressionDump.printExpStr(inExp);
-        Error.addMessage(Error.INTERNAL_ERROR, {error_msg});
+        Error.addInternalError(getInstanceName() + " - Unknown expression " + ExpressionDump.printExpStr(inExp) + ". Called using: " + System.dladdr(inEnterFunc) + " " + System.dladdr(inExitFunc), sourceInfo());
       then
         fail();
 
@@ -7506,6 +7618,17 @@ algorithm
          end match;
 end isDivBinary;
 
+public function isPow "returns true if operator is POW"
+  input DAE.Operator op;
+  output Boolean res;
+algorithm
+  res := match(op)
+    case(DAE.POW()) then true;
+    else false;
+  end match;
+end isPow;
+
+
 public function isFunCall "return true if expression is DAE.CALL(path=Absyn.IDENT(name))"
   input DAE.Exp iExp;
   input String name;
@@ -7753,7 +7876,7 @@ algorithm
 
     // pre is not a vector function, adrpo: 2009-03-03 -> pre is also needed here!
     case (DAE.CALL(path = Absyn.IDENT(name = "pre"))) then false;
-
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous"))) then false;
     // inStream and actualStream are not a vector function, adrpo: 2010-08-31 -> they are also needed here!
     case (DAE.CALL(path = Absyn.IDENT(name = "inStream"))) then false;
     case (DAE.CALL(path = Absyn.IDENT(name = "actualStream"))) then false;
@@ -7924,6 +8047,8 @@ algorithm
     // pre(x) is not a function call
     case (DAE.CALL(path = Absyn.IDENT(name = "pre"))) then false;
 
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous"))) then false;
+
     // any other call is a function call
     case (DAE.CALL()) then true;
 
@@ -8058,6 +8183,13 @@ algorithm
       then
         res;
 
+    // asub
+    case (DAE.ASUB(exp = e))
+      equation
+        res = containFunctioncall(e);
+      then
+        res;
+
     // size
     case (DAE.SIZE(exp = e1))
       equation
@@ -8112,6 +8244,13 @@ algorithm
   end match;
 end isArray;
 
+public function isMetaArray "returns true if expression is a MM array."
+  input DAE.Exp inExp;
+  output Boolean outB;
+algorithm
+  outB := Types.isMetaArray(typeof(inExp));
+end isMetaArray;
+
 public function isMatrix "returns true if expression is an matrix.
 "
   input DAE.Exp inExp;
@@ -8150,6 +8289,17 @@ algorithm
   end match;
 end isUnary;
 
+public function isBinary
+  "Returns true if expression is an binary."
+  input DAE.Exp inExp;
+  output Boolean outB;
+algorithm
+  outB:= match(inExp)
+    case(DAE.BINARY()) then true;
+    else false;
+  end match;
+end isBinary;
+
 public function isNegativeUnary
   "Returns true if expression is a negative unary."
   input DAE.Exp inExp;
@@ -8172,6 +8322,17 @@ algorithm
     else false;
   end match;
 end isCref;
+
+public function isUnaryCref
+  input DAE.Exp inExp;
+  output Boolean outIsCref;
+algorithm
+  outIsCref := match inExp
+    case DAE.UNARY(DAE.UMINUS(), DAE.CREF()) then true;
+    else false;
+  end match;
+
+end isUnaryCref;
 
 public function isCall
   "Returns true if the given expression is a function call,
@@ -9045,6 +9206,8 @@ algorithm
 
     // pre(v) does not contain variable v
     case (DAE.CALL(path = Absyn.IDENT(name = "pre"),expLst = {_}),_) then false;
+
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous"),expLst = {_}),_) then false;
 
     // special rule for no arguments
     case (DAE.CALL(expLst = {}),_) then false;
@@ -12124,7 +12287,7 @@ end while;
 
 end createResidualExp2;
 
-protected function createResidualExp3
+public function createResidualExp3
 "author: Vitalij
   helper function of createResidualExp3
   swaps args"
@@ -12143,9 +12306,7 @@ algorithm
 
     // f(x) = f(y) -> x = y
     case(DAE.CALL(path = Absyn.IDENT(s1), expLst={e1}),DAE.CALL(path = Absyn.IDENT(s2) ,expLst={e2}))
-     equation
-       true = s1 == s2;
-       true = createResidualExp4(s1);
+      guard s1 == s2 and createResidualExp4(s1)
      then (e1,e2, true);
     // sqrt(f(x)) = 0.0 -> f(x) = 0
     case(DAE.CALL(path = Absyn.IDENT("sqrt"), expLst={e1}), DAE.RCONST(0.0))
@@ -12185,9 +12346,7 @@ algorithm
     then (e1,e2,true);
   // f(x) - f(y) = 0 -> x = y
     case(DAE.BINARY(DAE.CALL(path = Absyn.IDENT(s1), expLst={e1}),DAE.SUB(),DAE.CALL(path = Absyn.IDENT(s2) ,expLst={e2})), DAE.RCONST(0.0))
-     equation
-       true = s1 == s2;
-       true = createResidualExp4(s1);
+    guard s1 == s2 and createResidualExp4(s1)
      then (e1,e2,true);
    else (iExp1, iExp2, false);
   end matchcontinue;

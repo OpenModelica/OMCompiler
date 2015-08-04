@@ -85,24 +85,14 @@ public function getEquations
   This function returns the equations"
   input BackendDAE.BackendDAE inBackendDAE;
   output String strEqs;
+protected
+  BackendDAE.Shared shared;
+  BackendDAE.EqSystem syst;
+  list<String> ls1;
 algorithm
-  strEqs := match (inBackendDAE)
-    local
-      String s,s1;
-      list<String> ls1;
-      list<BackendDAE.Equation> eqnsl;
-      BackendDAE.EquationArray eqns;
-      list<BackendDAE.WhenClause> wcLst;
-
-    case (BackendDAE.DAE(eqs=BackendDAE.EQSYSTEM(orderedEqs = eqns)::{}, shared=BackendDAE.SHARED(eventInfo = BackendDAE.EVENT_INFO(whenClauseLst = wcLst))))
-      equation
-        eqnsl = BackendEquation.equationList(eqns);
-        ls1 = List.map1(eqnsl, equationStr, wcLst);
-        s1 = stringDelimitList(ls1, ",");
-        s = "EqStr = {" + s1 + "};";
-      then
-        s;
-  end match;
+    BackendDAE.DAE({syst}, shared) := inBackendDAE;
+    ls1 := List.map1(BackendEquation.equationList(syst.orderedEqs), equationStr, shared.eventInfo.whenClauseLst);
+    strEqs := "EqStr = {" + stringDelimitList(ls1, ",") + "};";
 end getEquations;
 
 public function equationStr
@@ -797,6 +787,15 @@ algorithm
         {};
 
     case (DAE.CALL(path = Absyn.IDENT(name = "pre"),expLst = {DAE.CREF(componentRef = cr)}),vars) /* pre(v) is considered a known variable */ //IS IT????
+      equation
+        (_,p) = BackendVariable.getVar(cr, vars);
+        pStr = List.map(p, intString);
+        //ss = printExpStr(cr, vars);
+        //pStr = ss;
+      then
+        pStr;
+
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous"),expLst = {DAE.CREF(componentRef = cr)}),vars) /* previous(v) is considered a known variable*/
       equation
         (_,p) = BackendVariable.getVar(cr, vars);
         pStr = List.map(p, intString);

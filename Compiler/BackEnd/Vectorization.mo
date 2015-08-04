@@ -50,8 +50,6 @@ protected import Dump;
 protected import ExpressionDump;
 protected import ExpressionSimplify;
 protected import List;
-protected import SCode;
-protected import SCodeDump;
 protected import SimCode;
 protected import SimCodeVar;
 protected import Util;
@@ -817,7 +815,7 @@ algorithm
     equation
     true = ComponentReference.isArrayElement(cref);
     (crefHead,idx,crefTailOpt) = ComponentReference.stripArrayCref(cref);
-    if Util.isSome(crefTailOpt) then
+    if isSome(crefTailOpt) then
       crefLst = {Util.getOption(crefTailOpt)};
     else
       crefLst = {};
@@ -1405,53 +1403,43 @@ public function prepareVectorizedDAE0
   input BackendDAE.Shared sharedIn;
   output BackendDAE.EqSystem sysOut;
   output BackendDAE.Shared sharedOut;
-protected
-  array<Integer> ass1, ass2;
-  BackendDAE.Variables vars, aliasVars,knownVars;
-  list<BackendDAE.Var> varLst, addAlias, aliasLst, knownLst;
-  list<BackendDAE.Equation> eqLst;
-  BackendDAE.EquationArray eqs;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.Matching matching;
-  BackendDAE.StrongComponents compsIn, comps;
-  BackendDAE.StateSets stateSets "the statesets of the system";
-  BackendDAE.BaseClockPartitionKind partitionKind;
-  BackendDAE.Shared shared;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqs, m=m, mT=mT, matching=matching, stateSets=stateSets, partitionKind=partitionKind) := sysIn;
-  BackendDAE.SHARED(aliasVars=aliasVars, knownVars=knownVars) := sharedIn;
+  (sysOut, sharedOut) := match (sysIn, sharedIn)
+    local
+      BackendDAE.Shared shared;
+      BackendDAE.EqSystem syst;
+      list<BackendDAE.Var> varLst, addAlias, aliasLst, knownLst;
+      list<BackendDAE.Equation> eqLst;
+    case ( syst as BackendDAE.EQSYSTEM(),
+           shared as BackendDAE.SHARED() )
+      algorithm
+        eqLst := BackendEquation.equationList(syst.orderedEqs);
+        //BackendDump.dumpEquationList(eqLst,"eqsIn");
+        //remove partly unrolled for-equations
+        // occasionally, there is a constantly indexed var in the for-equation
+        (eqLst,_) := updateIterCrefs(eqLst,({},{}));
+        // (eqLst,_) := List.fold(eqLst,markUnrolledForEqs,({},{}));
 
+        // set subscripts at end of equation crefs
+        eqLst := List.map(listReverse(eqLst),setSubscriptsAtEndForEquation);
 
-  eqLst := BackendEquation.equationList(eqs);
-    //BackendDump.dumpEquationList(eqLst,"eqsIn");
-  //remove partly unrolled for-equations
-  // occasionally, there is a constantly indexed var in the for-equation
-  (eqLst,_) := updateIterCrefs(eqLst,({},{}));
-  // (eqLst,_) := List.fold(eqLst,markUnrolledForEqs,({},{}));
-
-  // set subscripts at end of equation crefs
-  eqLst := List.map(listReverse(eqLst),setSubscriptsAtEndForEquation);
-
-  // set subscripts at end of vars
-  varLst := BackendVariable.varList(vars);
-  aliasLst := BackendVariable.varList(aliasVars);
-  knownLst := BackendVariable.varList(knownVars);
-  varLst := List.map(varLst,appendSubscriptsInVar);
-  aliasLst := List.map(aliasLst,appendSubscriptsInVar);
-  knownLst := List.map(knownLst,appendSubscriptsInVar);
-  vars := BackendVariable.listVar1(varLst);
-  aliasVars := BackendVariable.listVar1(aliasLst);
-  knownVars := BackendVariable.listVar1(knownLst);
-
-  eqs := BackendEquation.listEquation(eqLst);
-    //BackendDump.dumpEquationList(eqLst,"eqsOut");
-    //BackendDump.dumpVariables(vars,"VARSOUT");
-
-  sysOut := BackendDAE.EQSYSTEM(vars,eqs,m,mT,matching,stateSets,partitionKind);
-  shared := BackendDAEUtil.replaceRemovedEqsInShared(sharedIn,BackendEquation.listEquation({}));
-  shared := BackendDAEUtil.replaceAliasVarsInShared(shared,aliasVars);
-  sharedOut := BackendDAEUtil.replaceKnownVarsInShared(shared,knownVars);
+        // set subscripts at end of vars
+        varLst := BackendVariable.varList(syst.orderedVars);
+        aliasLst := BackendVariable.varList(shared.aliasVars);
+        knownLst := BackendVariable.varList(shared.knownVars);
+        varLst := List.map(varLst,appendSubscriptsInVar);
+        aliasLst := List.map(aliasLst,appendSubscriptsInVar);
+        knownLst := List.map(knownLst,appendSubscriptsInVar);
+        syst.orderedVars := BackendVariable.listVar1(varLst);
+        shared.aliasVars := BackendVariable.listVar1(aliasLst);
+        shared.knownVars := BackendVariable.listVar1(knownLst);
+        syst.removedEqs := BackendEquation.listEquation({});
+        shared.removedEqs := BackendEquation.listEquation({});
+        syst.orderedEqs := BackendEquation.listEquation(eqLst);
+        //BackendDump.dumpEquationList(eqLst,"eqsOut");
+        //BackendDump.dumpVariables(vars,"VARSOUT");
+      then (syst, shared);
+  end match;
 end prepareVectorizedDAE0;
 
 protected function setSubscriptsAtEndForEquation
@@ -1586,29 +1574,29 @@ protected
   BackendDAE.StateSets stateSets;
   BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqs, m=m, mT=mT, matching=matching, stateSets=stateSets, partitionKind=partitionKind) := sysIn;
-  BackendDAE.SHARED(aliasVars=aliasVars, knownVars=knownVars) := sharedIn;
-
-  varLst := BackendVariable.varList(vars);
-  aliasLst := BackendVariable.varList(aliasVars);
-  knownLst := BackendVariable.varList(knownVars);
-    //BackendDump.dumpVarList(varLst,"varLst0");
-    //BackendDump.dumpVarList(aliasLst,"aliasVars0");
-    //BackendDump.dumpVarList(knownLst,"knownLst0");
-    //BackendDump.dumpVarList(aliasLst,"aliasVars0");
-
-  (varLst,aliasLst) := enlargeIteratedArrayVars1(varLst,aliasLst,{},{});
-  (knownLst,knownLst2) := enlargeIteratedArrayVars1(knownLst,{},{},{});
-
-    //BackendDump.dumpVarList(varLst,"varLst1");
-    //BackendDump.dumpVarList(aliasLst,"aliasVars1");
-    //BackendDump.dumpVarList(knownLst,"knownLst1");
-
-  vars := BackendVariable.listVar1(varLst);
-  aliasVars := BackendVariable.listVar1(aliasLst);
-  sysOut := BackendDAE.EQSYSTEM(vars,eqs,m,mT,matching,stateSets,partitionKind);
-  sharedOut := BackendDAEUtil.replaceAliasVarsInShared(sharedIn,aliasVars);
-  sharedOut := BackendDAEUtil.replaceKnownVarsInShared(sharedOut,BackendVariable.listVar1(knownLst));
+  (sysOut, sharedOut) := match (sysIn, sharedIn)
+    local
+      BackendDAE.EqSystem syst;
+      BackendDAE.Shared shared;
+    case (syst as BackendDAE.EQSYSTEM(), shared as BackendDAE.SHARED())
+      algorithm
+        varLst := BackendVariable.varList(syst.orderedVars);
+        aliasLst := BackendVariable.varList(shared.aliasVars);
+        knownLst := BackendVariable.varList(shared.knownVars);
+        (varLst, aliasLst) := enlargeIteratedArrayVars1(varLst, aliasLst, {}, {});
+        (knownLst, knownLst2) := enlargeIteratedArrayVars1(knownLst, {}, {}, {});
+        syst.orderedVars := BackendVariable.listVar1(varLst);
+        shared.aliasVars := BackendVariable.listVar1(aliasLst);
+        shared.knownVars := BackendVariable.listVar1(knownLst);
+        //BackendDump.dumpVarList(varLst,"varLst0");
+        //BackendDump.dumpVarList(aliasLst,"aliasVars0");
+        //BackendDump.dumpVarList(knownLst,"knownLst0");
+        //BackendDump.dumpVarList(aliasLst,"aliasVars0");
+        //BackendDump.dumpVarList(varLst,"varLst1");
+        //BackendDump.dumpVarList(aliasLst,"aliasVars1");
+        //BackendDump.dumpVarList(knownLst,"knownLst1");
+      then (syst, shared);
+  end match;
 end enlargeIteratedArrayVars;
 
 
@@ -1880,70 +1868,9 @@ end getSimCodeVarAlias;
 protected function setSimCodeInitialEquations
   input SimCode.SimCode simCode;
   input list<SimCode.SimEqSystem> initEqs;
-  output SimCode.SimCode outSimCode;
+  output SimCode.SimCode outSimCode = simCode;
 algorithm
-  outSimCode := match (simCode, initEqs)
-    local
-      SimCode.ModelInfo modelInfo;
-      list<DAE.Exp> literals;
-      list<SimCode.RecordDeclaration> recordDecls;
-      list<String> externalFunctionIncludes;
-      list<SimCode.SimEqSystem> allEquations;
-      list<list<SimCode.SimEqSystem>> odeEquations;
-      list<list<SimCode.SimEqSystem>> algebraicEquations;
-      Boolean useSymbolicInitialization, useHomotopy;
-      list<SimCode.SimEqSystem> initialEquations, removedInitialEquations;
-      list<SimCode.SimEqSystem> startValueEquations;
-      list<SimCode.SimEqSystem> nominalValueEquations;
-      list<SimCode.SimEqSystem> minValueEquations;
-      list<SimCode.SimEqSystem> maxValueEquations;
-      list<SimCode.SimEqSystem> parameterEquations;
-      list<SimCode.SimEqSystem> removedEquations;
-      list<SimCode.SimEqSystem> algorithmAndEquationAsserts;
-      list<SimCode.SimEqSystem> jacobianEquations;
-      list<SimCode.SimEqSystem> equationsForZeroCrossings;
-      list<SimCode.StateSet> stateSets;
-      list<DAE.Constraint> constraints;
-      list<DAE.ClassAttributes> classAttributes;
-      list<BackendDAE.ZeroCrossing> zeroCrossings, relations;
-      list<BackendDAE.TimeEvent> timeEvents;
-      list<SimCode.SimWhenClause> whenClauses;
-      list<DAE.ComponentRef> discreteModelVars;
-      SimCode.ExtObjInfo extObjInfo;
-      SimCode.MakefileParams makefileParams;
-      SimCode.DelayedExpression delayedExps;
-      list<SimCode.JacobianMatrix> jacobianMatrixes;
-      Option<SimCode.SimulationSettings> simulationSettingsOpt;
-      String fileNamePrefix;
-      // *** a protected section *** not exported to SimCodeTV
-      SimCode.HashTableCrefToSimVar crefToSimVarHT "hidden from typeview - used by cref2simvar() for cref -> SIMVAR lookup available in templates.";
-      HpcOmSimCode.HpcOmData hpcomData;
-      HashTableCrIListArray.HashTable varToArrayIndexMapping;
-      HashTableCrILst.HashTable varToIndexMapping;
-      Option<SimCode.FmiModelStructure> modelStruct;
-      Option<SimCode.BackendMapping> backendMapping;
-      list<BackendDAE.BaseClockPartitionKind> partitionsKind;
-      list<DAE.ClockKind> baseClocks;
-
-    case (SimCode.SIMCODE( modelInfo, literals, recordDecls, externalFunctionIncludes,
-                           allEquations, odeEquations, algebraicEquations, partitionsKind, baseClocks,
-                           useSymbolicInitialization, useHomotopy, initialEquations, removedInitialEquations, startValueEquations,
-                           nominalValueEquations, minValueEquations, maxValueEquations,
-                           parameterEquations, removedEquations, algorithmAndEquationAsserts, equationsForZeroCrossings,
-                           jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings,
-                           relations, timeEvents, whenClauses, discreteModelVars, extObjInfo, makefileParams,
-                           delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData, varToArrayIndexMapping,
-                           varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct ), _)
-      then SimCode.SIMCODE( modelInfo, literals, recordDecls, externalFunctionIncludes,
-                            allEquations, odeEquations, algebraicEquations, partitionsKind, baseClocks,
-                            useSymbolicInitialization, useHomotopy, initEqs, removedInitialEquations, startValueEquations,
-                            nominalValueEquations, minValueEquations, maxValueEquations,
-                            parameterEquations, removedEquations, algorithmAndEquationAsserts,equationsForZeroCrossings,
-                            jacobianEquations, stateSets, constraints, classAttributes, zeroCrossings,
-                            relations, timeEvents, whenClauses, discreteModelVars, extObjInfo, makefileParams,
-                            delayedExps, jacobianMatrixes, simulationSettingsOpt, fileNamePrefix, hpcomData,
-                            varToArrayIndexMapping, varToIndexMapping, crefToSimVarHT, backendMapping, modelStruct );
-  end match;
+  outSimCode.initialEquations := initEqs;
 end setSimCodeInitialEquations;
 
 /*
@@ -1982,7 +1909,7 @@ algorithm
   addAliasLst1 := expandAliasVars(aliasVars0,vars,{});
 
   sysOut := BackendDAE.EQSYSTEM(vars,eqs,m,mT,matching,stateSets,partitionKind);
-  sharedOut := BackendDAEUtil.replaceAliasVarsInShared(sharedIn,aliasVars);
+  sharedOut := BackendDAEUtil.setSharedAliasVars(sharedIn,aliasVars);
 end prepareVectorizedDAE1;
 
 protected function expandAliasVars

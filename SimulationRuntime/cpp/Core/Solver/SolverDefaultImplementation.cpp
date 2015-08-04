@@ -111,7 +111,7 @@ void SolverDefaultImplementation::initialize()
   timeevent_system->setTime(_tCurrent);
 
 
-  if(_settings->getGlobalSettings()->getOutputPointType() != EMPTY2 && _settings->getGlobalSettings()->getOutputFormat() != EMPTY)
+  if(_settings->getGlobalSettings()->getOutputPointType() != OPT_NONE)
     writeoutput_system->writeOutput(IWriteOutput::HEAD_LINE);
 
   // Allocate array with values of zero functions
@@ -185,14 +185,14 @@ void SolverDefaultImplementation::setZeroState()
 void SolverDefaultImplementation::writeToFile(const int& stp, const double& t, const double& h)
 {
   #ifdef RUNTIME_PROFILING
-  MEASURETIME_REGION_DEFINE(writeFunctionStartValues, "solverWriteOutput");
+  MEASURETIME_REGION_DEFINE(solverWriteOutputHandler, "solverWriteOutput");
   if(MeasureTime::getInstance() != NULL)
   {
       MEASURETIME_START(writeFunctionStartValues, solverWriteOutputHandler, "solverWriteOutput");
   }
   #endif
 
-  if(_settings->getGlobalSettings()->getOutputFormat()!= EMPTY)
+  if(_settings->getGlobalSettings()->getOutputPointType()!= OPT_NONE)
   {
     IWriteOutput* writeoutput_system = dynamic_cast<IWriteOutput*>(_system);
 

@@ -32,12 +32,10 @@ public:
   ///path for simulation results in textfile
   virtual string getOutputPath();
   virtual void setOutputPath(string);
-  virtual OutputFormat getOutputFormat();
-  virtual void setOutputFormat(OutputFormat format);
   virtual OutputPointType getOutputPointType();
   virtual void setOutputPointType(OutputPointType);
-  virtual LogType getLogType();
-  virtual void setLogType(LogType);
+  virtual LogSettings getLogSettings();
+  virtual void setLogSettings(LogSettings);
 
   //solver used for simulation
   virtual string getSelectedSolver();
@@ -71,9 +69,8 @@ private:
       _selected_nonlin_solver,
       _resultsfile_name,
       _runtimeLibraryPath;
-  OutputFormat _outputFormat;
   OutputPointType _outputPointType;
-  LogType _log_type;
+  LogSettings _log_settings;
   unsigned int _alarm_time;
 };
 /** @} */ // end of coreSimulationSettings

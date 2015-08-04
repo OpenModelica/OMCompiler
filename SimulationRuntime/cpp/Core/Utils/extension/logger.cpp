@@ -6,11 +6,16 @@
  */
 #include <Core/ModelicaDefine.h>
 #include <Core/Modelica.h>
+#include <Core/Utils/extension/FactoryExport.h>
 #include <Core/Utils/extension/logger.hpp>
 
-Logger* Logger::instance = 0;
+Logger* Logger::instance = NULL;
 
-Logger::Logger(bool enabled) : _isEnabled(enabled)
+Logger::Logger(LogSettings settings, bool enabled) : _settings(settings), _isEnabled(enabled)
+{
+}
+
+Logger::Logger(bool enabled) : _settings(LogSettings()), _isEnabled(enabled)
 {
 }
 
@@ -18,22 +23,12 @@ Logger::~Logger()
 {
 }
 
-void Logger::writeErrorInternal(std::string errorMsg)
+void Logger::writeInternal(std::string msg, LogCategory cat, LogLevel lvl)
 {
-  if(_isEnabled)
-    std::cerr << "Error: " << errorMsg << std::endl;
-}
-
-void Logger::writeWarningInternal(std::string warningMsg)
-{
-  if(_isEnabled)
-    std::cerr << "Warning: " << warningMsg << std::endl;
-}
-
-void Logger::writeInfoInternal(std::string infoMsg)
-{
-  if(_isEnabled)
-    std::cout << "Info: " << infoMsg << std::endl;
+	if(isOutput(cat, lvl))
+	{
+		std::cerr << getPrefix(cat,lvl) << msg << std::endl;
+	}
 }
 
 void Logger::setEnabledInternal(bool enabled)
@@ -44,4 +39,33 @@ void Logger::setEnabledInternal(bool enabled)
 bool Logger::isEnabledInternal()
 {
   return _isEnabled;
+}
+
+bool Logger::isOutput(LogCategory cat, LogLevel lvl) const
+{
+	return _settings.modes[cat] >= lvl && _isEnabled;
+}
+
+bool Logger::isOutput(std::pair<LogCategory,LogLevel> mode) const
+{
+	return isOutput(mode.first, mode.second);
+}
+
+
+std::string Logger::getPrefix(LogCategory cat, LogLevel lvl) const
+{
+	switch(lvl)
+	{
+	case(LL_DEBUG):
+		return "DEBUG: ";
+	case(LL_ERROR):
+		return "ERROR: ";
+	case(LL_INFO):
+		return "INFO: ";
+	case(LL_WARNING):
+		return "WARNING: ";
+	default:
+		return "";
+
+	}
 }

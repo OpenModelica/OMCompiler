@@ -26,8 +26,12 @@ class IMixedSystem
 public:
   virtual ~IMixedSystem() {};
   /// Provide Jacobian
-  virtual void getJacobian(SparseMatrix& matrix) = 0;
-  virtual void getStateSetJacobian(unsigned int index, SparseMatrix& matrix) = 0;
+  virtual const matrix_t& getJacobian() = 0;
+  virtual const matrix_t& getJacobian(unsigned int index)  = 0;
+  virtual const sparsematrix_t& getSparseJacobian() = 0;
+  virtual const sparsematrix_t& getSparseJacobian(unsigned int index)  = 0;
+
+  virtual void getStateSetJacobian(unsigned int index, matrix_t& matrix) = 0;
   /// Called to handle all  events occured at same time
   virtual bool handleSystemEvents(bool* events) = 0;
 
@@ -37,5 +41,8 @@ public:
 
   virtual void getAColorOfColumn(int* aSparsePatternColorCols, int size) = 0;
   virtual int getAMaxColors() = 0;
+
+  // Copy the given IMixedSystem instance
+  virtual IMixedSystem* clone() = 0;
 };
 /** @} */ // end of coreSystem

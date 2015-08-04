@@ -71,7 +71,6 @@ protected import InstTypes;
 protected import NFInstUtil;
 protected import List;
 protected import Lookup;
-protected import MetaUtil;
 protected import Patternm;
 protected import PrefixUtil;
 protected import Static;
@@ -5015,7 +5014,7 @@ algorithm
     // (v1,v2,..,vn) := func(...)
     case (cache,env,ih,pre,Absyn.TUPLE(expressions = expl),e_1,eprop,_,source,_,impl,_,_)
       equation
-        true = MetaUtil.onlyCrefExpressions(expl);
+        true = List.all(expl, Absyn.isCref);
         (cache, e_1 as DAE.CALL(), eprop) = Ceval.cevalIfConstant(cache, env, e_1, eprop, impl, info);
         (cache,e_2) = PrefixUtil.prefixExp(cache, env, ih, e_1, pre);
         (cache,expl_1,cprops,attrs,_) = Static.elabExpCrefNoEvalList(cache, env, expl, impl, NONE(), false, pre, info);
@@ -5030,7 +5029,7 @@ algorithm
     case (cache,env,ih,pre,Absyn.TUPLE(expressions = expl),e_1,eprop,_,source,_,impl,_,_)
       equation
         true = Config.acceptMetaModelicaGrammar();
-        true = MetaUtil.onlyCrefExpressions(expl);
+        true = List.all(expl, Absyn.isCref);
         true = Types.isTuple(Types.getPropType(eprop));
         (cache, e_1 as DAE.MATCHEXPRESSION(), eprop) = Ceval.cevalIfConstant(cache, env, e_1, eprop, impl, info);
         (cache,e_2) = PrefixUtil.prefixExp(cache, env, ih, e_1, pre);
@@ -5294,7 +5293,7 @@ algorithm
 
         // Now the iterator is already removed. No need for this.
         // is it the iterator of the parfor loop(implicitly declared)?
-        // isForiterator = Util.isSome(cnstForRange);
+        // isForiterator = isSome(cnstForRange);
 
         //is it either a parglobal var or for iterator
         //true = isParglobal or isForiterator;
@@ -5607,71 +5606,6 @@ algorithm
       then fail();
   end match;
 end checkValidNoRetcall;
-
-public function getSMStatesInContext "
-Author: BTH
-Return list of states defined in current context (by checking 'transtion' and 'initialState' operators)"
-  input list<SCode.Equation> eqns;
-  output list<DAE.ComponentRef> states;
-protected
-  list<SCode.Equation> eqns1;
-  list<list<Absyn.ComponentRef>> statesLL;
-  list<Absyn.ComponentRef> statesCR;
-algorithm
-  eqns1 := List.filter(eqns, isSMStatement);
-  statesLL := List.map(eqns1, extractSMStates);
-  statesCR := List.flatten(statesLL);
-  states := List.map(statesCR, ComponentReference.toExpCref);
-end getSMStatesInContext;
-
-protected function isSMStatement "
-Author: BTH
-Succeeds if element is a state machine statement"
-  input SCode.Equation inElement;
-algorithm
-  _:= match (inElement)
-    case SCode.EQUATION(eEquation=SCode.EQ_NORETCALL(exp=Absyn.CALL(function_=
-      Absyn.CREF_IDENT(name="transition"))))
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then ();
-    case SCode.EQUATION(eEquation=SCode.EQ_NORETCALL(exp=Absyn.CALL(function_=
-      Absyn.CREF_IDENT(name="initialState"))))
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then ();
-  end match;
-end isSMStatement;
-
-
-protected function extractSMStates "
-Author: BTH
-Helper function to getSMStatesInContext.
-Return list of state instance componenent refs used as arguments in operators 'transtion' or 'initialState'.
-"
-input SCode.Equation inElement;
-output list<Absyn.ComponentRef> outElement;
-algorithm
-  outElement := match (inElement)
-    local
-      Absyn.ComponentRef cref1, cref2;
-      list<Absyn.Exp> args;
-    case SCode.EQUATION(eEquation=SCode.EQ_NORETCALL(exp=Absyn.CALL(function_=
-      Absyn.CREF_IDENT(name="transition"),
-      functionArgs = Absyn.FUNCTIONARGS(args =
-        {Absyn.CREF(componentRef = cref1),
-        Absyn.CREF(componentRef = cref2),_}
-        ))))
-      then {cref1, cref2};
-    case SCode.EQUATION(eEquation=SCode.EQ_NORETCALL(exp=Absyn.CALL(function_=
-      Absyn.CREF_IDENT(name="initialState"),
-      functionArgs = Absyn.FUNCTIONARGS(args =
-        {Absyn.CREF(componentRef = cref1)}
-        ))))
-      then {cref1};
-    else {};
-  end match;
-end extractSMStates;
 
 annotation(__OpenModelica_Interface="frontend");
 end InstSection;

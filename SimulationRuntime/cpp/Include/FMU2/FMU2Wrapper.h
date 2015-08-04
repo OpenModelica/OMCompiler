@@ -46,15 +46,15 @@
 // build MODEL_CLASS from MODEL_IDENTIFIER
 #define FMU2_PASTER(a, b) a ## b
 #define FMU2_CONCAT(a, b) FMU2_PASTER(a, b)
-#define MODEL_CLASS FMU2_CONCAT(MODEL_IDENTIFIER, FMU)
+#define MODEL_CLASS FMU2_CONCAT(MODEL_IDENTIFIER_SHORT, FMU)
 
 // define logger as macro that passes through variadic args
 #define FMU2_LOG(w, status, category, ...) \
   if ((w)->logCategories & (1 << (category))) \
     (w)->logger((w)->componentEnvironment, (w)->instanceName, \
-                status, (w)->logCategoryName(category), __VA_ARGS__)
+                status, (w)->LogCategoryFMUName(category), __VA_ARGS__)
 
-enum LogCategory {
+enum LogCategoryFMU {
   logEvents = 0,
   logSingularLinearSystems,
   logNonlinearSystems,
@@ -83,7 +83,7 @@ class FMU2Wrapper
   const fmi2CallbackLogger &logger;
   const fmi2ComponentEnvironment &componentEnvironment;
   const fmi2String &instanceName;
-  static fmi2String logCategoryName(LogCategory);
+  static fmi2String LogCategoryFMUName(LogCategoryFMU);
 
   // Enter and exit initialization mode, terminate and reset
   virtual fmi2Status setupExperiment(fmi2Boolean toleranceDefined,

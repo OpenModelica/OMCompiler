@@ -41,6 +41,7 @@
 #include "util/ringbuffer.h"
 #include "util/omc_error.h"
 #include "util/rtclock.h"
+#include "util/rational.h"
 
 #define omc_dummyVarInfo {-1,"","",omc_dummyFileInfo}
 #define omc_dummyEquationInfo {-1,0,"",-1,NULL}
@@ -314,6 +315,8 @@ typedef struct NONLINEAR_SYSTEM_DATA
   unsigned long numberOfIterations;     /* number of iteration of non-linear solvers of this system */
   double totalTime;                     /* save the totalTime */
   rtclock_t totalTimeClock;             /* time clock for the totalTime  */
+
+  void* csvData;                        /* information to save csv data */
 }NONLINEAR_SYSTEM_DATA;
 
 typedef struct LINEAR_SYSTEM_DATA
@@ -415,6 +418,18 @@ typedef struct MODEL_DATA_XML
   EQUATION_INFO *equationInfo;         /* lazy loading; read from file if it is NULL when accessed */
 } MODEL_DATA_XML;
 
+typedef struct SUBCLOCK_INFO {
+  RATIONAL shift;
+  RATIONAL factor;
+  const char* solverMethod;
+  modelica_boolean holdEvents;
+} SUBCLOCK_INFO;
+
+typedef struct CLOCK_INFO {
+  long nSubClocks;
+  SUBCLOCK_INFO* subClocks;
+} CLOCK_INFO;
+
 typedef struct MODEL_DATA
 {
   STATIC_REAL_DATA* realVarsData;     /* states + derived states + algs + (constrainsVars+FinalconstrainsVars) + discrete */
@@ -443,6 +458,11 @@ typedef struct MODEL_DATA
 
   long nSamples;                       /* number of different sample-calls */
   SAMPLE_INFO* samplesInfo;            /* array containing each sample-call */
+
+  long nClocks;
+  CLOCK_INFO* clocksInfo;
+  long nSubClocks;
+  SUBCLOCK_INFO* subClocksInfo;
 
   fortran_integer nStates;
   long nVariablesReal;                 /* all Real Variables of the model (states, statesderivatives, algebraics, real discretes) */
@@ -478,6 +498,12 @@ typedef struct MODEL_DATA
   long nJacobians;
 }MODEL_DATA;
 
+typedef struct CLOCK_DATA {
+  modelica_real interval;
+  modelica_real timepoint;
+  long cnt;
+} CLOCK_DATA;
+
 typedef struct SIMULATION_INFO
 {
   modelica_real startTime;
@@ -492,6 +518,7 @@ typedef struct SIMULATION_INFO
   int mixedMethod;                     /* mixed solver */
   int nlsMethod;                       /* nonlinear solver */
   int newtonStrategy;                  /* newton damping strategy solver */
+  int nlsCsvInfomation;                /* = 1 csv files with detailed nonlinear solver process are generated */
 
   double lambda;                       /* homotopy parameter E [0, 1.0] */
 
@@ -510,6 +537,8 @@ typedef struct SIMULATION_INFO
   double nextSampleEvent;              /* point in time of next sample-call */
   double *nextSampleTimes;             /* array of next sample time */
   modelica_boolean *samples;           /* array of the current value for all sample-calls */
+
+  CLOCK_DATA *clocksData;
 
   modelica_real* zeroCrossings;
   modelica_real* zeroCrossingsPre;

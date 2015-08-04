@@ -37,6 +37,12 @@
 
 #include <Core/SimulationSettings/IGlobalSettings.h>
 
+#ifdef FMU_KINSOL
+  #define DEFAULT_NLS "kinsol"
+#else
+  #define DEFAULT_NLS "newton"
+#endif
+
 class FMU2GlobalSettings : public IGlobalSettings
 {
  public:
@@ -59,18 +65,16 @@ class FMU2GlobalSettings : public IGlobalSettings
   virtual bool            getInfoOutput() { return false; }
   virtual void            setInfoOutput(bool) {}
   virtual string          getOutputPath() { return "./"; }
-  virtual OutputFormat    getOutputFormat() { return EMPTY; }
-  virtual LogType         getLogType() { return OFF; }
-  virtual void            setLogType(LogType) {}
-  virtual OutputPointType getOutputPointType() { return ALL; };
+  virtual LogSettings     getLogSettings() { return LogSettings(); }
+  virtual void            setLogSettings(LogSettings) {}
+  virtual OutputPointType getOutputPointType() { return OPT_ALL; };
   virtual void            setOutputPointType(OutputPointType) {};
-  virtual void            setOutputFormat(OutputFormat) {}
   virtual void            setOutputPath(string) {}
   virtual string          getSelectedSolver() { return "euler"; }
   virtual void            setSelectedSolver(string) {}
-  virtual string          getSelectedLinSolver() { return "kinsol"; }
+  virtual string          getSelectedLinSolver() { return DEFAULT_NLS; }
   virtual void            setSelectedLinSolver(string) {}
-  virtual string          getSelectedNonLinSolver() { return "kinsol"; }
+  virtual string          getSelectedNonLinSolver() { return DEFAULT_NLS; }
   virtual void            setSelectedNonLinSolver(string) {}
   virtual void            load(std::string xml_file) {};
   virtual void            setResultsFileName(string) {}

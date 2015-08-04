@@ -66,7 +66,6 @@ public import DAE;
 public import FCore;
 
 protected import Array;
-protected import BackendDAETransform;
 protected import BackendDAEUtil;
 protected import BackendDump;
 protected import BackendEquation;
@@ -77,7 +76,6 @@ protected import BaseHashSet;
 protected import Ceval;
 protected import ComponentReference;
 protected import DAEUtil;
-protected import Debug;
 protected import Error;
 protected import Expression;
 protected import ExpressionDump;
@@ -202,18 +200,11 @@ protected function evaluateParameters "author Frenkel TUD
   output BackendDAE.BackendDAE outDAE;
   output BackendVarTransform.VariableReplacements oRepl;
 protected
-  DAE.FunctionTree funcs;
-  BackendDAE.Variables knvars,exobj,av;
-  BackendDAE.EquationArray remeqns,inieqns;
-  list<DAE.Constraint> constrs;
-  list<DAE.ClassAttributes> clsAttrs;
+  BackendDAE.Variables knvars, av;
+  BackendDAE.EquationArray inieqns;
   FCore.Cache cache;
   FCore.Graph graph;
-  BackendDAE.EventInfo einfo;
-  BackendDAE.ExternalObjectClasses eoc;
-  BackendDAE.SymbolicJacobians symjacs;
-  BackendVarTransform.VariableReplacements repl,repleval;
-  BackendDAE.BackendDAEType btp;
+  BackendVarTransform.VariableReplacements repl, repleval;
   BackendDAE.EqSystems systs;
   BackendDAE.Shared shared;
   list<list<Integer>> comps;
@@ -222,38 +213,53 @@ protected
   BackendDAE.IncidenceMatrixT m;
   BackendDAE.IncidenceMatrixT mt;
   list<Integer> selectedParameter;
-  BackendDAE.ExtraInfo ei;
 algorithm
-  BackendDAE.DAE(systs, BackendDAE.SHARED(knvars, exobj, av, inieqns, remeqns, constrs, clsAttrs, cache, graph, funcs, einfo, eoc, btp, symjacs, ei)) := inDAE;
+  (outDAE, oRepl) := match inDAE
+    case BackendDAE.DAE ( systs,
+                          shared as BackendDAE.SHARED(knownVars=knvars, aliasVars=av, initialEqs=inieqns, cache=cache, graph=graph) )
+      algorithm
+        // get parameters with annotation(Evaluate=true)
+        size := BackendVariable.varsSize(knvars);
+        m := arrayCreate(size, {});
+        mt := arrayCreate(size, {});
+        ass2 := arrayCreate(size, -1);
+        ((_, _, _, selectedParameter, nselect, ass2, m, mt)) :=
+            BackendVariable.traverseBackendDAEVars( knvars, getParameterIncidenceMatrix,
+                                                    (knvars, 1, selectParameterfunc, {}, 0, ass2, m, mt) );
 
-  // get parameters with annotation(Evaluate=true)
-  size := BackendVariable.varsSize(knvars);
-  m := arrayCreate(size, {});
-  mt := arrayCreate(size, {});
-  ass2 := arrayCreate(size, -1);
-  ((_, _, _, selectedParameter, nselect, ass2, m, mt)) := BackendVariable.traverseBackendDAEVars(knvars, getParameterIncidenceMatrix, (knvars, 1, selectParameterfunc, {}, 0, ass2, m, mt));
+        // evaluate selected parameters
+        size := intMax(BaseHashTable.defaultBucketSize, realInt(realMul(intReal(size), 0.7)));
+        nselect := intMax(BaseHashTable.defaultBucketSize, nselect*2);
+        repl := BackendVarTransform.emptyReplacementsSized(size);
+        repleval := BackendVarTransform.emptyReplacementsSized(nselect);
+        markarr := arrayCreate(size, -1);
+        (knvars, cache, repl, repleval, mark) :=
+            evaluateSelectedParameters(selectedParameter, knvars, m, inieqns, cache, graph, 1, markarr, repl, repleval);
 
-  // evaluate selected parameters
-  size := intMax(BaseHashTable.defaultBucketSize, realInt(realMul(intReal(size), 0.7)));
-  nselect := intMax(BaseHashTable.defaultBucketSize, nselect*2);
-  repl := BackendVarTransform.emptyReplacementsSized(size);
-  repleval := BackendVarTransform.emptyReplacementsSized(nselect);
-  markarr := arrayCreate(size, -1);
-  (knvars, cache, repl, repleval, mark) := evaluateSelectedParameters(selectedParameter, knvars, m, inieqns, cache, graph, 1, markarr, repl, repleval);
+        // replace evaluated parameter in parameters
+        comps := Sorting.TarjanTransposed(mt, ass2);
 
-  // replace evaluated parameter in parameters
-  comps := Sorting.TarjanTransposed(mt, ass2);
+        // evaluate vars with bind expression consists of evaluated vars
+        (knvars, repl, repleval, cache, mark) :=
+            traverseParameterSorted(comps, knvars, m, inieqns, cache, graph, mark, markarr, repl, repleval);
+        if Flags.isSet(Flags.DUMP_EA_REPL) then
+          BackendVarTransform.dumpReplacements(repleval);
+        end if;
 
-  // evaluate vars with bind expression consists of evaluated vars
-  (knvars, repl, repleval, cache, mark) := traverseParameterSorted(comps, knvars, m, inieqns, cache, graph, mark, markarr, repl, repleval);
-  if Flags.isSet(Flags.DUMP_EA_REPL) then
-    BackendVarTransform.dumpReplacements(repleval);
-  end if;
+        // replace evaluated parameter in variables
+        (systs, (knvars, m, inieqns, cache, graph, mark, markarr, repl, repleval)) :=
+            List.mapFold( systs, replaceEvaluatedParametersSystem, ( knvars, m, inieqns, cache, graph, mark,
+                                                                     markarr, repl, repleval ) );
+        (av, _) := BackendVariable.traverseBackendDAEVarsWithUpdate (
+            av, replaceEvaluatedParameterTraverser, (knvars, m, inieqns, cache, graph, mark, markarr, repl, repleval) );
 
-  // replace evaluated parameter in variables
-  (systs, (knvars, m, inieqns, cache, graph, mark, markarr, repl, oRepl)) := List.mapFold(systs, replaceEvaluatedParametersSystem, (knvars, m, inieqns, cache, graph, mark, markarr, repl, repleval));
-  (av, _) := BackendVariable.traverseBackendDAEVarsWithUpdate(av, replaceEvaluatedParameterTraverser, (knvars, m, inieqns, cache, graph, mark, markarr, repl, oRepl));
-  outDAE := BackendDAE.DAE(systs, BackendDAE.SHARED(knvars, exobj, av, inieqns, remeqns, constrs, clsAttrs, cache, graph, funcs, einfo, eoc, btp, symjacs, ei));
+        shared.knownVars := knvars;
+        shared.aliasVars := av;
+        shared.initialEqs := inieqns;
+        shared.graph := graph;
+        shared.cache := cache;
+      then (BackendDAE.DAE(systs, shared), repleval);
+  end match;
 end evaluateParameters;
 
 
@@ -999,9 +1005,9 @@ protected
   BackendDAE.StateSets stateSets;
   BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns,m=m,mT=mT,matching=matching,stateSets=stateSets,partitionKind=partitionKind) := isyst;
-  (vars,outTypeA) := BackendVariable.traverseBackendDAEVarsWithUpdate(vars,replaceEvaluatedParameterTraverser,inTypeA);
-  osyst := BackendDAE.EQSYSTEM(vars,eqns,m,mT,matching,stateSets,partitionKind);
+  BackendDAE.EQSYSTEM(orderedVars=vars) := isyst;
+  (vars,outTypeA) := BackendVariable.traverseBackendDAEVarsWithUpdate(vars, replaceEvaluatedParameterTraverser, inTypeA);
+  osyst := BackendDAEUtil.setEqSystVars(isyst, vars);
 end replaceEvaluatedParametersSystem;
 
 protected function replaceEvaluatedParameterTraverser
@@ -1058,59 +1064,56 @@ protected function replaceEvaluatedParametersEqns "author Frenkel TUD"
   input BackendVarTransform.VariableReplacements inRepl;
   output BackendDAE.BackendDAE outDAE;
 protected
-  DAE.FunctionTree funcs;
-  BackendDAE.Variables knvars, exobj, av;
-  BackendDAE.EquationArray remeqns, inieqns;
-  list<DAE.Constraint> constrs;
-  list<DAE.ClassAttributes> clsAttrs;
-  FCore.Cache cache;
-  FCore.Graph graph;
-  BackendDAE.EventInfo einfo;
-  BackendDAE.ExternalObjectClasses eoc;
-  BackendDAE.SymbolicJacobians symjacs;
-  BackendDAE.BackendDAEType btp;
-  list<BackendDAE.Equation> eqnslst;
+  list<BackendDAE.Equation> lsteqns;
   BackendDAE.EqSystems systs;
   Boolean b;
-  BackendDAE.ExtraInfo ei;
+  BackendDAE.Shared shared;
 algorithm
-  BackendDAE.DAE(systs, BackendDAE.SHARED(knvars, exobj, av, inieqns, remeqns, constrs, clsAttrs, cache, graph, funcs, einfo, eoc, btp, symjacs, ei)) := inDAE;
+  BackendDAE.DAE(systs, shared) := inDAE;
 
   // do replacements in initial equations
-  eqnslst := BackendEquation.equationList(inieqns);
-  (eqnslst, b) := BackendVarTransform.replaceEquations(eqnslst, inRepl, NONE());
-  inieqns := if b then BackendEquation.listEquation(eqnslst) else inieqns;
+  lsteqns := BackendEquation.equationList(shared.initialEqs);
+  (lsteqns, b) := BackendVarTransform.replaceEquations(lsteqns, inRepl, NONE());
+  if b then
+    shared.initialEqs :=  BackendEquation.listEquation(lsteqns);
+  end if;
 
-  // do replacements in simple equations
-  eqnslst := BackendEquation.equationList(remeqns);
-  (eqnslst, b) := BackendVarTransform.replaceEquations(eqnslst, inRepl, NONE());
-  remeqns := if b then BackendEquation.listEquation(eqnslst) else remeqns;
+  lsteqns := BackendEquation.equationList(shared.removedEqs);
+  (lsteqns, b) := BackendVarTransform.replaceEquations(lsteqns, inRepl, NONE());
+  if b then
+    shared.initialEqs :=  BackendEquation.listEquation(lsteqns);
+  end if;
 
   // do replacements in systems
   systs := List.map1(systs, replaceEvaluatedParametersSystemEqns, inRepl);
 
-  outDAE := BackendDAE.DAE(systs, BackendDAE.SHARED(knvars, exobj, av, inieqns, remeqns, constrs, clsAttrs, cache, graph, funcs, einfo, eoc, btp, symjacs, ei));
+  outDAE := BackendDAE.DAE(systs, shared);
 end replaceEvaluatedParametersEqns;
 
 protected function replaceEvaluatedParametersSystemEqns
 "author Frenkel TUD
   replace the evaluated parameters in the equationsystems"
   input BackendDAE.EqSystem isyst;
-  input BackendVarTransform.VariableReplacements repl;
-  output BackendDAE.EqSystem osyst;
+  input BackendVarTransform.VariableReplacements inRepl;
+  output BackendDAE.EqSystem osyst = isyst;
 protected
-  BackendDAE.Variables vars;
-  BackendDAE.EquationArray eqns,eqns1;
-  list<BackendDAE.Equation> eqns_1,lsteqns;
+  list<BackendDAE.Equation> lsteqns;
   Boolean b;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns,stateSets=stateSets,partitionKind=partitionKind) := isyst;
-  lsteqns := BackendEquation.equationList(eqns);
-  (eqns_1,b) := BackendVarTransform.replaceEquations(lsteqns, repl,NONE());
-  eqns1 := if b then BackendEquation.listEquation(eqns_1) else eqns;
-  osyst := if b then BackendDAE.EQSYSTEM(vars,eqns1,NONE(),NONE(),BackendDAE.NO_MATCHING(),stateSets,partitionKind) else isyst;
+  lsteqns := BackendEquation.equationList(osyst.orderedEqs);
+  (lsteqns, b) := BackendVarTransform.replaceEquations(lsteqns, inRepl, NONE());
+  if b then
+    osyst.orderedEqs := BackendEquation.listEquation(lsteqns);
+    osyst := BackendDAEUtil.clearEqSyst(osyst);
+  end if;
+
+  // do replacements in simple equations
+  lsteqns := BackendEquation.equationList(osyst.removedEqs);
+  (lsteqns, b) := BackendVarTransform.replaceEquations(lsteqns, inRepl, NONE());
+  if b then
+    osyst.removedEqs := BackendEquation.listEquation(lsteqns);
+  end if;
+
 end replaceEvaluatedParametersSystemEqns;
 
 annotation(__OpenModelica_Interface="backend");

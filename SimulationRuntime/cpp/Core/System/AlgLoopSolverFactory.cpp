@@ -8,7 +8,7 @@
 #include <Core/System/AlgLoopSolverFactory.h>
 
 AlgLoopSolverFactory::AlgLoopSolverFactory(IGlobalSettings* global_settings,PATH library_path,PATH modelicasystem_path)
-  : ObjectFactory<BaseFactory>(library_path,modelicasystem_path,library_path)
+  : IAlgLoopSolverFactory(), ObjectFactory<BaseFactory>(library_path,modelicasystem_path,library_path)
   , NonLinSolverPolicy(library_path,modelicasystem_path,library_path)
   , LinSolverPolicy(library_path,modelicasystem_path,library_path)
   , _global_settings(global_settings)
@@ -25,6 +25,8 @@ boost::shared_ptr<IAlgLoopSolver> AlgLoopSolverFactory::createAlgLoopSolver(IAlg
 {
   if(algLoop->getDimReal() > 0)
   {
+#if defined(__vxworks)
+#else
     if(algLoop->isLinear())
     {
       try
@@ -43,7 +45,7 @@ boost::shared_ptr<IAlgLoopSolver> AlgLoopSolverFactory::createAlgLoopSolver(IAlg
         //the linear solver was not found -> take the nonlinear solver
       }
     }
-
+#endif
     string nonlinsolver_name = _global_settings->getSelectedNonLinSolver();
     boost::shared_ptr<INonLinSolverSettings> algsolversetting= createNonLinSolverSettings(nonlinsolver_name);
     _algsolversettings.push_back(algsolversetting);

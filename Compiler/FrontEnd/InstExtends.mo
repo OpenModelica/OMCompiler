@@ -53,7 +53,6 @@ public import Prefix;
 
 // protected imports
 protected import BaseHashTable;
-protected import Builtin;
 protected import ComponentReference;
 protected import Debug;
 protected import Dump;
@@ -1470,8 +1469,7 @@ algorithm
 
     case (_,_,stmt,_)
       equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.traceln("- Inst.fixStatement failed: " + Dump.unparseAlgorithmStr(SCode.statementToAlgorithmItem(stmt)));
+        Error.addInternalError(getInstanceName() + " failed: " + Dump.unparseAlgorithmStr(SCode.statementToAlgorithmItem(stmt)), sourceInfo());
       then fail();
   end matchcontinue;
 end fixStatement;

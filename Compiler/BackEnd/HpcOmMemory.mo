@@ -30,31 +30,33 @@
  */
 encapsulated package HpcOmMemory
 
-  public import BackendDAE;
-  public import DAE;
-  public import HashTableCrILst;
-  public import HpcOmSimCode;
-  public import HpcOmTaskGraph;
-  public import SimCode;
-  public import SimCodeVar;
+import BackendDAE;
+import DAE;
+import HashTableCrILst;
+import HpcOmSimCode;
+import HpcOmTaskGraph;
+import SimCode;
+import SimCodeVar;
 
-  protected import Array;
-  protected import BackendDAEUtil;
-  protected import BackendDump;
-  protected import BackendEquation;
-  protected import BackendVariable;
-  protected import BaseHashTable;
-  protected import ComponentReference;
-  protected import Config;
-  protected import Debug;
-  protected import Error;
-  protected import Expression;
-  protected import Flags;
-  protected import GraphML;
-  protected import HpcOmScheduler;
-  protected import List;
-  protected import SimCodeUtil;
-  protected import Util;
+protected
+
+import Array;
+import BackendDAEUtil;
+import BackendDump;
+import BackendEquation;
+import BackendVariable;
+import BaseHashTable;
+import ComponentReference;
+import Config;
+import Error;
+import Expression;
+import Flags;
+import GraphML;
+import HpcOmScheduler;
+import List;
+import SimCodeUtil;
+import SimCodeFunctionUtil;
+import Util;
 
   // -------------------------------------------
   // STRUCTURES
@@ -1168,7 +1170,7 @@ encapsulated package HpcOmMemory
     (partlyFilledClFloat, partlyFilledClInt, partlyFilledClBool) := threadPartlyFilledCacheLines;
     (fullyFilledClFloat, fullyFilledClInt, fullyFilledClBool) := threadFullyFilledCacheLines;
 
-    if(Util.isSome(iMatchedCacheLine)) then //advice was given, to which CL the variable should be added
+    if(isSome(iMatchedCacheLine)) then //advice was given, to which CL the variable should be added
       clMapIdx := numOfCLs;
       SOME((partlyFilledCacheLine, matchedClIndex)) := iMatchedCacheLine;
       partlyFilledCacheLineOption := SOME(partlyFilledCacheLine);
@@ -1363,7 +1365,7 @@ encapsulated package HpcOmMemory
     Integer levelIdx, threadIdx;
   algorithm
     (levelIdx, threadIdx) := iLevelThreadIdx;
-    if(Util.isSome(iOldPartlyFilledCacheLine)) then
+    if(isSome(iOldPartlyFilledCacheLine)) then
       SOME(PARTLYFILLEDCACHELINE_LEVEL(prefetchLevel=prefetchLevel,writeLevel=writeLevel)) := iOldPartlyFilledCacheLine;
     else
       prefetchLevel := {};
@@ -2865,9 +2867,9 @@ encapsulated package HpcOmMemory
       simVarOpt := arrayGet(iAllVarsMapping, varIdx);
       description := "unknown";
       threadText := "Th -1";
-      if(Util.isSome(simVarOpt)) then
+      if(isSome(simVarOpt)) then
         simVar := Util.getOption(simVarOpt);
-        varCompRef := SimCodeUtil.varName(simVar);
+        varCompRef := SimCodeFunctionUtil.varName(simVar);
         description :=  ComponentReference.printComponentRefStr(varCompRef);
         isValidVar := BaseHashTable.hasKey(varCompRef, iVarNameSCVarIdxMapping);
 

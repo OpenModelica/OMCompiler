@@ -53,7 +53,6 @@ protected import ClassInf;
 protected import ComponentReference;
 protected import DAEUtil;
 protected import Debug;
-protected import FCore;
 protected import Error;
 protected import Expression;
 protected import ExpressionDump;
@@ -172,8 +171,7 @@ algorithm
   end match;
 end equationList2;
 
-public function getWhenEquationExpr "
-  Get the left and right hand parts from an equation appearing in a when clause"
+public function getWhenEquationExpr "Get the left and right hand parts from an equation appearing in a when clause"
   input BackendDAE.WhenEquation inWhenEquation;
   output DAE.ComponentRef outComponentRef;
   output DAE.Exp outExp;
@@ -181,17 +179,11 @@ algorithm
   BackendDAE.WHEN_EQ(left=outComponentRef, right=outExp) := inWhenEquation;
 end getWhenEquationExpr;
 
-public function copyEquationArray "author: wbraun
-  Performs a deep copy of an expandable equation array."
+public function copyEquationArray "Performs a deep copy of an expandable equation array."
   input BackendDAE.EquationArray inEquationArray;
-  output BackendDAE.EquationArray outEquationArray;
-protected
-  Integer numberOfElement, size, arrSize;
-  array<Option<BackendDAE.Equation>> equOptArr, newEquOptArr;
+  output BackendDAE.EquationArray outEquationArray = inEquationArray;
 algorithm
-  BackendDAE.EQUATION_ARRAY(size, numberOfElement, arrSize, equOptArr) := inEquationArray;
-  newEquOptArr := arrayCopy(equOptArr);
-  outEquationArray := BackendDAE.EQUATION_ARRAY(size, numberOfElement, arrSize, newEquOptArr);
+  outEquationArray.equOptArr := arrayCopy(inEquationArray.equOptArr);
 end copyEquationArray;
 
 public function equationsLstVars
@@ -317,6 +309,10 @@ algorithm
     case (e as DAE.CALL(path = Absyn.IDENT(name = "pre")), _)
     then (inExp, false, inTuple);
 
+    // case for previous vars
+    case (e as DAE.CALL(path = Absyn.IDENT(name = "previous")), _)
+    then (inExp, false, inTuple);
+
     // add it
     case (e as DAE.CREF(componentRef = cr), (vars, bt)) equation
       (_, ilst) = BackendVariable.getVar(cr, vars);
@@ -357,6 +353,16 @@ algorithm
     else (inExp,inTpl);
   end matchcontinue;
 end traversingStateRefFinder;
+
+public function assertWithCondTrue "author: Frenkel TUD 2012-12"
+  input BackendDAE.Equation inEqn;
+  output Boolean b;
+algorithm
+  b := match inEqn
+    case BackendDAE.ALGORITHM(alg=DAE.ALGORITHM_STMTS({DAE.STMT_ASSERT(cond=DAE.BCONST(true))})) then false;
+    else true;
+  end match;
+end assertWithCondTrue;
 
 public function equationsParams "author: marcusw
   From a list of equations return all occurring parameter variables. Duplicates are removed."
@@ -972,12 +978,9 @@ public function traverseEquationArray<T> "author: Frenkel TUD
     output BackendDAE.Equation outEq;
     output T outA;
   end FuncExpType;
-protected
-  array<Option<BackendDAE.Equation>> equOptArr;
 algorithm
   //try
-    BackendDAE.EQUATION_ARRAY(equOptArr=equOptArr) := inEquationArray;
-    outTypeA := BackendDAEUtil.traverseArrayNoCopy(equOptArr, func, traverseOptEquation, inTypeA);
+    outTypeA := BackendDAEUtil.traverseArrayNoCopy(inEquationArray.equOptArr, func, traverseOptEquation, inTypeA);
   //else
   //  if Flags.isSet(Flags.FAILTRACE) then
   //    Debug.trace("- BackendEquation.traverseEquationArray failed\n");
@@ -1001,12 +1004,9 @@ public function traverseEquationArray_WithStop "author: Frenkel TUD
     output Boolean cont;
     output Type_a outA;
   end FuncWithStop;
-protected
-  array<Option<BackendDAE.Equation>> equOptArr;
 algorithm
   //try
-    BackendDAE.EQUATION_ARRAY(equOptArr=equOptArr) := inEquationArray;
-    outTypeA := BackendDAEUtil.traverseArrayNoCopyWithStop(equOptArr, inFuncWithStop, traverseOptEquation_WithStop, inTypeA);
+    outTypeA := BackendDAEUtil.traverseArrayNoCopyWithStop(inEquationArray.equOptArr, inFuncWithStop, traverseOptEquation_WithStop, inTypeA);
   //else
   //  if Flags.isSet(Flags.FAILTRACE) then
   //    Debug.trace("- BackendEquation.traverseEquationArray_WithStop failed\n");
@@ -1077,7 +1077,7 @@ public function traverseEquationArray_WithUpdate<T> "author: Frenkel TUD
   input BackendDAE.EquationArray inEquationArray;
   input FuncWithUpdate inFuncWithUpdate;
   input T inTypeA;
-  output BackendDAE.EquationArray outEquationArray;
+  output BackendDAE.EquationArray outEquationArray = inEquationArray;
   output T outTypeA;
 
   partial function FuncWithUpdate
@@ -1087,12 +1087,10 @@ public function traverseEquationArray_WithUpdate<T> "author: Frenkel TUD
     output T outA;
   end FuncWithUpdate;
 protected
-  Integer numberOfElement, arrSize, size;
   array<Option<BackendDAE.Equation>> equOptArr;
 algorithm
-  BackendDAE.EQUATION_ARRAY(size=size, numberOfElement=numberOfElement, arrSize=arrSize, equOptArr=equOptArr) := inEquationArray;
-  (equOptArr, outTypeA) := BackendDAEUtil.traverseArrayNoCopyWithUpdate(equOptArr, inFuncWithUpdate, traverseOptEquation_WithUpdate, inTypeA);
-  outEquationArray := BackendDAE.EQUATION_ARRAY(size, numberOfElement, arrSize, equOptArr);
+  (equOptArr, outTypeA) := BackendDAEUtil.traverseArrayNoCopyWithUpdate(inEquationArray.equOptArr, inFuncWithUpdate, traverseOptEquation_WithUpdate, inTypeA);
+  outEquationArray.equOptArr := equOptArr;
 end traverseEquationArray_WithUpdate;
 
 protected function traverseOptEquation_WithUpdate<T> "author: Frenkel TUD 2010-11
@@ -1227,22 +1225,21 @@ public function addEquation "author: PA
   input BackendDAE.EquationArray inEquationArray;
   output BackendDAE.EquationArray outEquationArray;
 algorithm
-  outEquationArray := matchcontinue (inEquation, inEquationArray)
+  outEquationArray := matchcontinue (inEquationArray)
     local
       Integer n_1, numberOfElement, arrSize, expandsize, expandsize_1, newsize, size, index;
       array<Option<BackendDAE.Equation>> arr_1, equOptArr, arr_2;
-      BackendDAE.Equation e;
       Real rsize, rexpandsize;
 
-    case (e, BackendDAE.EQUATION_ARRAY(size=size, numberOfElement=numberOfElement, arrSize=arrSize, equOptArr=equOptArr)) equation
+    case BackendDAE.EQUATION_ARRAY(size=size, numberOfElement=numberOfElement, arrSize=arrSize, equOptArr=equOptArr) equation
       (numberOfElement < arrSize) = true "Have space to add array elt.";
       n_1 = numberOfElement + 1;
       index = findFirstUnusedEquOptEntry(n_1, arrSize, equOptArr);
-      arr_1 = arrayUpdate(equOptArr, index, SOME(e));
-      size = equationSize(e) + size;
+      arr_1 = arrayUpdate(equOptArr, index, SOME(inEquation));
+      size = equationSize(inEquation) + size;
     then BackendDAE.EQUATION_ARRAY(size, n_1, arrSize, arr_1);
 
-    case (e, BackendDAE.EQUATION_ARRAY(size=size, numberOfElement=numberOfElement, arrSize=arrSize, equOptArr=equOptArr)) equation /* Do NOT Have space to add array elt. Expand array 1.4 times */
+    case BackendDAE.EQUATION_ARRAY(size=size, numberOfElement=numberOfElement, arrSize=arrSize, equOptArr=equOptArr) equation /* Do NOT Have space to add array elt. Expand array 1.4 times */
       (numberOfElement < arrSize) = false;
       rsize = intReal(arrSize);
       rexpandsize = rsize * 0.4;
@@ -1251,11 +1248,11 @@ algorithm
       newsize = expandsize_1 + arrSize;
       arr_1 = Array.expand(expandsize_1, equOptArr, NONE());
       n_1 = numberOfElement + 1;
-      arr_2 = arrayUpdate(arr_1, n_1, SOME(e));
-      size = equationSize(e) + size;
+      arr_2 = arrayUpdate(arr_1, n_1, SOME(inEquation));
+      size = equationSize(inEquation) + size;
     then BackendDAE.EQUATION_ARRAY(size, n_1, newsize, arr_2);
 
-    case (_, BackendDAE.EQUATION_ARRAY(size=size, numberOfElement=numberOfElement, arrSize=arrSize, equOptArr=equOptArr)) equation
+    case BackendDAE.EQUATION_ARRAY(size=size, numberOfElement=numberOfElement, arrSize=arrSize, equOptArr=equOptArr) equation
       print("- BackendEquation.addEquation failed\nArraySize: " + intString(arrSize) + "\nnumberOfElement " + intString(numberOfElement) + "\nSize " + intString(size) + "\narraySize " + intString(arrayLength(equOptArr)));
     then fail();
   end matchcontinue;
@@ -1265,96 +1262,44 @@ public function equationAddDAE "author: Frenkel TUD 2011-05"
   input BackendDAE.Equation inEquation;
   input BackendDAE.EqSystem inEqSystem;
   output BackendDAE.EqSystem outEqSystem;
-protected
-  BackendDAE.Variables orderedVars;
-  BackendDAE.EquationArray orderedEqs, newOrderedEqs;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars, orderedEqs, m, mT, _, stateSets, partitionKind) := inEqSystem;
-  newOrderedEqs := addEquation(inEquation, orderedEqs);
-  outEqSystem := BackendDAE.EQSYSTEM(orderedVars, newOrderedEqs, m, mT, BackendDAE.NO_MATCHING(), stateSets, partitionKind);
+  outEqSystem := BackendDAEUtil.setEqSystEqs(inEqSystem, addEquation(inEquation, inEqSystem.orderedEqs));
+  outEqSystem.matching := BackendDAE.NO_MATCHING();
 end equationAddDAE;
 
 public function equationsAddDAE "author: Frenkel TUD 2011-05"
   input list<BackendDAE.Equation> inEquations;
   input BackendDAE.EqSystem inEqSystem;
-  output BackendDAE.EqSystem outEqSystem;
-protected
-  BackendDAE.Variables orderedVars;
-  BackendDAE.EquationArray orderedEqs, newOrderedEqs;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.BaseClockPartitionKind partitionKind;
+  output BackendDAE.EqSystem outEqSystem = inEqSystem;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars, orderedEqs, m, mT, _, stateSets, partitionKind) := inEqSystem;
-  newOrderedEqs := List.fold(inEquations, addEquation, orderedEqs);
-  outEqSystem := BackendDAE.EQSYSTEM(orderedVars, newOrderedEqs, m, mT, BackendDAE.NO_MATCHING(), stateSets, partitionKind);
+  outEqSystem.orderedEqs := addEquations(inEquations, outEqSystem.orderedEqs);
+  outEqSystem.matching := BackendDAE.NO_MATCHING();
 end equationsAddDAE;
 
 public function requationsAddDAE "author: Frenkel TUD 2012-10
   Add a list of equations to removed equations of a BackendDAE.
   If the variable already exists, the function updates the variable."
   input list<BackendDAE.Equation> inEquations;
-  input BackendDAE.Shared inShared;
-  output BackendDAE.Shared outShared;
+  input BackendDAE.EqSystem inSyst;
+  output BackendDAE.EqSystem outSyst;
 algorithm
-  outShared := match (inEquations, inShared)
-    local
-      BackendDAE.Variables knvars, exobj, aliasVars;
-      BackendDAE.EquationArray remeqns, inieqns;
-      list<DAE.Constraint> constrs;
-      list<DAE.ClassAttributes> clsAttrs;
-      FCore.Cache cache;
-      FCore.Graph env;
-      DAE.FunctionTree funcs;
-      BackendDAE.EventInfo einfo;
-      BackendDAE.ExternalObjectClasses eoc;
-      BackendDAE.SymbolicJacobians symjacs;
-      BackendDAE.BackendDAEType btp;
-      BackendDAE.ExtraInfo ei;
-
-    case ({}, _)
-    then inShared;
-
-    case (_, BackendDAE.SHARED(knvars, exobj, aliasVars, inieqns, remeqns, constrs, clsAttrs, cache, env, funcs, einfo, eoc, btp, symjacs, ei)) equation
-      remeqns = List.fold(inEquations, addEquation, remeqns);
-    then BackendDAE.SHARED(knvars, exobj, aliasVars, inieqns, remeqns, constrs, clsAttrs, cache, env, funcs, einfo, eoc, btp, symjacs, ei);
+  outSyst := match inEquations
+    case {} then inSyst;
+    else  then BackendDAEUtil.setEqSystRemovedEqns(inSyst, List.fold(inEquations, addEquation, inSyst.removedEqs));
   end match;
 end requationsAddDAE;
 
-public function removeRemovedEqs
-"
-remove removedEqs
-"
-  input BackendDAE.Shared inShared;
-  output BackendDAE.Shared outShared;
+public function removeRemovedEqs "remove removedEqs"
+  input BackendDAE.EqSystem inSyst;
+  output BackendDAE.EqSystem outSyst = inSyst;
 protected
-      BackendDAE.Variables knvars, exobj, aliasVars;
-      BackendDAE.EquationArray remeqns, inieqns;
-      list<DAE.Constraint> constrs;
-      list<DAE.ClassAttributes> clsAttrs;
-      FCore.Cache cache;
-      FCore.Graph env;
-      DAE.FunctionTree funcs;
-      BackendDAE.EventInfo einfo;
-      BackendDAE.ExternalObjectClasses eoc;
-      BackendDAE.SymbolicJacobians symjacs;
-      BackendDAE.BackendDAEType btp;
-      BackendDAE.ExtraInfo ei;
-      Integer n;
+  BackendDAE.EquationArray removedEqs = inSyst.removedEqs;
+  Integer N;
 algorithm
-  (BackendDAE.SHARED(knvars, exobj, aliasVars, inieqns, remeqns, constrs, clsAttrs, cache, env, funcs, einfo, eoc, btp, symjacs, ei)) := inShared;
-  BackendDAE.EQUATION_ARRAY(numberOfElement=n) := remeqns;
-  for ind in 1:n loop
-    remeqns := equationRemove(ind, remeqns);
+  for i in 1:removedEqs.numberOfElement loop
+    removedEqs := equationRemove(i, removedEqs);
   end for;
-
-  outShared := BackendDAE.SHARED(knvars, exobj, aliasVars, inieqns, remeqns, constrs, clsAttrs, cache, env, funcs, einfo, eoc, btp, symjacs, ei);
-
+  outSyst.removedEqs := removedEqs;
 end removeRemovedEqs;
 
 public function setAtIndex "author: lochel
@@ -1363,15 +1308,10 @@ public function setAtIndex "author: lochel
   input BackendDAE.EquationArray inEquationArray;
   input Integer inPos "one-based indexing";
   input BackendDAE.Equation inEquation;
-  output BackendDAE.EquationArray outEquationArray;
-protected
-  array<Option<BackendDAE.Equation>> equOptArr, newEquOptArr;
-  Integer size, numberOfElement, arrSize;
+  output BackendDAE.EquationArray outEquationArray = inEquationArray;
 algorithm
-  BackendDAE.EQUATION_ARRAY(size, numberOfElement, arrSize, equOptArr) := inEquationArray;
-  size := size -equationOptSize(equOptArr[inPos]) +equationSize(inEquation);
-  newEquOptArr := arrayUpdate(equOptArr, inPos, SOME(inEquation));
-  outEquationArray := BackendDAE.EQUATION_ARRAY(size, numberOfElement, arrSize, newEquOptArr);
+  outEquationArray.size := inEquationArray.size -equationOptSize(arrayGet(inEquationArray.equOptArr, inPos)) +equationSize(inEquation);
+  outEquationArray.equOptArr := arrayUpdate(inEquationArray.equOptArr, inPos, SOME(inEquation));
 end setAtIndex;
 
 public function setAtIndexFirst "author: waurich
@@ -1475,25 +1415,23 @@ public function equationDelete "author: Frenkel TUD 2010-12
   input list<Integer> inIndices;
   output BackendDAE.EquationArray outEquationArray;
 algorithm
-  outEquationArray := matchcontinue (inEquationArray, inIndices)
+  outEquationArray := matchcontinue inIndices
     local
       list<BackendDAE.Equation> eqnlst;
-      Integer numberOfElement, arrSize;
       array<Option<BackendDAE.Equation>> equOptArr;
 
-    case (_, {})
+    case {}
     then inEquationArray;
 
-    case (BackendDAE.EQUATION_ARRAY(arrSize=arrSize, equOptArr=equOptArr), _) equation
-      equOptArr = List.fold1r(inIndices, arrayUpdate, NONE(), equOptArr);
-      eqnlst = equationDelete1(arrSize, equOptArr, {});
+    case _ equation
+      equOptArr = List.fold1r(inIndices, arrayUpdate, NONE(), inEquationArray.equOptArr);
+      eqnlst = equationDelete1(inEquationArray.arrSize, equOptArr, {});
     then listEquation(eqnlst);
 
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.trace("- BackendDAE.equationDelete failed\n");
-      then fail();
+    else equation
+      true = Flags.isSet(Flags.FAILTRACE);
+      Debug.trace("- BackendDAE.equationDelete failed\n");
+    then fail();
   end matchcontinue;
 end equationDelete;
 
@@ -1811,14 +1749,11 @@ algorithm
 end equationInfo;
 
 public function markedEquationSource
-  input BackendDAE.EqSystem syst;
+  input BackendDAE.EqSystem inEqSystem;
   input Integer inPos "one-based indexing";
   output DAE.ElementSource outSource;
-protected
-  BackendDAE.EquationArray eqns;
 algorithm
-  BackendDAE.EQSYSTEM(orderedEqs=eqns) := syst;
-  outSource := equationSource(equationNth1(eqns, inPos));
+  outSource := equationSource(equationNth1(inEqSystem.orderedEqs, inPos));
 end markedEquationSource;
 
 public function equationSource "
@@ -1835,9 +1770,9 @@ algorithm
     case BackendDAE.ALGORITHM(source=source) then source;
     case BackendDAE.COMPLEX_EQUATION(source=source) then source;
     case BackendDAE.IF_EQUATION(source=source) then source;
-    else
-      equation Error.addInternalError("BackendEquation.equationSource failed!", sourceInfo());
-      then fail();
+    else equation
+      Error.addInternalError("BackendEquation.equationSource failed!", sourceInfo());
+    then fail();
   end match;
 end equationSource;
 
@@ -2043,7 +1978,7 @@ algorithm
     case BackendDAE.FOR_EQUATION(attr=attr) then attr;
 
     else equation
-      Error.addInternalError("./Compiler/BackEnd/BackendEquation.mo: function getEquationAttributes failed", sourceInfo());
+      Error.addInternalError("function getEquationAttributes failed", sourceInfo());
     then fail();
   end match;
 end getEquationAttributes;
@@ -2093,10 +2028,86 @@ algorithm
     then BackendDAE.IF_EQUATION(conditions, eqnstrue, eqnsfalse, source, inAttr);
 
     else equation
-      Error.addInternalError("./Compiler/BackEnd/BackendEquation.mo: function setEquationAttributes failed", sourceInfo());
+      Error.addInternalError("function setEquationAttributes failed", sourceInfo());
     then fail();
   end match;
 end setEquationAttributes;
+
+public function setEquationLHS
+"
+  sets the left hand side expression of an equation.
+"
+  input BackendDAE.Equation inEqn;
+  input DAE.Exp lhs;
+  output BackendDAE.Equation outEqn;
+algorithm
+  outEqn := match inEqn
+    local
+      DAE.ElementSource source;
+      list<Integer> dimSize;
+      DAE.Exp rhs;
+      DAE.ComponentRef componentRef;
+      Integer size;
+      DAE.Algorithm alg;
+      DAE.Expand expand;
+      BackendDAE.WhenEquation whenEquation;
+      list< .DAE.Exp> conditions;
+      list<list<BackendDAE.Equation>> eqnstrue;
+      list<BackendDAE.Equation> eqnsfalse;
+      BackendDAE.EquationAttributes attr;
+
+    case BackendDAE.EQUATION(scalar=rhs, source=source, attr=attr)
+    then BackendDAE.EQUATION(lhs, rhs, source, attr);
+
+    case BackendDAE.ARRAY_EQUATION(dimSize=dimSize, right=rhs, source=source, attr=attr)
+    then BackendDAE.ARRAY_EQUATION(dimSize, lhs, rhs, source, attr);
+
+    else equation
+      Error.addInternalError("function setEquationLHS failed", sourceInfo());
+    then fail();
+  end match;
+end setEquationLHS;
+
+public function setEquationRHS
+"
+  sets the right hand side expression of an equation.
+"
+  input BackendDAE.Equation inEqn;
+  input DAE.Exp rhs;
+  output BackendDAE.Equation outEqn;
+algorithm
+  outEqn := match inEqn
+    local
+      DAE.ElementSource source;
+      list<Integer> dimSize;
+      DAE.Exp lhs;
+      DAE.ComponentRef componentRef;
+      Integer size;
+      DAE.Algorithm alg;
+      DAE.Expand expand;
+      BackendDAE.WhenEquation whenEquation;
+      list< .DAE.Exp> conditions;
+      list<list<BackendDAE.Equation>> eqnstrue;
+      list<BackendDAE.Equation> eqnsfalse;
+      BackendDAE.EquationAttributes attr;
+
+    case BackendDAE.EQUATION(exp=lhs, source=source, attr=attr)
+    then BackendDAE.EQUATION(lhs, rhs, source, attr);
+
+    case BackendDAE.ARRAY_EQUATION(dimSize=dimSize, left=lhs, source=source, attr=attr)
+    then BackendDAE.ARRAY_EQUATION(dimSize, lhs, rhs, source, attr);
+
+    case BackendDAE.SOLVED_EQUATION(componentRef=componentRef, source=source, attr=attr)
+    then BackendDAE.SOLVED_EQUATION(componentRef, rhs, source, attr);
+
+    case BackendDAE.RESIDUAL_EQUATION(source=source, attr=attr)
+    then BackendDAE.RESIDUAL_EQUATION(rhs, source, attr);
+
+    else equation
+      Error.addInternalError("function setEquationRHS failed", sourceInfo());
+    then fail();
+  end match;
+end setEquationRHS;
 
 public function generateSolvedEqnsfromOption "author: Frenkel TUD 2010-05"
   input DAE.ComponentRef inLhs;
@@ -2211,61 +2222,91 @@ public function makeTmpEqnForExp
   input BackendDAE.EquationArray ieqns;
   input BackendDAE.Variables ivars;
   input BackendDAE.Shared ishared;
-
+  input Boolean noPara = false;
   output DAE.Exp oExp;
   output BackendDAE.EquationArray oeqns = ieqns;
   output BackendDAE.Variables ovars = ivars;
   output BackendDAE.Shared oshared = ishared;
-
+  //output BackendDAE.StrongComponent
+  output Boolean update;
+  output Boolean para = false;
 protected
   DAE.ComponentRef cr;
-  DAE.ComponentRef cr_time = ComponentReference.makeCrefIdent("time", DAE.T_REAL_DEFAULT , {});
   BackendDAE.Var tmpvar;
   String name_ = "__OMC__" + intString(offset) + "$" + name;
-  DAE.Exp x, y;
+  DAE.Exp y;
   BackendDAE.Equation eqn;
-  list<BackendDAE.Var> eqnVars, eqnKnVars, inputsKnVars, paramKnVars;
+  list<BackendDAE.Var> eqnVars, eqnKnVars, inputsKnVars;
   BackendDAE.Variables knowVars;
   Boolean b;
 
 algorithm
 
   (y, _) := ExpressionSimplify.simplify(iExp);
-  b := Expression.isCref(y) or Expression.isConst(y);
-  if not b then
-    cr  := ComponentReference.makeCrefIdent(name_, DAE.T_REAL_DEFAULT , {});
-    tmpvar := BackendVariable.makeVar(cr);
-    x := Expression.crefExp(cr);
-    oExp := x;
+  if makeTmpEqnForExp_rule(y) then
+    update := true;
 
-    eqn := BackendDAE.EQUATION(x, y, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN);
-    //BackendDump.printEquation(eqn);
+    cr  := ComponentReference.makeCrefIdent(name_, DAE.T_REAL_DEFAULT , {});
+    oExp := Expression.crefExp(cr);
+
+    tmpvar := BackendVariable.makeVar(cr);
+    tmpvar := BackendVariable.setVarTS(tmpvar,SOME(BackendDAE.AVOID()));
+
+    eqn := BackendDAE.EQUATION(oExp, y, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
+    if Flags.isSet(Flags.DUMP_SIMPLIFY_LOOPS) then
+      print(BackendDump.equationString(eqn) + " -- new eqn--\n");
+    end if;
     eqnVars := equationVars(eqn, ivars);
-    b := listEmpty(eqnVars) and not Expression.expHasCref(y,cr_time);
+    b := listEmpty(eqnVars) and not Expression.expHasCref(y, DAE.crefTime);
     if b then
       knowVars := BackendVariable.daeKnVars(oshared);
       eqnKnVars := equationVars(eqn, knowVars);
       (inputsKnVars,_) := List.splitOnTrue(eqnKnVars, BackendVariable.isInput);
        b := listEmpty(inputsKnVars);
     end if;
+
     if b then
-      tmpvar := BackendVariable.setBindExp(tmpvar, SOME(y));
-      (paramKnVars,_) := List.splitOnTrue(eqnKnVars, BackendVariable.isParam);
-      if listEmpty(paramKnVars) then
-        tmpvar := BackendVariable.setVarKind(tmpvar, BackendDAE.CONST());
+      if noPara then
+        oExp := ExpressionSimplify.simplify(iExp);
+        update := false;
       else
+        tmpvar := BackendVariable.setBindExp(tmpvar, SOME(y));
         tmpvar := BackendVariable.setVarKind(tmpvar, BackendDAE.PARAM());
+        oshared := BackendVariable.addKnVarDAE(tmpvar, oshared);
+        para := true;
       end if;
-      oshared := BackendVariable.addKnVarDAE(tmpvar, oshared);
     else
       oeqns := BackendEquation.addEquation(eqn, oeqns);
       ovars := BackendVariable.addVar(tmpvar, ovars);
     end if;
+
   else
    oExp := y;
+   update := false;
   end if;
 
 end makeTmpEqnForExp;
+
+protected function makeTmpEqnForExp_rule
+  input DAE.Exp inExp;
+  output Boolean allowed;
+algorithm
+
+  if Expression.isCref(inExp) or Expression.isConst(inExp) or Expression.isUnaryCref(inExp) then
+    allowed := false;
+    return;
+  end if;
+
+  allowed := match inExp
+             local DAE.Exp e1, e2;
+             case DAE.BINARY(e1,DAE.DIV(),e2)
+             guard (Expression.isOne(e1) or Expression.isConstMinusOne(e1)) and (Expression.isCref(e2) or Expression.isUnaryCref(e2))
+              then false;
+             case DAE.CAST(exp=e1) then makeTmpEqnForExp_rule(e1);
+             else true;
+             end match;
+
+end makeTmpEqnForExp_rule;
 
 public function normalizationVec
 "
@@ -2351,7 +2392,7 @@ algorithm
 */
     else equation
       BackendDump.dumpBackendDAEEqnList({eqn}, "function BackendEquation.solveEquation failed w.r.t " + ExpressionDump.printExpStr(crefExp), true);
-      Error.addInternalError("./Compiler/BackEnd/BackendEquation.mo: function solveEquation failed", sourceInfo());
+      Error.addInternalError("function solveEquation failed", sourceInfo());
     then fail();
   end matchcontinue;
 end solveEquation;
@@ -2368,17 +2409,13 @@ end generateRESIDUAL_EQUATION;
 public function getEqnsFromEqSystem "
   Extracts the orderedEqs attribute from an equation system."
   input BackendDAE.EqSystem inEqSystem;
-  output BackendDAE.EquationArray outOrderedEqs;
-algorithm
-  BackendDAE.EQSYSTEM(orderedEqs=outOrderedEqs) := inEqSystem;
+  output BackendDAE.EquationArray outOrderedEqs = inEqSystem.orderedEqs;
 end getEqnsFromEqSystem;
 
 public function getInitialEqnsFromShared "
   Extracts the initial equations from a shared object."
   input BackendDAE.Shared inShared;
-  output BackendDAE.EquationArray outInitialEqs;
-algorithm
-  BackendDAE.SHARED(initialEqs=outInitialEqs) := inShared;
+  output BackendDAE.EquationArray outInitialEqs = inShared.initialEqs;
 end getInitialEqnsFromShared;
 
 public function aliasEquation "author Frenkel TUD 2011-04
@@ -2811,6 +2848,26 @@ algorithm
   end match;
 end addOperation;
 
+public function isEquationsSystem
+  input BackendDAE.StrongComponent comp;
+  output Boolean res;
+algorithm
+  res := match comp
+         case BackendDAE.EQUATIONSYSTEM() then true;
+         else false;
+         end match;
+end isEquationsSystem;
+
+public function isTornSystem
+  input BackendDAE.StrongComponent comp;
+  output Boolean res;
+algorithm
+  res := match comp
+         case BackendDAE.TORNSYSTEM() then true;
+         else false;
+         end match;
+end isTornSystem;
+
 public function isWhenEquation
   input BackendDAE.Equation inEqn;
   output Boolean b;
@@ -2840,6 +2897,16 @@ algorithm
     else false;
   end match;
 end isAlgorithm;
+
+public function isComplexEquation
+  input BackendDAE.Equation inEqn;
+  output Boolean b;
+algorithm
+  b := match (inEqn)
+    case BackendDAE.COMPLEX_EQUATION() then true;
+    else false;
+  end match;
+end isComplexEquation;
 
 public function isNotAlgorithm
   input BackendDAE.Equation inEqn;
@@ -2900,13 +2967,9 @@ end markDifferentiated;
 
 protected function markDifferentiated2
   input BackendDAE.EquationAttributes inAttr;
-  output BackendDAE.EquationAttributes outAttr;
-protected
-  BackendDAE.EquationKind kind;
-  BackendDAE.LoopInfo loopInfo;
+  output BackendDAE.EquationAttributes outAttr = inAttr;
 algorithm
-  BackendDAE.EQUATION_ATTRIBUTES(kind=kind, loopInfo=loopInfo) := inAttr;
-  outAttr := BackendDAE.EQUATION_ATTRIBUTES(true, kind, loopInfo);
+  outAttr.differentiated := true;
 end markDifferentiated2;
 
 public function isDifferentiated

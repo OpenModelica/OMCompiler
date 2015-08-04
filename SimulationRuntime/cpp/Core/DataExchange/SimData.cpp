@@ -4,15 +4,24 @@
  */
 
 #include <Core/ModelicaDefine.h>
- #include <Core/Modelica.h>
+#include <Core/Modelica.h>
 #include <Core/DataExchange/SimData.h>
 
 SimData::SimData(void)
 {
 }
 
+SimData::SimData(SimData &instance)
+{
+}
+
 SimData::~SimData(void)
 {
+}
+
+ISimData* SimData::clone()
+{
+    return new SimData(*this);
 }
 
 void SimData::Add(string key, boost::shared_ptr<ISimVar> var)

@@ -50,7 +50,6 @@ protected import BackendEquation;
 protected import BackendVariable;
 protected import ComponentReference;
 protected import DAEUtil;
-protected import Debug;
 protected import Error;
 protected import Flags;
 protected import List;
@@ -96,28 +95,95 @@ protected
   list<BackendDAE.EqSystem> contSysts, clockedSysts;
   array<DAE.ClockKind> baseClocks;
   DAE.ClockKind clock;
-  BackendDAE.Shared shared;
+  BackendDAE.Shared shared = inShared;
   list<BackendDAE.EqSystem> systs;
   BackendDAE.Variables vars;
   BackendDAE.EquationArray eqs;
   BackendDAE.BaseClockPartitionKind partitionKind;
   list<DAE.ComponentRef> holdComps;
   array<Integer> varsPartition;
+  list<BackendDAE.Equation> unpartRemEqs;
 algorithm
   syst := substituteParitionOpExps(inSyst);
 
-  (contSysts, clockedSysts) := baseClockPartitioning(syst, inShared);
+  (contSysts, clockedSysts, unpartRemEqs) := baseClockPartitioning(syst, inShared);
   (contSysts, holdComps) := removeHoldExpsSyst(contSysts);
-  (clockedSysts, baseClocks) := subClockPartitioning1(clockedSysts, inShared, holdComps);
 
-  //Continuous system always first in equation systems list
+  shared.removedEqs := BackendEquation.addEquations(unpartRemEqs, shared.removedEqs);
+
+  (clockedSysts, baseClocks) := subClockPartitioning1(clockedSysts, inShared, holdComps);
+  clockedSysts := List.map(clockedSysts, makePreviousFixed);
+
+  //Continuous systems always first in equation systems list
   systs := listAppend(contSysts, clockedSysts);
   outDAE := BackendDAE.DAE(systs, setClocks(inShared, baseClocks));
 
   if Flags.isSet(Flags.DUMP_SYNCHRONOUS) then
     BackendDump.dumpEqSystems(systs, "base-clock partitioning");
+    BackendDump.dumpClocks(baseClocks, "Base clocks");
   end if;
 end clockPartitioning1;
+
+protected function makePreviousFixed
+  input BackendDAE.EqSystem inSyst;
+  output BackendDAE.EqSystem outSyst = inSyst;
+protected
+  BackendDAE.Equation eq;
+  list<DAE.ComponentRef> fixedComps = {};
+  array<Boolean> prevVars;
+  Option<String> solverMethod;
+  list<Integer> varIxs;
+  BackendDAE.Var var;
+algorithm
+  BackendDAE.CLOCKED_PARTITION(subClock=BackendDAE.SUBCLOCK(solver=solverMethod)) := outSyst.partitionKind;
+  if isNone(solverMethod) then
+    prevVars := arrayCreate(BackendVariable.varsSize(outSyst.orderedVars), false);
+    for i in 1:BackendDAEUtil.equationSize(outSyst.orderedEqs) loop
+      eq := BackendEquation.equationNth1(outSyst.orderedEqs, i);
+      (_, fixedComps) := BackendEquation.traverseExpsOfEquation(eq, collectPrevVars, fixedComps);
+    end for;
+    for i in 1:BackendDAEUtil.equationSize(outSyst.removedEqs) loop
+      eq := BackendEquation.equationNth1(outSyst.removedEqs, i);
+      (_, fixedComps) := BackendEquation.traverseExpsOfEquation(eq, collectPrevVars, fixedComps);
+    end for;
+    for cr in fixedComps loop
+      varIxs := getVarIxs(cr, outSyst.orderedVars);
+      for idx in varIxs loop
+        arrayUpdate(prevVars, idx, true);
+      end for;
+    end for;
+    for i in 1:arrayLength(prevVars) loop
+      if prevVars[i] then
+        var := BackendVariable.setVarFixed(BackendVariable.getVarAt(outSyst.orderedVars, i), true);
+        BackendVariable.setVarAt(outSyst.orderedVars, i, var);
+      end if;
+    end for;
+  end if;
+end makePreviousFixed;
+
+protected function collectPrevVars
+  input DAE.Exp inExp;
+  input list<DAE.ComponentRef> inPrevVars;
+  output DAE.Exp outExp;
+  output list<DAE.ComponentRef> outPrevVars;
+algorithm
+  (outExp, outPrevVars) := Expression.traverseExpBottomUp(inExp, collectPrevVars1, inPrevVars);
+end collectPrevVars;
+
+public function collectPrevVars1
+  input DAE.Exp inExp;
+  input list<DAE.ComponentRef> inPrevCompRefs;
+  output DAE.Exp outExp = inExp;
+  output list<DAE.ComponentRef> outPrevCompRefs;
+algorithm
+  outPrevCompRefs := match inExp
+    local
+      DAE.ComponentRef cr;
+    case DAE.CALL(path=Absyn.IDENT("previous"), expLst={DAE.CREF(cr, _)})
+      then cr::inPrevCompRefs;
+    else inPrevCompRefs;
+  end match;
+end collectPrevVars1;
 
 protected function setClocks
   input BackendDAE.Shared inShared;
@@ -132,14 +198,13 @@ protected
   list<BackendDAE.ZeroCrossing> relationsLst;
   Integer numberMathEvents;
 algorithm
-  BackendDAE.SHARED(eventInfo=eventInfo) := inShared;
-  BackendDAE.EVENT_INFO( timeEvents=timeEvents, whenClauseLst=whenClauseLst, sampleLst=sampleLst,
-                         zeroCrossingLst=zeroCrossingLst, relationsLst=relationsLst,
-                         numberMathEvents=numberMathEvents) := eventInfo;
-  eventInfo := BackendDAE.EVENT_INFO( timeEvents=timeEvents, whenClauseLst=whenClauseLst,
-                                      zeroCrossingLst=zeroCrossingLst, relationsLst=relationsLst,
-                                      numberMathEvents=numberMathEvents, sampleLst=sampleLst, clocks = inClocks );
-  outShared := BackendDAEUtil.setEventInfo(inShared, eventInfo);
+  outShared := match inShared
+    local
+      BackendDAE.Shared shared;
+    case shared as BackendDAE.SHARED()
+      algorithm shared.partitionsInfo := BackendDAE.PARTITIONS_INFO(inClocks);
+      then shared;
+  end match;
 end setClocks;
 
 protected type UnresolvedPartitionData = tuple<BackendDAE.Variables, BackendDAE.EquationArray, BackendDAE.SubClock>;
@@ -216,25 +281,28 @@ protected function removeHoldExpsSyst
   input list<BackendDAE.EqSystem> inSysts;
   output list<BackendDAE.EqSystem> outSysts = {};
   output list<DAE.ComponentRef> outHoldComps = {};
-protected
-  BackendDAE.EquationArray eqs;
-  BackendDAE.Variables vars;
-  BackendDAE.Equation eq;
-  list<BackendDAE.Equation> lstEqs;
-  Integer i;
-  BackendDAE.EqSystem syst;
-  BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  for syst in inSysts loop
-    lstEqs := {};
-    BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs, partitionKind = partitionKind) := syst;
-    for i in 1:BackendDAEUtil.equationArraySize(eqs) loop
-      eq := BackendEquation.equationNth1(eqs, i);
-      (eq, outHoldComps) := BackendEquation.traverseExpsOfEquation(eq, removeHoldExp1, outHoldComps);
-      lstEqs := eq::lstEqs;
-    end for;
-    outSysts := BackendDAEUtil.createEqSystem( vars, BackendEquation.listEquation(listReverse(lstEqs)),
-                                                  {}, partitionKind ) :: outSysts;
+  for syst1 in inSysts loop
+    syst1 := match syst1
+      local
+        BackendDAE.EquationArray eqs;
+        BackendDAE.Variables vars;
+        BackendDAE.EqSystem syst;
+        list<BackendDAE.Equation> lstEqs;
+        Integer i;
+        BackendDAE.Equation eq;
+      case syst as BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs)
+        algorithm
+          lstEqs := {};
+          for i in 1:BackendDAEUtil.equationArraySize(eqs) loop
+            eq := BackendEquation.equationNth1(eqs, i);
+            (eq, outHoldComps) := BackendEquation.traverseExpsOfEquation(eq, removeHoldExp1, outHoldComps);
+            lstEqs := eq::lstEqs;
+          end for;
+          syst.orderedEqs := BackendEquation.listEquation(listReverse(lstEqs));
+        then syst;
+    end match;
+    outSysts := BackendDAEUtil.clearEqSyst(syst1) :: outSysts;
   end for;
 end removeHoldExpsSyst;
 
@@ -276,9 +344,9 @@ protected
   BackendDAE.EquationArray eqs, clockEqs;
   BackendDAE.Variables vars, clockVars;
   BackendDAE.EqSystem syst, clockSyst;
-  BackendDAE.IncidenceMatrix m,mT;
+  BackendDAE.IncidenceMatrix m, mT, rm, rmT;
   Integer i, partitionsCnt;
-  array<Integer> partitions;
+  array<Integer> partitions, reqsPartitions;
   list<BackendDAE.Equation> newClockEqs;
   list<BackendDAE.Var> newClockVars;
   array<Option<Boolean>> contPartitions;
@@ -297,8 +365,10 @@ algorithm
   syst := BackendDAEUtil.createEqSystem(vars, eqs);
 
   (syst, m, mT) := BackendDAEUtil.getIncidenceMatrixfromOption(syst, BackendDAE.SUBCLOCK_IDX(), SOME(funcs));
+  (rm, rmT) := BackendDAEUtil.removedIncidenceMatrix(syst, BackendDAE.SUBCLOCK_IDX(), SOME(funcs));
   partitions := arrayCreate(arrayLength(m), 0);
-  partitionsCnt := partitionIndependentBlocks0(m, mT, partitions);
+  reqsPartitions := arrayCreate(arrayLength(rm), 0);
+  partitionsCnt := partitionIndependentBlocks0(m, mT, rm, rmT, partitions, reqsPartitions);
 
   //Detect clocked continuous partitions and create new subclock equations
   (eqs, newClockEqs, newClockVars, contPartitions, subclksCnt)
@@ -317,7 +387,7 @@ algorithm
   syst :=  BackendDAEUtil.createEqSystem(vars, eqs);
   systs :=
     if partitionsCnt > 1 then
-      partitionIndependentBlocksSplitBlocks(partitionsCnt, syst, partitions, mT, false)
+      partitionIndependentBlocksSplitBlocks(partitionsCnt, syst, partitions, reqsPartitions, mT, false)
     else
       {syst};
 
@@ -996,31 +1066,32 @@ end splitClockVars;
 
 protected function substituteParitionOpExps
 "Each non-trivial expression (non-literal, non-constant, non-parameter, non-variable), expr_i, appearing
- as first argument of any clock conversion operator or Boolean clock is recursively replaced by a unique variable, $var_i,
+ as first argument of any clock conversion operator or in base clock constructor is recursively replaced by a unique variable, $var_i,
  and the equation $var_i = expr_i is added to the equation set."
   input BackendDAE.EqSystem inSyst;
   output BackendDAE.EqSystem outSyst;
-protected
-  BackendDAE.Variables vars;
-  BackendDAE.EquationArray eqs;
-  list<BackendDAE.Equation> newEqs = {};
-  list<BackendDAE.Var> newVars = {};
-  Integer cnt = 1;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.Equation eq;
-  Integer eqSize;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqs) := inSyst;
-  eqSize := BackendDAEUtil.equationArraySize(eqs);
-  for i in 1:eqSize loop
-    eq := BackendEquation.equationNth1(eqs, i);
-    (eq, (newEqs, newVars, cnt)) :=
-        BackendEquation.traverseExpsOfEquation(eq, substituteParitionOpExp, (newEqs, newVars, cnt));
-    newEqs := eq::newEqs;
-  end for;
-  eqs := BackendEquation.listEquation(listReverse(newEqs));
-  vars := BackendVariable.addVars(newVars, vars);
-  outSyst := BackendDAEUtil.createEqSystem(vars, eqs);
+  outSyst := match inSyst
+    local
+      BackendDAE.Variables vars;
+      BackendDAE.EquationArray eqs;
+      BackendDAE.EqSystem syst;
+      list<BackendDAE.Equation> newEqs = {};
+      list<BackendDAE.Var> newVars = {};
+      Integer cnt = 1;
+      BackendDAE.Equation eq;
+    case syst as BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqs)
+      algorithm
+        for i in 1:BackendDAEUtil.equationArraySize(eqs) loop
+          eq := BackendEquation.equationNth1(eqs, i);
+          (eq, (newEqs, newVars, cnt)) :=
+          BackendEquation.traverseExpsOfEquation(eq, substituteParitionOpExp, (newEqs, newVars, cnt));
+          newEqs := eq::newEqs;
+        end for;
+        syst.orderedEqs := BackendEquation.listEquation(listReverse(newEqs));
+        syst.orderedVars := BackendVariable.addVars(newVars, vars);
+      then BackendDAEUtil.clearEqSyst(syst);
+  end match;
 end substituteParitionOpExps;
 
 protected function substituteParitionOpExp
@@ -1048,13 +1119,12 @@ algorithm
       Absyn.Path path;
       list<DAE.Exp> exps;
       DAE.CallAttributes attr;
-      DAE.Exp e;
-      Real intvl;
-    case DAE.CLKCONST(DAE.BOOLEAN_CLOCK(e, intvl))
+      DAE.ClockKind clk;
+    case DAE.CLKCONST(clk)
       equation
-        ({e}, newEqs, newVars, cnt) = substExp({e}, newEqs, newVars, cnt);
+        (clk, newEqs, newVars, cnt) = substClock(clk, newEqs, newVars, cnt);
       then
-        (DAE.CLKCONST(DAE.BOOLEAN_CLOCK(e, intvl)), (newEqs, newVars, cnt));
+        (DAE.CLKCONST(clk), (newEqs, newVars, cnt));
     case DAE.CALL(path = path, expLst = exps, attr = attr)
       then
         substituteExpsCall(path, exps, attr, newEqs, newVars, cnt);
@@ -1062,6 +1132,68 @@ algorithm
       (inExp, inTpl);
   end match;
 end substituteParitionOpExp1;
+
+protected function substClock
+  input DAE.ClockKind inClk;
+  input list<BackendDAE.Equation> inNewEqs;
+  input list<BackendDAE.Var> inNewVars;
+  input Integer inCnt;
+  output DAE.ClockKind outClk;
+  output list<BackendDAE.Equation> outNewEqs;
+  output list<BackendDAE.Var> outNewVars;
+  output Integer outCnt;
+algorithm
+  (outClk, outNewEqs, outNewVars, outCnt) := match inClk
+    local
+      DAE.Exp e;
+      Integer i;
+      Real f;
+      list<BackendDAE.Equation> eqs;
+      list<BackendDAE.Var> vars;
+      Integer cnt;
+    case DAE.BOOLEAN_CLOCK(e, f)
+      equation
+        (e, eqs, vars, cnt) = substClockExp(e, inNewEqs, inNewVars, inCnt);
+      then
+        (DAE.BOOLEAN_CLOCK(e, f), eqs, vars, cnt);
+    case DAE.REAL_CLOCK(e)
+      equation
+        (e, eqs, vars, cnt) = substClockExp(e, inNewEqs, inNewVars, inCnt);
+      then
+        (DAE.REAL_CLOCK(e), eqs, vars, cnt);
+    case DAE.INTEGER_CLOCK(e, i)
+      equation
+        (e, eqs, vars, cnt) = substClockExp(e, inNewEqs, inNewVars, inCnt);
+      then
+        (DAE.INTEGER_CLOCK(e, i), eqs, vars, cnt);
+    else
+      (inClk, inNewEqs, inNewVars, inCnt);
+  end match;
+end substClock;
+
+protected function substClockExp
+  input DAE.Exp inExp;
+  input list<BackendDAE.Equation> inNewEqs;
+  input list<BackendDAE.Var> inNewVars;
+  input Integer inCnt;
+  output DAE.Exp outExp;
+  output list<BackendDAE.Equation> outNewEqs;
+  output list<BackendDAE.Var> outNewVars;
+  output Integer outCnt;
+protected
+  DAE.Exp e;
+  list<BackendDAE.Equation> eqs;
+  list<BackendDAE.Var> vars;
+  Integer cnt;
+algorithm
+  ({outExp}, outNewEqs, outNewVars, outCnt) := substExp({inExp}, inNewEqs, inNewVars, inCnt);
+  outExp := match outExp
+    local DAE.Type ty;
+    case DAE.CREF(_, ty)
+      then Expression.makePureBuiltinCall("previous", {outExp}, ty);
+    else outExp;
+  end match;
+end substClockExp;
 
 protected function substituteExpsCall
   input Absyn.Path inPath;
@@ -1205,18 +1337,19 @@ protected function baseClockPartitioning
   input BackendDAE.Shared inShared;
   output list<BackendDAE.EqSystem> outContSysts = {};
   output list<BackendDAE.EqSystem> outClockedSysts = {};
+  output list<BackendDAE.Equation> outUnpartRemEqs;
 protected
   BackendDAE.Variables vars;
   BackendDAE.EquationArray eqs;
   DAE.FunctionTree funcs;
-  BackendDAE.IncidenceMatrix m,mT;
+  BackendDAE.IncidenceMatrix m, mT, rm, rmT;
   BackendDAE.EqSystem syst;
   BackendDAE.EqSystems systs;
   Integer partitionCnt, i, j, eqIdx;
   DAE.ComponentRef cr;
   list<Integer> varIxs;
   BackendDAE.EqSystem syst;
-  array<Integer> eqsPartition;
+  array<Integer> eqsPartition, reqsPartition;
   BackendDAE.Equation eq;
   list<tuple<DAE.ComponentRef, Boolean>> refsInfo;
   tuple<DAE.ComponentRef, Boolean> refInfo;
@@ -1228,14 +1361,18 @@ algorithm
   funcs := BackendDAEUtil.getFunctions(inShared);
 
   (syst, m, mT) := BackendDAEUtil.getIncidenceMatrixfromOption(inSyst, BackendDAE.BASECLOCK_IDX(), SOME(funcs));
+  (rm, rmT) := BackendDAEUtil.removedIncidenceMatrix(inSyst, BackendDAE.BASECLOCK_IDX(), SOME(funcs));
+
   BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs) := syst;
   eqsPartition := arrayCreate(arrayLength(m), 0);
-  partitionCnt := partitionIndependentBlocks0(m, mT, eqsPartition);
-  systs :=
-    if partitionCnt > 1 then
-      partitionIndependentBlocksSplitBlocks(partitionCnt, syst, eqsPartition, mT, false)
-    else
-      {syst};
+  reqsPartition := arrayCreate(arrayLength(rm), 0);
+  partitionCnt := partitionIndependentBlocks0(m, mT, rm, rmT, eqsPartition, reqsPartition);
+  if partitionCnt > 1 then
+    (systs, outUnpartRemEqs) := partitionIndependentBlocksSplitBlocks(partitionCnt, syst, eqsPartition, reqsPartition, mT, false);
+  else
+    (systs, outUnpartRemEqs) := ({syst}, {});
+  end if;
+
   //Partition finished
   clockedEqs := arrayCreate(BackendDAEUtil.equationArraySize(eqs), NONE());
   clockedVars := arrayCreate(BackendVariable.varsSize(vars), NONE());
@@ -1483,18 +1620,15 @@ protected function setSystPartition
   input BackendDAE.EqSystem inSyst;
   input BackendDAE.BaseClockPartitionKind inPartitionKind;
   output BackendDAE.EqSystem outSyst;
-protected
-  BackendDAE.Variables orderedVars;
-  BackendDAE.EquationArray orderedEqs;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.Matching matching;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.EquationArray removedEqs;
-  BackendDAE.EventInfo eventInfo;
 algorithm
-  BackendDAE.EQSYSTEM( orderedVars=orderedVars, orderedEqs=orderedEqs, stateSets=stateSets) := inSyst;
-  outSyst := BackendDAEUtil.createEqSystem(orderedVars, orderedEqs, stateSets,  inPartitionKind);
+  outSyst := match inSyst
+    local
+      BackendDAE.EqSystem syst;
+    case syst as BackendDAE.EQSYSTEM()
+      algorithm
+        syst.partitionKind := inPartitionKind;
+      then syst;
+  end match;
 end setSystPartition;
 
 protected function getPartitionConflictError
@@ -1537,20 +1671,29 @@ end setClockedPartition;
 public function partitionIndependentBlocks0
   input BackendDAE.IncidenceMatrix m;
   input BackendDAE.IncidenceMatrixT mT;
+  input BackendDAE.IncidenceMatrix rm;
+  input BackendDAE.IncidenceMatrixT rmT;
   input array<Integer> ixs;
+  input array<Integer> rixs;
   output Integer on = 0;
 algorithm
   for i in arrayLength(m):-1:1 loop
-    on := if partitionIndependentBlocks1(i, on + 1, m, mT, ixs) then on + 1 else on;
+    on := if partitionIndependentBlocksEq(i, on + 1, m, mT, rm, rmT, ixs, rixs) then on + 1 else on;
+  end for;
+  for i in arrayLength(rm):-1:1 loop
+    on := if partitionIndependentBlocksReq(i, on + 1, m, mT, rm, rmT, ixs, rixs) then on + 1 else on;
   end for;
 end partitionIndependentBlocks0;
 
-protected function partitionIndependentBlocks1
+protected function partitionIndependentBlocksEq
   input Integer ix;
   input Integer n;
   input BackendDAE.IncidenceMatrix m;
   input BackendDAE.IncidenceMatrixT mT;
+  input BackendDAE.IncidenceMatrix rm;
+  input BackendDAE.IncidenceMatrixT rmT;
   input array<Integer> ixs;
+  input array<Integer> rixs;
   output Boolean ochange;
 algorithm
   ochange := arrayGet(ixs, ix) == 0;
@@ -1559,68 +1702,98 @@ algorithm
     arrayUpdate(ixs, ix, n);
     for i in arrayGet(m, ix) loop
       for j in arrayGet(mT, intAbs(i)) loop
-        partitionIndependentBlocks1(intAbs(j), n, m, mT, ixs);
+        partitionIndependentBlocksEq(intAbs(j), n, m, mT, rm, rmT, ixs, rixs);
+      end for;
+      for j in arrayGet(rmT, intAbs(i)) loop
+        partitionIndependentBlocksReq(intAbs(j), n, m, mT, rm, rmT, ixs, rixs);
       end for;
     end for;
   end if;
-end partitionIndependentBlocks1;
+end partitionIndependentBlocksEq;
+
+protected function partitionIndependentBlocksReq
+  input Integer ix;
+  input Integer n;
+  input BackendDAE.IncidenceMatrix m;
+  input BackendDAE.IncidenceMatrixT mT;
+  input BackendDAE.IncidenceMatrix rm;
+  input BackendDAE.IncidenceMatrixT rmT;
+  input array<Integer> ixs;
+  input array<Integer> rixs;
+  output Boolean ochange;
+algorithm
+  ochange := arrayGet(rixs, ix) == 0;
+  if ochange then
+    arrayUpdate(rixs, ix, n);
+    for i in arrayGet(rm, ix) loop
+      for j in arrayGet(mT, intAbs(i)) loop
+        partitionIndependentBlocksEq(intAbs(j), n, m, mT, rm, rmT, ixs, rixs);
+      end for;
+      for j in arrayGet(rmT, intAbs(i)) loop
+        partitionIndependentBlocksReq(intAbs(j), n, m, mT, rm, rmT, ixs, rixs);
+      end for;
+    end for;
+  end if;
+end partitionIndependentBlocksReq;
 
 public function partitionIndependentBlocksSplitBlocks
   "Partitions the independent blocks into list<array<...>> by first constructing
   an array<list<...>> structure for the algorithm complexity"
   input Integer n;
-  input BackendDAE.EqSystem syst;
+  input BackendDAE.EqSystem inSyst;
   input array<Integer> ixs;
+  input array<Integer> rixs;
   input BackendDAE.IncidenceMatrix mT;
   input Boolean throwNoError;
-  output list<BackendDAE.EqSystem> systs;
+  output list<BackendDAE.EqSystem> systs = {};
+  output list<BackendDAE.Equation> unpartRemovedEqs = {};
+protected
+  array<list<BackendDAE.Equation>> ea, rea;
+  array<list<BackendDAE.Var>> va;
+  Integer i1, i2;
+  String s1, s2;
+  Boolean b, b1 = true;
+  BackendDAE.EqSystem syst;
+  list<BackendDAE.Equation> rest;
 algorithm
-  systs := match (syst)
-    local
-      BackendDAE.Variables vars;
-      BackendDAE.EquationArray arr;
-      array<list<BackendDAE.Equation>> ea;
-      array<list<BackendDAE.Var>> va;
-      list<list<BackendDAE.Equation>> el;
-      list<list<BackendDAE.Var>> vl;
-      Integer i1, i2;
-      String s1, s2;
-      Boolean b;
+  ea := arrayCreate(n, {});
+  rea := arrayCreate(n, {});
+  va := arrayCreate(n, {});
+  i1 := BackendDAEUtil.equationSize(inSyst.orderedEqs);
+  i2 := BackendVariable.varsSize(inSyst.orderedVars);
 
-    case BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=arr)
-      equation
-        ea = arrayCreate(n, {});
-        va = arrayCreate(n, {});
-        i1 = BackendDAEUtil.equationSize(arr);
-        i2 = BackendVariable.varsSize(vars);
+  if i1 <> i2 and not throwNoError then
+  s1 := intString(i1);
+  s2 := intString(i2);
+  Error.addSourceMessage(if i1 > i2 then Error.OVERDET_EQN_SYSTEM else Error.UNDERDET_EQN_SYSTEM,
+    {s1, s2}, Absyn.dummyInfo);
+    fail();
+  end if;
 
-        if i1 <> i2 and not throwNoError then
-          s1 = intString(i1);
-          s2 = intString(i2);
-          Error.addSourceMessage(if i1 > i2 then Error.OVERDET_EQN_SYSTEM else Error.UNDERDET_EQN_SYSTEM,
-            {s1, s2}, Absyn.dummyInfo);
-          fail();
-        end if;
+  rest := partitionEquations(BackendDAEUtil.equationArraySize(inSyst.orderedEqs), inSyst.orderedEqs, ixs, ea);
+  assert(listLength(rest) == 0, "Equations partitioning failure in SynchronousFeatures.partitionIndependentBlocksSplitBlocks");
+  unpartRemovedEqs := partitionEquations(BackendDAEUtil.equationArraySize(inSyst.removedEqs), inSyst.removedEqs, rixs, rea);
+  partitionVars(i2, inSyst.orderedEqs, inSyst.orderedVars, ixs, mT, va);
 
-        partitionEquations(BackendDAEUtil.equationArraySize(arr), arr, ixs, ea);
-        partitionVars(i2, arr, vars, ixs, mT, va);
-        el = arrayList(ea);
-        vl = arrayList(va);
-        (systs, (b, _)) = List.threadMapFold(el, vl, createEqSystem, (true, throwNoError));
-        true = throwNoError or b;
-      then
-        systs;
-  end match;
+  for i in 1:n loop
+    (syst, (b, _)) := createEqSystem(ea[i], va[i], rea[i], (true, throwNoError));
+    systs := syst :: systs;
+    b1 := b1 and b;
+  end for;
+  true := throwNoError or b1;
+  systs := listReverse(systs);
+
 end partitionIndependentBlocksSplitBlocks;
 
 protected function createEqSystem
   input list<BackendDAE.Equation> el;
   input list<BackendDAE.Var> vl;
+  input list<BackendDAE.Equation> rel;
   input tuple<Boolean, Boolean> iTpl;
   output BackendDAE.EqSystem syst;
   output tuple<Boolean, Boolean> oTpl;
 protected
-  BackendDAE.EquationArray arr;
+  BackendDAE.EquationArray arr, remArr;
   BackendDAE.Variables vars;
   Integer i1, i2;
   String s1, s2, s3, s4;
@@ -1630,6 +1803,7 @@ algorithm
   (success, throwNoError) := iTpl;
   vars := BackendVariable.listVar1(vl);
   arr := BackendEquation.listEquation(el);
+  remArr := BackendEquation.listEquation(rel);
   i1 := BackendDAEUtil.equationSize(arr);
   i2 := BackendVariable.varsSize(vars);
 
@@ -1644,7 +1818,7 @@ algorithm
     fail();
   end if;
 
-  syst := BackendDAEUtil.createEqSystem(vars, arr);
+  syst := BackendDAEUtil.createEqSystem(vars, arr, {}, BackendDAE.UNKNOWN_PARTITION(), remArr);
   success := success and i1==i2;
   oTpl := (success, throwNoError);
 end createEqSystem;
@@ -1654,6 +1828,7 @@ protected function partitionEquations
   input BackendDAE.EquationArray arr;
   input array<Integer> ixs;
   input array<list<BackendDAE.Equation>> ea;
+  output list<BackendDAE.Equation> restEqs = {};
 protected
   Integer ix;
   list<BackendDAE.Equation> lst;
@@ -1661,11 +1836,15 @@ protected
 algorithm
   for i in n:-1:1 loop
     ix := ixs[i];
-    lst := ea[ix];
     eq := BackendEquation.equationNth1(arr, i);
-    lst := eq::lst;
-    // print("adding eq " + intString(n) + " to group " + intString(ix) + "\n");
-    arrayUpdate(ea, ix, lst);
+    if ix == 0 then
+      restEqs := eq::restEqs;
+    else
+      lst := ea[ix];
+      lst := eq::lst;
+      // print("adding eq " + intString(n) + " to group " + intString(ix) + "\n");
+      arrayUpdate(ea, ix, lst);
+    end if;
   end for;
 end partitionEquations;
 

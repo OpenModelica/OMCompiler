@@ -98,23 +98,14 @@ protected
   BackendDAE.StrongComponent c;
   Integer i = 1;
   list<BackendDAE.Var> newVars = {};
-
-  BackendDAE.Variables vars;
-  BackendDAE.Matching matching;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.BaseClockPartitionKind partitionKind;
-  BackendDAE.EquationArray eqns;
-
 algorithm
   for comp in inComps loop
     (osyst,oshared, newVars) := findSimpleEquationWork(osyst,oshared,comp, i, newVars);
     i := i + 1;
   end for;
-
   if  not listEmpty(newVars) then
-    BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns,matching=matching,stateSets=stateSets,partitionKind=partitionKind) := osyst;
-    vars := BackendVariable.addVars(newVars, vars);
-    osyst := BackendDAE.EQSYSTEM(vars,eqns,NONE(),NONE(),matching,stateSets,partitionKind);
+    osyst.orderedVars := BackendVariable.addVars(newVars, osyst.orderedVars);
+    osyst := BackendDAEUtil.setEqSystMatrices(osyst);
     //BackendDump.printEqSystem(osyst);
   end if;
 
@@ -145,8 +136,6 @@ algorithm
       BackendDAE.Shared shared;
       DAE.ElementSource source;
       BackendDAE.Matching matching;
-      BackendDAE.StateSets stateSets;
-      BackendDAE.BaseClockPartitionKind partitionKind;
       DAE.FunctionTree funcs;
       list<BackendDAE.Equation> solveEqns;
       DAE.Exp e1,e2,varexp,e;
@@ -155,11 +144,9 @@ algorithm
       BackendDAE.StrongComponent comp;
       BackendDAE.StrongComponents comps;
       array<Integer> ass1, ass2;
-      Option<BackendDAE.IncidenceMatrix> m;
-      Option<BackendDAE.IncidenceMatrixT> mT;
 
 
-    case (BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns,matching=matching,stateSets=stateSets,partitionKind=partitionKind, m=m,mT=mT),shared,BackendDAE.SINGLEEQUATION(eqn=eindex,var=vindx))
+    case (BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns,matching=matching),shared,BackendDAE.SINGLEEQUATION(eqn=eindex,var=vindx))
       algorithm
         (eqn_ as BackendDAE.EQUATION(exp=e1, scalar=e2, source=source,attr=attr)) := BackendEquation.equationNth1(eqns, eindex);
         (var_ as BackendDAE.VAR(varName = cr)) := BackendVariable.getVarAt(vars, vindx);
@@ -198,12 +185,12 @@ algorithm
           comps := List.replaceAt(comp, iter, comps);
           matching := BackendDAE.MATCHING(ass1, ass2, comps);
         end try;
-        eqns_ := BackendEquation.setAtIndex(eqns,eindex,eqn_);
-        syst := BackendDAE.EQSYSTEM(vars,eqns_,m,mT,matching,stateSets,partitionKind);
+        eqns_ := BackendEquation.setAtIndex(eqns, eindex, eqn_);
+        syst := BackendDAEUtil.setEqSystEqs(isyst, eqns_);
+        syst := BackendDAEUtil.setEqSystMatching(syst, matching);
+        then(syst, shared, tmpvars);
 
-        then(syst,shared,tmpvars);
-
-    else (isyst,ishared, iNewVars);
+    else (isyst, ishared, iNewVars);
   end matchcontinue;
 end findSimpleEquationWork;
 
@@ -681,8 +668,7 @@ algorithm
       orhs := DAE.IFEXP(Expression.makeNoEvent(DAE.RELATION(
                 dt,
                   DAE.EQUAL(tp),
-                DAE.RCONST(0.0),-1,NONE())),
-              Expression.makePureBuiltinCall("$_old", {X}, tp), rhs);
+                DAE.RCONST(0.0),-1,NONE())), X, rhs);
     end if;
   end if;
 
@@ -1107,6 +1093,16 @@ algorithm
   ores := Expression.expAdd(e0,ores);
 
 end expAddX2;
+
+public function collectX
+  input DAE.Exp inExp1 "lhs";
+  input DAE.Exp inExp3 "DAE.CREF";
+  input DAE.Boolean expand = true;
+  output DAE.Exp outLhs;
+  output DAE.Exp outRhs;
+algorithm
+ (outLhs, outRhs) := preprocessingSolve5(inExp1, inExp3, expand);
+end collectX;
 
 protected function preprocessingSolve5
 "

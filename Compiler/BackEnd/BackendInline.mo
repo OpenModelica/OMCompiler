@@ -41,29 +41,15 @@ encapsulated package BackendInline
   The entry point is the inlineCalls function, or inlineCallsInFunctions
   "
 
-public import Absyn;
 public import BackendDAE;
-public import BaseHashTable;
 public import DAE;
-public import FCore;
-public import HashTableCG;
 public import Inline;
 public import SCode;
 public import Values;
 
-protected import Ceval;
-protected import ClassInf;
-protected import ComponentReference;
-protected import Config;
 protected import Debug;
-protected import Error;
-protected import Expression;
-protected import ExpressionDump;
-protected import ExpressionSimplify;
 protected import Flags;
 protected import List;
-protected import Types;
-protected import VarTransform;
 
 // =============================================================================
 // late inline functions stuff
@@ -94,7 +80,7 @@ algorithm
       BackendDAE.EqSystems eqs;
       BackendDAE.Shared shared;
 
-    case BackendDAE.DAE(eqs, shared as BackendDAE.SHARED())
+    case BackendDAE.DAE(eqs, shared)
       algorithm
         tpl := (SOME(shared.functionTree), inITLst);
         eqs := List.map1(eqs, inlineEquationSystem, tpl);
@@ -118,26 +104,11 @@ end inlineCalls;
 protected function inlineEquationSystem
   input BackendDAE.EqSystem eqs;
   input Inline.Functiontuple tpl;
-  output BackendDAE.EqSystem oeqs;
+  output BackendDAE.EqSystem oeqs = eqs;
 algorithm
-  oeqs := match (eqs,tpl)
-    local
-      BackendDAE.EqSystem syst;
-      BackendDAE.Variables orderedVars;
-      BackendDAE.EquationArray orderedEqs;
-      BackendDAE.Matching matching;
-      Boolean b1,b2;
-      BackendDAE.StateSets stateSets;
-      BackendDAE.BaseClockPartitionKind partitionKind;
-
-    case (syst as BackendDAE.EQSYSTEM(orderedVars=orderedVars,orderedEqs=orderedEqs,matching=matching,stateSets=stateSets,partitionKind=partitionKind),_)
-      equation
-        (orderedVars,b1) = inlineVariables(orderedVars,tpl);
-        (orderedEqs,b2) = inlineEquationArray(orderedEqs,tpl);
-        syst = if b1 or b2 then BackendDAE.EQSYSTEM(orderedVars,orderedEqs,NONE(),NONE(),matching,stateSets,partitionKind) else syst;
-      then
-        syst;
-  end match;
+  inlineVariables(oeqs.orderedVars, tpl);
+  inlineEquationArray(oeqs.orderedEqs, tpl);
+  inlineEquationArray(oeqs.removedEqs, tpl);
 end inlineEquationSystem;
 
 protected function inlineEquationArray "
@@ -534,13 +505,12 @@ algorithm
       BackendDAE.EventInfo ev;
       Boolean b1, b2, b3;
       list<BackendDAE.TimeEvent> timeEvents;
-      array<DAE.ClockKind> clocks;
 
-    case(BackendDAE.EVENT_INFO(timeEvents, wclst, zclst, samples, relations, numberOfMathEvents, clocks), fns) equation
+    case(BackendDAE.EVENT_INFO(timeEvents, wclst, zclst, samples, relations, numberOfMathEvents), fns) equation
       (wclst_1, b1) = inlineWhenClauses(wclst, fns, {}, false);
       (zclst_1, b2) = inlineZeroCrossings(zclst, fns, {}, false);
       (relations, b3) = inlineZeroCrossings(relations, fns, {}, false);
-      ev = if b1 or b2 or b3 then BackendDAE.EVENT_INFO(timeEvents, wclst_1, zclst_1, samples, relations, numberOfMathEvents, clocks)
+      ev = if b1 or b2 or b3 then BackendDAE.EVENT_INFO(timeEvents, wclst_1, zclst_1, samples, relations, numberOfMathEvents)
                              else inEventInfo;
     then ev;
 

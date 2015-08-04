@@ -5,12 +5,14 @@
 
 #pragma once
 
+#include "FactoryExport.h"
+
 #include <Core/System/IAlgLoop.h>                // Interface to AlgLoo
 #include <Core/Solver/IAlgLoopSolver.h>        // Export function from dll
 #include <Core/Solver/INonLinSolverSettings.h>
 #include <Solver/Newton/NewtonSettings.h>
 
-
+#include <Core/Utils/extension/logger.hpp>
 
 
 /*****************************************************************************/
@@ -91,8 +93,8 @@ private:
         *_f,                        ///< Temp        - Residuals
         *_yHelp,                    ///< Temp        - Auxillary variables
         *_fHelp,                    ///< Temp        - Auxillary variables
-        *_jac;                        ///< Temp        - Jacobian
-
+        *_jac,                        ///< Temp        - Jacobian
+        * _zeroVec;
   long int *_iHelp;
 };
 /** @} */ // end of solverNewton

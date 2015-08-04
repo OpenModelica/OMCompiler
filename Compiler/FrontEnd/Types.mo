@@ -1588,7 +1588,8 @@ algorithm
     case (DAE.T_METAOPTION(ty = t1),DAE.T_METAOPTION(ty = t2))
       then subtype(t1,t2,requireRecordNamesEqual);
 
-    case (DAE.T_METABOXED(ty = t1),DAE.T_METABOXED(ty = t2)) then subtype(t1,t2,requireRecordNamesEqual);
+    case (DAE.T_METABOXED(ty = t1),DAE.T_METABOXED(ty = t2))
+      then subtype(t1,t2,requireRecordNamesEqual);
     case (DAE.T_METABOXED(ty = t1),t2) equation true = isBoxedType(t2); then subtype(t1,t2,requireRecordNamesEqual);
     case (t1,DAE.T_METABOXED(ty = t2)) equation true = isBoxedType(t1); then subtype(t1,t2,requireRecordNamesEqual);
 
@@ -1600,8 +1601,10 @@ algorithm
     // MM Function Reference
     case (DAE.T_FUNCTION(funcArg = farg1,funcResultType = t1),DAE.T_FUNCTION(funcArg = farg2,funcResultType = t2))
       equation
-        tList1 = List.map(farg1, funcArgType);
-        tList2 = List.map(farg2, funcArgType);
+        tList1 = list(traverseType(funcArgType(t), 1, unboxedTypeTraverseHelper) for t in farg1);
+        tList2 = list(traverseType(funcArgType(t), 1, unboxedTypeTraverseHelper) for t in farg2);
+        t1 = traverseType(t1, 1, unboxedTypeTraverseHelper);
+        t2 = traverseType(t2, 1, unboxedTypeTraverseHelper);
         true = subtypeTypelist(tList1,tList2,requireRecordNamesEqual);
         true = subtype(t1,t2,requireRecordNamesEqual);
       then true;
@@ -2054,6 +2057,7 @@ algorithm
     local
       Type ty;
     case (DAE.T_METALIST(ty = ty)) then (boxIfUnboxedType(ty),DAE.DIM_UNKNOWN());
+    case (DAE.T_METAARRAY(ty = ty)) then (boxIfUnboxedType(ty),DAE.DIM_UNKNOWN());
     case (DAE.T_ARRAY(dims = {dim},ty = ty)) then (ty,dim);
     case (DAE.T_SUBTYPE_BASIC(complexType = ty))
       equation
@@ -5793,7 +5797,7 @@ algorithm
     case (DAE.T_METARECORD(knownSingleton=false,utPath = path1), DAE.T_METARECORD(knownSingleton=false,utPath=path2))
       equation
         true = Absyn.pathEqual(path1,path2);
-      then DAE.T_METAUNIONTYPE({},false,{path1});
+      then DAE.T_METAUNIONTYPE({},false,DAE.NOT_SINGLETON(),{path1});
 
     case (DAE.T_INTEGER(),DAE.T_REAL())
       then DAE.T_REAL_DEFAULT;
@@ -6529,33 +6533,34 @@ algorithm
 
     case ((id,{ty})::rest,solvedBindings,unsolvedBindings)
       equation
+        ty = Types.boxIfUnboxedType(ty);
         (solvedBindings,unsolvedBindings) = solvePolymorphicBindingsLoop(listAppend(unsolvedBindings,rest),(id,{ty})::solvedBindings,{});
       then (solvedBindings,unsolvedBindings);
 
       // Replace solved bindings
     case ((id,tys)::rest,solvedBindings,unsolvedBindings)
-      equation
-        tys = replaceSolvedBindings(tys, solvedBindings, false);
-        tys = List.unionOnTrue(tys, {}, equivtypes);
-        (solvedBindings,unsolvedBindings) = solvePolymorphicBindingsLoop(listAppend((id,tys)::unsolvedBindings,rest),solvedBindings,{});
+      algorithm
+        tys := replaceSolvedBindings(tys, solvedBindings, false);
+        tys := List.unionOnTrue(tys, {}, equivtypes);
+        (solvedBindings,unsolvedBindings) := solvePolymorphicBindingsLoop(listAppend((id,tys)::unsolvedBindings,rest),solvedBindings,{});
       then (solvedBindings,unsolvedBindings);
 
     case ((id,tys)::rest,solvedBindings,unsolvedBindings)
-      equation
-        (tys,solvedBindings) = solveBindings(tys, tys, solvedBindings);
-        tys = List.unionOnTrue(tys, {}, equivtypes);
-        (solvedBindings,unsolvedBindings) = solvePolymorphicBindingsLoop(listAppend((id,tys)::unsolvedBindings,rest),solvedBindings,{});
+      algorithm
+        (tys,solvedBindings) := solveBindings(tys, tys, solvedBindings);
+        tys := List.unionOnTrue(tys, {}, equivtypes);
+        (solvedBindings,unsolvedBindings) := solvePolymorphicBindingsLoop(listAppend((id,tys)::unsolvedBindings,rest),solvedBindings,{});
       then (solvedBindings,unsolvedBindings);
 
       // Duplicate types need to be removed
     case ((id,tys)::rest,solvedBindings,unsolvedBindings)
-      equation
-        len1 = listLength(tys);
-        true = len1 > 1;
-        tys = List.unionOnTrue(tys, {}, equivtypes); // Remove duplicates
-        len2 = listLength(tys);
-        false = len1 == len2;
-        (solvedBindings,unsolvedBindings) = solvePolymorphicBindingsLoop(listAppend((id,tys)::unsolvedBindings,rest),solvedBindings,{});
+      algorithm
+        len1 := listLength(tys);
+        true := len1 > 1;
+        tys := List.unionOnTrue(tys, {}, equivtypes); // Remove duplicates
+        len2 := listLength(tys);
+        false := len1 == len2;
+        (solvedBindings,unsolvedBindings) := solvePolymorphicBindingsLoop(listAppend((id,tys)::unsolvedBindings,rest),solvedBindings,{});
       then (solvedBindings,unsolvedBindings);
 
     case (first::rest, solvedBindings, unsolvedBindings)
@@ -6788,96 +6793,101 @@ Only works on the MetaModelica datatypes; the input is assumed to be boxed.
   input DAE.Type actual;
   input DAE.Type expected;
   input Option<Absyn.Path> envPath;
-  input InstTypes.PolymorphicBindings ibindings;
-  output InstTypes.PolymorphicBindings outBindings;
+  input InstTypes.PolymorphicBindings inBindings;
+  output InstTypes.PolymorphicBindings bindings;
 algorithm
-  outBindings := matchcontinue (actual,expected,envPath,ibindings)
+  bindings := matchcontinue (actual,expected)
     local
       String id,prefix;
       Type ty,ty1,ty2;
       list<DAE.FuncArg> farg1,farg2;
       list<DAE.Type> tList1,tList2,tys;
       Absyn.Path path1,path2;
-      list<String> ids;
-      InstTypes.PolymorphicBindings bindings;
+      list<String> ids,names1,names2;
 
-    case (_,DAE.T_METAPOLYMORPHIC(name = id),_,bindings)
-      then addPolymorphicBinding("$" + id,actual,bindings);
+    case (_,DAE.T_METAPOLYMORPHIC(name = id))
+      then addPolymorphicBinding("$" + id,actual,inBindings);
 
-    case (DAE.T_METAPOLYMORPHIC(name = id),_,_,bindings)
-      then addPolymorphicBinding("$$" + id,expected,bindings);
+    case (DAE.T_METAPOLYMORPHIC(name = id),_)
+      then addPolymorphicBinding("$$" + id,expected,inBindings);
 
-    case (DAE.T_METABOXED(ty = ty1),ty2,_,bindings)
+    case (DAE.T_METABOXED(ty = ty1),ty2)
       equation
         ty1 = unboxedType(ty1);
-      then subtypePolymorphic(ty1,ty2,envPath,bindings);
+      then subtypePolymorphic(ty1,ty2,envPath,inBindings);
 
-    case (ty1,DAE.T_METABOXED(ty = ty2),_,bindings)
+    case (ty1,DAE.T_METABOXED(ty = ty2))
       equation
         ty2 = unboxedType(ty2);
-      then subtypePolymorphic(ty1,ty2,envPath,bindings);
+      then subtypePolymorphic(ty1,ty2,envPath,inBindings);
 
-    case (DAE.T_NORETCALL(),DAE.T_NORETCALL(),_,bindings) then bindings;
-    case (DAE.T_INTEGER(),DAE.T_INTEGER(),_,bindings) then bindings;
-    case (DAE.T_REAL(),DAE.T_INTEGER(),_,bindings) then bindings;
-    case (DAE.T_STRING(),DAE.T_STRING(),_,bindings) then bindings;
-    case (DAE.T_BOOL(),DAE.T_BOOL(),_,bindings) then bindings;
+    case (DAE.T_NORETCALL(),DAE.T_NORETCALL()) then inBindings;
+    case (DAE.T_INTEGER(),DAE.T_INTEGER()) then inBindings;
+    case (DAE.T_REAL(),DAE.T_INTEGER()) then inBindings;
+    case (DAE.T_STRING(),DAE.T_STRING()) then inBindings;
+    case (DAE.T_BOOL(),DAE.T_BOOL()) then inBindings;
 
-    case (DAE.T_METAARRAY(ty = ty1),DAE.T_METAARRAY(ty = ty2),_,bindings)
-      then subtypePolymorphic(ty1,ty2,envPath,bindings);
-    case (DAE.T_METALIST(ty = ty1),DAE.T_METALIST(ty = ty2),_,bindings)
-      then subtypePolymorphic(ty1,ty2,envPath,bindings);
-    case (DAE.T_METAOPTION(ty = ty1),DAE.T_METAOPTION(ty = ty2),_,bindings)
-      then subtypePolymorphic(ty1,ty2,envPath,bindings);
-    case (DAE.T_METATUPLE(types = tList1),DAE.T_METATUPLE(types = tList2),_,bindings)
-      then subtypePolymorphicList(tList1,tList2,envPath,bindings);
+    case (DAE.T_ENUMERATION(names = names1),
+          DAE.T_ENUMERATION(names = names2))
+      equation
+        true = List.isEqualOnTrue(names1, names2, stringEq);
+      then inBindings;
 
-    case (DAE.T_TUPLE(types = tList1),DAE.T_TUPLE(types = tList2),_,bindings)
-      then subtypePolymorphicList(tList1,tList2,envPath,bindings);
+    case (DAE.T_METAARRAY(ty = ty1),DAE.T_METAARRAY(ty = ty2))
+      then subtypePolymorphic(ty1,ty2,envPath,inBindings);
+    case (DAE.T_METALIST(ty = ty1),DAE.T_METALIST(ty = ty2))
+      then subtypePolymorphic(ty1,ty2,envPath,inBindings);
+    case (DAE.T_METAOPTION(ty = ty1),DAE.T_METAOPTION(ty = ty2))
+      then subtypePolymorphic(ty1,ty2,envPath,inBindings);
+    case (DAE.T_METATUPLE(types = tList1),DAE.T_METATUPLE(types = tList2))
+      then subtypePolymorphicList(tList1,tList2,envPath,inBindings);
 
-    case (DAE.T_METAUNIONTYPE(source = {path1}),DAE.T_METAUNIONTYPE(source = {path2}),_,bindings)
+    case (DAE.T_TUPLE(types = tList1),DAE.T_TUPLE(types = tList2))
+      then subtypePolymorphicList(tList1,tList2,envPath,inBindings);
+
+    case (DAE.T_METAUNIONTYPE(source = {path1}),DAE.T_METAUNIONTYPE(source = {path2}))
       equation
         true = Absyn.pathEqual(path1,path2);
-      then bindings;
+      then inBindings;
 
-    case (DAE.T_COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ(path1)),DAE.T_COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ(path2)),_,bindings)
+    case (DAE.T_COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ(path1)),DAE.T_COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ(path2)))
       equation
         true = Absyn.pathEqual(path1,path2);
-      then bindings;
+      then inBindings;
 
     // MM Function Reference. sjoelund
-    case (DAE.T_FUNCTION(farg1,ty1,_,{path1}),DAE.T_FUNCTION(farg2,ty2,_,{_}),_,bindings)
+    case (DAE.T_FUNCTION(farg1,ty1,_,{path1}),DAE.T_FUNCTION(farg2,ty2,_,{_}))
       equation
         true = Absyn.pathPrefixOf(Util.getOptionOrDefault(envPath,Absyn.IDENT("$TOP$")),path1); // Don't rename the result type for recursive calls...
         tList1 = List.map(farg1, funcArgType);
         tList2 = List.map(farg2, funcArgType);
-        bindings = subtypePolymorphicList(tList1,tList2,envPath,bindings);
+        bindings = subtypePolymorphicList(tList1,tList2,envPath,inBindings);
         bindings = subtypePolymorphic(ty1,ty2,envPath,bindings);
       then bindings;
 
-    case (DAE.T_FUNCTION(source = {path1}),DAE.T_FUNCTION(farg2,ty2,_,{_}),_,bindings)
+    case (DAE.T_FUNCTION(source = {path1}),DAE.T_FUNCTION(farg2,ty2,_,{_}))
       equation
         false = Absyn.pathPrefixOf(Util.getOptionOrDefault(envPath,Absyn.IDENT("$TOP$")),path1);
         prefix = "$" + Absyn.pathString(path1) + ".";
         (DAE.T_FUNCTION(farg1,ty1,_,_),_) = traverseType(actual, prefix, prefixTraversedPolymorphicType);
         tList1 = List.map(farg1, funcArgType);
         tList2 = List.map(farg2, funcArgType);
-        bindings = subtypePolymorphicList(tList1,tList2,envPath,bindings);
+        bindings = subtypePolymorphicList(tList1,tList2,envPath,inBindings);
         bindings = subtypePolymorphic(ty1,ty2,envPath,bindings);
       then bindings;
 
-    case (DAE.T_UNKNOWN(),ty2,_,bindings)
+    case (DAE.T_UNKNOWN(),ty2)
       equation
         tys = getAllInnerTypesOfType(ty2, isPolymorphic);
         ids = List.map(tys, polymorphicTypeName);
-        bindings = List.fold1(ids, addPolymorphicBinding, actual, bindings);
+        bindings = List.fold1(ids, addPolymorphicBinding, actual, inBindings);
       then bindings;
 
-    case (DAE.T_ANYTYPE(),ty2,_,bindings)
+    case (DAE.T_ANYTYPE(),ty2)
       equation
         tys = getAllInnerTypesOfType(ty2, isPolymorphic);
         ids = List.map(tys, polymorphicTypeName);
-        bindings = List.fold1(ids, addPolymorphicBinding, actual, bindings);
+        bindings = List.fold1(ids, addPolymorphicBinding, actual, inBindings);
       then bindings;
 
     else
@@ -7814,7 +7824,10 @@ algorithm
     case (DAE.T_METALIST(t, _), ts) then DAE.T_METALIST(t, ts);
     case (DAE.T_METATUPLE(tys, _), ts) then DAE.T_METATUPLE(tys, ts);
     case (DAE.T_METAOPTION(t, _), ts) then DAE.T_METAOPTION(t, ts);
-    case (DAE.T_METAUNIONTYPE(ps, b, _), ts) then DAE.T_METAUNIONTYPE(ps, b, ts);
+    case (t as DAE.T_METAUNIONTYPE(), ts)
+      algorithm
+        t.source := ts;
+      then t;
     case (DAE.T_METARECORD(p, i, v, b, _), ts) then DAE.T_METARECORD(p, i, v, b, ts);
     case (DAE.T_METAARRAY(t, _), ts) then DAE.T_METAARRAY(t, ts);
     case (DAE.T_METABOXED(t, _), ts) then DAE.T_METABOXED(t, ts);
@@ -8031,6 +8044,18 @@ algorithm
   end match;
 end dimNotFixed;
 
+function isArrayWithUnknownDimension
+  input DAE.Type ty;
+  output Boolean b;
+algorithm
+  b := match ty
+    case DAE.T_ARRAY() then max(
+        match d case DAE.DIM_UNKNOWN() then true; else false; end match
+      for d in getDimensions(ty));
+    else false;
+  end match;
+end isArrayWithUnknownDimension;
+
 public function stripTypeVars
   "Strips the attribute variables from a type, and returns both the stripped
    type and the attribute variables."
@@ -8196,7 +8221,7 @@ algorithm
     local
       Boolean b;
       Absyn.Path p;
-    case DAE.T_METARECORD(utPath=p,knownSingleton=b) then DAE.T_METAUNIONTYPE({},b,{p});
+    case DAE.T_METARECORD(utPath=p,knownSingleton=b) then DAE.T_METAUNIONTYPE({},b,if b then DAE.EVAL_SINGLETON_KNOWN_TYPE(inTy) else DAE.NOT_SINGLETON(),{p});
     else inTy;
   end match;
 end getUniontypeIfMetarecord;
@@ -8215,7 +8240,7 @@ protected function getUniontypeIfMetarecordTraverse
   output Integer odummy = dummy;
 algorithm
   oty := match ty
-    case DAE.T_METARECORD() then DAE.T_METAUNIONTYPE({},ty.knownSingleton,{ty.utPath});
+    case DAE.T_METARECORD() then DAE.T_METAUNIONTYPE({},ty.knownSingleton,if ty.knownSingleton then DAE.EVAL_SINGLETON_KNOWN_TYPE(ty) else DAE.NOT_SINGLETON(),{ty.utPath});
     else ty;
   end match;
 end getUniontypeIfMetarecordTraverse;
@@ -8810,6 +8835,17 @@ algorithm
   end match;
 end metaArrayElementType;
 
+public function isMetaArray
+  input DAE.Type inType;
+  output Boolean b;
+algorithm
+  b := match inType
+    case DAE.T_METAARRAY() then true;
+    case DAE.T_METATYPE() then isMetaArray(inType.ty);
+    else false;
+  end match;
+end isMetaArray;
+
 public function getAttributes
   input DAE.Type inType;
   output list<DAE.Var> outAttributes;
@@ -8837,6 +8873,67 @@ algorithm
     end if;
   end for;
 end lookupAttributeValue;
+
+public function lookupAttributeExp
+  input list<DAE.Var> inAttributes;
+  input String inName;
+  output Option<DAE.Exp> outExp = NONE();
+algorithm
+  for attr in inAttributes loop
+    if inName == varName(attr) then
+      outExp := DAEUtil.bindingExp(varBinding(attr));
+      break;
+    end if;
+  end for;
+end lookupAttributeExp;
+
+protected function unboxedTypeTraverseHelper<T>
+  input DAE.Type ty;
+  input T dummy;
+  output DAE.Type oty = unboxedType(ty);
+  output T odummy = dummy;
+end unboxedTypeTraverseHelper;
+
+public function getMetaRecordFields
+  input DAE.Type ty;
+  output list<DAE.Var> fields;
+algorithm
+  fields := match ty
+    local
+      DAE.EvaluateSingletonTypeFunction fun;
+    case DAE.T_METARECORD(fields=fields) then fields;
+    case DAE.T_METAUNIONTYPE(knownSingleton=false)
+      algorithm
+        Error.addInternalError(getInstanceName() + " called on a non-singleton uniontype: " + unparseType(ty), sourceInfo());
+      then fail();
+    case DAE.T_METAUNIONTYPE(singletonType=DAE.EVAL_SINGLETON_KNOWN_TYPE(ty=DAE.T_METARECORD(fields=fields))) then fields;
+    case DAE.T_METAUNIONTYPE(singletonType=DAE.EVAL_SINGLETON_TYPE_FUNCTION(fun=fun))
+      algorithm
+        DAE.T_METARECORD(fields=fields) := fun();
+      then fields;
+    else
+      algorithm
+        Error.addInternalError(getInstanceName() + " called on a non-singleton uniontype: " + unparseType(ty), sourceInfo());
+      then fail();
+  end match;
+end getMetaRecordFields;
+
+public function getMetaRecordIfSingleton
+  input DAE.Type ty;
+  output DAE.Type oty;
+algorithm
+  oty := match ty
+    local
+      DAE.EvaluateSingletonTypeFunction fun;
+    case DAE.T_METAUNIONTYPE(knownSingleton=false) then ty;
+    case DAE.T_METAUNIONTYPE(singletonType=DAE.EVAL_SINGLETON_KNOWN_TYPE(ty=oty)) then oty;
+    case DAE.T_METAUNIONTYPE(singletonType=DAE.EVAL_SINGLETON_TYPE_FUNCTION(fun=fun))
+      algorithm
+        oty := fun();
+      then oty;
+    else ty;
+  end match;
+end getMetaRecordIfSingleton;
 
 annotation(__OpenModelica_Interface="frontend");
 end Types;

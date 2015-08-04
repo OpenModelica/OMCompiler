@@ -12,6 +12,7 @@
 #     if the Intel TBB library was found                                           -DUSE_INTEL_TBB
 #     if the Pugi XML library was found                                            -DUSE_PUGI_XML
 #     if profiling for the simulation runtime should be enabled                    -DRUNTIME_PROFILING
+#     if the equation systems of a FMU should be solved with kinsol                -DFMU_KINSOL
 #
 # Some of these options can be controlled by passing arguments to CMAKE
 #     if write output should be handled in parallel                                -DUSE_PARALLEL_OUTPUT=ON
@@ -36,6 +37,7 @@ OPTION(USE_PARALLEL_OUTPUT "USE_PARALLEL_OUTPUT" OFF)
 OPTION(USE_SCOREP "USE_SCOREP" OFF)
 OPTION(BOOST_STATIC_LINKING "BOOST_STATIC_LINKING" OFF)
 OPTION(RUNTIME_PROFILING "RUNTIME_PROFILING" OFF)
+OPTION(FMU_KINSOL "FMU_KINSOL" OFF)
 OPTION(SUNDIALS_ROOT "SUNDIALS ROOT" "")
 OPTION(BUILD_DOCUMENTATION "Use Doxygen to create the cpp runtime documentation" OFF)
 
@@ -55,6 +57,7 @@ SET(ModelicaTablesName ModelicaStandardTables)
 SET(SimulationSettings ${LIBPREFIX}SimulationSettings)
 SET(SimControllerName ${LIBPREFIX}SimController)
 SET(CVodeName ${LIBPREFIX}CVode)
+SET(ARKodeName ${LIBPREFIX}ARKode)
 SET(IDAName ${LIBPREFIX}IDA)
 SET(PeerName ${LIBPREFIX}Peer)
 SET(RTRKName ${LIBPREFIX}RTRK)
@@ -120,8 +123,14 @@ ENDIF(USE_PARALLEL_OUTPUT)
 # Handle ScoreP
 IF(USE_SCOREP)
   ADD_DEFINITIONS(-DUSE_SCOREP)
+  SET(USE_SCOREP_ "ON")
+  FIND_PACKAGE(ScoreP)
+  SET(SCOREP_INCLUDE_ ${SCOREP_INCLUDE_DIR})
   MESSAGE(STATUS "ScoreP enabled")
+  include_directories(${SCOREP_INCLUDE_DIR})
 ELSE(USE_SCOREP)
+    SET(SCOREP_INCLUDE_ ".")
+    SET(USE_SCOREP_ "OFF")
   MESSAGE(STATUS "ScoreP disabled")
 ENDIF(USE_SCOREP)
 
@@ -132,6 +141,16 @@ IF(RUNTIME_PROFILING)
 ELSE(RUNTIME_PROFILING)
   MESSAGE(STATUS "Runtime profiling disabled")
 ENDIF(RUNTIME_PROFILING)
+
+# Handle FMU kinsol support
+IF(FMU_KINSOL)
+  ADD_DEFINITIONS(-DFMU_KINSOL)
+  SET(USE_FMU_KINSOL_ "ON")
+  MESSAGE(STATUS "FMU kinsol enabled")
+ELSE(FMU_KINSOL)
+  SET(USE_FMU_KINSOL_ "OFF")
+  MESSAGE(STATUS "FMU kinsol disabled")
+ENDIF(FMU_KINSOL)
 
 # Handle build type
 IF(OMC_BUILD)
@@ -172,6 +191,23 @@ IF(WIN32)
   SET(INSTALL_OMDEV_LIBS ON)
 ENDIF(WIN32)
 
+# Find OpenMP
+FIND_PACKAGE(OpenMP)
+IF(OPENMP_FOUND)
+  MESSAGE(STATUS "OPENMP enabled")
+ELSE(OPENMP_FOUND)
+  MESSAGE(STATUS "OPENMP disabled")
+ENDIF(OPENMP_FOUND)
+SET(USE_OPENMP_ ${OPENMP_FOUND})
+
+# Find MPI
+FIND_PACKAGE(MPI)
+IF(MPI_FOUND)
+  MESSAGE(STATUS "MPI enabled")
+ELSE(MPI_FOUND)
+  MESSAGE(STATUS "MPI disabled")
+ENDIF(MPI_FOUND)
+SET(USE_MPI_ ${MPI_FOUND})
 
 # Find CMinpack
 # Note: Visual Studio libs are located in install/msvc, libs for gcc are directly in install
@@ -217,6 +253,9 @@ INCLUDE(FindPackageHandleStandardArgs)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(PAPI DEFAULT_MSG PAPI_LIBRARIES PAPI_INCLUDE_DIRS)
 IF(PAPI_FOUND)
   ADD_DEFINITIONS(-DUSE_PAPI)
+  SET(USE_PAPI_ "ON")
+ELSE(PAPI_FOUND)
+  SET(USE_PAPI_ "OFF")
 ENDIF(PAPI_FOUND)
 
 
@@ -225,14 +264,14 @@ ENDIF(PAPI_FOUND)
 #  - Additionaly the Boost_LIBRARIES variable is overwritten each time find_package(Boost ...) is called, thus it must be rescued
 FIND_PACKAGE(Boost COMPONENTS log log_setup)
 
-SET(Boost_LIBRARIES_TMP ${Boost_LIBRARIES_TMP} ${Boost_LIBRARIES})
-IF(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
-  ADD_DEFINITIONS(-DUSE_BOOST_LOG)
-  MESSAGE(STATUS "Using boost log")
-ELSE(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
-  MESSAGE(STATUS "Boost log disabled")
-  UNSET(Boost_LOG_LIBRARY)
-ENDIF(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
+#SET(Boost_LIBRARIES_TMP ${Boost_LIBRARIES_TMP} ${Boost_LIBRARIES})
+#IF(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
+#  ADD_DEFINITIONS(-DUSE_BOOST_LOG)
+#  MESSAGE(STATUS "Using boost log")
+#ELSE(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
+#  MESSAGE(STATUS "Boost log disabled")
+#  UNSET(Boost_LOG_LIBRARY)
+#ENDIF(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
 
 FIND_PACKAGE(Boost COMPONENTS thread atomic)
 
@@ -325,6 +364,11 @@ IF(USE_SUNDIALS)
     MESSAGE(FATAL_ERROR "Could not find libsundials_cvodes!")
   ENDIF()
 
+#    FIND_LIBRARY(SUNDIALS_ARKODE_LIB "sundials_arkode" PATHS ${SUNDIALS_LIBRARY_RELEASE_HOME}  $ENV{SUNDIALS_ROOT}/lib)
+#  IF(NOT SUNDIALS_ARKODE_LIB)
+#    MESSAGE(FATAL_ERROR "Could not find libsundials_ARKODE!")
+#  ENDIF()
+
   FIND_LIBRARY(SUNDIALS_IDA_LIB "sundials_idas" PATHS ${SUNDIALS_LIBRARY_RELEASE_HOME}  $ENV{SUNDIALS_ROOT}/lib)
   include_directories(${SUNDIALS_INCLUDE_DIR}/ida ${SUNDIALS_INCLUDE_DIR}/nvector  ${SUNDIALS_INCLUDE_DIR}/sundials ${SUNDIALS_INCLUDE_DIR})
   IF(NOT SUNDIALS_IDA_LIB)
@@ -335,7 +379,7 @@ IF(USE_SUNDIALS)
   IF(NOT SUNDIALS_KINSOL_LIB)
     MESSAGE(FATAL_ERROR "Could not find libsundials_kinsol!")
   ENDIF()
-  SET(SUNDIALS_LIBRARIES ${SUNDIALS_NVECSERIAL_LIB} ${SUNDIALS_CVODES_LIB} ${SUNDIALS_IDA_LIB} ${SUNDIALS_KINSOL_LIB})
+  SET(SUNDIALS_LIBRARIES ${SUNDIALS_NVECSERIAL_LIB} ${SUNDIALS_CVODES_LIB} ${SUNDIALS_IDA_LIB} ${SUNDIALS_KINSOL_LIB} ${SUNDIALS_ARKODE_LIB})
 
   MESSAGE(STATUS "Sundials Libraries:")
   MESSAGE(STATUS "${SUNDIALS_LIBS}")
@@ -373,10 +417,10 @@ endif()
 #Handle umfpack
 FIND_PACKAGE(SuiteSparse)
 IF(SUITESPARSE_UMFPACK_FOUND)
-  MESSAGE(STATUS "Using UmfPack")
+  MESSAGE(STATUS "Using UmfPack include path: ${SUITESPARSE_UMFPACK_INCLUDE_DIR}")
   INCLUDE_DIRECTORIES(${SUITESPARSE_UMFPACK_INCLUDE_DIR})
-  ADD_DEFINITIONS(-DUSE_UMFPACK)
-    SET(SUITESPARSE_INCLUDE ${SUITESPARSE_UMFPACK_INCLUDE_DIR})
+  #ADD_DEFINITIONS(-DUSE_UMFPACK)
+  SET(SUITESPARSE_INCLUDE ${SUITESPARSE_UMFPACK_INCLUDE_DIR})
   SET(UMFPACK_LIB ${SUITESPARSE_UMFPACK_LIBRARIES})
 ELSE(SUITESPARSE_UMFPACK_FOUND)
   MESSAGE(STATUS "UmfPack disabled")
@@ -447,33 +491,37 @@ endif()
 
 
 
-if(USE_SUNDIALS)
-#add  Cvode solver project
-add_subdirectory (Solver/CVode)
-add_subdirectory(Solver/IDA)
-add_subdirectory (Solver/Kinsol)
-#add  Idas solver project
-##add_subdirectory (Solver/Idas/Implementation)
-##add_subdirectory (Solver/Ida/Implementation)
-GET_TARGET_PROPERTY(libCVode ${CVodeName} LOCATION)
-GET_FILENAME_COMPONENT(libCVodeName ${libCVode} NAME)
+IF(USE_SUNDIALS)
+  #add  Cvode solver project
+  ADD_SUBDIRECTORY (Solver/CVode)
+  #add_subdirectory (Solver/ARKode)
+  ADD_SUBDIRECTORY(Solver/IDA)
+  ADD_SUBDIRECTORY(Solver/Kinsol)
+  #add  Idas solver project
+  ##add_subdirectory (Solver/Idas/Implementation)
+  ##add_subdirectory (Solver/Ida/Implementation)
+  GET_TARGET_PROPERTY(libCVode ${CVodeName} LOCATION)
+  GET_TARGET_PROPERTY(libARKode ${ARKodeName} LOCATION)
+  GET_FILENAME_COMPONENT(libCVodeName ${libCVode} NAME)
+  GET_FILENAME_COMPONENT(libARKodeName ${libARKode} NAME)
 
-GET_TARGET_PROPERTY(libIDA ${IDAName} LOCATION)
-GET_FILENAME_COMPONENT(libIDAName ${libIDA} NAME)
+  GET_TARGET_PROPERTY(libIDA ${IDAName} LOCATION)
+  GET_FILENAME_COMPONENT(libIDAName ${libIDA} NAME)
 
-GET_TARGET_PROPERTY(libKinsol ${KinsolName} LOCATION)
-GET_FILENAME_COMPONENT(libKinsolName ${libKinsol} NAME)
-#GET_TARGET_PROPERTY(libIdas ${IdasName} LOCATION)
-#GET_FILENAME_COMPONENT(libIdasName ${libIdas} NAME)
-#GET_TARGET_PROPERTY(libIda ${IdaName} LOCATION)
-#GET_FILENAME_COMPONENT(libIdaName ${libIda} NAME)
+  GET_TARGET_PROPERTY(libKinsol ${KinsolName} LOCATION)
+  GET_FILENAME_COMPONENT(libKinsolName ${libKinsol} NAME)
+  #GET_TARGET_PROPERTY(libIdas ${IdasName} LOCATION)
+  #GET_FILENAME_COMPONENT(libIdasName ${libIdas} NAME)
+  #GET_TARGET_PROPERTY(libIda ${IdaName} LOCATION)
+  #GET_FILENAME_COMPONENT(libIdaName ${libIda} NAME)
 
-#set (IDAS_LIB ${libIdasName})
-set (CVODE_LIB ${libCVodeName})
-set(IDA_LIB ${libIDAName})
-set (KINSOL_LIB ${libKinsolName})
-#set (IDA_LIB ${libIdaName})
-endIf()
+  #set (IDAS_LIB ${libIdasName})
+  SET(CVODE_LIB ${libCVodeName})
+  SET(ARKODE_LIB ${libARKodeName})
+  SET(IDA_LIB ${libIDAName})
+  SET(KINSOL_LIB ${libKinsolName})
+  #set(IDA_LIB ${libIdaName})
+ENDIF(USE_SUNDIALS)
 
 GET_TARGET_PROPERTY(libPeer ${PeerName} LOCATION)
 GET_FILENAME_COMPONENT(libPeerName ${libPeer} NAME)
@@ -584,10 +632,10 @@ ENDMACRO(INSTALL_HEADERS_WITH_DIRECTORY)
 
 install (FILES "${PROJECT_BINARY_DIR}/LibrariesConfig.h" DESTINATION include/omc/cpp)
 
+install (FILES "Licenses/sundials.license" DESTINATION share/omc/runtime/cpp/licenses)
 
-
- #copy Utils/extension
- SET(HS Include/Core/Object/IObject.h
+#copy Utils/extension
+SET(HS Include/Core/Object/IObject.h
         Include/Core/Object/Object.h
         Include/Core/Utils/extension/adaptable_factory.hpp
         Include/Core/Utils/extension/common.hpp
@@ -601,7 +649,7 @@ install (FILES "${PROJECT_BINARY_DIR}/LibrariesConfig.h" DESTINATION include/omc
         Include/Core/Utils/extension/registry.hpp
         Include/Core/Utils/extension/shared_library.hpp
         Include/Core/Utils/extension/type_map.hpp
-	Include/Core/Utils/extension/logger.hpp
+        Include/Core/Utils/extension/logger.hpp
         Include/Core/Utils/extension/impl/adaptable_factory.hpp
         Include/Core/Utils/extension/impl/adaptable_factory_free_functions.hpp
         Include/Core/Utils/extension/impl/adaptable_factory_set.hpp

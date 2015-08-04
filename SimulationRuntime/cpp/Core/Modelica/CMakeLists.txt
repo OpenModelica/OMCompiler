@@ -5,7 +5,7 @@ project(${ModelicaName})
 #FIX RUNTIME_STATIC_LINKING
 add_library(${ModelicaName}_static STATIC Modelica.cpp )
 target_link_libraries (${ModelicaName}_static ${Boost_LIBRARIES})
-set_target_properties(${ModelicaName}_static PROPERTIES COMPILE_DEFINITIONS "DRUNTIME_STATIC_LINKING")
+set_target_properties(${ModelicaName}_static PROPERTIES COMPILE_DEFINITIONS "RUNTIME_STATIC_LINKING")
 include_directories(${SUNDIALS_INCLUDE_DIR}/cvodes ${SUNDIALS_INCLUDE_DIR}/nvector  ${SUNDIALS_INCLUDE_DIR}/sundials ${SUNDIALS_INCLUDE_DIR})
 
 add_library(${ModelicaName} SHARED Modelica.cpp)
@@ -187,9 +187,11 @@ FOREACH(lib ${LAPACK_LIBRARIES})
 ENDFOREACH(lib ${LAPACK_LIBRARIES})
 
 SET(INTEL_TBB_LIBS "")
-foreach(lib ${TBB_LIBRARIES})
-	set(INTEL_TBB_LIBS "${INTEL_TBB_LIBS} ${lib}")
-endforeach(lib ${TBB_LIBRARIES})
+FOREACH(lib ${TBB_LIBRARIES})
+	GET_FILENAME_COMPONENT(libNew "${lib}" NAME_WE)
+	STRING(REGEX REPLACE "^lib" "" libNew ${libNew})
+	set(INTEL_TBB_LIBS "${INTEL_TBB_LIBS} ${LINKER_LIB_PREFIX}${libNew}")
+ENDFOREACH(lib ${TBB_LIBRARIES})
 
 SET(UMFPACK_LIBS "")
 FOREACH(lib ${SUITESPARSE_UMFPACK_LIBRARIES_OMC})
@@ -225,7 +227,7 @@ IF(MSVC)
 				DESTINATION include/omc/cpp)
 ENDIF(MSVC)
 
-IF("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+IF("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
 configure_file (
   "ModelicaConfig_gcc.inc.in"
   "${PROJECT_BINARY_DIR}/ModelicaConfig_gcc.inc"
@@ -233,17 +235,7 @@ configure_file (
 install (FILES
 				${PROJECT_BINARY_DIR}/ModelicaConfig_gcc.inc
 				DESTINATION include/omc/cpp)  
-ENDIF("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-
-IF("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-configure_file (
-  "ModelicaConfig_gcc.inc.in"
-  "${PROJECT_BINARY_DIR}/ModelicaConfig_gcc.inc"
-  )
-install (FILES
-				${PROJECT_BINARY_DIR}/ModelicaConfig_gcc.inc
-				DESTINATION include/omc/cpp)  
-ENDIF("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+ENDIF("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
 
 configure_file (
  "ModelicaLibraryConfig.inc.in"

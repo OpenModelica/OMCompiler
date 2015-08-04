@@ -15,6 +15,11 @@
 #include <kinsol/kinsol_spbcgs.h>
 #include <kinsol/kinsol_sptfqmr.h>
 #include <boost/math/special_functions/fpclassify.hpp>
+#include <boost/numeric/ublas/lu.hpp>
+#include <boost/numeric/ublas/symmetric.hpp>
+
+#include <Core/Utils/extension/logger.hpp>
+
 //#include<kinsol_lapack.h>
  int kin_fCallback(N_Vector y, N_Vector fval, void *user_data);
 class Kinsol : public IAlgLoopSolver
@@ -36,13 +41,11 @@ public:
 private:
   /// Encapsulation of determination of residuals to given unknowns
   void calcFunction(const double* y, double* residual);
-  /// Encapsulation of determination of Jacobian
-  void calcJacobian(double* f, double* y);
+
 
   int check_flag(void *flagvalue, char *funcname, int opt);
 
   void solveNLS();
-  bool isfinite(double* u, int dim);
   void check4EventRetry(double* y);
 
   // Member variables
@@ -61,19 +64,22 @@ private:
 
   bool
     _firstCall;           ///< Temp   - Denotes the first call to the solver, init() is called
-  long int * _ihelpArray;
+  long int *_ihelpArray,
+	  *_jhelpArray;
+
   double
-    *_y,                  ///< Temp   - Unknowns
-    *_f,                  ///< Temp   - Residuals
-    *_helpArray,
-    *_y0,                 ///< Temp   - Auxillary variables
-    *_yScale,             ///< Temp   - Auxillary variables
-    *_fScale,             ///< Temp   - Auxillary variables
-    *_jac,
-    *_yHelp,              ///< Temp   - Auxillary variables
-    *_fHelp,              ///< Temp   - Auxillary variables
-    *_zeroVec,
-    *_currentIterate;
+	  *_y,                  ///< Temp   - Unknowns
+	  *_f,                  ///< Temp   - Residuals
+	  *_helpArray,
+	  *_y0,                 ///< Temp   - Auxillary variables
+	  *_yScale,             ///< Temp   - Auxillary variables
+	  *_fScale,             ///< Temp   - Auxillary variables
+	  *_jac,
+	  *_yHelp,              ///< Temp   - Auxillary variables
+	  *_fHelp,              ///< Temp   - Auxillary variables
+	  *_zeroVec,
+	  *_currentIterate,
+	  *_scale;
 
   double
     _fnormtol,

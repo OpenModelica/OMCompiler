@@ -33,8 +33,7 @@ encapsulated package StateMachineFeatures
 " file:        StateMachineFeatures.mo
   package:     StateMachineFeatures
   description: Provides support for Modelica State Machines.
-
-  RCS: $Id$"
+"
 
 public import Absyn;
 public import BackendDAE;
@@ -47,9 +46,6 @@ protected import BackendEquation;
 protected import BackendVariable;
 protected import ComponentReference;
 protected import DAEUtil;
-protected import Debug;
-protected import Error;
-protected import Flags;
 protected import List;
 protected import Util;
 protected import HashSet;
@@ -174,6 +170,18 @@ constant String SMS_PRE = "smOf" "prefix for crefs of fresh State Machine Semant
 constant Boolean DEBUG_SMDUMP = false "enable verbose stdout debug information during elaboration";
 
 public function stateMachineElab
+  "Deactived old module, since now implemented in frontend. See function 'stateMachineElabDEACTIVATED' for old code.
+
+   Might want to reactivate (and adapt) the module at a later time, particularly when state machine support is to be
+   extended to support features that cannot be handled in a good way in the front-end.
+  "
+  input BackendDAE.BackendDAE inDAE;
+  output BackendDAE.BackendDAE outDAE;
+algorithm
+  outDAE := inDAE;
+end stateMachineElab;
+
+public function stateMachineElabDEACTIVATED
   "Elaborate state machines and transform them in data-flow equations."
   input BackendDAE.BackendDAE inDAE;
   output BackendDAE.BackendDAE outDAE;
@@ -213,7 +221,7 @@ algorithm
   end if;
 
   // Identify modes in the system
-  modes := identifyModes(shared);
+  modes := identifyModes(syst);
   names := List.map(BaseHashTable.hashTableKeyList(modes), ComponentReference.crefLastIdent);
   if (not listEmpty(names)) then
     if DEBUG_SMDUMP then
@@ -280,7 +288,7 @@ algorithm
     //BackendDump.printShared(shared);
   end if;
 
-end stateMachineElab;
+end stateMachineElabDEACTIVATED;
 
 protected function synthesizeAutomataEqs "
 Author: BTH
@@ -316,7 +324,7 @@ Synthesize Automaton/state machine relevant data-flow equations.
   output BackendDAE.EqSystem systOut;
 protected
   DAE.ComponentRef initRef, resetRef, stateRef, activeResetStateRef, activeStateRef, activeResetRef, activeRef;
-  BackendDAE.Var initVar, resetVar, activePlotIndicatorVar;
+  BackendDAE.Var initVar, activePlotIndicatorVar;
   DAE.ComponentRef preRef, refiningRef, refiningResetRef, refiningActiveRef;
   Composition refiningComp;
   list<Composition> stateRefiningComps, refiningComps;
@@ -1457,36 +1465,15 @@ protected
   // Fields EQSYSTEM:
   BackendDAE.Variables orderedVars;
   BackendDAE.EquationArray orderedEqs;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.Matching matching;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.BaseClockPartitionKind partitionKind;
   // Fields SHARED:
-  BackendDAE.Variables knownVars;
-  BackendDAE.Variables externalObjects;
-  BackendDAE.Variables aliasVars;
-  BackendDAE.EquationArray initialEqs;
   BackendDAE.EquationArray removedEqs;
-  list<DAE.Constraint> constraints;
-  list<DAE.ClassAttributes> classAttrs;
-  FCore.Cache cache;
-  FCore.Graph graph;
-  DAE.FunctionTree functionTree;
-  BackendDAE.EventInfo eventInfo;
-  BackendDAE.ExternalObjectClasses extObjClasses;
-  BackendDAE.BackendDAEType backendDAEType;
-  BackendDAE.SymbolicJacobians symjacs;
-  BackendDAE.ExtraInfo info;
   // Fields of EQUATION_ARRAY
   Integer orderedSize, removedSize;
   Integer orderedNumberOfElement, removedNumberOfElement;
   Integer orderedArrSize, removedArrSize;
   array<Option<BackendDAE.Equation>> orderedEquOptArr, removedEquOptArr;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars, orderedEqs, m, mT, matching, stateSets, partitionKind) := inSyst;
-  BackendDAE.SHARED(knownVars, externalObjects, aliasVars, initialEqs, removedEqs, constraints,
-    classAttrs, cache, graph, functionTree, eventInfo, extObjClasses,backendDAEType, symjacs, info) := inShared;
+  BackendDAE.EQSYSTEM(orderedVars=orderedVars, orderedEqs=orderedEqs, removedEqs=removedEqs) := inSyst;
 
   BackendDAE.EQUATION_ARRAY(orderedSize, orderedNumberOfElement, orderedArrSize, orderedEquOptArr) := orderedEqs;
   BackendDAE.EQUATION_ARRAY(removedSize, removedNumberOfElement, removedArrSize, removedEquOptArr) := removedEqs;
@@ -1505,10 +1492,8 @@ algorithm
   // add output variables and (non-input) local variables to modes that declared them
   (_, modesOut) := Array.mapNoCopy_1(varOptArr, annotateModeOutLocal, modesOut);
 
-  // A lot of code bloat just for updating fields "orderedEqs" and "removedEqs" in "EQSYSTEM" and "SHARED" ...
-  outSyst := BackendDAE.EQSYSTEM(orderedVars, orderedEqsNew, m, mT, matching, stateSets, partitionKind);
-  outShared := BackendDAE.SHARED(knownVars, externalObjects, aliasVars, initialEqs, removedEqsNew, constraints,
-    classAttrs, cache, graph, functionTree, eventInfo, extObjClasses,backendDAEType, symjacs, info);
+  outSyst := inSyst;
+  outShared := inShared;
 
 end annotateModes;
 
@@ -1791,19 +1776,13 @@ protected
   array<Option<BackendDAE.Equation>> equOptArr;
   DAE.VarInnerOuter io1, io2;
   // EQSYSTEM
-  BackendDAE.Variables orderedVars "ordered Variables, only states and alg. vars";
-  BackendDAE.EquationArray orderedEqs "ordered Equations";
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.Matching matching;
-  BackendDAE.StateSets stateSets "the statesets of the system";
-  BackendDAE.BaseClockPartitionKind partitionKind;
+  BackendDAE.Variables orderedVars;
 algorithm
   (modes,syst) := inModesSyst;
   (keyCref,mode) := inCrefMode;
-  MODE(name,isInitial,edges,eqs,outgoing,outShared,outLocal,crefPrevious) := mode;
-  BackendDAE.EQUATION_ARRAY(size,numberOfElement,arrSize,equOptArr) := eqs;
-  BackendDAE.EQSYSTEM(orderedVars,orderedEqs,m,mT,matching,stateSets,partitionKind) := syst;
+  MODE(name, isInitial, edges, eqs, outgoing, outShared, outLocal, crefPrevious) := mode;
+  BackendDAE.EQUATION_ARRAY(size, numberOfElement, arrSize, equOptArr) := eqs;
+  BackendDAE.EQSYSTEM(orderedVars=orderedVars) := syst;
   outSharedNew := {};
 
   for outVar in outShared loop
@@ -1817,18 +1796,18 @@ algorithm
 
       if isSome(innerOptCref) then
         // Remove the equation relating inner and outer
-        arrayUpdate(equOptArr,i,NONE());
+        arrayUpdate(equOptArr, i, NONE());
         size := size - 1;
         //numberOfElement := numberOfElement - 1;
-        eqs := BackendDAE.EQUATION_ARRAY(size,numberOfElement,arrSize,equOptArr);
+        eqs := BackendDAE.EQUATION_ARRAY(size, numberOfElement, arrSize, equOptArr);
         // replace all outer crefs by their corresponding inner cref
-        (eqs,_) := BackendEquation.traverseEquationArray_WithUpdate(eqs,subsOuterByInnerEq,(outCref,Util.getOption(innerOptCref)));
+        (eqs,_) := BackendEquation.traverseEquationArray_WithUpdate(eqs, subsOuterByInnerEq, (outCref,Util.getOption(innerOptCref)));
         // update outSharedNew and use that later to construct MODE
-        ({innerVar},_) := BackendVariable.getVar(Util.getOption(innerOptCref),orderedVars);
+        ({innerVar}, _) := BackendVariable.getVar(Util.getOption(innerOptCref), orderedVars);
         outSharedNew := innerVar :: outSharedNew;
         // replace possible outer crefs in "crefPrevious" by their corresponding inner
-        crefPrevious := List.replaceOnTrue(Util.getOption(innerOptCref),crefPrevious,function ComponentReference.crefEqual(inComponentRef1=outCref));
-
+        crefPrevious := List.replaceOnTrue( Util.getOption(innerOptCref), crefPrevious,
+                                            function ComponentReference.crefEqual(inComponentRef1=outCref) );
         // Remove variable from BackendDAE variables (the corresponding element in the variable array is set to NONE())
         orderedVars := BackendVariable.removeCref(outCref,orderedVars);
         success := true;
@@ -1836,7 +1815,7 @@ algorithm
       end if;
     end for;
 
-    assert(success, "Expect to find inner variable corresponding to outer variable "+ComponentReference.crefStr(outCref));
+    assert(success, "Expect to find inner variable corresponding to outer variable " + ComponentReference.crefStr(outCref));
   end for;
 
   // Rebuild "orderedVars" in order to eliminate intermediate "NONE()" entries in variable array.
@@ -1847,7 +1826,7 @@ algorithm
 
   mode := MODE(name,isInitial,edges,eqs,outgoing,listReverse(outSharedNew),outLocal,crefPrevious);
   modes := BaseHashTable.update((keyCref, mode), modes);
-  syst := BackendDAE.EQSYSTEM(orderedVars,orderedEqs,m,mT,matching,stateSets,partitionKind);
+  syst.orderedVars := orderedVars;
   outModesSyst := (modes,syst);
 end elaborateMode;
 
@@ -1908,7 +1887,7 @@ protected
   Boolean equal;
 algorithm
   rhsExp := Util.applyOption(inEq,BackendEquation.getEquationRHS);
-  //print("In getOptInner: rhsExp: "+ (if Util.isSome(rhsExp) then ExpressionDump.printExpStr(Util.getOption(rhsExp)) else "NONE()") + "\n");
+  //print("In getOptInner: rhsExp: "+ (if isSome(rhsExp) then ExpressionDump.printExpStr(Util.getOption(rhsExp)) else "NONE()") + "\n");
   outOptInner := match rhsExp
     local
       DAE.ComponentRef crefInner;
@@ -2378,13 +2357,12 @@ Author: BTH
 Traverse the equations, search for 'transition' and 'initialState' operators,
 extract the state arguments from them and collect them in the table.
 "
-  input BackendDAE.Shared inShared;
+  input BackendDAE.EqSystem inSyst;
   output ModeTable modes;
 protected
   BackendDAE.EquationArray removedEqs;
 algorithm
-  BackendDAE.SHARED(removedEqs=removedEqs) := inShared;
-  modes := BackendEquation.traverseEquationArray(removedEqs, extractStates, HashTableSM.emptyHashTable());
+  modes := BackendEquation.traverseEquationArray(inSyst.removedEqs, extractStates, HashTableSM.emptyHashTable());
 end identifyModes;
 
 
@@ -2473,6 +2451,7 @@ algorithm
         mode1 = MODE(name1, isInitial1, edges1, eqs1, outgoing1,os1,ol1,ps1);
         modes = BaseHashTable.add((cstate1, mode1), inA);
 
+        // FIXME: I should just update the mode1 and not create a mode2???
         mode2 = if BaseHashTable.hasKey(cstate2, modes)
           then BaseHashTable.get(cstate2, modes)
             else MODE(ComponentReference.crefLastIdent(cstate1), false, HashSet.emptyHashSet(),
@@ -2491,37 +2470,15 @@ protected function wrapAddTimeEventHack "
 Author: BTH
 Just a workaround as long as no support of synchronous features."
   input list<BackendDAE.TimeEvent> timeEventsIn;
-  input BackendDAE.Shared shared;
-  output BackendDAE.Shared oshared;
+  input BackendDAE.Shared inShared;
+  output BackendDAE.Shared outShared = inShared;
+protected
+  BackendDAE.EventInfo eventInfo;
 algorithm
-  oshared := match (timeEventsIn,shared)
-    local
-      list<BackendDAE.TimeEvent> timeEvents;
-      list<BackendDAE.WhenClause> whenClauseLst;
-      list<BackendDAE.ZeroCrossing> zeroCrossingLst;
-      list<BackendDAE.ZeroCrossing> sampleLst;
-      list<BackendDAE.ZeroCrossing> relationsLst;
-      Integer numberMathEvents;
-      array<DAE.ClockKind> clocks;
-      BackendDAE.EventInfo eventInfo;
-    case( _, BackendDAE.SHARED( eventInfo =
-              BackendDAE.EVENT_INFO (
-                  timeEvents = timeEvents, whenClauseLst = whenClauseLst,
-                  zeroCrossingLst = zeroCrossingLst, sampleLst = sampleLst,
-                  relationsLst = relationsLst, numberMathEvents = numberMathEvents,
-                  clocks = clocks ) ))
-      equation
-        timeEvents = listAppend(timeEvents,timeEventsIn);
-        eventInfo = BackendDAE.EVENT_INFO (
-                      timeEvents = timeEvents, whenClauseLst = whenClauseLst,
-                      zeroCrossingLst = zeroCrossingLst, sampleLst = sampleLst,
-                      relationsLst = relationsLst, numberMathEvents = numberMathEvents,
-                      clocks = clocks );
-      then BackendDAEUtil.setEventInfo(shared, eventInfo);
-  end match;
+  eventInfo := outShared.eventInfo;
+  eventInfo.timeEvents := listAppend(outShared.eventInfo.timeEvents, timeEventsIn);
+  outShared.eventInfo := eventInfo;
 end wrapAddTimeEventHack;
-
-
 
 protected function wrapInWhenHack "
 Author: BTH

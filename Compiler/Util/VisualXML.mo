@@ -40,21 +40,22 @@ encapsulated package VisualXML
 
 "
 
-protected import Absyn;
-protected import Array;
-protected import BackendDAE;
-protected import BackendDAEUtil;
-protected import BackendEquation;
-protected import BackendVariable;
-protected import ComponentReference;
-protected import DAE;
-protected import DAEUtil;
-protected import ExpressionDump;
-protected import ExpressionSolve;
-protected import List;
-protected import Util;
-protected import Tpl;
-protected import VisualXMLTpl;
+protected
+
+import Absyn;
+import BackendDAE;
+import BackendDAEUtil;
+import BackendEquation;
+import BackendVariable;
+import ComponentReference;
+import DAE;
+import DAEUtil;
+import ExpressionDump;
+import ExpressionSolve;
+import List;
+import Util;
+import Tpl;
+import VisualXMLTpl;
 
 //----------------------------
 //  Visualization types
@@ -127,18 +128,11 @@ This is needed since protected, time-dependent variables are not stored in resul
 protected
   array<Integer> ass1;
   BackendDAE.Variables vars;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.Matching matching;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.BaseClockPartitionKind partitionKind;
   BackendDAE.EquationArray eqs;
-  list<BackendDAE.Var> varLst;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs, m=m, mT=mT, matching=matching, stateSets=stateSets, partitionKind=partitionKind) := eqSysIn;
-  BackendDAE.MATCHING(ass1=ass1) := matching;
-  (vars,_) := BackendVariable.traverseBackendDAEVarsWithUpdate(vars,setBindingForProtectedVars1,(1,ass1,eqs));
-  eqSysOut := BackendDAE.EQSYSTEM(vars,eqs,m,mT,matching,stateSets,partitionKind);
+  BackendDAE.EQSYSTEM(orderedEqs=eqs, orderedVars=vars, matching=BackendDAE.MATCHING(ass1=ass1)) := eqSysIn;
+  BackendVariable.traverseBackendDAEVarsWithUpdate(vars, setBindingForProtectedVars1, (1, ass1, eqs));
+  eqSysOut := eqSysIn;
 end setBindingForProtectedVars;
 
 protected function setBindingForProtectedVars1"checks if the var is protected and sets the binding (i.e. the solved equation)"
@@ -300,7 +294,7 @@ algorithm
 
   case(DAE.CREF_QUAL(ident="R",componentRef=DAE.CREF_IDENT(ident="T", subscriptLst = {DAE.INDEX(DAE.ICONST(pos)),DAE.INDEX(DAE.ICONST(pos1))})),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then exp := Util.getOption(bind);
+      if isSome(bind) then exp := Util.getOption(bind);
       else exp := BackendVariable.varExp(var);
       end if;
       T0 := arrayGet(T,pos);
@@ -310,7 +304,7 @@ algorithm
 
   case(DAE.CREF_IDENT(ident="r", subscriptLst = {DAE.INDEX(DAE.ICONST(pos))}),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then exp := Util.getOption(bind);
+      if isSome(bind) then exp := Util.getOption(bind);
       else exp := BackendVariable.varExp(var);
       end if;
       r := arrayUpdate(r,pos,exp);
@@ -318,7 +312,7 @@ algorithm
 
   case(DAE.CREF_IDENT(ident="r_shape", subscriptLst = {DAE.INDEX(DAE.ICONST(pos))}),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then exp := Util.getOption(bind);
+      if isSome(bind) then exp := Util.getOption(bind);
       else exp := BackendVariable.varExp(var);
       end if;
       r_shape := arrayUpdate(r_shape,pos,exp);
@@ -326,7 +320,7 @@ algorithm
 
   case(DAE.CREF_IDENT(ident="lengthDirection", subscriptLst = {DAE.INDEX(DAE.ICONST(pos))}),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then exp := Util.getOption(bind);
+      if isSome(bind) then exp := Util.getOption(bind);
       else exp := BackendVariable.varExp(var);
       end if;
       lengthDir := arrayUpdate(lengthDir,pos,exp);
@@ -334,7 +328,7 @@ algorithm
 
   case(DAE.CREF_IDENT(ident="widthDirection", subscriptLst = {DAE.INDEX(DAE.ICONST(pos))}),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then exp := Util.getOption(bind);
+      if isSome(bind) then exp := Util.getOption(bind);
       else exp := BackendVariable.varExp(var);
       end if;
       widthDir := arrayUpdate(widthDir,pos,exp);
@@ -342,35 +336,35 @@ algorithm
 
   case(DAE.CREF_IDENT(ident="length"),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then length := Util.getOption(bind);
+      if isSome(bind) then length := Util.getOption(bind);
       else length := BackendVariable.varExp(var);
       end if;
     then (SHAPE(ident, shapeType, T, r, r_shape, lengthDir, widthDir, length, width, height, extra, color, specularCoeff));
 
   case(DAE.CREF_IDENT(ident="width"),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then width := Util.getOption(bind);
+      if isSome(bind) then width := Util.getOption(bind);
       else width := BackendVariable.varExp(var);
       end if;
     then (SHAPE(ident, shapeType, T, r, r_shape, lengthDir, widthDir, length, width, height, extra, color, specularCoeff));
 
   case(DAE.CREF_IDENT(ident="height"),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then height := Util.getOption(bind);
+      if isSome(bind) then height := Util.getOption(bind);
       else height := BackendVariable.varExp(var);
       end if;
     then (SHAPE(ident, shapeType, T, r, r_shape, lengthDir, widthDir, length, width, height, extra, color, specularCoeff));
 
    case(DAE.CREF_IDENT(ident="extra"),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then extra := Util.getOption(bind);
+      if isSome(bind) then extra := Util.getOption(bind);
       else extra := BackendVariable.varExp(var);
       end if;
     then (SHAPE(ident, shapeType, T, r, r_shape, lengthDir, widthDir, length, width, height, extra, color, specularCoeff));
 
   case(DAE.CREF_IDENT(ident="color", subscriptLst = {DAE.INDEX(DAE.ICONST(pos))}),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then exp := Util.getOption(bind);
+      if isSome(bind) then exp := Util.getOption(bind);
       else exp := BackendVariable.varExp(var);
       end if;
       color := arrayUpdate(color,pos,exp);
@@ -378,7 +372,7 @@ algorithm
 
    case(DAE.CREF_IDENT(ident="specularCoefficient"),BackendDAE.VAR(bindExp=bind), SHAPE(ident=ident, shapeType=shapeType, T=T, r=r, r_shape=r_shape, lengthDir=lengthDir, widthDir=widthDir, length=length, width=width, height=height, extra=extra, color=color, specularCoeff=specularCoeff))
     algorithm
-      if Util.isSome(bind) then specularCoeff := Util.getOption(bind);
+      if isSome(bind) then specularCoeff := Util.getOption(bind);
       else specularCoeff := BackendVariable.varExp(var);
       end if;
     then (SHAPE(ident, shapeType, T, r, r_shape, lengthDir, widthDir, length, width, height, extra, color, specularCoeff));
@@ -386,7 +380,7 @@ algorithm
   else
     algorithm
       BackendDAE.VAR(bindExp=bind) := var;
-      if Util.isSome(bind) then exp := Util.getOption(bind);
+      if isSome(bind) then exp := Util.getOption(bind);
       else exp := DAE.SCONST("NO_BINDING");
       end if;
        //print("whats this? :"+ComponentReference.printComponentRefStr(cref)+" with binding: "+ExpressionDump.printExpStr(exp)+"\n");

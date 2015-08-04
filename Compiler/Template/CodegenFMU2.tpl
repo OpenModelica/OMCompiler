@@ -46,6 +46,7 @@
 package CodegenFMU2
 
 import interface SimCodeTV;
+import interface SimCodeBackendTV;
 import CodegenUtil.*;
 import CodegenC.*; //unqualified import, no need the CodegenC is optional when calling a template; or mandatory when the same named template exists in this package (name hiding)
 import CodegenFMUCommon.*;
@@ -94,7 +95,7 @@ case SIMCODE(modelInfo = MODELINFO(varInfo = vi as VARINFO(__), vars = SIMVARS(s
   let generationTool= 'OpenModelica Compiler <%getVersionNr()%>'
   let generationDateAndTime = xsdateTime(getCurrentDateTime())
   let variableNamingConvention = 'structured'
-  let numberOfEventIndicators = vi.numZeroCrossings
+  let numberOfEventIndicators = getNumberOfEventIndicators(simCode)
   <<
   fmiVersion="<%fmiVersion%>"
   modelName="<%modelName%>"

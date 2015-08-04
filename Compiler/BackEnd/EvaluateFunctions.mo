@@ -48,7 +48,6 @@ protected import ClassInf;
 protected import ComponentReference;
 protected import DAEUtil;
 protected import DAEDump;
-protected import Debug;
 protected import Expression;
 protected import ExpressionDump;
 protected import ExpressionSimplify;
@@ -130,7 +129,7 @@ algorithm
   varLst := BackendVariable.varList(knVars);
   varLst := List.map1(varLst,evaluateParameter,funcTree);
   knVars := BackendVariable.listVar(varLst);
-  sharedOut := BackendDAEUtil.replaceKnownVarsInShared(sharedIn,knVars);
+  sharedOut := BackendDAEUtil.setSharedKnVars(sharedIn,knVars);
 end evaluateShared;
 
 protected function evaluateParameter "evaluates a parameter"
@@ -163,30 +162,21 @@ protected function evalFunctions_main "traverses the eqSystems for function call
 protected
   Boolean changed;
   Integer sysIdx;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.IncidenceMatrix m1,m2;
   BackendDAE.Shared sharedIn, shared;
   BackendDAE.EquationArray eqs;
-  BackendDAE.Matching matching;
-  BackendDAE.Variables vars;
-  list<BackendDAE.Var> varLst;
   list<BackendDAE.Equation> eqLst, addEqs;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
   (sharedIn,sysIdx,changed) := tplIn;
-  BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqs,m=m,mT=mT,matching=matching,stateSets=stateSets,partitionKind=partitionKind) := eqSysIn;
+  BackendDAE.EQSYSTEM(orderedEqs=eqs) := eqSysIn;
   eqLst := BackendEquation.equationList(eqs);
-  varLst := BackendVariable.varList(vars);
 
   //traverse the eqSystem for function calls
-  (eqLst,(shared,addEqs,_,changed)) := List.mapFold(eqLst,evalFunctions_findFuncs,(sharedIn,{},1,changed));
-  eqLst := listAppend(eqLst,addEqs);
+  (eqLst, (shared, addEqs, _, changed)) := List.mapFold(eqLst, evalFunctions_findFuncs, (sharedIn, {}, 1, changed));
+  eqLst := listAppend(eqLst, addEqs);
   eqs := BackendEquation.listEquation(eqLst);
-  eqSysOut := BackendDAE.EQSYSTEM(vars,eqs,m,mT,matching,stateSets,partitionKind);
+  eqSysOut := BackendDAEUtil.setEqSystEqs(eqSysIn, eqs);
 
-  tplOut := (shared,sysIdx+1,changed);
+  tplOut := (shared, sysIdx+1, changed);
 end evalFunctions_main;
 
 protected function evalFunctions_findFuncs "traverses the lhs and rhs exps of an equation and tries to evaluate function calls "
@@ -221,6 +211,7 @@ algorithm
         addEqs = listAppend(addEqs1,addEqs);
         addEqs = listAppend(addEqs2,addEqs);
         eq = BackendDAE.EQUATION(lhsExp,rhsExp,source,attr);
+        //if changed then print("FROM EQ "+BackendDump.equationString(eqIn)+"\n");print("GOT EQ "+BackendDump.equationString(eq)+"\n"); end if;
       then
         (eq,(shared,addEqs,idx+1,changed));
     case(BackendDAE.ARRAY_EQUATION(),_)
@@ -243,13 +234,14 @@ algorithm
         changed = changed or changed1;
         addEqs = listAppend(addEqs1,addEqs);
         addEqs = listAppend(addEqs2,addEqs);
-        shared = BackendDAEUtil.addFunctionTree(funcs,shared);
+        shared = BackendDAEUtil.setSharedFunctionTree(shared, funcs);
         sizeL = getScalarExpSize(lhsExp);
         sizeR = getScalarExpSize(rhsExp);
         size = intMax(sizeR,sizeL);
         eq = if intEq(size,0) then BackendDAE.EQUATION(lhsExp,rhsExp,source,attr) else BackendDAE.COMPLEX_EQUATION(size,lhsExp,rhsExp,source,attr);
         //since tuple=tuple is not supported, these equations are converted into a list of simple equations
         (eq,addEqs) = convertTupleEquations(eq,addEqs);
+        //if changed then print("FROM EQ "+BackendDump.equationString(eqIn)+"\n");print("GOT EQ "+BackendDump.equationString(eq)+"\n"); end if;
       then
         (eq,(shared,addEqs,idx+1,changed));
     else
@@ -294,13 +286,13 @@ algorithm
         exps = List.map1(exps0,evaluateConstantFunctionCallExp,funcsIn);
         scalarExp = List.map1(exps,expandComplexEpressions,funcsIn);
         allInputExps = List.flatten(scalarExp);
-        //print("allInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
+          //print("allInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
 
         // get all input crefs (from function body) (scalar and one dimensioanl)
         allInputs = List.filterOnTrue(elements,DAEUtil.isInputVar);
         scalarInputs = List.map(allInputs,expandComplexElementsToCrefs);
         allInputCrefs = List.flatten(scalarInputs);
-        //print("\nallInputCrefs\n"+stringDelimitList(List.map(allInputCrefs,ComponentReference.printComponentRefStr),"\n")+"\n");
+          //print("\nallInputCrefs\n"+stringDelimitList(List.map(allInputCrefs,ComponentReference.printComponentRefStr),"\n")+"\n");
 
         if listEmpty(elements) then  // its a record
           expOut = DAE.TUPLE(allInputExps);
@@ -320,17 +312,18 @@ algorithm
         //print("\nscalarOutputs\n"+stringDelimitList(List.map(List.flatten(scalarOutputs),ComponentReference.printComponentRefStr),"\n")+"\n");
 
         // get the constant inputs
+            //print("\nallInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
+            //print("\nall algs "+intString(listLength(algs))+"\n"+DAEDump.dumpElementsStr(algs)+"\n");
         (constInputExps,constInputCrefs) = List.filterOnTrueSync(allInputExps,Expression.isConst,allInputCrefs);
-        //print("\nallInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
-        //print("\nconstInputExps\n"+stringDelimitList(List.map(constInputExps,ExpressionDump.printExpStr),"\n")+"\n");
-        //print("\nconstInputCrefs\n"+stringDelimitList(List.map(constInputCrefs,ComponentReference.printComponentRefStr),"\n")+"\n");
-        //print("\nall algs "+intString(listLength(algs))+"\n"+DAEDump.dumpElementsStr(algs)+"\n");
+          //print("\nconstInputExps\n"+stringDelimitList(List.map(constInputExps,ExpressionDump.printExpStr),"\n")+"\n");
+          //print("\nconstInputCrefs\n"+stringDelimitList(List.map(constInputCrefs,ComponentReference.printComponentRefStr),"\n")+"\n");
+          //print("\nall algs "+intString(listLength(algs))+"\n"+DAEDump.dumpElementsStr(algs)+"\n");
 
         //build replacement rules
         repl = BackendVarTransform.emptyReplacements();
         repl = BackendVarTransform.addReplacements(repl,constInputCrefs,constInputExps,NONE());
         //repl = BackendVarTransform.addReplacements(repl,allInputCrefs,allInputExps,NONE());
-         //BackendVarTransform.dumpReplacements(repl);
+          //BackendVarTransform.dumpReplacements(repl);
 
         // recognize if there are statements we cannot evaluate at the moment
         hasAssert = List.fold(algs,hasAssertFold,false);
@@ -349,8 +342,8 @@ algorithm
         (constCrefs,constExps) = List.filter1OnTrueSync(constCrefs,ComponentReference.crefInLst,allOutputCrefs,constExps); // extract outputs
         (constExps,constCrefs) = List.filterOnTrueSync(constExps,Expression.isConst,constCrefs); // extract constant outputs
 
-        //print("all constant crefs \n"+stringDelimitList(List.map(constCrefs,ComponentReference.printComponentRefStr),"\n")+"\n");
-        //print("all constant exps:\n"+ExpressionDump.printExpListStr(constExps)+"\n");
+          //print("all constant crefs \n"+stringDelimitList(List.map(constCrefs,ComponentReference.printComponentRefStr),"\n")+"\n");
+          //print("all constant exps:\n"+ExpressionDump.printExpListStr(constExps)+"\n");
 
         // get the completely constant complex outputs, the constant parts of complex outputs and the variable parts of complex outputs and the expressions
         (constComplexCrefs,varComplexCrefs,constScalarCrefs,varScalarCrefs) = checkIfOutputIsEvaluatedConstant(allOutputs,constCrefs,{},{},{},{});
@@ -377,17 +370,18 @@ algorithm
       end if;
 
       if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
-       print("\nevaluted to: "+ExpressionDump.printExpStr(expOut)+"\n\n");
+       print("\nevaluted1 to: "+ExpressionDump.printExpStr(expOut)+"\n\n");
       end if;
 
       then expOut;
 
   case(DAE.ASUB(DAE.CALL(path=path, expLst=exps, attr=attr1),sub),_)
     equation
-      //this ASUB stuff occures in the flattened DAE, check this special case because of removeSimpleEquations
+      //this ASUB stuff occurs in the flattened DAE, check this special case because of removeSimpleEquations
      exp = evaluateConstantFunctionCallExp(DAE.CALL(path=path, expLst=exps, attr=attr1),funcsIn);
-     if not Expression.isConst(exp) then exp = expIn; end if;
      (exp,_) = ExpressionSimplify.simplify(DAE.ASUB(exp,sub));
+
+     if not Expression.isConst(exp) then exp = expIn; end if;
     then exp;
 
   else
@@ -615,6 +609,19 @@ algorithm
       then
         ((exp,outputExp,constEqs,funcs,idx,changed));
 
+  case(DAE.ASUB(DAE.CALL(path=path, expLst=exps, attr=attr1),sub),_,_,_)
+    equation
+      //this ASUB stuff occurs in the flattened DAE, check this special case because of removeSimpleEquations
+      exp = evaluateConstantFunctionCallExp(DAE.CALL(path=path, expLst=exps, attr=attr1),funcsIn);
+      (exp,_) = ExpressionSimplify.simplify(DAE.ASUB(exp,sub));
+
+      changed = true;
+      if not Expression.isConst(exp) then
+        exp = rhsExpIn;
+        changed=false;
+      end if;
+    then ((exp,lhsExpIn,{},funcsIn,eqIdx,changed));
+
     else
         ((rhsExpIn,lhsExpIn,{},funcsIn,eqIdx,false));
   end matchcontinue;
@@ -657,6 +664,8 @@ algorithm
         lst;
     else
       equation
+        //print("Could not scalarize EXP:\n");
+        //print(ExpressionDump.dumpExpStr(e,0)+"\n");
       then {e};
   end matchcontinue;
 end expandComplexEpressions;
@@ -2974,27 +2983,23 @@ protected
   BackendDAE.Variables vars;
   list<BackendDAE.Var> states,varLst,ssVarLst;
   BackendDAE.EquationArray eqs, initEqs;
-  BackendDAE.StateSets stateSets;
-  BackendDAE.Matching matching;
   list<DAE.ComponentRef> derVars,ssVars,derVarsInit;
-  Option<BackendDAE.IncidenceMatrix> m;
-  Option<BackendDAE.IncidenceMatrixT> mT;
-  BackendDAE.BaseClockPartitionKind partitionKind;
+
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqs,m=m,mT=mT,matching=matching,stateSets=stateSets,partitionKind=partitionKind) := sysIn;
+  BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqs) := sysIn;
   varLst := BackendVariable.varList(vars);
   initEqs := BackendEquation.getInitialEqnsFromShared(shared);
-  states := List.filterOnTrue(varLst,BackendVariable.isStateorStateDerVar);
-  ((_,derVarsInit)) := BackendDAEUtil.traverseBackendDAEExpsEqns(initEqs,Expression.traverseSubexpressionsHelper,(findDerVarCrefs,{}));
-  ((_,derVars)) := BackendDAEUtil.traverseBackendDAEExpsEqns(eqs,Expression.traverseSubexpressionsHelper,(findDerVarCrefs,derVarsInit));
+  states := List.filterOnTrue(varLst, BackendVariable.isStateorStateDerVar);
+  ((_, derVarsInit)) := BackendDAEUtil.traverseBackendDAEExpsEqns(initEqs, Expression.traverseSubexpressionsHelper, (findDerVarCrefs, {}));
+  ((_, derVars)) := BackendDAEUtil.traverseBackendDAEExpsEqns(eqs, Expression.traverseSubexpressionsHelper, (findDerVarCrefs, derVarsInit));
     //print("derVars\n"+stringDelimitList(List.map(derVars,ComponentReference.printComponentRefStr),"\n")+"\n\n");
-  ssVarLst := List.filterOnTrue(varLst,varSSisPreferOrHigher);
+  ssVarLst := List.filterOnTrue(varLst, varSSisPreferOrHigher);
   ssVars := List.map(ssVarLst,BackendVariable.varCref);
     //print("ssVars\n"+stringDelimitList(List.map(ssVars,ComponentReference.printComponentRefStr),"\n")+"\n\n");
-  derVars := listAppend(derVars,ssVars);
+  derVars := listAppend(derVars, ssVars);
   derVars := List.unique(derVars);
-  (vars,_) := BackendVariable.traverseBackendDAEVarsWithUpdate(vars,setVarKindForStates,derVars);
-  sysOut := BackendDAE.EQSYSTEM(vars,eqs,m,mT,matching,stateSets,partitionKind);
+  (vars, _) := BackendVariable.traverseBackendDAEVarsWithUpdate(vars, setVarKindForStates, derVars);
+  sysOut := BackendDAEUtil.setEqSystVars(sysIn, vars);
 end updateVarKinds_eqSys;
 
 protected function varSSisPreferOrHigher "outputs true if the stateSelect attribute is prefer or always

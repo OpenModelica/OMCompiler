@@ -109,12 +109,12 @@ public function regex "Fails and sets Error.mo if the regex does not compile.
   input String str;
   input String re;
   input Integer maxMatches "The maximum number of matches that will be returned";
-  input Boolean extended "Use POSIX extended or regular syntax";
-  input Boolean sensitive;
+  input Boolean extended=false "Use POSIX extended or regular syntax";
+  input Boolean ignoreCase=false;
   output Integer numMatches "0 means no match, else returns a number 1..maxMatches (1 if maxMatches<0)";
   output list<String> strs "This list has length = maxMatches. Substrings that did not match are filled with the empty string";
 
-  external "C" strs=System_regex(str,re,maxMatches,extended,sensitive,numMatches) annotation(Library = "omcruntime");
+  external "C" strs=System_regex(str,re,maxMatches,extended,ignoreCase,numMatches) annotation(Library = "omcruntime");
 end regex;
 
 public function strncmp
@@ -921,7 +921,31 @@ public function openModelicaPlatform "
 end openModelicaPlatform;
 
 public function dgesv
-  "dgesv from LAPACK"
+ "# dgesv from LAPACK
+
+  ## Purpose
+  DGESV computes the solution to a real system of linear equations
+    A * X = B,
+  where A is an N-by-N matrix and X and B are N-by-NRHS matrices.
+
+  The LU decomposition with partial pivoting and row interchanges is
+  used to factor A as
+    A = P * L * U,
+  where P is a permutation matrix, L is unit lower triangular, and U is
+  upper triangular. The factored form of A is then used to solve the
+  system of equations A * X = B.
+
+  ## Return values
+  ### output list<Real> X
+  On exit, if info = 0, the N-by-NRHS solution matrix X.
+
+  ### output Integer info
+  = 0:  successful exit
+  < 0:  if INFO = -i, the i-th argument had an illegal value
+  > 0:  if INFO = i, U(i,i) is exactly zero. The factorization
+        has been completed, but the factor U is exactly
+        singular, so the solution could not be computed.
+  "
   input list<list<Real>> A;
   input list<Real> B;
   output list<Real> X;
@@ -1029,9 +1053,10 @@ public function realpath
 end realpath;
 
 public function getSimulationHelpText
-  input Boolean detailed;
+  input Boolean detailed=false;
+  input Boolean sphinx=false;
   output String text;
-  external "C" text = System_getSimulationHelpText(detailed) annotation(Library = {"omcruntime"});
+  external "C" text = System_getSimulationHelpTextSphinx(detailed,sphinx) annotation(Library = {"omcruntime"});
 end getSimulationHelpText;
 
 public function getTerminalWidth

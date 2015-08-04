@@ -3,8 +3,8 @@
 #include <Solver/IDA/IDA.h>
 #include <Core/Math/Functions.h>
 
-#include <Core/Utils/numeric/bindings/traits/ublas_vector.hpp>
-#include <Core/Utils/numeric/bindings/traits/ublas_sparse.hpp>
+//#include <Core/Utils/numeric/bindings/traits/ublas_vector.hpp>
+//#include <Core/Utils/numeric/bindings/traits/ublas_sparse.hpp>
 
 Ida::Ida(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
@@ -282,8 +282,8 @@ void Ida::initialize()
 
 void Ida::solve(const SOLVERCALL action)
 {
-  bool writeEventOutput = (_settings->getGlobalSettings()->getOutputPointType() == ALL);
-  bool writeOutput = !(_settings->getGlobalSettings()->getOutputFormat() == EMPTY) && !(_settings->getGlobalSettings()->getOutputPointType() == EMPTY2);
+  bool writeEventOutput = (_settings->getGlobalSettings()->getOutputPointType() == OPT_ALL);
+  bool writeOutput = !(_settings->getGlobalSettings()->getOutputPointType() == OPT_NONE);
 
   #ifdef RUNTIME_PROFILING
   MEASURETIME_REGION_DEFINE(idaSolveFunctionHandler, "solve");
@@ -397,7 +397,7 @@ void Ida::solve(const SOLVERCALL action)
       flag = IDAGetNonlinSolvStats(_idaMem, &nni, &ncfn);
 
       MeasureTimeValuesSolver solverVals = MeasureTimeValuesSolver(nfe, netf);
-      measureTimeFunctionsArray[6].numCalcs += nst;
+      measureTimeFunctionsArray[6].sumMeasuredValues->_numCalcs += nst;
       measureTimeFunctionsArray[6].sumMeasuredValues->add(&solverVals);
   }
   #endif
@@ -422,8 +422,8 @@ void Ida::IDACore()
   if (_idid < 0)
     throw std::runtime_error("IDA::ReInit");
 
-  bool writeEventOutput = (_settings->getGlobalSettings()->getOutputPointType() == ALL);
-  bool writeOutput = !(_settings->getGlobalSettings()->getOutputFormat() == EMPTY) && !(_settings->getGlobalSettings()->getOutputPointType() == EMPTY2);
+  bool writeEventOutput = (_settings->getGlobalSettings()->getOutputPointType() == OPT_ALL);
+  bool writeOutput = !(_settings->getGlobalSettings()->getOutputPointType() == OPT_NONE);
 
   while (_solverStatus & ISolver::CONTINUE && !_interrupt )
   {
@@ -625,7 +625,7 @@ void Ida::writeIDAOutput(const double &time, const double &h, const int &stp)
         MEASURETIME_REGION_DEFINE(idaWriteOutputHandler, "IDAWriteOutput");
         if(MeasureTime::getInstance() != NULL)
         {
-            measureTimeFunctionsArray[2].numCalcs--;
+            measureTimeFunctionsArray[2].sumMeasuredValues->_numCalcs--;
             MEASURETIME_START(measuredFunctionStartValues, idaWriteOutputHandler, "IDAWriteOutput");
         }
         #endif
@@ -872,13 +872,13 @@ int Ida::calcJacobian(double t, long int N, N_Vector fHelp, N_Vector errorWeight
 
 void Ida::initializeColoredJac()
 {
-  _colorOfColumn = new int[_dimSys];
+  /*_colorOfColumn = new int[_dimSys];
   _system->getAColorOfColumn( _colorOfColumn, _dimSys);
 
   _system->getJacobian(_jacobianA);
   _jacobianANonzeros  = boost::numeric::bindings::traits::spmatrix_num_nonzeros (_jacobianA);
   _jacobianAIndex     = boost::numeric::bindings::traits::spmatrix_index2_storage(_jacobianA);
-  _jacobianALeadindex = boost::numeric::bindings::traits::spmatrix_index1_storage(_jacobianA);
+  _jacobianALeadindex = boost::numeric::bindings::traits::spmatrix_index1_storage(_jacobianA);*/
 }
 
 int Ida::reportErrorMessage(ostream& messageStream)
@@ -905,12 +905,6 @@ int Ida::reportErrorMessage(ostream& messageStream)
 
 void Ida::writeSimulationInfo()
 {
-#ifdef USE_BOOST_LOG
-  src::logger lg;
-
-  // Now, let's try logging with severity
-  src::severity_logger<idaseverity_level> slg;
-
   long int nst, nfe, nsetups, nni, ncfn, netf;
   long int nfQe, netfQ;
   long int nfSe, nfeS, nsetupsS, nniS, ncfnS, netfS;
@@ -925,15 +919,12 @@ void Ida::writeSimulationInfo()
 
   flag = IDAGetNonlinSolvStats(_idaMem, &nni, &ncfn);
 
-  BOOST_LOG_SEV(slg, ida_normal)<< " Number steps: " << nst;
-  BOOST_LOG_SEV(slg, ida_normal)<< " Function evaluations " << "f: " << nfe;
-  BOOST_LOG_SEV(slg, ida_normal)<< " Error test failures " << "netf: " << netfS;
-  BOOST_LOG_SEV(slg, ida_normal)<< " Linear solver setups " << "nsetups: " << nsetups;
-  BOOST_LOG_SEV(slg, ida_normal)<< " Nonlinear iterations " << "nni: " << nni;
-  BOOST_LOG_SEV(slg, ida_normal)<< " Convergence failures " << "ncfn: " << ncfn;
-
-#endif
-
+  Logger::write("Cvode: number steps = " + boost::lexical_cast<std::string>(nst),LC_SOLV,LL_INFO);
+  Logger::write("Cvode: function evaluations 'f' = " + boost::lexical_cast<std::string>(nfe),LC_SOLV,LL_INFO);
+  Logger::write("Cvode: error test failures 'netf' = " + boost::lexical_cast<std::string>(netfS),LC_SOLV,LL_INFO);
+  Logger::write("Cvode: linear solver setups 'nsetups' = " + boost::lexical_cast<std::string>(nsetups),LC_SOLV,LL_INFO);
+  Logger::write("Cvode: nonlinear iterations 'nni' = " + boost::lexical_cast<std::string>(nni),LC_SOLV,LL_INFO);
+  Logger::write("Cvode: convergence failures 'ncfn' = " + boost::lexical_cast<std::string>(ncfn),LC_SOLV,LL_INFO);
 }
 
 int Ida::check_flag(void *flagvalue, const char *funcname, int opt)

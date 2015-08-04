@@ -46,6 +46,7 @@
 package CodegenFMU1
 
 import interface SimCodeTV;
+import interface SimCodeBackendTV;
 import CodegenUtil.*;
 import CodegenC.*; //unqualified import, no need the CodegenC is optional when calling a template; or mandatory when the same named template exists in this package (name hiding)
 import CodegenFMUCommon.*;
@@ -82,7 +83,7 @@ case SIMCODE(modelInfo = MODELINFO(varInfo = vi as VARINFO(__), vars = SIMVARS(s
   let generationDateAndTime = xsdateTime(getCurrentDateTime())
   let variableNamingConvention = 'structured'
   let numberOfContinuousStates = if intEq(vi.numStateVars,1) then statesnumwithDummy(listStates) else vi.numStateVars
-  let numberOfEventIndicators = vi.numZeroCrossings
+  let numberOfEventIndicators = getNumberOfEventIndicators(simCode)
   <<
   fmiVersion="<%fmiVersion%>"
   modelName="<%modelName%>"

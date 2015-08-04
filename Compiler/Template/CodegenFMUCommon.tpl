@@ -46,8 +46,10 @@
 package CodegenFMUCommon
 
 import interface SimCodeTV;
+import interface SimCodeBackendTV;
 import CodegenUtil.*;
 import CodegenC.*; //unqualified import, no need the CodegenC is optional when calling a template; or mandatory when the same named template exists in this package (name hiding)
+import CodegenCFunctions.*;
 
 template ModelExchange(SimCode simCode)
  "Generates ModelExchange code for ModelDescription file for FMU target."
@@ -432,6 +434,18 @@ match varKind
   case PARAM(__) then if isValueChangeable then "parameter" else "calculatedParameter"
   else "local"
 end getCausality2Helper;
+
+template getNumberOfEventIndicators(SimCode simCode)
+ "Get the number of event indicators, which depends on the selected code target (c or cpp)."
+::=
+match simCode
+  case SIMCODE(zeroCrossings = zeroCrossings, modelInfo = MODELINFO(varInfo = vi as VARINFO(__))) then
+    match Config.simCodeTarget()
+      case "Cpp" then listLength(zeroCrossings)
+      else vi.numZeroCrossings
+    end match
+  else ""
+end getNumberOfEventIndicators;
 
 template getInitialType(VarKind varKind, Option<DAE.Exp> initialValue, Causality c, Boolean isValueChangeable)
  "Returns the Initial Attribute of ScalarVariable."

@@ -1098,7 +1098,7 @@ extern int SystemImpl__removeDirectory(const char *path)
     }
   }
 
-  return retval;
+  return retval==0;
 }
 
 extern char* SystemImpl__readFileNoNumeric(const char* filename)
@@ -1446,7 +1446,7 @@ static int SystemImpl__freeLibrary(int libIndex, int printDebug)
 
 static void free_library(modelica_ptr_t lib, modelica_integer printDebug)
 {
-  if (printDebug) { fprintf(stderr, "LIB UNLOAD handle[%lu].\n", (unsigned long) lib->data.lib); fflush(stderr); }
+  if (printDebug) { fprintf(stderr, "LIB UNLOAD handle[%" PRINT_MMC_UINT_T "].\n", (mmc_uint_t) lib->data.lib); fflush(stderr); }
   if (FreeLibraryFromHandle(lib->data.lib))
   {
     fprintf(stderr,"System.freeLibrary error code: %lu while unloading dll.\n", GetLastError());
@@ -2590,25 +2590,99 @@ int System_getTerminalWidth(void)
 
 #include "simulation_options.h"
 
-char* System_getSimulationHelpText(int detailed)
+char* System_getSimulationHelpTextSphinx(int detailed, int sphinx)
 {
   static char buf[8192];
-  int i;
+  int i,j;
   const char **desc = detailed ? FLAG_DETAILED_DESC : FLAG_DESC;
   char *cur = buf;
   *cur = 0;
   for(i=1; i<FLAG_MAX; ++i)
   {
+    if (sphinx) {
+      cur += snprintf(cur, 8191-(buf-cur), "\n.. _simflag-%s :\n\n", FLAG_NAME[i]);
+    }
     if (FLAG_TYPE[i] == FLAG_TYPE_FLAG) {
-      cur += snprintf(cur, 8191-(buf-cur), "<-%s>\n  %s\n", FLAG_NAME[i], desc[i]);
+      if (sphinx) {
+        cur += snprintf(cur, 8191-(buf-cur), ":ref:`-%s <simflag-%s>`\n%s\n", FLAG_NAME[i], FLAG_NAME[i], desc[i]);
+      } else {
+        cur += snprintf(cur, 8191-(buf-cur), "<-%s>\n%s\n", FLAG_NAME[i], desc[i]);
+      }
     } else if (FLAG_TYPE[i] == FLAG_TYPE_OPTION) {
-      cur += snprintf(cur, 8191-(buf-cur), "<-%s=value> or <-%s value>\n  %s\n", FLAG_NAME[i], FLAG_NAME[i], desc[i]);
+      int numExtraFlags=0;
+      int firstExtraFlag=1;
+      const char **flagName;
+      const char **flagDesc;
+      if (sphinx) {
+        cur += snprintf(cur, 8191-(buf-cur), ":ref:`-%s=value <simflag-%s>` *or* -%s value \n%s\n", FLAG_NAME[i], FLAG_NAME[i], FLAG_NAME[i], desc[i]);
+      } else {
+        cur += snprintf(cur, 8191-(buf-cur), "<-%s=value> or <-%s value>\n%s\n", FLAG_NAME[i], FLAG_NAME[i], desc[i]);
+      }
+
+      switch(i) {
+      case FLAG_LS:
+        numExtraFlags = LS_MAX;
+        flagName = LS_NAME;
+        flagDesc = LS_DESC;
+        break;
+
+      case FLAG_NLS:
+        numExtraFlags = NLS_MAX;
+        flagName = NLS_NAME;
+        flagDesc = NLS_DESC;
+        break;
+
+      case FLAG_NEWTON_STRATEGY:
+        numExtraFlags = NEWTON_MAX;
+        flagName = NEWTONSTRATEGY_NAME;
+        flagDesc = NEWTONSTRATEGY_DESC;
+        break;
+
+      case FLAG_LV:
+        firstExtraFlag=firstOMCErrorStream;
+        numExtraFlags = SIM_LOG_MAX;
+        flagName = LOG_STREAM_NAME;
+        flagDesc = LOG_STREAM_DESC;
+        break;
+
+      case FLAG_IIM:
+        numExtraFlags = IIM_MAX;
+        flagName = INIT_METHOD_NAME;
+        flagDesc = INIT_METHOD_DESC;
+        break;
+
+      case FLAG_S:
+        numExtraFlags = S_MAX;
+        flagName = NULL;
+        flagDesc = SOLVER_METHOD_DESC;
+        break;
+      }
+
+      if (numExtraFlags) {
+        cur += snprintf(cur, 8191-(buf-cur), "\n");
+        if (flagName) {
+          for (j=firstExtraFlag; j<numExtraFlags; j++) {
+            cur += snprintf(cur, 8191-(buf-cur), "  * %s (%s)\n", flagName[j], flagDesc[j]);
+          }
+        } else {
+          for (j=firstExtraFlag; j<numExtraFlags; j++) {
+            cur += snprintf(cur, 8191-(buf-cur), "  * %s\n", flagDesc[j]);
+          }
+        }
+      }
+
     } else {
       cur += snprintf(cur, 8191-(buf-cur), "[unknown flag-type] <-%s>\n", FLAG_NAME[i]);
     }
   }
   *cur = 0;
   return buf;
+}
+
+/* TODO: Remove me with new tarball */
+char* System_getSimulationHelpText(int detailed)
+{
+  return System_getSimulationHelpTextSphinx(detailed, 0);
 }
 
 int SystemImpl__fileIsNewerThan(const char *file1, const char *file2)

@@ -53,7 +53,6 @@ public import HashSet;
 public import Tpl;
 
 protected import Absyn;
-protected import BackendDAETransform;
 protected import BackendDAEUtil;
 protected import BackendEquation;
 protected import BackendVariable;
@@ -109,7 +108,7 @@ algorithm
 end printBackendDAE;
 
 public function printEqSystem "This function prints the BackendDAE.EqSystem representation to stdout."
-  input BackendDAE.EqSystem inEqSystem;
+  input BackendDAE.EqSystem inSyst;
 protected
   BackendDAE.Variables orderedVars;
   BackendDAE.EquationArray orderedEqs;
@@ -119,23 +118,16 @@ protected
   BackendDAE.StateSets stateSets;
   BackendDAE.BaseClockPartitionKind partitionKind;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=orderedVars,
-                      orderedEqs=orderedEqs,
-                      m=m,
-                      mT=mT,
-                      matching=matching,
-                      stateSets=stateSets,
-                      partitionKind=partitionKind) := inEqSystem;
-
-  print("\n" + partitionKindString(partitionKind) + "\n" + UNDERLINE + "\n");
-  dumpVariables(orderedVars, "Variables");
-  dumpEquationArray(orderedEqs, "Equations");
-  dumpStateSets(stateSets, "State Sets");
-  dumpOption(m, dumpIncidenceMatrix);
-  dumpOption(mT, dumpIncidenceMatrixT);
+  print("\n" + partitionKindString(inSyst.partitionKind) + "\n" + UNDERLINE + "\n");
+  dumpVariables(inSyst.orderedVars, "Variables");
+  dumpEquationArray(inSyst.orderedEqs, "Equations");
+  dumpEquationArray(inSyst.removedEqs, "Simple Equations");
+  dumpStateSets(inSyst.stateSets, "State Sets");
+  dumpOption(inSyst.m, dumpIncidenceMatrix);
+  dumpOption(inSyst.mT, dumpIncidenceMatrixT);
 
   print("\n");
-  dumpFullMatching(matching);
+  dumpFullMatching(inSyst.matching);
   print("\n");
 end printEqSystem;
 
@@ -258,49 +250,27 @@ end printClassAttributes;
 
 public function printShared "This function dumps the BackendDAE.Shared representation to stdout."
   input BackendDAE.Shared inShared;
-protected
-  BackendDAE.Variables knownVars, externalObjects, aliasVars;
-  BackendDAE.EquationArray initialEqs, removedEqs;
-  list<DAE.Constraint> constraints;
-  list<BackendDAE.ZeroCrossing> zeroCrossingLst, sampleLst, relationsLst;
-  list<BackendDAE.WhenClause> whenClauseLst;
-  list<BackendDAE.TimeEvent> timeEvents;
-  BackendDAE.ExternalObjectClasses extObjClasses;
-  BackendDAE.BackendDAEType backendDAEType;
-  BackendDAE.SymbolicJacobians symjacs;
-  array<DAE.ClockKind> clocks;
 algorithm
-  BackendDAE.SHARED(knownVars=knownVars,
-                    externalObjects=externalObjects,
-                    aliasVars=aliasVars,
-                    initialEqs=initialEqs,
-                    removedEqs=removedEqs,
-                    constraints=constraints,
-                    eventInfo=BackendDAE.EVENT_INFO( timeEvents=timeEvents, relationsLst=relationsLst, zeroCrossingLst=zeroCrossingLst,
-                                                     sampleLst=sampleLst, whenClauseLst=whenClauseLst, clocks = clocks ),
-                    extObjClasses=extObjClasses,
-                    backendDAEType=backendDAEType,
-                    symjacs=symjacs) := inShared;
+
   print("\nBackendDAEType: ");
-  printBackendDAEType(backendDAEType);
+  printBackendDAEType(inShared.backendDAEType);
   print("\n\n");
 
-
-  dumpVariables(knownVars, "Known Variables (constants)");
-  dumpVariables(externalObjects, "External Objects");
-  dumpExternalObjectClasses(extObjClasses, "Classes of External Objects");
-  dumpVariables(aliasVars, "Alias Variables");
-  dumpEquationArray(removedEqs, "Simple Equations");
-  dumpEquationArray(initialEqs, "Initial Equations");
-  dumpZeroCrossingList(zeroCrossingLst, "Zero Crossings");
-  dumpZeroCrossingList(relationsLst, "Relations");
+  dumpVariables(inShared.knownVars, "Known Variables (constants)");
+  dumpVariables(inShared.externalObjects, "External Objects");
+  dumpExternalObjectClasses(inShared.extObjClasses, "Classes of External Objects");
+  dumpVariables(inShared.aliasVars, "Alias Variables");
+  dumpEquationArray(inShared.removedEqs, "Simple Shared Equations");
+  dumpEquationArray(inShared.initialEqs, "Initial Equations");
+  dumpZeroCrossingList(inShared.eventInfo.zeroCrossingLst, "Zero Crossings");
+  dumpZeroCrossingList(inShared.eventInfo.relationsLst, "Relations");
   if stringEqual(Config.simCodeTarget(), "Cpp") then
-    dumpZeroCrossingList(sampleLst, "Samples");
+    dumpZeroCrossingList(inShared.eventInfo.sampleLst, "Samples");
   else
-    dumpTimeEvents(timeEvents, "Time Events");
+    dumpTimeEvents(inShared.eventInfo.timeEvents, "Time Events");
   end if;
-  dumpWhenClauseList(whenClauseLst, "When Clauses");
-  dumpConstraintList(constraints, "Constraints");
+  dumpWhenClauseList(inShared.eventInfo.whenClauseLst, "When Clauses");
+  dumpConstraintList(inShared.constraints, "Constraints");
 end printShared;
 
 public function printClocks
@@ -597,7 +567,6 @@ algorithm
   printClocks(clocks);
   print("\n");
 end dumpClocks;
-
 
 public function dumpVariables "function dumpVariables"
   input BackendDAE.Variables inVars;
@@ -1990,11 +1959,11 @@ algorithm
     local
       String s1,s2,str;
       list<String> l;
-    case DAE.T_INTEGER() then "Integer ";
-    case DAE.T_REAL() then "Real ";
-    case DAE.T_BOOL() then "Boolean ";
-    case DAE.T_STRING() then "String ";
-    case DAE.T_CLOCK() then "Clock ";
+    case DAE.T_INTEGER() then "Integer";
+    case DAE.T_REAL() then "Real";
+    case DAE.T_BOOL() then "Boolean";
+    case DAE.T_STRING() then "String";
+    case DAE.T_CLOCK() then "Clock";
     case DAE.T_ENUMERATION(names = l)
       equation
         s1 = stringDelimitList(l, ", ");
@@ -2002,9 +1971,9 @@ algorithm
         str = stringAppend(s2, ")");
       then
         str;
-    case DAE.T_COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ(_)) then "ExternalObject ";
-    case DAE.T_COMPLEX(complexClassType = ClassInf.RECORD(_)) then "Record ";
-    case DAE.T_ARRAY() then "Array ";
+    case DAE.T_COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ(_)) then "ExternalObject";
+    case DAE.T_COMPLEX(complexClassType = ClassInf.RECORD(_)) then "Record";
+    case DAE.T_ARRAY() then "Array";
   end match;
 end dumpTypeStr;
 
@@ -2322,40 +2291,20 @@ public function varString "Helper function to printVarList."
   input BackendDAE.Var inVar;
   output String outStr;
 protected
-  DAE.ComponentRef cr;
-  BackendDAE.VarKind kind;
-  DAE.VarDirection dir;
-  BackendDAE.Type var_type;
-  DAE.InstDims arrayDim;
-  Option<DAE.Exp> bindExp;
-  DAE.ElementSource source;
-  Option<DAE.VariableAttributes> dae_var_attr;
-  Option<SCode.Comment> comment;
-  DAE.ConnectorType ct;
   list<Absyn.Path> paths;
   list<String> paths_lst;
-  String path_str;
-  Boolean unreplaceable;
   String unreplaceableStr;
+  String dimensions;
 algorithm
-  BackendDAE.VAR(varName=cr,
-                 varKind=kind,
-                 varDirection=dir,
-                 varType=var_type,
-                 arryDim=arrayDim,
-                 bindExp=bindExp,
-                 source=source,
-                 values=dae_var_attr,
-                 comment=comment,
-                 connectorType=ct,
-                 unreplaceable=unreplaceable) := inVar;
-  paths := DAEUtil.getElementSourceTypes(source);
+  paths := DAEUtil.getElementSourceTypes(inVar.source);
   paths_lst := List.map(paths, Absyn.pathString);
-  unreplaceableStr := if unreplaceable then " unreplaceable" else "";
-  outStr := DAEDump.dumpDirectionStr(dir) + ComponentReference.printComponentRefStr(cr) + ":"
-            + kindString(kind) + "(" + connectorTypeString(ct) + attributesString(dae_var_attr)
-            + ") " + optExpressionString(bindExp,"") + DAEDump.dumpCommentAnnotationStr(comment)
-            + stringDelimitList(paths_lst, ", ") + " type: " + dumpTypeStr(var_type) + "["+ExpressionDump.dimensionsString(arrayDim) + "]" + unreplaceableStr;
+  unreplaceableStr := if inVar.unreplaceable then " unreplaceable" else "";
+  dimensions := ExpressionDump.dimensionsString(inVar.arryDim);
+  dimensions := if dimensions <> "" then " [" + dimensions + "]" else "";
+  outStr := DAEDump.dumpDirectionStr(inVar.varDirection) + ComponentReference.printComponentRefStr(inVar.varName) + ":"
+            + kindString(inVar.varKind) + "(" + connectorTypeString(inVar.connectorType) + attributesString(inVar.values)
+            + ") " + optExpressionString(inVar.bindExp, "") + DAEDump.dumpCommentAnnotationStr(inVar.comment)
+            + stringDelimitList(paths_lst, ", ") + " type: " + dumpTypeStr(inVar.varType) + dimensions + unreplaceableStr;
 end varString;
 
 public function dumpKind
@@ -3311,7 +3260,8 @@ protected
   DumpCompShortTornTpl tornTpl;
   BackendDAE.BackendDAEType backendDAEType;
 algorithm
-  BackendDAE.DAE(systs, BackendDAE.SHARED(removedEqs=removedEqs, backendDAEType=backendDAEType)) := inDAE;
+  BackendDAE.DAE(systs, BackendDAE.SHARED(backendDAEType=backendDAEType)) := inDAE;
+  removedEqs := BackendDAEUtil.collapseRemovedEqs(inDAE);
   daeType := printBackendDAEType2String(backendDAEType);
 
   HS := HashSet.emptyHashSet();

@@ -49,7 +49,6 @@ import DAE;
 import FCore;
 import GlobalScript;
 import HashTableExpToIndex;
-import HashTableStringToPath;
 import Tpl;
 import Values;
 import SimCode;
@@ -58,12 +57,12 @@ import SimCode;
 protected
 import BackendDAECreate;
 import BackendQSS;
-import BaseHashTable;
 import ClockIndexes;
-import CevalScript;
+import CevalScriptBackend;
 import CodegenC;
 import CodegenFMU;
 import CodegenFMUCpp;
+import CodegenFMUCppHpcom;
 import CodegenQSS;
 import CodegenAdevs;
 import CodegenSparseFMI;
@@ -141,13 +140,13 @@ protected
 algorithm
   System.realtimeTick(ClockIndexes.RT_CLOCK_SIMCODE);
   a_cref := Absyn.pathToCref(className);
-  fileDir := CevalScript.getFileDir(a_cref, p);
+  fileDir := CevalScriptBackend.getFileDir(a_cref, p);
   (libs,libPaths,includes, includeDirs, recordDecls, functions, outIndexedBackendDAE, _, literals) :=
     SimCodeUtil.createFunctions(p, dae, inBackendDAE, className);
-  (simCode,_) := SimCodeUtil.createSimCode(outIndexedBackendDAE,
+  simCode := createSimCode(outIndexedBackendDAE,
     className, filenamePrefix, fileDir, functions, includes, includeDirs, libs, libPaths,simSettingsOpt, recordDecls, literals,Absyn.FUNCTIONARGS({},{}));
   timeSimCode := System.realtimeTock(ClockIndexes.RT_CLOCK_SIMCODE);
-  SimCodeUtil.execStat("SimCode");
+  SimCodeFunctionUtil.execStat("SimCode");
 
   System.realtimeTick(ClockIndexes.RT_CLOCK_TEMPLATES);
   callTargetTemplatesFMU(simCode, Config.simCodeTarget(), FMUVersion, FMUType);
@@ -182,13 +181,13 @@ protected
 algorithm
   System.realtimeTick(ClockIndexes.RT_CLOCK_SIMCODE);
   a_cref := Absyn.pathToCref(className);
-  fileDir := CevalScript.getFileDir(a_cref, p);
+  fileDir := CevalScriptBackend.getFileDir(a_cref, p);
   (libs, libPaths, includes, includeDirs, recordDecls, functions, outIndexedBackendDAE, _, literals) :=
     SimCodeUtil.createFunctions(p, dae, inBackendDAE, className);
   (simCode,_) := SimCodeUtil.createSimCode(outIndexedBackendDAE,
     className, filenamePrefix, fileDir, functions, includes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals,Absyn.FUNCTIONARGS({},{}));
   timeSimCode := System.realtimeTock(ClockIndexes.RT_CLOCK_SIMCODE);
-  SimCodeUtil.execStat("SimCode");
+  SimCodeFunctionUtil.execStat("SimCode");
 
   System.realtimeTick(ClockIndexes.RT_CLOCK_TEMPLATES);
   callTargetTemplatesXML(simCode, Config.simCodeTarget());
@@ -234,13 +233,14 @@ algorithm
       String description;
       Boolean symbolicJacActivated;
       Boolean fmi20;
+      Boolean flagValue;
 
     case (cache,graph,_,st as GlobalScript.SYMBOLTABLE(ast=p),FMUVersion,FMUType,filenameprefix,_, _)
       equation
         /* calculate stuff that we need to create SimCode data structure */
         System.realtimeTick(ClockIndexes.RT_CLOCK_FRONTEND);
         //(cache,Values.STRING(filenameprefix),SOME(_)) = Ceval.ceval(cache,graph, fileprefix, true, SOME(st),NONE(), msg);
-        (cache,graph,dae,st) = CevalScript.runFrontEnd(cache,graph,className,st,false);
+        (cache,graph,dae,st) = CevalScriptBackend.runFrontEnd(cache,graph,className,st,false);
         timeFrontend = System.realtimeTock(ClockIndexes.RT_CLOCK_FRONTEND);
         System.realtimeTick(ClockIndexes.RT_CLOCK_BACKEND);
 
@@ -249,6 +249,7 @@ algorithm
         fmi20 = FMI.isFMIVersion20(FMUVersion);
         symbolicJacActivated = Flags.getConfigBool(Flags.GENERATE_SYMBOLIC_LINEARIZATION);
         Flags.setConfigBool(Flags.GENERATE_SYMBOLIC_LINEARIZATION, fmi20);
+        flagValue = Flags.enableDebug(Flags.DIS_SYMJAC_FMI20);
 
         _ = FCore.getFunctionTree(cache);
         dae = DAEUtil.transformationsBeforeBackend(cache,graph,dae);
@@ -262,6 +263,7 @@ algorithm
 
         //reset config flag
         Flags.setConfigBool(Flags.GENERATE_SYMBOLIC_LINEARIZATION, symbolicJacActivated);
+        Flags.set(Flags.DIS_SYMJAC_FMI20, flagValue);
 
         resultValues =
         {("timeTemplates",Values.REAL(timeTemplates)),
@@ -322,7 +324,7 @@ algorithm
         /* calculate stuff that we need to create SimCode data structure */
         System.realtimeTick(ClockIndexes.RT_CLOCK_FRONTEND);
         //(cache,Values.STRING(filenameprefix),SOME(_)) = Ceval.ceval(cache,graph, fileprefix, true, SOME(st),NONE(), msg);
-        (cache,graph,dae,st) = CevalScript.runFrontEnd(cache,graph,className,st,false);
+        (cache,graph,dae,st) = CevalScriptBackend.runFrontEnd(cache,graph,className,st,false);
         timeFrontend = System.realtimeTock(ClockIndexes.RT_CLOCK_FRONTEND);
         System.realtimeTick(ClockIndexes.RT_CLOCK_BACKEND);
         _ = FCore.getFunctionTree(cache);
@@ -384,16 +386,16 @@ algorithm
   end if;
   System.realtimeTick(ClockIndexes.RT_CLOCK_SIMCODE);
   a_cref := Absyn.pathToCref(className);
-  fileDir := CevalScript.getFileDir(a_cref, p);
+  fileDir := CevalScriptBackend.getFileDir(a_cref, p);
   (libs, libPaths,includes, includeDirs, recordDecls, functions, outIndexedBackendDAE, _, literals) := SimCodeUtil.createFunctions(p, dae, inBackendDAE, className);
   simCode := createSimCode(outIndexedBackendDAE, className, filenamePrefix, fileDir, functions, includes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args);
   timeSimCode := System.realtimeTock(ClockIndexes.RT_CLOCK_SIMCODE);
-  SimCodeUtil.execStat("SimCode");
+  SimCodeFunctionUtil.execStat("SimCode");
 
   System.realtimeTick(ClockIndexes.RT_CLOCK_TEMPLATES);
   callTargetTemplates(simCode, inBackendDAE, Config.simCodeTarget());
   timeTemplates := System.realtimeTock(ClockIndexes.RT_CLOCK_TEMPLATES);
-  SimCodeUtil.execStat("Templates");
+  SimCodeFunctionUtil.execStat("Templates");
 end generateModelCode;
 
 protected function createSimCode "
@@ -576,7 +578,11 @@ algorithm
       then ();
     case (_,"Cpp")
       equation
-        Tpl.tplNoret3(CodegenFMUCpp.translateModel, simCode, FMUVersion, FMUType);
+        if(Flags.isSet(Flags.HPCOM)) then
+          Tpl.tplNoret3(CodegenFMUCppHpcom.translateModel, simCode, FMUVersion, FMUType);
+        else
+          Tpl.tplNoret3(CodegenFMUCpp.translateModel, simCode, FMUVersion, FMUType);
+        end if;
       then ();
     else
       equation
@@ -632,13 +638,13 @@ algorithm
       System.realtimeTick(ClockIndexes.RT_CLOCK_FRONTEND);
       System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT);
       System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_CUMULATIVE);
-      (cache, graph, dae, st) = CevalScript.runFrontEnd(cache, graph, className, st, false);
-      SimCodeUtil.execStat("FrontEnd");
+      (cache, graph, dae, st) = CevalScriptBackend.runFrontEnd(cache, graph, className, st, false);
+      SimCodeFunctionUtil.execStat("FrontEnd");
       timeFrontend = System.realtimeTock(ClockIndexes.RT_CLOCK_FRONTEND);
 
       System.realtimeTick(ClockIndexes.RT_CLOCK_BACKEND);
       dae = DAEUtil.transformationsBeforeBackend(cache, graph, dae);
-      SimCodeUtil.execStat("Transformations before backend");
+      SimCodeFunctionUtil.execStat("Transformations before backend");
       description = DAEUtil.daeDescription(dae);
       dlow = BackendDAECreate.lower(dae, cache, graph, BackendDAE.EXTRA_INFO(description,filenameprefix));
       //BackendDump.printBackendDAE(dlow);
@@ -662,138 +668,6 @@ algorithm
     then fail();
   end matchcontinue;
 end translateModel;
-
-public function translateFunctions "
-  Entry point to translate Modelica/MetaModelica functions to C functions.
-  Called from other places in the compiler."
-  input Absyn.Program program;
-  input String name;
-  input Option<DAE.Function> optMainFunction;
-  input list<DAE.Function> idaeElements;
-  input list<DAE.Type> metarecordTypes;
-  input list<String> inIncludes;
-algorithm
-  _ := match (program, name, optMainFunction, idaeElements, metarecordTypes, inIncludes)
-    local
-      DAE.Function daeMainFunction;
-      SimCode.Function mainFunction;
-      list<SimCode.Function> fns;
-      list<String> includes, libs, libPaths,includeDirs;
-      SimCode.MakefileParams makefileParams;
-      SimCode.FunctionCode fnCode;
-      list<SimCode.RecordDeclaration> extraRecordDecls;
-      list<DAE.Exp> literals;
-      list<DAE.Function> daeElements;
-
-    case (_, _, SOME(daeMainFunction), daeElements, _, includes)
-      equation
-        // Create SimCode.FunctionCode
-        (daeElements,literals) = SimCodeUtil.findLiterals(daeMainFunction::daeElements);
-        (mainFunction::fns, extraRecordDecls, includes, includeDirs, libs,libPaths) = SimCodeUtil.elaborateFunctions(program, daeElements, metarecordTypes, literals, includes);
-        SimCodeUtil.checkValidMainFunction(name, mainFunction);
-        makefileParams = SimCodeUtil.createMakefileParams(includeDirs, libs,libPaths, true);
-        fnCode = SimCode.FUNCTIONCODE(name, SOME(mainFunction), fns, literals, includes, makefileParams, extraRecordDecls);
-        // Generate code
-        _ = Tpl.tplString(CodegenC.translateFunctions, fnCode);
-      then
-        ();
-    case (_, _, NONE(), daeElements, _, includes)
-      equation
-        // Create SimCode.FunctionCode
-        (daeElements,literals) = SimCodeUtil.findLiterals(daeElements);
-        (fns, extraRecordDecls, includes, includeDirs, libs,libPaths) = SimCodeUtil.elaborateFunctions(program, daeElements, metarecordTypes, literals, includes);
-        makefileParams = SimCodeUtil.createMakefileParams(includeDirs, libs,libPaths, true);
-        // remove OpenModelica.threadData.ThreadData
-        fns = removeThreadDataFunction(fns, {});
-        extraRecordDecls = removeThreadDataRecord(extraRecordDecls, {});
-
-        fnCode = SimCode.FUNCTIONCODE(name, NONE(), fns, literals, includes, makefileParams, extraRecordDecls);
-        // Generate code
-        _ = Tpl.tplString(CodegenC.translateFunctions, fnCode);
-      then
-        ();
-  end match;
-end translateFunctions;
-
-protected function removeThreadDataRecord
-"remove OpenModelica.threadData.ThreadData
- as is already defined in openmodelica.h"
-  input list<SimCode.RecordDeclaration> inRecs;
-  input list<SimCode.RecordDeclaration> inAcc;
-  output list<SimCode.RecordDeclaration> outRecs;
-algorithm
-  outRecs := match(inRecs, inAcc)
-    local
-      Absyn.Path p;
-      list<SimCode.RecordDeclaration> acc, rest;
-      SimCode.RecordDeclaration r;
-
-    case ({}, _) then listReverse(inAcc);
-
-    case (SimCode.RECORD_DECL_FULL(name = "OpenModelica_threadData_ThreadData")::rest, _)
-     equation
-       acc = removeThreadDataRecord(rest, inAcc);
-     then
-       acc;
-
-    case (SimCode.RECORD_DECL_DEF(path = Absyn.QUALIFIED("OpenModelica",Absyn.QUALIFIED("threadData",Absyn.IDENT("ThreadData"))))::rest, _)
-     equation
-       acc = removeThreadDataRecord(rest, inAcc);
-     then
-       acc;
-
-    case (r::rest, _)
-     equation
-       acc = removeThreadDataRecord(rest, r::inAcc);
-     then
-       acc;
-
-  end match;
-end removeThreadDataRecord;
-
-protected function removeThreadDataFunction
-"remove OpenModelica.threadData.ThreadData
- as is already defined in openmodelica.h"
-  input list<SimCode.Function> inFuncs;
-  input list<SimCode.Function> inAcc;
-  output list<SimCode.Function> outFuncs;
-algorithm
-  outFuncs := match(inFuncs, inAcc)
-    local
-      Absyn.Path p;
-      list<SimCode.Function> acc, rest;
-      SimCode.Function f;
-
-    case ({}, _) then listReverse(inAcc);
-
-    case (SimCode.RECORD_CONSTRUCTOR(name = Absyn.FULLYQUALIFIED(Absyn.QUALIFIED("OpenModelica",Absyn.QUALIFIED("threadData",Absyn.IDENT("ThreadData")))))::rest, _)
-     equation
-       acc = removeThreadDataFunction(rest, inAcc);
-     then
-       acc;
-
-    case (f::rest, _)
-     equation
-       acc = removeThreadDataFunction(rest, f::inAcc);
-     then
-       acc;
-
-  end match;
-end removeThreadDataFunction;
-
-public function getCalledFunctionsInFunction
-"Goes through the given DAE, finds the given function and collects
-  the names of the functions called from within those functions"
-  input Absyn.Path path;
-  input DAE.FunctionTree funcs;
-  output list<Absyn.Path> outPaths;
-protected
-  HashTableStringToPath.HashTable ht;
-algorithm
-  ht := HashTableStringToPath.emptyHashTable();
-  ht := SimCodeUtil.getCalledFunctionsInFunction2(path,Absyn.pathStringNoQual(path),ht,funcs);
-  outPaths := BaseHashTable.hashTableValueList(ht);
-end getCalledFunctionsInFunction;
 
 annotation(__OpenModelica_Interface="backend");
 end SimCodeMain;

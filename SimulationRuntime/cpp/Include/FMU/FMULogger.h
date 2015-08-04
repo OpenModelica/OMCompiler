@@ -9,6 +9,7 @@
 #define FMULOGGER_H_
 
 #include <Core/Modelica.h>
+#include <FMU/FactoryExport.h>
 #include <Core/Utils/extension/logger.hpp>
 #include "fmiModelFunctions.h"
 
@@ -27,10 +28,7 @@ class BOOST_EXTENSION_EXPORT_DECL FMULogger : Logger
     }
 
   protected:
-    virtual void writeErrorInternal(std::string errorMsg);
-    virtual void writeWarningInternal(std::string warningMsg);
-    virtual void writeInfoInternal(std::string infoMsg);
-
+    virtual void writeInternal(std::string errorMsg, LogCategory cat, LogLevel lvl);
   private:
     fmiCallbackLogger callbackLogger;
     fmiComponent component;
