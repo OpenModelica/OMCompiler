@@ -278,6 +278,7 @@ int solveNewton(DATA *data, int sysNumber)
   int retries2 = 0;
   int iflag = 1;
   int nonContinuousCase = 0;
+  int casualTearingSet = data->simulationInfo.nonlinearSystemData[sysNumber].strictTearingFunctionCall != NULL;
 
   modelica_boolean *relationsPreBackup = (modelica_boolean*) malloc(data->modelData.nRelations*sizeof(modelica_boolean));
 
@@ -349,6 +350,11 @@ int solveNewton(DATA *data, int sysNumber)
       memcpy(systemData->nlsx, solverData->x, solverData->n*(sizeof(double)));
 
     /* Then try with old values (instead of extrapolating )*/
+    }
+    else if(retries < 1 && casualTearingSet)
+    {
+      giveUp = 1;
+      infoStreamPrint(LOG_NLS, 0, "### No Solution for the casual tearing set at the first try! ###");
     }
     else if(retries < 1)
     {
@@ -511,6 +517,7 @@ static int _omc_newton(int* n, double *x, double *fvec, double* eps, double* fde
     for(i=0; i<*n; i++)
       infoStreamPrint(LOG_NLS_V, 0, "x[%d]: %e ", i, x[i]);
     messageClose(LOG_NLS_V);
+    messageClose(LOG_NLS_V);
   }
 
   *info = 1;
@@ -523,6 +530,8 @@ static int _omc_newton(int* n, double *x, double *fvec, double* eps, double* fde
   memcpy(solverData->f_old, fvec, *n*sizeof(double));
 
   error_f = current_fvec_enorm = enorm_(n, fvec);
+
+  memcpy(solverData->fvecScaled, solverData->fvec, *n*sizeof(double));
 
   while(error_f > *eps && scaledError_f > *eps  &&  delta_x > *eps  &&  delta_f > *eps  && delta_x_scaled > *eps  )
   {
