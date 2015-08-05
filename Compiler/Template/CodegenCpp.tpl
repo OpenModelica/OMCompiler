@@ -2295,7 +2295,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
       try
       {
             Logger::initialize();
-            Logger::setEnabled(false);
+            Logger::setEnabled(true);
             <%if boolNot(stringEq(getConfigString(PROFILING_LEVEL),"none")) then
                 <<
                 std::vector<MeasureTimeData> measureTimeArraySimulation = std::vector<MeasureTimeData>(2); //0 all, 1 setup
@@ -13445,10 +13445,10 @@ template daeExpCrefRhsArrayBox(ComponentRef cr,DAE.Type ty, Context context, Tex
                 let &preExp +=
                   <<
                   StatArrayDim<%ndims%><<%T%>, <%dimstr%>> <%arr%>_pre;
-                  std::transform(<%arr%>.getDataRefs(),
-                                 <%arr%>.getDataRefs() + <%arr%>.getNumElems(),
+                  std::transform(<%arr%>.getData(),
+                                 <%arr%>.getData() + <%arr%>.getNumElems(),
                                  <%arr%>_pre.getData(),
-                                 PreRefArray2CArray<<%T%>>(_discrete_events));
+                                 PreArray2CArray<<%T%>>(_discrete_events));
                   >>
                 '<%arr%>_pre'
               else
