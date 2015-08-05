@@ -212,6 +212,7 @@ int solveNewton(DATA *data, int sysNumber)
   int retries = 0;
   int retries2 = 0;
   int nonContinuousCase = 0;
+  int casualTearingSet = data->simulationInfo.nonlinearSystemData[sysNumber].strictTearingFunctionCall != NULL;
   modelica_boolean *relationsPreBackup = NULL;
 
   DATA_USER* userdata = (DATA_USER*)malloc(sizeof(DATA_USER));
@@ -298,6 +299,11 @@ int solveNewton(DATA *data, int sysNumber)
       memcpy(systemData->nlsx, solverData->x, solverData->n*(sizeof(double)));
 
       /* Then try with old values (instead of extrapolating )*/
+    }
+    else if(retries < 1 && casualTearingSet)
+    {
+      giveUp = 1;
+      infoStreamPrint(LOG_NLS, 0, "### No Solution for the casual tearing set at the first try! ###");
     }
     else if(retries < 1)
     {
