@@ -5763,6 +5763,7 @@ case SIMCODE(modelInfo = MODELINFO(__))  then
    void <%lastIdentOfPath(modelInfo.name)%>Initialize::initializeFreeVariables()
    {
       _simTime = 0.0;
+      _state_var_reinitialized = false;
 
       /*initialize parameter*/
       initializeParameterVars();
@@ -6945,6 +6946,7 @@ match modelInfo
       //Variables:
       boost::shared_ptr<EventHandling> _event_handling;
       boost::shared_ptr<DiscreteEvents> _discrete_events;
+      bool _state_var_reinitialized;
 
       //pointer to simVars-array to speedup simulation and compile time
       double* _pointerToRealVars;
@@ -11259,8 +11261,8 @@ match typeof(e.right)
     <%cref1(e.left, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, context, varDecls, stateDerVectorName, useFlatArrayNotation)%> = _discrete_events->pre(<%cref1(e.left, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, context, varDecls, stateDerVectorName, useFlatArrayNotation)%>);
    >>
 end match
-   else
-    error(sourceInfo(), 'No support for this sort of pre call')
+        else
+          <<; // nothing to do>>
 ;separator="\n")
 <<
   <%body%>
@@ -11330,7 +11332,7 @@ template whenOperators(list<WhenOperator> whenOps, Context context, Text &varDec
         let &varDeclsCref = buffer "" /*BUFD*/
         let val = daeExp(value, contextSimulationDiscrete, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
         <<
-        state_var_reinitialized = true;
+        _state_var_reinitialized = true;
         <%preExp%>
         <%cref1(stateVar,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace,contextOther,varDeclsCref,stateDerVectorName,useFlatArrayNotation)%> = <%val%>;
         >>
@@ -14836,7 +14838,6 @@ template createEvaluateAll( list<SimEqSystem> allEquationsPlusWhen,list<SimWhenC
   bool <%className%>::evaluateAll(const UPDATETYPE command)
   {
     <%if createMeasureTime then generateMeasureTimeStartCode("measuredFunctionStartValues", "evaluateAll", "MEASURETIME_MODELFUNCTIONS") else ""%>
-    bool state_var_reinitialized = false;
 
     <%varDecls%>
     // Evaluate Equations
@@ -14845,7 +14846,7 @@ template createEvaluateAll( list<SimEqSystem> allEquationsPlusWhen,list<SimWhenC
     <%reinit%>
 
     <%if createMeasureTime then generateMeasureTimeEndCode("measuredFunctionStartValues", "measuredFunctionEndValues", "measureTimeFunctionsArray[1]", "evaluateAll", "MEASURETIME_MODELFUNCTIONS") else ""%>
-    return state_var_reinitialized;
+    return _state_var_reinitialized;
   }
   >>
 end createEvaluateAll;
@@ -14992,7 +14993,7 @@ template functionWhenReinitStatementThen(list<WhenOperator> reinits, Text &varDe
         let &varDeclsCref = buffer "" /*BUFD*/
         let val = daeExp(value, contextSimulationDiscrete, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
         <<
-        state_var_reinitialized = true;
+        _state_var_reinitialized = true;
         <%preExp%>
         <%cref1(stateVar,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace,contextOther,varDeclsCref,stateDerVectorName,useFlatArrayNotation)%> = <%val%>;
         >>
