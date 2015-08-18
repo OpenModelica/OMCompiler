@@ -11998,10 +11998,12 @@ algorithm
       then
         List.map(enum_expl, makeIndexSubscript);
 
+    // Boolean dimension => {false, true}.
     case DAE.DIM_BOOLEAN()
-      then DAE.INDEX(DAE.BCONST(false))::DAE.INDEX(DAE.BCONST(true))::{};
+      then {DAE.INDEX(DAE.BCONST(false)), DAE.INDEX(DAE.BCONST(true))};
 
-    else {};
+    case DAE.DIM_UNKNOWN() then {DAE.WHOLEDIM()};
+
   end match;
 end expandDimension;
 
