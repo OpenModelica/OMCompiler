@@ -11006,74 +11006,77 @@ public function crefVectorize
   input DAE.Type crefIdType "the type of the last cref ident, without considering subscripts. picked up from splicedExpData and used for crefs in vectorized exp";
   output DAE.Exp outExp;
 algorithm
-  outExp := matchcontinue (performVectorization,inExp,inType,splicedExp,crefIdType)
+  if not performVectorization or not isVectorizableType(inType) then
+    outExp := inExp;
+    return;
+  end if;
+
+  outExp := matchcontinue (inExp, inType, splicedExp)
     local
-      Boolean b1,b2;
-      DAE.Type exptp;
       DAE.Exp e;
       DAE.ComponentRef cr;
       DAE.Type t;
-      DAE.Dimension d1, d2;
-      Integer ds, ds2;
-
-    // no vectorization
-    case(false, e, _, _,_) then e;
+      list<DAE.ComponentRef> crefs;
+      list<DAE.Exp> expl;
 
     // types extending basictype
-    case (_,e,DAE.T_SUBTYPE_BASIC(complexType = t),_,_)
-      equation
-        e = crefVectorize(true,e,t,NONE(),crefIdType);
-      then e;
+    case (_, DAE.T_SUBTYPE_BASIC(complexType = t), _)
+      then crefVectorize(true, inExp, t, NONE(), crefIdType);
 
     // component reference and an array type with dimensions less than vectorization limit
-    case (_, _, DAE.T_ARRAY(dims = {d1}, ty = DAE.T_ARRAY(dims = {d2})),
-        SOME(DAE.CREF(componentRef = cr)), _)
+    case (_, DAE.T_ARRAY(ty = DAE.T_ARRAY()), SOME(DAE.CREF(componentRef = cr)))
       equation
-        b1 = (Expression.dimensionSize(d1) < Config.vectorizationLimit());
-        b2 = (Expression.dimensionSize(d2) < Config.vectorizationLimit());
-        true = boolAnd(b1, b2) or Config.vectorizationLimit() == 0;
-        e = elabCrefSlice(cr,crefIdType);
-        e = elabMatrixToMatrixExp(e);
+        e = elabCrefSlice(cr, crefIdType);
       then
-        e;
+        elabMatrixToMatrixExp(e);
 
-    case (_, _, DAE.T_ARRAY(dims = {d1}, ty = t),
-        SOME(DAE.CREF(componentRef = cr)), _)
+    case (_, DAE.T_ARRAY(ty = t), SOME(DAE.CREF(componentRef = cr)))
       equation
         false = Types.isArray(t);
-        true = (Expression.dimensionSize(d1) < Config.vectorizationLimit()) or Config.vectorizationLimit() == 0;
-        e = elabCrefSlice(cr,crefIdType);
       then
-        e;
+        elabCrefSlice(cr,crefIdType);
 
-    // matrix sizes > vectorization limit is not vectorized
-    case (_, DAE.CREF(componentRef = cr, ty = exptp),
-         DAE.T_ARRAY(dims = {d1}, ty = t as DAE.T_ARRAY(dims = {d2})),
-         _, _)
-      equation
-        ds = Expression.dimensionSize(d1);
-        ds2 = Expression.dimensionSize(d2);
-        b1 = (ds < Config.vectorizationLimit());
-        b2 = (ds2 < Config.vectorizationLimit());
-        true = boolAnd(b1, b2) or Config.vectorizationLimit() == 0;
-        e = createCrefArray2d(cr, 1, ds, ds2, exptp, t,crefIdType);
-      then
-        e;
+    // No spliced expression, try to expand with expandCref instead.
+    case (DAE.CREF(componentRef = cr), DAE.T_ARRAY(), _)
+      algorithm
+        // Try to expand the cref using expandCref.
+        crefs := ComponentReference.expandCref(cr, false);
 
-    // vectorsizes > vectorization limit is not vectorized
-    case (_,DAE.CREF(componentRef = cr,ty = exptp),
-         DAE.T_ARRAY(dims = {d1},ty = t),
-         _,_)
-      equation
-        false = Types.isArray(t);
-        ds = Expression.dimensionSize(d1);
-        true = ds < Config.vectorizationLimit() or Config.vectorizationLimit() == 0;
-        e = createCrefArray(cr, 1, ds, exptp, t,crefIdType);
+        // If we only got one cref back from expansion, make sure it's not the
+        // same as the one we sent in.
+        if List.hasOneElement(crefs) and
+           ComponentReference.crefEqual(cr, listHead(crefs)) then
+          fail();
+        end if;
+
+        // Create an array of the crefs.
+        expl := list(Expression.crefExp(c) for c in crefs);
       then
-        e;
+        Expression.makeScalarArray(expl, Types.arrayElementType(inType));
+
     else inExp;
   end matchcontinue;
 end crefVectorize;
+
+protected function isVectorizableType
+  "Returns true if the given type's dimensions are within the vectorization limit."
+  input DAE.Type inType;
+  output Boolean outIsVectorizable = true;
+protected
+  Integer vlim = Config.vectorizationLimit();
+  list<DAE.Dimension> dims;
+algorithm
+  if vlim <> 0 then
+    dims := Types.getDimensions(inType);
+
+    for dim in dims loop
+      if Expression.dimensionKnown(dim) and Expression.dimensionSize(dim) >= vlim then
+        outIsVectorizable := false;
+        break;
+      end if;
+    end for;
+  end if;
+end isVectorizableType;
 
 protected function extractDimensionOfChild
 "A function for extracting the type-dimension of the child to *me* to dimension *my* array-size.
@@ -11498,120 +11501,6 @@ algorithm
         fail();
   end matchcontinue;
 end callVectorize;
-
-protected function createCrefArray
-"helper function to crefVectorize, creates each individual cref,
-  e.g. {x{1},x{2}, ...} from x."
-  input DAE.ComponentRef inComponentRef1;
-  input Integer inInteger2;
-  input Integer inInteger3;
-  input DAE.Type inType4;
-  input DAE.Type inType5;
-  input DAE.Type crefIdType;
-  output DAE.Exp outExp;
-algorithm
-  outExp := matchcontinue (inComponentRef1,inInteger2,inInteger3,inType4,inType5,crefIdType)
-    local
-      DAE.ComponentRef cr,cr_1;
-      Integer indx,ds,indx_1;
-      DAE.Type et,elt_tp;
-      DAE.Type t;
-      list<DAE.Exp> expl;
-      DAE.Exp e_1;
-    // index iterator dimension size
-    case (_,indx,ds,et,_,_)
-      equation
-        (indx > ds) = true;
-      then
-        DAE.ARRAY(et,true,{});
-    // index
-    /*
-    case (cr,indx,ds,et,t,crefIdType)
-      equation
-        (DAE.INDEX(e_1) :: ss) = ComponentReference.crefLastSubs(cr);
-        cr_1 = ComponentReference.crefStripLastSubs(cr);
-        cr_1 = ComponentReference.subscriptCref(cr_1,ss);
-        DAE.ARRAY(_,_,expl) = createCrefArray(cr_1, indx, ds, et, t,crefIdType);
-        expl = List.map1(expl,Expression.prependSubscriptExp,DAE.INDEX(e_1));
-      then
-        DAE.ARRAY(et,true,expl);
-    */
-    // for crefs with wholedim
-    case (cr,indx,ds,et,t,_)
-      equation
-        indx_1 = indx + 1;
-        cr_1 = ComponentReference.replaceWholeDimSubscript(cr,indx);
-        DAE.ARRAY(_,_,expl) = createCrefArray(cr, indx_1, ds, et, t,crefIdType);
-        elt_tp = Expression.unliftArray(et);
-        e_1 = crefVectorize(true,Expression.makeCrefExp(cr_1,elt_tp), t,NONE(),crefIdType);
-      then
-        DAE.ARRAY(et,true,(e_1 :: expl));
-    // no subscript
-    case (cr,indx,ds,et,t,_)
-      equation
-        indx_1 = indx + 1;
-        // {} = ComponentReference.crefLastSubs(cr);
-        DAE.ARRAY(_,_,expl) = createCrefArray(cr, indx_1, ds, et, t,crefIdType);
-        e_1 = Expression.makeASUB(Expression.makeCrefExp(cr,et),{DAE.ICONST(indx)});
-        (e_1,_) = ExpressionSimplify.simplify(e_1);
-        e_1 = crefVectorize(true,e_1, t,NONE(),crefIdType);
-      then
-        DAE.ARRAY(et,true,(e_1 :: expl));
-    // failure
-    case (cr,_,_,_,_,_)
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.trace("createCrefArray failed on:" + ComponentReference.printComponentRefStr(cr));
-      then
-        fail();
-  end matchcontinue;
-end createCrefArray;
-
-protected function createCrefArray2d
-"helper function to cref_vectorize, creates each
-  individual cref, e.g. {x{1,1},x{2,1}, ...} from x."
-  input DAE.ComponentRef inCref;
-  input Integer inIndex;
-  input Integer inDim1;
-  input Integer inDim2;
-  input DAE.Type inType5;
-  input DAE.Type inType6;
-  input DAE.Type crefIdType;
-  output DAE.Exp outExp;
-algorithm
-  outExp := matchcontinue (inCref, inIndex, inDim1, inDim2, inType5,inType6,crefIdType)
-    local
-      DAE.ComponentRef cr,cr_1;
-      Integer indx,ds,ds2,indx_1;
-      DAE.Type et,tp,elt_tp;
-      DAE.Type t;
-      list<list<DAE.Exp>> ms;
-      list<DAE.Exp> expl;
-    // index iterator dimension size 1 dimension size 2
-    case (_,indx,ds,_,et,_,_)
-      equation
-        (indx > ds) = true;
-      then
-        DAE.MATRIX(et,0,{});
-    // increase the index dimension
-    case (cr,indx,ds,ds2,et,t,_)
-      equation
-        indx_1 = indx + 1;
-        DAE.MATRIX(matrix = ms) = createCrefArray2d(cr, indx_1, ds, ds2, et, t,crefIdType);
-        cr_1 = ComponentReference.subscriptCref(cr, {DAE.INDEX(DAE.ICONST(indx))});
-        elt_tp = Expression.unliftArray(et);
-        DAE.ARRAY(_,true,expl) = crefVectorize(true,Expression.makeCrefExp(cr_1,elt_tp), t,NONE(),crefIdType);
-      then
-        DAE.MATRIX(et,ds,(expl :: ms));
-    //
-    case (cr,_,_,_,_,_,_)
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.traceln("- Static.createCrefArray2d failed on: " + ComponentReference.printComponentRefStr(cr));
-      then
-        fail();
-  end matchcontinue;
-end createCrefArray2d;
 
 public function absynCrefToComponentReference "This function converts an absyn cref to a component reference"
   input Absyn.ComponentRef inComponentRef;
