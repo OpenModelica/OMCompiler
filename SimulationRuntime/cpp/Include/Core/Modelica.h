@@ -17,21 +17,10 @@
 #include <boost/assign/list_of.hpp> // for 'list_of()'
 #include <boost/unordered_map.hpp>
 #include <boost/unordered_set.hpp>
-#include <boost/ref.hpp>
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
+//#include <boost/function.hpp>
 #include <boost/lexical_cast.hpp>
-#include <boost/numeric/conversion/cast.hpp>
 #include <boost/circular_buffer.hpp>
 #include <boost/foreach.hpp>
-#include <boost/algorithm/string.hpp>
-#include <boost/any.hpp>
-#include <boost/preprocessor/arithmetic/inc.hpp>
-#include <boost/preprocessor/if.hpp>
-#include <boost/preprocessor/punctuation/comma_if.hpp>
-#include <boost/preprocessor/repetition.hpp>
-#include <boost/preprocessor/iteration/iterate.hpp>
-#include <boost/range/irange.hpp>
 #define BOOST_UBLAS_SHALLOW_ARRAY_ADAPTOR
 #include <boost/numeric/ublas/vector.hpp>
 #include <boost/numeric/ublas/io.hpp>
@@ -39,39 +28,22 @@
 #include <boost/numeric/ublas/matrix_proxy.hpp>
 #include <boost/numeric/ublas/matrix_sparse.hpp>
 #include <boost/numeric/ublas/storage.hpp>
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/math/special_functions/trunc.hpp>
-#include <boost/assert.hpp>
-#include <boost/assign/list_inserter.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
 //#include <boost/timer/timer.hpp>
-#include <boost/noncopyable.hpp>
-#include <boost/container/vector.hpp>
 
 
- /*Namespaces*/
-#ifndef _MSC_VER
-using namespace std;
-#endif //_MSC_VER
+/*Namespaces*/
+using std::abs;
 using std::ios;
 using std::endl;
 using std::cout;
 using std::cerr;
 using std::ostream_iterator;
 using boost::unordered_map;
-namespace uBlas = boost::numeric::ublas;
 using namespace boost::numeric;
 using std::map;
 using std::pair;
 using std::make_pair;
 using namespace boost::assign;
-using namespace boost::algorithm;
-using boost::unordered_map;
-using boost::lexical_cast;
-using boost::numeric_cast;
-using boost::tie;
-using boost::get;
 using std::max;
 using std::min;
 using std::string;
@@ -92,6 +64,12 @@ using std::runtime_error;
   #include <condition_variable>
   #include <tuple>
   #include <memory>
+  /** namespace for generated code to avoid name clashes */
+  namespace omcpp {
+    using std::ref;
+    using std::trunc;
+    using std::to_string;
+  }
   using std::bind;
   using std::function;
   using std::thread;
@@ -104,6 +82,7 @@ using std::runtime_error;
   using std::make_tuple;
   using std::array;
   using std::minmax_element;
+  using std::get;
   using std::tuple;
   using std::shared_ptr;
   using std::weak_ptr;
@@ -112,17 +91,21 @@ using std::runtime_error;
 #else
   #if defined(_MSC_VER)
     #include <tuple>
+    using std::get;
     using std::tuple;
     using std::make_tuple;
     using std::minmax_element;
   #else
     #include <boost/tuple/tuple.hpp>
     #include <boost/algorithm/minmax_element.hpp>
+    using boost::get;
     using boost::tuple;
     using boost::make_tuple;
     using boost::minmax_element;
   #endif
   #include <boost/array.hpp>
+  #include <boost/math/special_functions/trunc.hpp>
+  #include <boost/ref.hpp>
   #include <boost/shared_ptr.hpp>
   #include <boost/weak_ptr.hpp>
 
@@ -130,6 +113,7 @@ using std::runtime_error;
     #include <boost/thread.hpp>
     #include <boost/atomic.hpp>
     #include <boost/thread/mutex.hpp>
+    #include <boost/bind.hpp>
     using boost::bind;
     using boost::function;
     using boost::thread;
@@ -141,15 +125,20 @@ using std::runtime_error;
     using boost::unique_lock;
     using boost::dynamic_pointer_cast;
   #endif //USE_THREAD
-
+  /** namespace for generated code to avoid name clashes */
+  namespace omcpp {
+    using boost::ref;
+    using boost::math::trunc;
+    template <typename T>
+    std::string to_string(T val) {
+      return boost::lexical_cast<std::string>(val);
+    }
+  }
   using boost::array;
   using boost::shared_ptr;
   using boost::weak_ptr;
   using boost::dynamic_pointer_cast;
-  template <typename T>
-  std::string to_string(T val) {
-    return boost::lexical_cast<std::string>(val);
-  }
+  using omcpp::to_string;
 #endif //USE_CPP_ELEVEN
 
 #if defined(USE_THREAD)
@@ -165,7 +154,7 @@ typedef ublas::matrix<double,  ublas::column_major,adaptor_t> shared_matrix_t;
 
 //typedef boost::function<bool (unsigned int)> getCondition_type;
 //typedef boost::function<void (unordered_map<string,unsigned int>&,unordered_map<string,unsigned int>&)> init_prevars_type;
-typedef uBlas::compressed_matrix<double, uBlas::column_major, 0, uBlas::unbounded_array<int>, uBlas::unbounded_array<double> > sparsematrix_t;
+typedef ublas::compressed_matrix<double, ublas::column_major, 0, ublas::unbounded_array<int>, ublas::unbounded_array<double> > sparsematrix_t;
 typedef ublas::matrix<double, ublas::column_major> matrix_t;
 #include <Core/SimulationSettings/IGlobalSettings.h>
 #include <Core/Solver/ISolverSettings.h>

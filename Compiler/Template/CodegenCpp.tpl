@@ -1079,6 +1079,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
        : <%classname%>Jacobian(globalSettings, nonlinsolverfactory, sim_data,sim_vars)
 
 
+
    {
    }
 
@@ -1090,6 +1091,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
    <%classname%>Mixed::~<%classname%>Mixed()
    {
    }
+
 
 
 
