@@ -309,6 +309,7 @@ int (*function_equationsSynchronous)(DATA *data, threadData_t *threadData, long 
 /* functionODEPartial contains those equations that are needed
  * to calculate the state derivative i-th */
 void (*functionODEPartial)(DATA *data, threadData_t*, int i);
+void (*functionFMIJacobian)(DATA *data, threadData_t*, const unsigned *unknown, int nUnk, const unsigned *ders, int nKnown, double *dvKnown, double *out);
 #endif
 };
 
