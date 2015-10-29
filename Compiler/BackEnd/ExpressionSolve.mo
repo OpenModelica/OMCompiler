@@ -605,7 +605,6 @@ preprocessing for solve1,
        x := Expression.expSub(lhsX, rhsX);
        y := Expression.expSub(rhsY, lhsY);
        collect := true;
-       inlineFun := true;
      elseif collect then
        collect := false;
        con := true;
@@ -1244,15 +1243,13 @@ protected function solveFunCalls
   output DAE.Exp x;
   output Boolean con;
 algorithm
- (x,con) := matchcontinue(functions, inExp1)
-                  local DAE.Exp funX; Boolean b;
-                  case(_,_)
-                  equation
-                    (funX,_) = Expression.traverseExpTopDown(inExp1, inlineCallX, (inExp3, functions));
-                    b = not Expression.expEqual(funX, inExp1);
-                  then (funX, b);
-                  else (inExp1, false);
-                  end matchcontinue;
+  try
+    x := Expression.traverseExpTopDown(inExp1, inlineCallX, (inExp3, functions));
+	con := Expression.expEqual(x, inExp1);
+  else
+    x := inExp1;
+	con := false;
+ end try;
 end solveFunCalls;
 
 protected function removeSimpleCalls
@@ -1387,12 +1384,12 @@ author: vitalij
      Boolean b;
 
    case(DAE.CALL(),(X, functions))
+     guard expHasCref(inExp, X)
      equation
        //print("\nIn: ");print(ExpressionDump.printExpStr(inExp));
-       true = expHasCref(inExp, X);
-       (e,_,b) = Inline.forceInlineExp(inExp,(functions,{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource);
+       (e,((_,_),b,_)) = Inline.forceInlineCall(inExp,((functions,{DAE.NORM_INLINE(),DAE.NO_INLINE()}),false,{}));
        //print("\nOut: ");print(ExpressionDump.printExpStr(e));
-     then (e, not b, iT);
+     then (e, b, iT);
    else (inExp, true, iT);
    end matchcontinue;
 end inlineCallX;
