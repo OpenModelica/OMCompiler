@@ -533,9 +533,8 @@ algorithm
         // show errors if there are any
         showErrors(Print.getErrorString(), ErrorExt.printMessagesStr(false));
         // evaluate statements and print the result to stdout directly
-        _ = Interactive.evaluateToStdOut(stmts, st, true);
-      then
-        ();
+        Interactive.evaluateToStdOut(stmts, st, true);
+      then ();
 
     case {f} /* A template file .tpl (in the Susan language)*/
       equation
@@ -874,11 +873,18 @@ algorithm
   //        without asking Adrian.Pop@liu.se
   if System.os() == "Windows_NT" then
     setWindowsPaths(Settings.getInstallationDirectoryPath());
+  else
+    try
+      Settings.getInstallationDirectoryPath();
+    else
+      print("Error: OPENMODELICAHOME was not set.\n");
+      print("  Read the documentation for instructions on how to set it properly.\n");
+      print("  Most OpenModelica release distributions have scripts that set OPENMODELICAHOME for you.\n\n");
+      fail();
+    end try;
   end if;
 
   try
-    Settings.getInstallationDirectoryPath();
-
     if Flags.isSet(Flags.INTERACTIVE) then
       interactivemode(readSettings(args));
     elseif Flags.isSet(Flags.INTERACTIVE_CORBA) then
@@ -898,19 +904,10 @@ algorithm
       return;
     end if;
 
-    try
-      Settings.getInstallationDirectoryPath();
-      print("# Error encountered! Exiting...\n");
-      print("# Please check the error message and the flags.\n");
-      Print.printBuf("\n\n----\n\nError buffer:\n\n");
-      print(Print.getErrorString());
-      print(ErrorExt.printMessagesStr(false)); print("\n");
-      FGraphStream.finish();
-    else
-      print("Error: OPENMODELICAHOME was not set.\n");
-      print("  Read the documentation for instructions on how to set it properly.\n");
-      print("  Most OpenModelica release distributions have scripts that set OPENMODELICAHOME for you.\n\n");
-    end try;
+    print("# Error encountered! Exiting...\n");
+    print("# Please check the error message and the flags.\n");
+    print(ErrorExt.printMessagesStr(false)); print("\n");
+    FGraphStream.finish();
     fail();
   end try;
 end main2;

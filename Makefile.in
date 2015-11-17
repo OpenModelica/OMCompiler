@@ -37,13 +37,13 @@ LINK=@LINK@
 MSL_EXTRA_ARGS=@MSL_EXTRA_ARGS@
 # LIBGC configuration is different for Linux (this file) and Windows (Makefile.omdev.mingw)
 # Do not use munmap; it crashes processes...
-LIBGC_EXTRA_CONFIGURATION=--enable-threads=posix --enable-parallel-mark
+LIBGC_EXTRA_CONFIGURATION=@LIBGC_EXTRA_CONFIGURATION@
 LIBFMILIB=@LIBFMILIB@
 LIBCMINPACKLIB=@LIBCMINPACKLIB@
 LD_LAPACK=@LD_LAPACK@
 LAPACK_TARGET=@LAPACK_TARGET@
 OPENBLAS_EXTRA_ARGS=@OPENBLAS_EXTRA_ARGS@
-IPOPT_TARGET=ipopt
+IPOPT_TARGET=@IPOPT_TARGET@
 UMFPACK_TARGET=@UMFPACK_TARGET@
 UMFPACK_SHARED=@UMFPACK_SHARED@
 # We don't want the shared version, but symbols are not exported if we use the static version

@@ -610,9 +610,12 @@ AC_CHECK_LIB(pthread,pthread_self,[RT_LDFLAGS="$RT_LDFLAGS $LIBS"],[AC_MSG_ERROR
 
 LIBS=""
 
+AC_SUBST(IPOPT_TARGET)
+IPOPT_TARGET=ipopt
 AC_ARG_WITH(ipopt, [  --without-ipopt              Disable compilation ipopt], [
   if test "$withval" = "no"; then
     NO_IPOPT=yes
+    IPOPT_TARGET=
   fi
 ]
 ],[])
@@ -657,12 +660,14 @@ AC_SUBST(CMAKE_EXTRA_DEFINES)
 AC_SUBST(DLLEXT)
 AC_SUBST(UMFPACK_SHARED)
 AC_SUBST(CONFIG_OS)
+AC_SUBST(LIBGC_EXTRA_CONFIGURATION)
 if test "$DARWIN" = "1"; then
   APP=".app"
   EXE=".app"
   SHREXT=".dylib"
   DLLEXT=".dylib"
   LIBGC="$OMBUILDDIR/lib/$host_short/omc/libomcgc.a"
+  LIBGC_EXTRA_CONFIGURATION="--enable-threads=posix --enable-parallel-mark"
   LIBSIMULATION=libSimulationRuntimeC.dylib
   LIBRUNTIME=libOpenModelicaRuntimeC.dylib
   LIBFMIRUNTIME=libOpenModelicaFMIRuntimeC.dylib
@@ -697,6 +702,7 @@ elif echo "$host" | grep -iq "mingw"; then
   SHREXT=".a"
   DLLEXT=".dll"
   LIBGC="$OMBUILDDIR/lib/$host_short/omc/libomcgc.a"
+  LIBGC_EXTRA_CONFIGURATION="--enable-threads=posix --enable-munmap=1 --disable-parallel-mark"
   LIBSIMULATION=libSimulationRuntimeC.a
   LIBRUNTIME=libOpenModelicaRuntimeC.a
   LIBFMIRUNTIME=libOpenModelicaFMIRuntimeC.a
@@ -731,6 +737,7 @@ else
   SHREXT=".so"
   DLLEXT=".so"
   LIBGC="$OMBUILDDIR/lib/$host_short/omc/libomcgc.so"
+  LIBGC_EXTRA_CONFIGURATION="--enable-threads=posix --enable-parallel-mark"
   LIBSIMULATION=libSimulationRuntimeC.so
   LIBRUNTIME=libOpenModelicaRuntimeC.so
   LIBFMIRUNTIME=libOpenModelicaFMIRuntimeC.so
