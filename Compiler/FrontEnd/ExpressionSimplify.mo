@@ -107,26 +107,26 @@ protected function simplifyWithOptions "Simplifies expressions"
 algorithm
   (outExp,hasChanged) := match options
     local
-      DAE.Exp e, eNew;
+      DAE.Exp eNew;
       Boolean b;
     case (_,ExpressionSimplifyTypes.DO_EVAL())
-      equation
+      algorithm
         (eNew,_) := simplify1WithOptions(inExp,options); // Basic local simplifications
-        Error.assertionOrAddSourceMessage(Expression.isConstValue(eNew), Error.INTERNAL_ERROR, {"eval exp failed"}, Absyn.dummyInfo);
-        b := not Expression.expEqual(e,eNew);
+        Error.assertionOrAddSourceMessage(Expression.isConstValue(eNew), Error.INTERNAL_ERROR, {"eval exp failed"}, sourceInfo());
+        b := not Expression.expEqual(inExp,eNew);
       then (eNew,b);
     else
       algorithm
-        if Config.getNoSimplify() then
-          (eNew,b) := simplify1WithOptions(e,options);
-        else
+        if Flags.getConfigEnum(Flags.SIMPLIFY_LEVEL)==100 then
           //print("SIMPLIFY BEFORE->" + ExpressionDump.printExpStr(inExp) + "\n");
           eNew := simplify1WithOptions(inExp,options); // Basic local simplifications
           //print("SIMPLIFY INTERMEDIATE->" + ExpressionDump.printExpStr(eNew) + "\n");
           eNew := simplify2(eNew); // Advanced (global) simplifications
-          eNew = simplify1WithOptions(eNew,options); // Basic local simplifications
-          b = not Expression.expEqual(inExp,eNew);
+          eNew := simplify1WithOptions(eNew,options); // Basic local simplifications
+          b := not Expression.expEqual(inExp,eNew);
           //print("SIMPLIFY FINAL->" + ExpressionDump.printExpStr(eNew) + "\n");
+        else
+          (eNew,b) := simplify1WithOptions(inExp,options);
         end if;
       then (eNew,b);
   end match;

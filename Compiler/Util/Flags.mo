@@ -671,9 +671,12 @@ constant ConfigFlag SHOW_ANNOTATIONS = CONFIG_FLAG(10, "showAnnotations",
   NONE(), EXTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Show annotations in the flattened code."));
 
-constant ConfigFlag NO_SIMPLIFY = CONFIG_FLAG(11, "noSimplify",
-  NONE(), EXTERNAL(), BOOL_FLAG(false), NONE(),
-  Util.gettext("Do not simplify expressions if set."));
+constant ConfigFlag SIMPLIFY_LEVEL = CONFIG_FLAG(11, "simplify", NONE(), EXTERNAL(),
+  ENUM_FLAG(1,
+    {("fast", 1), ("full", 100)}),
+  SOME(STRING_OPTION({"fast", "full"})),
+  Util.gettext("Sets the simplification level. Performing the full simplification is very slow for large expressions (scales exponentially)."));
+
 constant Util.TranslatableContent removeSimpleEquationDesc = Util.gettext("Performs alias elimination and removes constant variables from the DAE, replacing all occurrences of the old variable reference with the new value (constants) or variable reference (alias elimination).");
 
 public
@@ -1199,7 +1202,7 @@ constant list<ConfigFlag> allConfigFlags = {
   LANGUAGE_STANDARD,
   SHOW_ERROR_MESSAGES,
   SHOW_ANNOTATIONS,
-  NO_SIMPLIFY,
+  SIMPLIFY_LEVEL,
   PRE_OPT_MODULES,
   CHEAPMATCHING_ALGORITHM,
   MATCHING_ALGORITHM,

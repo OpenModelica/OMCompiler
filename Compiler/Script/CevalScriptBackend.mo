@@ -981,18 +981,6 @@ algorithm
       then
         (cache,Values.STRING(res),st);
 
-    case (cache,_,"getNoSimplify",{},st,_)
-      equation
-        b = Config.getNoSimplify();
-      then
-        (cache,Values.BOOL(b),st);
-
-    case (cache,_,"setNoSimplify",{Values.BOOL(b)},st,_)
-      equation
-        Config.setNoSimplify(b);
-      then
-        (cache,Values.BOOL(true),st);
-
     case (cache,_,"getShowAnnotations",{},st,_)
       equation
         b = Config.showAnnotations();

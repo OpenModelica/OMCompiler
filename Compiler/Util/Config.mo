@@ -185,22 +185,6 @@ algorithm
   Flags.setConfigString(Flags.ANNOTATION_VERSION, annotationVersion);
 end setAnnotationVersion;
 
-public function getNoSimplify
-"returns what flag was given at start
-   omc [+noSimplify]
- or via the API
-   setNoSimplify(true|false);"
-  output Boolean noSimplify;
-algorithm
-  noSimplify := Flags.getConfigBool(Flags.NO_SIMPLIFY);
-end getNoSimplify;
-
-public function setNoSimplify
-  input Boolean noSimplify;
-algorithm
-  Flags.setConfigBool(Flags.NO_SIMPLIFY, noSimplify);
-end setNoSimplify;
-
 public function vectorizationLimit
   "Returns the vectorization limit that is used to determine how large an array
   can be before it no longer is expanded by Static.crefVectorize."
