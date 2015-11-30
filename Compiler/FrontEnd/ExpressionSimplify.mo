@@ -105,32 +105,31 @@ protected function simplifyWithOptions "Simplifies expressions"
   output DAE.Exp outExp;
   output Boolean hasChanged;
 algorithm
-  (outExp,hasChanged) := matchcontinue (inExp,options)
+  (outExp,hasChanged) := match options
     local
       DAE.Exp e, eNew;
       Boolean b;
-    case (e,(_,ExpressionSimplifyTypes.DO_EVAL()))
+    case (_,ExpressionSimplifyTypes.DO_EVAL())
       equation
-        (eNew,_) = simplify1WithOptions(e,options); // Basic local simplifications
+        (eNew,_) := simplify1WithOptions(inExp,options); // Basic local simplifications
         Error.assertionOrAddSourceMessage(Expression.isConstValue(eNew), Error.INTERNAL_ERROR, {"eval exp failed"}, Absyn.dummyInfo);
-        b = not Expression.expEqual(e,eNew);
+        b := not Expression.expEqual(e,eNew);
       then (eNew,b);
-    case (e,_)
-      equation
-        false = Config.getNoSimplify();
-        //print("SIMPLIFY BEFORE->" + ExpressionDump.printExpStr(e) + "\n");
-        (eNew,_) = simplify1WithOptions(e,options); // Basic local simplifications
-        //print("SIMPLIFY INTERMEDIATE->" + ExpressionDump.printExpStr(eNew) + "\n");
-        eNew = simplify2(eNew); // Advanced (global) simplifications
-        (eNew,_) = simplify1WithOptions(eNew,options); // Basic local simplifications
-        b = not Expression.expEqual(e,eNew);
-        //print("SIMPLIFY FINAL->" + ExpressionDump.printExpStr(eNew) + "\n");
+    else
+      algorithm
+        if Config.getNoSimplify() then
+          (eNew,b) := simplify1WithOptions(e,options);
+        else
+          //print("SIMPLIFY BEFORE->" + ExpressionDump.printExpStr(inExp) + "\n");
+          eNew := simplify1WithOptions(inExp,options); // Basic local simplifications
+          //print("SIMPLIFY INTERMEDIATE->" + ExpressionDump.printExpStr(eNew) + "\n");
+          eNew := simplify2(eNew); // Advanced (global) simplifications
+          eNew = simplify1WithOptions(eNew,options); // Basic local simplifications
+          b = not Expression.expEqual(inExp,eNew);
+          //print("SIMPLIFY FINAL->" + ExpressionDump.printExpStr(eNew) + "\n");
+        end if;
       then (eNew,b);
-    case (e,_)
-      equation
-        (eNew,b) = simplify1WithOptions(e,options);
-      then (eNew,b);
-  end matchcontinue;
+  end match;
 end simplifyWithOptions;
 
 public function simplifyTraverseHelper
