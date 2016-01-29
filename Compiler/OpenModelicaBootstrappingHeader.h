@@ -1766,8 +1766,8 @@ ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__FAILURE_
 #else /* Only use the file as a header */
 extern struct record_description Absyn_Equation_EQ__FAILURE__desc;
 #endif
-#define Absyn__EQ_5fFAILURE_3dBOX1 9
-#define Absyn__EQ_5fFAILURE(equ) (mmc_mk_box2(9,&Absyn_Equation_EQ__FAILURE__desc,equ))
+#define Absyn__EQ_5fFAILURE_3dBOX1 10
+#define Absyn__EQ_5fFAILURE(equ) (mmc_mk_box2(10,&Absyn_Equation_EQ__FAILURE__desc,equ))
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_Equation_EQ__NORETCALL__desc_added
 #define Absyn_Equation_EQ__NORETCALL__desc_added
@@ -1781,8 +1781,8 @@ ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__NORETCAL
 #else /* Only use the file as a header */
 extern struct record_description Absyn_Equation_EQ__NORETCALL__desc;
 #endif
-#define Absyn__EQ_5fNORETCALL_3dBOX2 8
-#define Absyn__EQ_5fNORETCALL(functionName,functionArgs) (mmc_mk_box3(8,&Absyn_Equation_EQ__NORETCALL__desc,functionName,functionArgs))
+#define Absyn__EQ_5fNORETCALL_3dBOX2 9
+#define Absyn__EQ_5fNORETCALL(functionName,functionArgs) (mmc_mk_box3(9,&Absyn_Equation_EQ__NORETCALL__desc,functionName,functionArgs))
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_Equation_EQ__WHEN__E__desc_added
 #define Absyn_Equation_EQ__WHEN__E__desc_added
@@ -1796,8 +1796,8 @@ ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__WHEN__E_
 #else /* Only use the file as a header */
 extern struct record_description Absyn_Equation_EQ__WHEN__E__desc;
 #endif
-#define Absyn__EQ_5fWHEN_5fE_3dBOX3 7
-#define Absyn__EQ_5fWHEN_5fE(whenExp,whenEquations,elseWhenEquations) (mmc_mk_box4(7,&Absyn_Equation_EQ__WHEN__E__desc,whenExp,whenEquations,elseWhenEquations))
+#define Absyn__EQ_5fWHEN_5fE_3dBOX3 8
+#define Absyn__EQ_5fWHEN_5fE(whenExp,whenEquations,elseWhenEquations) (mmc_mk_box4(8,&Absyn_Equation_EQ__WHEN__E__desc,whenExp,whenEquations,elseWhenEquations))
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_Equation_EQ__FOR__desc_added
 #define Absyn_Equation_EQ__FOR__desc_added
@@ -1811,8 +1811,8 @@ ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__FOR__des
 #else /* Only use the file as a header */
 extern struct record_description Absyn_Equation_EQ__FOR__desc;
 #endif
-#define Absyn__EQ_5fFOR_3dBOX2 6
-#define Absyn__EQ_5fFOR(iterators,forEquations) (mmc_mk_box3(6,&Absyn_Equation_EQ__FOR__desc,iterators,forEquations))
+#define Absyn__EQ_5fFOR_3dBOX2 7
+#define Absyn__EQ_5fFOR(iterators,forEquations) (mmc_mk_box3(7,&Absyn_Equation_EQ__FOR__desc,iterators,forEquations))
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_Equation_EQ__CONNECT__desc_added
 #define Absyn_Equation_EQ__CONNECT__desc_added
@@ -1826,12 +1826,27 @@ ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__CONNECT_
 #else /* Only use the file as a header */
 extern struct record_description Absyn_Equation_EQ__CONNECT__desc;
 #endif
-#define Absyn__EQ_5fCONNECT_3dBOX2 5
-#define Absyn__EQ_5fCONNECT(connector1,connector2) (mmc_mk_box3(5,&Absyn_Equation_EQ__CONNECT__desc,connector1,connector2))
+#define Absyn__EQ_5fCONNECT_3dBOX2 6
+#define Absyn__EQ_5fCONNECT(connector1,connector2) (mmc_mk_box3(6,&Absyn_Equation_EQ__CONNECT__desc,connector1,connector2))
+#ifdef ADD_METARECORD_DEFINITIONS
+#ifndef Absyn_Equation_EQ__PDE__desc_added
+#define Absyn_Equation_EQ__PDE__desc_added
+ADD_METARECORD_DEFINITIONS const char* Absyn_Equation_EQ__PDE__desc__fields[3] = {"leftSide","rightSide","domain"};
+ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__PDE__desc = {
+  "Absyn_Equation_EQ__PDE",
+  "Absyn.Equation.EQ_PDE",
+  Absyn_Equation_EQ__PDE__desc__fields
+};
+#endif
+#else /* Only use the file as a header */
+extern struct record_description Absyn_Equation_EQ__PDE__desc;
+#endif
+#define Absyn__EQ_5fPDE_3dBOX3 5
+#define Absyn__EQ_5fPDE(leftSide,rightSide,domain) (mmc_mk_box4(5,&Absyn_Equation_EQ__PDE__desc,leftSide,rightSide,domain))
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_Equation_EQ__EQUALS__desc_added
 #define Absyn_Equation_EQ__EQUALS__desc_added
-ADD_METARECORD_DEFINITIONS const char* Absyn_Equation_EQ__EQUALS__desc__fields[3] = {"leftSide","rightSide","domainOpt"};
+ADD_METARECORD_DEFINITIONS const char* Absyn_Equation_EQ__EQUALS__desc__fields[2] = {"leftSide","rightSide"};
 ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__EQUALS__desc = {
   "Absyn_Equation_EQ__EQUALS",
   "Absyn.Equation.EQ_EQUALS",
@@ -1841,8 +1856,8 @@ ADD_METARECORD_DEFINITIONS struct record_description Absyn_Equation_EQ__EQUALS__
 #else /* Only use the file as a header */
 extern struct record_description Absyn_Equation_EQ__EQUALS__desc;
 #endif
-#define Absyn__EQ_5fEQUALS_3dBOX3 4
-#define Absyn__EQ_5fEQUALS(leftSide,rightSide,domainOpt) (mmc_mk_box4(4,&Absyn_Equation_EQ__EQUALS__desc,leftSide,rightSide,domainOpt))
+#define Absyn__EQ_5fEQUALS_3dBOX2 4
+#define Absyn__EQ_5fEQUALS(leftSide,rightSide) (mmc_mk_box3(4,&Absyn_Equation_EQ__EQUALS__desc,leftSide,rightSide))
 #ifdef ADD_METARECORD_DEFINITIONS
 #ifndef Absyn_Equation_EQ__IF__desc_added
 #define Absyn_Equation_EQ__IF__desc_added
