@@ -1758,7 +1758,9 @@ algorithm
         end if;
         knvars = BackendVariable.listVar1(knvarsTmp);
         backendDAE = BackendDAEUtil.setKnownVars(backendDAE, knvars);
-        SimCodeFunctionUtil.execStat("analytical Jacobians -> generated optimized jacobians");
+        if Flags.isSet(Flags.JAC_DUMP2) then
+          print("analytical Jacobians -> generated optimized jacobians: " + realString(clock()) + "\n");
+        end if;
 
         // generate sparse pattern
         (sparsepattern,colsColors) = generateSparsePattern(reduceDAE, inDiffVars, diffedVars);
@@ -1814,13 +1816,12 @@ algorithm
                                                                    {"removeEqualFunctionCalls",
                                                                     "removeSimpleEquations",
                                                                     "evalFunc",
-                                                                    //"wrapFunctionCalls",
                                                                     "simplifyAllExpressions"},
                                                                    NONE(),
                                                                    NONE(),
-                                                                   {"inlineArrayEqn",
+                                                                   {"wrapFunctionCalls",
+                                                                    "inlineArrayEqn",
                                                                     "constantLinearSystem",
-                                                                    "removeSimpleEquations",
                                                                     "tearingSystem",
                                                                     "calculateStrongComponentJacobians",
                                                                     "removeConstants",
@@ -2207,7 +2208,7 @@ protected function convertResidualsIntoSolvedEquations2 "author: lochel"
   output list<BackendDAE.Equation> outEquationList;
   output list<BackendDAE.Var> outVariableList;
 algorithm
-  (outEquationList, outVariableList) := matchcontinue(inEquationList, inIndex)
+  (outEquationList, outVariableList) := match(inEquationList, inIndex)
     local
       Integer index;
       list<BackendDAE.Equation> restEquationList;
@@ -2234,18 +2235,14 @@ algorithm
       currEquation = BackendDAE.EQUATION(expVarName, exp, source, eqAttr);
 
       currVariable = BackendDAE.VAR(componentRef, BackendDAE.VARIABLE(), DAE.OUTPUT(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
-
       (equationList, variableList) = convertResidualsIntoSolvedEquations2(restEquationList, index+1,currEquation::iEquationList,currVariable::iVariableList);
     then (equationList, variableList);
 
-    case (currEquation::_, _) equation
-      Error.addInternalError("function convertResidualsIntoSolvedEquations2 failed", sourceInfo());
-    then fail();
-
     else equation
+      true = Flags.isSet(Flags.FAILTRACE);
       Error.addInternalError("function convertResidualsIntoSolvedEquations2 failed", sourceInfo());
     then fail();
-  end matchcontinue;
+  end match;
 end convertResidualsIntoSolvedEquations2;
 
 protected function prepareTornStrongComponentData
@@ -2320,6 +2317,30 @@ else
 end try;
 end prepareTornStrongComponentData;
 
+protected function checkForSymbolicJacobian
+  input list<BackendDAE.Equation> inResidualEqns;
+  input list<BackendDAE.Equation> inOtherEqns;
+  input String name;
+  output Boolean out;
+protected
+  Boolean b1, b2;
+algorithm
+  if not Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN) then
+    (b1, _) := BackendEquation.traverseExpsOfEquationList_WithStop(inResidualEqns, traverserhasEqnNonDiffParts, ({}, true, false));
+    (b2, _) := BackendEquation.traverseExpsOfEquationList_WithStop(inOtherEqns, traverserhasEqnNonDiffParts, ({}, true, false));
+    if not (b1 and b2) then
+      if Flags.isSet(Flags.FAILTRACE) then
+        Debug.traceln("Skip symbolic jacobian for non-linear system " + name + "\n");
+      end if;
+      out := false;
+    else
+      out := true;
+    end if;
+  else
+    out := true;
+  end if;
+end checkForSymbolicJacobian;
+
 protected function calculateJacobianComponent
   input BackendDAE.StrongComponent inComp;
   input BackendDAE.Variables inVars;
@@ -2373,7 +2394,7 @@ algorithm
 
       case (BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(tearingvars=iterationvarsInts, residualequations=residualequations, otherEqnVarTpl=otherEqnVarTpl), NONE(), linear=false, mixedSystem=mixedSystem), _, _, _)
         equation
-          true = Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN);
+
 
           // generate jacobian name
           name = "NLSJac" + intString(System.tmpTickIndex(Global.backendDAE_jacobianSeq));
@@ -2387,14 +2408,7 @@ algorithm
           //check if we are able to calc symbolic jacobian
           otherEqnsLst = BackendEquation.equationList(oeqns);
           reqns = BackendEquation.equationList(eqns);
-          (b1, _) = BackendEquation.traverseExpsOfEquationList_WithStop(otherEqnsLst, traverserhasEqnNonDiffParts, ({}, true, false));
-          (b2, _) = BackendEquation.traverseExpsOfEquationList_WithStop(reqns, traverserhasEqnNonDiffParts, ({}, true, false));
-          if not (b1 and b2) then
-            if Flags.isSet(Flags.FAILTRACE) then
-              Debug.traceln("Skip symbolic jacobian for non-linear system " + name + "\n");
-            end if;
-            fail();
-          end if;
+          true = checkForSymbolicJacobian(reqns, otherEqnsLst, name);
 
           // generate generic jacobian backend dae
           (jacobian, shared) = getSymbolicJacobian(diffVars, eqns, resVars, oeqns, ovars, inShared, inVars, name);
@@ -2420,14 +2434,7 @@ algorithm
           //check if we are able to calc symbolic jacobian
           otherEqnsLst = BackendEquation.equationList(oeqns);
           reqns = BackendEquation.equationList(eqns);
-          (b1, _) = BackendEquation.traverseExpsOfEquationList_WithStop(otherEqnsLst, traverserhasEqnNonDiffParts, ({}, true, false));
-          (b2, _) = BackendEquation.traverseExpsOfEquationList_WithStop(reqns, traverserhasEqnNonDiffParts, ({}, true, false));
-          if not (b1 and b2) then
-            if Flags.isSet(Flags.FAILTRACE) then
-              Debug.traceln("Skip symbolic jacobian for non-linear system " + name + "\n");
-            end if;
-            fail();
-          end if;
+          true = checkForSymbolicJacobian(reqns, otherEqnsLst, name);
 
           // generate generic jacobian backend dae
           (jacobian, shared) = getSymbolicJacobian(diffVars, eqns, resVars, oeqns, ovars, inShared, inVars, name);
@@ -2446,17 +2453,10 @@ algorithm
           //check if we are able to calc symbolic jacobian
           otherEqnsLst = BackendEquation.equationList(oeqns);
           reqns = BackendEquation.equationList(eqns);
-          (b1, _) = BackendEquation.traverseExpsOfEquationList_WithStop(otherEqnsLst, traverserhasEqnNonDiffParts, ({}, true, false));
-          (b2, _) = BackendEquation.traverseExpsOfEquationList_WithStop(reqns, traverserhasEqnNonDiffParts, ({}, true, false));
-          if not (b1 and b2) then
-            if Flags.isSet(Flags.FAILTRACE) then
-              Debug.traceln("Skip symbolic jacobian for non-linear system " + name + "\n");
-            end if;
-            fail();
-          end if;
+          true = checkForSymbolicJacobian(reqns, otherEqnsLst, name);
 
           // generate generic jacobian backend dae
-          (jacobian2, shared) = getSymbolicJacobian(diffVars, eqns, resVars, oeqns, ovars, inShared, inVars, name);
+          (jacobian2, shared) = getSymbolicJacobian(diffVars, eqns, resVars, oeqns, ovars, shared, inVars, name);
 
       then (BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(iterationvarsInts, residualequations, otherEqnVarTpl, jacobian), SOME(BackendDAE.TEARINGSET(iterationvarsInts2, residualequations2, otherEqnVarTpl2, jacobian2)), b, mixedSystem), shared);
 
@@ -2466,7 +2466,9 @@ algorithm
 
       case (BackendDAE.EQUATIONSYSTEM(eqns=residualequations, vars=iterationvarsInts, mixedSystem=mixedSystem), _, _, _)
         equation
-          true = Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN);
+          //generate jacobian name
+          name = "NLSJac" + intString(System.tmpTickIndex(Global.backendDAE_jacobianSeq));
+
           // get iteration vars
           iterationvars = List.map1r(iterationvarsInts, BackendVariable.getVarAt, inVars);
           iterationvars = List.map(iterationvars, BackendVariable.transformXToXd);
@@ -2477,7 +2479,7 @@ algorithm
           reqns = BackendEquation.getEqns(residualequations, inEqns);
           reqns = BackendEquation.replaceDerOpInEquationList(reqns);
           //check if we are able to calc symbolic jacobian
-          (true, _) = BackendEquation.traverseExpsOfEquationList_WithStop(reqns, traverserhasEqnNonDiffParts, ({}, true, false));
+          true = checkForSymbolicJacobian(reqns, {}, name);
 
           eqns = BackendEquation.listEquation(reqns);
           // create  residual equations
@@ -2490,9 +2492,6 @@ algorithm
           // other eqns and vars are empty
           oeqns = BackendEquation.listEquation({});
           ovars =  BackendVariable.emptyVars();
-
-          //generate jacobian name
-          name = "NLSJac" + intString(System.tmpTickIndex(Global.backendDAE_jacobianSeq));
 
           // generate generic jacobian backend dae
           (jacobian, shared) = getSymbolicJacobian(diffVars, eqns, resVars, oeqns, ovars, inShared, inVars, name);
@@ -2538,6 +2537,11 @@ algorithm
     DAE.Type ty;
     case (DAE.CALL(path=Absyn.IDENT("delay")), (expLst, _, insideCall)) then (inExp, false, (inExp::expLst, false, insideCall));
     case (DAE.CALL(path=Absyn.IDENT("homotopy")), (expLst, _, insideCall)) then (inExp, false, (inExp::expLst, false, insideCall));
+
+// For now exclude all not built in calls
+    case (DAE.CALL(expLst=expLst1,attr=DAE.CALL_ATTR(builtin=false)), (expLst, b, insideCall)) then (inExp, false, (inExp::expLst, false, insideCall));
+
+/*
     case (_, (expLst, _, true)) guard(Expression.isRecord(inExp)) then (inExp, false, (inExp::expLst, false, true));
     case (_, (expLst, _, true)) guard(Expression.isMatrix(inExp)) then (inExp, false, (inExp::expLst, false, true));
     case (DAE.CALL(attr=DAE.CALL_ATTR(ty = ty, builtin=false)), (expLst, b, insideCall))
@@ -2548,10 +2552,11 @@ algorithm
       equation
         (_, (_, false, _)) = Expression.traverseExpListTopDown(expLst1, hasEqnNonDiffParts, (expLst, b, true));
     then (inExp, false, (inExp::expLst, false, insideCall));
+*/
+
     case (outExp, (_, b, _)) then (outExp, b, inTpl);
   end matchcontinue;
 end hasEqnNonDiffParts;
-
 
 protected function isRecordInvoled
   input DAE.Type inType;
@@ -2564,6 +2569,7 @@ algorithm
     list<Boolean> blst;
     case DAE.T_COMPLEX() then true;
     case DAE.T_ARRAY(ty=ty) then isRecordInvoled(ty);
+    case DAE.T_FUNCTION(funcResultType=ty) then isRecordInvoled(ty);
     case DAE.T_TUPLE(types)
     then Util.boolOrList(List.map(types, isRecordInvoled));
     else false;
@@ -2685,6 +2691,7 @@ algorithm
           inResVars,
           dependentVarsLst,
           inName);
+
         shared = BackendDAEUtil.setSharedFunctionTree(inShared, funcs);
 
       then (BackendDAE.GENERIC_JACOBIAN(symJacBDAE, sparsePattern, sparseColoring), shared);

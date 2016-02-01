@@ -54,6 +54,7 @@ protected import DAEUtil;
 protected import Expression;
 protected import ExpressionDump;
 protected import ExpressionSolve;
+protected import Global;
 protected import HashTableExpToExp;
 protected import HashTableExpToIndex;
 protected import HpcOmEqSystems;
@@ -75,7 +76,7 @@ protected
   BackendDAE.Variables orderedVars;
   DAE.FunctionTree functionTree;
   HashTableExpToExp.HashTable HT;
-  Integer index=1;
+  Integer index=System.tmpTickIndex(Global.backendDAE_cseIndex);
   list<BackendDAE.Equation> eqList;
   list<BackendDAE.Var> varList;
 algorithm
@@ -113,6 +114,7 @@ algorithm
   end for;
   eqs := listReverse(eqs);
 
+  System.tmpTickSetIndex(index, Global.backendDAE_cseIndex);
   outDAE := BackendDAE.DAE(eqs, shared);
   // TODO: change pre-opt module order
   //outDAE := SynchronousFeatures.clockPartitioning(BackendDAE.DAE({syst}, shared));
