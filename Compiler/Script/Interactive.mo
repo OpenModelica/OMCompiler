@@ -4767,7 +4767,7 @@ protected function appendNonEmptyStrings
   output String outString;
 algorithm
   outString:=
-  matchcontinue (inString1,inString2,inString3)
+  match (inString1,inString2,inString3)
     local String s1,s2,str,delimiter;
     case ("","",_) then "";
     case (s1,"",_) then s1;
@@ -4777,7 +4777,7 @@ algorithm
         str = stringAppendList({s1,delimiter,s2});
       then
         str;
-  end matchcontinue;
+  end match;
 end appendNonEmptyStrings;
 
 protected function getElementsInfo
@@ -5412,7 +5412,7 @@ public function isModifierfinal
   output Boolean outBoolean;
 algorithm
   outBoolean:=
-  matchcontinue (inAbsynElementArgLst,inPath)
+  match (inAbsynElementArgLst,inPath)
     local
       Boolean f;
       Absyn.Each each_;
@@ -5421,14 +5421,11 @@ algorithm
       Option<String> cmt;
       list<Absyn.ElementArg> rest,args;
       String name1,name2;
-    case ((Absyn.MODIFICATION(finalPrefix = f,path = p1,modification = SOME(_)) :: _),p2)
-      equation
-        true = Absyn.pathEqual(p1, p2);
+    case ((Absyn.MODIFICATION(finalPrefix = f,path = p1,modification = SOME(_)) :: _),p2) guard Absyn.pathEqual(p1, p2)
       then
         f;
-    case ((Absyn.MODIFICATION(path = Absyn.IDENT(name = name1),modification = SOME(Absyn.CLASSMOD(elementArgLst=args))) :: _),Absyn.QUALIFIED(name = name2,path = p2))
+    case ((Absyn.MODIFICATION(path = Absyn.IDENT(name = name1),modification = SOME(Absyn.CLASSMOD(elementArgLst=args))) :: _),Absyn.QUALIFIED(name = name2,path = p2)) guard stringEq(name1, name2)
       equation
-        true = stringEq(name1, name2);
         f = isModifierfinal(args, p2);
       then
         f;
@@ -5438,7 +5435,7 @@ algorithm
       then
         f;
     else false;
-  end matchcontinue;
+  end match;
 end isModifierfinal;
 
 protected function makeExtendsFullyQualified
@@ -6093,17 +6090,14 @@ protected function findPathModification
   input list<Absyn.ElementArg> lst;
   output Boolean found;
 algorithm
-  found := matchcontinue(path,lst)
+  found := match(path,lst)
     local
       Absyn.Path p;
       list<Absyn.ElementArg> rest;
-    case (_,Absyn.MODIFICATION(path = p)::_)
-      equation
-        true = Absyn.pathEqual(path,p);
-      then true;
+    case (_,Absyn.MODIFICATION(path = p)::_) guard Absyn.pathEqual(path,p) then true;
     case (_,_::rest) then findPathModification(path,rest);
     case (_,{}) then false;
-  end matchcontinue;
+  end match;
 end findPathModification;
 
 protected function getComponentModifierValue
@@ -6163,7 +6157,7 @@ public function getModificationValue
   output Absyn.Modification outModification;
 algorithm
   outModification:=
-  matchcontinue (inAbsynElementArgLst,inPath)
+  match (inAbsynElementArgLst,inPath)
     local
       Boolean f;
       Absyn.Each each_;
@@ -6172,14 +6166,12 @@ algorithm
       Option<String> cmt;
       list<Absyn.ElementArg> rest,args;
       String name1,name2;
-    case ((Absyn.MODIFICATION(path = p1,modification = SOME(mod)) :: _),p2)
-      equation
-        true = Absyn.pathEqual(p1, p2);
+    case ((Absyn.MODIFICATION(path = p1,modification = SOME(mod)) :: _),p2) guard Absyn.pathEqual(p1, p2)
       then
         mod;
     case ((Absyn.MODIFICATION(path = Absyn.IDENT(name = name1),modification = SOME(Absyn.CLASSMOD(elementArgLst=args))) :: _),Absyn.QUALIFIED(name = name2,path = p2))
+      guard stringEq(name1, name2)
       equation
-        true = stringEq(name1, name2);
         res = getModificationValue(args, p2);
       then
         res;
@@ -6188,7 +6180,7 @@ algorithm
         mod = getModificationValue(rest, inPath);
       then
         mod;
-  end matchcontinue;
+  end match;
 end getModificationValue;
 
 public function getComponentModifierNames
@@ -6555,7 +6547,7 @@ protected function setVariableBindingInCompitems
   output list<Absyn.ComponentItem> outAbsynComponentItemLst;
   output Boolean outChangeMade;
 algorithm
-  (outAbsynComponentItemLst,outChangeMade) := matchcontinue (inAbsynComponentItemLst,inIdent,inExp)
+  (outAbsynComponentItemLst,outChangeMade) := match (inAbsynComponentItemLst,inIdent,inExp)
     local
       String id,id2;
       list<Absyn.Subscript> dim;
@@ -6570,14 +6562,14 @@ algorithm
     case ({},_,_) then ({}, false);
 
     case ((Absyn.COMPONENTITEM(component = Absyn.COMPONENT(name = id,arrayDim = dim,modification = SOME(Absyn.CLASSMOD(arg,_))),condition = cond,comment = cmt) :: rest),id2,exp)
-      equation
-        true = stringEq(id, id2);
+      guard
+        stringEq(id, id2)
       then
         ((Absyn.COMPONENTITEM(Absyn.COMPONENT(id,dim,SOME(Absyn.CLASSMOD(arg,Absyn.EQMOD(exp,Absyn.dummyInfo)))),cond,cmt) :: rest), true);
 
     case ((Absyn.COMPONENTITEM(component = Absyn.COMPONENT(name = id,arrayDim = dim,modification = NONE()),condition = cond,comment = cmt) :: rest),id2,exp)
-      equation
-        true = stringEq(id, id2);
+      guard
+        stringEq(id, id2)
       then
         ((Absyn.COMPONENTITEM(Absyn.COMPONENT(id,dim,SOME(Absyn.CLASSMOD({},Absyn.EQMOD(exp,Absyn.dummyInfo)))),cond,cmt) :: rest), true);
 
@@ -6586,7 +6578,7 @@ algorithm
         (res, b) = setVariableBindingInCompitems(rest, id, exp);
       then
         (item :: res, b);
-  end matchcontinue;
+  end match;
 end setVariableBindingInCompitems;
 
 public function buildWithin
@@ -6615,15 +6607,15 @@ protected function componentitemNamed
   input Absyn.Ident inIdent;
   output Boolean outBoolean;
 algorithm
-  outBoolean := matchcontinue (inComponentItem,inIdent)
+  outBoolean := match (inComponentItem,inIdent)
     local String id1,id2;
     case (Absyn.COMPONENTITEM(component = Absyn.COMPONENT(name = id1)),id2)
-      equation
-        true = stringEq(id1, id2);
+      guard
+        stringEq(id1, id2)
       then
         true;
     else false;
-  end matchcontinue;
+  end match;
 end componentitemNamed;
 
 protected function getComponentitemName
@@ -7093,7 +7085,7 @@ public function isPrimitive
   output Boolean outBoolean;
 algorithm
   outBoolean:=
-  matchcontinue (inComponentRef,inProgram)
+  match (inComponentRef,inProgram)
     local
       Absyn.Path path;
       Absyn.Class class_;
@@ -7112,7 +7104,7 @@ algorithm
       then
         res;
     else false;
-  end matchcontinue;
+  end match;
 end isPrimitive;
 
 protected function createModel
@@ -7194,7 +7186,7 @@ protected function deleteClassFromList
   input list<Absyn.Class> inAbsynClassLst;
   output list<Absyn.Class> outAbsynClassLst;
 algorithm
-  outAbsynClassLst := matchcontinue (inClass,inAbsynClassLst)
+  outAbsynClassLst := match (inClass,inAbsynClassLst)
     local
       String name1,name2;
       list<Absyn.Class> xs,res;
@@ -7202,25 +7194,16 @@ algorithm
 
     case (_,{}) then {};  /* Empty list */
 
-    case (Absyn.CLASS(name = name1),(Absyn.CLASS(name = name2) :: xs))
-      equation
-        true = stringEq(name1, name2);
+    case (Absyn.CLASS(name = name1),(Absyn.CLASS(name = name2) :: xs)) guard stringEq(name1, name2)
       then
         xs;
-
-    case ((cdef as Absyn.CLASS(name = name1)),((x as Absyn.CLASS(name = name2)) :: xs))
-      equation
-        false = stringEq(name1, name2);
-        res = deleteClassFromList(cdef, xs);
-      then
-        (x :: res);
 
     case ((cdef as Absyn.CLASS()),(x :: xs))
       equation
         res = deleteClassFromList(cdef, xs);
       then
         (x :: res);
-  end matchcontinue;
+  end match;
 end deleteClassFromList;
 
 public function setClassComment
@@ -7331,14 +7314,14 @@ protected function setClassCommentInCommentOpt
   output Option<Absyn.Comment> outAbsynCommentOption;
 algorithm
   outAbsynCommentOption:=
-  matchcontinue (inAbsynCommentOption,inString)
+  match (inAbsynCommentOption,inString)
     local
       Option<Absyn.Annotation> ann;
       String cmt;
     case (SOME(Absyn.COMMENT(ann,_)),"") then SOME(Absyn.COMMENT(ann,NONE()));
     case (SOME(Absyn.COMMENT(ann,_)),cmt) then SOME(Absyn.COMMENT(ann,SOME(cmt)));
     case (NONE(),cmt) then SOME(Absyn.COMMENT(NONE(),SOME(cmt)));
-  end matchcontinue;
+  end match;
 end setClassCommentInCommentOpt;
 
 protected function getShortDefinitionBaseClassInformation
@@ -8969,17 +8952,15 @@ protected function makeReplaceableIfPartial
   input Option<Absyn.RedeclareKeywords> redecl;
   output Option<Absyn.RedeclareKeywords> new_redecl;
 algorithm
-  new_redecl := matchcontinue(p, className, redecl)
-    case (_, _, NONE())
-      equation
-        true = isPartial(className, p);
+  new_redecl := match(p, className, redecl)
+    case (_, _, NONE()) guard isPartial(className, p)
       then SOME(Absyn.REPLACEABLE());
     /* if the above case fails i.e class is not partial */
     case (_, _, NONE())
     then redecl;
     case (_, _, SOME(Absyn.REPLACEABLE()))
     then redecl;
-  end matchcontinue;
+  end match;
 end makeReplaceableIfPartial;
 
 protected function getDefaultInnerOuter "helper function to getDefaultPrefixes"
@@ -9634,7 +9615,7 @@ algorithm
                      body = Absyn.PARTS(classParts = (Absyn.PUBLIC(contents = elt) :: lst),ann = ann,comment = cmt),info = file_info)
       equation
         c1 = countComponents(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},lst,ann,cmt),file_info));
-        c2 = countComponentsInElts(elt);
+        c2 = countComponentsInElts(elt, 0);
       then
         c1 + c2;
 
@@ -9642,7 +9623,7 @@ algorithm
                      body = Absyn.PARTS(classParts = (Absyn.PROTECTED(contents = elt) :: lst),ann = ann,comment = cmt),info = file_info)
       equation
         c1 = countComponents(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},lst,ann,cmt),file_info));
-        c2 = countComponentsInElts(elt);
+        c2 = countComponentsInElts(elt, 0);
       then
         c1 + c2;
 
@@ -9660,7 +9641,7 @@ algorithm
                      body = Absyn.CLASS_EXTENDS(parts = (Absyn.PUBLIC(contents = elt) :: lst),ann = ann,comment = cmt),info = file_info)
       equation
         c1 = countComponents(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},lst,ann,cmt),file_info));
-        c2 = countComponentsInElts(elt);
+        c2 = countComponentsInElts(elt, 0);
       then
         c1 + c2;
 
@@ -9668,7 +9649,7 @@ algorithm
                      body = Absyn.CLASS_EXTENDS(parts = (Absyn.PROTECTED(contents = elt) :: lst),ann=ann,comment = cmt),info = file_info)
       equation
         c1 = countComponents(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},lst,ann,cmt),file_info));
-        c2 = countComponentsInElts(elt);
+        c2 = countComponentsInElts(elt, 0);
       then
         c1 + c2;
 
@@ -9690,27 +9671,22 @@ end countComponents;
 protected function countComponentsInElts
 "Helper function to countComponents"
   input list<Absyn.ElementItem> inAbsynElementItemLst;
+  input Integer inInteger;
   output Integer outInteger;
 algorithm
   outInteger:=
-  matchcontinue (inAbsynElementItemLst)
+  match (inAbsynElementItemLst)
     local
-      Integer c1,ncomps,res;
       list<Absyn.ComponentItem> complst;
       list<Absyn.ElementItem> lst;
     case ((Absyn.ELEMENTITEM(element = Absyn.ELEMENT(specification = Absyn.COMPONENTS(components = complst))) :: lst))
-      equation
-        c1 = countComponentsInElts(lst);
-        ncomps = listLength(complst);
       then
-        c1 + ncomps;
+        countComponentsInElts(lst, inInteger + listLength(complst));
     case ((_ :: lst))
-      equation
-        res = countComponentsInElts(lst);
       then
-        res;
-    case ({}) then 0;
-  end matchcontinue;
+        countComponentsInElts(lst, inInteger);
+    case ({}) then inInteger;
+  end match;
 end countComponentsInElts;
 
 protected function getNthComponent "
@@ -9798,7 +9774,7 @@ protected function useQuotes
   input list<Absyn.NamedArg> inAbsynNamedArgLst;
   output Boolean outBoolean;
 algorithm
-  outBoolean := matchcontinue (inAbsynNamedArgLst)
+  outBoolean := match (inAbsynNamedArgLst)
     local
       Absyn.NamedArg a;
       list<Absyn.NamedArg> al;
@@ -9810,7 +9786,7 @@ algorithm
         res = useQuotes(al);
       then
         res;
-  end matchcontinue;
+  end match;
 end useQuotes;
 
 protected function insertQuotesToList
@@ -10318,7 +10294,7 @@ protected function deleteEquationInEqlist
   input Absyn.ComponentRef inComponentRef3;
   output list<Absyn.EquationItem> outAbsynEquationItemLst;
 algorithm
-  outAbsynEquationItemLst := matchcontinue (inAbsynEquationItemLst1,inComponentRef2,inComponentRef3)
+  outAbsynEquationItemLst := match (inAbsynEquationItemLst1,inComponentRef2,inComponentRef3)
     local
       list<Absyn.EquationItem> res,xs;
       Absyn.ComponentRef cn1,cn2,c1,c2;
@@ -10326,18 +10302,16 @@ algorithm
 
     case ({},_,_) then {};
     case ((Absyn.EQUATIONITEM(equation_ = Absyn.EQ_CONNECT(connector1 = cn1,connector2 = cn2)) :: xs),c1,c2)
-      equation
-        true = Absyn.crefEqual(c1,cn1);
-        true = Absyn.crefEqual(c2,cn2);
-        res = deleteEquationInEqlist(xs, c1, c2);
+      guard
+        Absyn.crefEqual(c1,cn1) and Absyn.crefEqual(c2,cn2)
       then
-        res;
+        deleteEquationInEqlist(xs, c1, c2);
     case ((x :: xs),c1,c2)
       equation
         res = deleteEquationInEqlist(xs, c1, c2);
       then
         (x :: res);
-  end matchcontinue;
+  end match;
 end deleteEquationInEqlist;
 
 protected function getComponentComment
@@ -12321,7 +12295,7 @@ protected function getNthCompname
   input Integer inInteger;
   output String outString;
 algorithm
-  outString := matchcontinue (inAbsynComponentItemLst,inInteger)
+  outString := match (inAbsynComponentItemLst,inInteger)
     local
       String id,res;
       list<Absyn.ComponentItem> lst,xs;
@@ -12338,7 +12312,7 @@ algorithm
 
     case ({},_) then fail();
 
-  end matchcontinue;
+  end match;
 end getNthCompname;
 
 protected function countPublicConnectors
@@ -12633,7 +12607,7 @@ algorithm
 
     case ((Absyn.EQUATIONS(contents = e) :: xs),n) /* The rule above failed, subtract the number of connections in the first equation section and try with the rest of the classparts */
       equation
-        c1 = countConnectionsInEquations(e);
+        c1 = countConnectionsInEquations(e, 0);
         newn = n - c1;
         eq = getNthConnectionitemInClassparts(xs, newn);
       then
@@ -12747,7 +12721,7 @@ algorithm
 
     case ((Absyn.EQUATIONS(contents = eqlist) :: xs))
       equation
-        r1 = countConnectionsInEquations(eqlist);
+        r1 = countConnectionsInEquations(eqlist, 0);
         r2 = countConnectionsInClassparts(xs);
       then
         r1 + r2;
@@ -12767,30 +12741,27 @@ protected function countConnectionsInEquations
 " This function takes an Equation list and returns an int
    with the number of connect statements in that list."
   input list<Absyn.EquationItem> inAbsynEquationItemLst;
+  input Integer inInteger;
   output Integer outInteger;
 algorithm
-  outInteger := matchcontinue (inAbsynEquationItemLst)
+  outInteger := match (inAbsynEquationItemLst)
     local
       Integer r1,res;
       list<Absyn.EquationItem> xs;
 
     case ((Absyn.EQUATIONITEM(equation_ = Absyn.EQ_CONNECT()) :: xs))
-      equation
-        r1 = countConnectionsInEquations(xs);
       then
-        r1 + 1;
+        countConnectionsInEquations(xs, inInteger + 1);
 
     case ((_ :: xs))
-      equation
-        res = countConnectionsInEquations(xs);
       then
-        res;
+        countConnectionsInEquations(xs, inInteger);
 
     case ({})
       then
-        0;
+        inInteger;
 
-  end matchcontinue;
+  end match;
 end countConnectionsInEquations;
 
 protected function getComponentAnnotationsFromElts
@@ -13585,7 +13556,7 @@ protected function getComponentsInElementitems
   output list<Absyn.Element> outAbsynElementLst;
 algorithm
   outAbsynElementLst:=
-  matchcontinue (inAbsynElementItemLst)
+  match (inAbsynElementItemLst)
     local
       list<Absyn.Element> res;
       Absyn.Element elt;
@@ -13601,7 +13572,7 @@ algorithm
         res = getComponentsInElementitems(rest);
       then
         res;
-  end matchcontinue;
+  end match;
 end getComponentsInElementitems;
 
 protected function getNthComponentInClass
@@ -13626,7 +13597,7 @@ algorithm
 
     case (Absyn.CLASS(body = Absyn.PARTS(classParts = (Absyn.PUBLIC(contents = elt) :: _))),n)
       equation
-        count = countComponentsInElts(elt);
+        count = countComponentsInElts(elt, 0);
         true = n <= count;
         res = getNthComponentInElementitems(elt, n);
       then
@@ -13637,7 +13608,7 @@ algorithm
                       body = Absyn.PARTS(classParts = (Absyn.PUBLIC(contents = elt) :: rest),ann = ann,comment = cmt),
                       info = file_info),n)
       equation
-        c1 = countComponentsInElts(elt);
+        c1 = countComponentsInElts(elt, 0);
         newn = n - c1;
         true = newn > 0;
         res = getNthComponentInClass(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},rest,ann,cmt),file_info),
@@ -13656,7 +13627,7 @@ algorithm
                       body = Absyn.PARTS(classParts = (Absyn.PROTECTED(contents = elt) :: rest),comment = cmt,ann = ann),
                       info = file_info),n)
       equation
-        c1 = countComponentsInElts(elt);
+        c1 = countComponentsInElts(elt, 0);
         newn = n - c1;
         (newn > 0) = true;
         res = getNthComponentInClass(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},rest,ann,cmt),file_info), newn);
@@ -13677,7 +13648,7 @@ algorithm
     // adrpo: handle also the case model extends X end X;
     case (Absyn.CLASS(body = Absyn.CLASS_EXTENDS(parts = (Absyn.PUBLIC(contents = elt) :: _))),n)
       equation
-        count = countComponentsInElts(elt);
+        count = countComponentsInElts(elt, 0);
         (n <= count) = true;
         res = getNthComponentInElementitems(elt, n);
       then
@@ -13689,7 +13660,7 @@ algorithm
                       body = Absyn.CLASS_EXTENDS(parts = (Absyn.PUBLIC(contents = elt) :: rest),ann = ann,comment = cmt),
                       info = file_info),n)
       equation
-        c1 = countComponentsInElts(elt);
+        c1 = countComponentsInElts(elt, 0);
         newn = n - c1;
         true = newn > 0;
         res = getNthComponentInClass(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},rest,ann,cmt),file_info),
@@ -13710,7 +13681,7 @@ algorithm
                       body = Absyn.CLASS_EXTENDS(parts = (Absyn.PROTECTED(contents = elt) :: rest),ann = ann,comment = cmt),
                       info = file_info),n)
       equation
-        c1 = countComponentsInElts(elt);
+        c1 = countComponentsInElts(elt, 0);
         newn = n - c1;
         true = newn > 0;
         res = getNthComponentInClass(Absyn.CLASS(a,b,c,d,e,Absyn.PARTS({},{},rest,ann,cmt),file_info), newn);
@@ -13867,13 +13838,13 @@ protected function arrayDimensionStr
   input Option<Absyn.ArrayDim> ad;
   output String str;
 algorithm
-  str:=matchcontinue(ad)
+  str:=match(ad)
   local Absyn.ArrayDim adim;
     case(SOME(adim)) equation
       str = stringDelimitList(List.map(adim,Dump.printSubscriptStr),",");
     then str;
     else "";
-  end matchcontinue;
+  end match;
 end arrayDimensionStr;
 
 
@@ -14919,7 +14890,7 @@ protected function replacePublicList
   input list<Absyn.ElementItem> inAbsynElementItemLst;
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
-  outAbsynClassPartLst := matchcontinue (inAbsynClassPartLst,inAbsynElementItemLst)
+  outAbsynClassPartLst := match (inAbsynClassPartLst,inAbsynElementItemLst)
     local
       list<Absyn.ClassPart> rest_1,rest,ys,xs;
       Absyn.ClassPart lst,x;
@@ -14939,7 +14910,7 @@ algorithm
 
     case ({},newpublist) then {Absyn.PUBLIC(newpublist)};
 
-  end matchcontinue;
+  end match;
 end replacePublicList;
 
 protected function replaceProtectedList "
@@ -14951,7 +14922,7 @@ protected function replaceProtectedList "
   input list<Absyn.ElementItem> inAbsynElementItemLst;
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
-  outAbsynClassPartLst := matchcontinue (inAbsynClassPartLst,inAbsynElementItemLst)
+  outAbsynClassPartLst := match (inAbsynClassPartLst,inAbsynElementItemLst)
     local
       list<Absyn.ClassPart> rest_1,rest,ys,xs;
       Absyn.ClassPart lst,x;
@@ -14971,7 +14942,7 @@ algorithm
 
     case ({},newprotlist) then {Absyn.PROTECTED(newprotlist)};
 
-  end matchcontinue;
+  end match;
 end replaceProtectedList;
 
 protected function replaceEquationList "
@@ -14983,7 +14954,7 @@ protected function replaceEquationList "
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
   outAbsynClassPartLst:=
-  matchcontinue (inAbsynClassPartLst,inAbsynEquationItemLst)
+  match (inAbsynClassPartLst,inAbsynEquationItemLst)
     local
       Absyn.ClassPart lst,x;
       list<Absyn.ClassPart> rest,ys,xs;
@@ -14995,7 +14966,7 @@ algorithm
       then
         (x :: ys);
     case ({},_) then {};
-  end matchcontinue;
+  end match;
 end replaceEquationList;
 
 protected function replaceInitialEquationList "
@@ -15007,7 +14978,7 @@ protected function replaceInitialEquationList "
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
   outAbsynClassPartLst:=
-  matchcontinue (inAbsynClassPartLst,inAbsynEquationItemLst)
+  match (inAbsynClassPartLst,inAbsynEquationItemLst)
     local
       Absyn.ClassPart lst,x;
       list<Absyn.ClassPart> rest,ys,xs;
@@ -15019,7 +14990,7 @@ algorithm
       then
         (x :: ys);
     case ({},_) then {};
-  end matchcontinue;
+  end match;
 end replaceInitialEquationList;
 
 protected function replaceAlgorithmList "
@@ -15031,7 +15002,7 @@ protected function replaceAlgorithmList "
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
   outAbsynClassPartLst:=
-  matchcontinue (inAbsynClassPartLst,inAbsynAlgorithmItemLst)
+  match (inAbsynClassPartLst,inAbsynAlgorithmItemLst)
     local
       Absyn.ClassPart lst,x;
       list<Absyn.ClassPart> rest,ys,xs;
@@ -15043,7 +15014,7 @@ algorithm
       then
         (x :: ys);
     case ({},_) then {};
-  end matchcontinue;
+  end match;
 end replaceAlgorithmList;
 
 protected function replaceInitialAlgorithmList "
@@ -15055,7 +15026,7 @@ protected function replaceInitialAlgorithmList "
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
   outAbsynClassPartLst:=
-  matchcontinue (inAbsynClassPartLst,inAbsynAlgorithmItemLst)
+  match (inAbsynClassPartLst,inAbsynAlgorithmItemLst)
     local
       Absyn.ClassPart lst,x;
       list<Absyn.ClassPart> rest,ys,xs;
@@ -15067,7 +15038,7 @@ algorithm
       then
         (x :: ys);
     case ({},_) then {};
-  end matchcontinue;
+  end match;
 end replaceInitialAlgorithmList;
 
 protected function deletePublicList "
@@ -15077,7 +15048,7 @@ protected function deletePublicList "
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
   outAbsynClassPartLst:=
-  matchcontinue (inAbsynClassPartLst)
+  match (inAbsynClassPartLst)
     local
       list<Absyn.ClassPart> res,xs;
       Absyn.ClassPart x;
@@ -15092,7 +15063,7 @@ algorithm
         res = deletePublicList(xs);
       then
         (x :: res);
-  end matchcontinue;
+  end match;
 end deletePublicList;
 
 protected function deleteProtectedList "
@@ -15102,7 +15073,7 @@ protected function deleteProtectedList "
   output list<Absyn.ClassPart> outAbsynClassPartLst;
 algorithm
   outAbsynClassPartLst:=
-  matchcontinue (inAbsynClassPartLst)
+  match (inAbsynClassPartLst)
     local
       list<Absyn.ClassPart> res,xs;
       Absyn.ClassPart x;
@@ -15117,7 +15088,7 @@ algorithm
         res = deleteProtectedList(xs);
       then
         (x :: res);
-  end matchcontinue;
+  end match;
 end deleteProtectedList;
 
 protected function getPublicList "
@@ -15128,7 +15099,7 @@ protected function getPublicList "
   output list<Absyn.ElementItem> outAbsynElementItemLst;
 algorithm
   outAbsynElementItemLst:=
-  matchcontinue (inAbsynClassPartLst)
+  match (inAbsynClassPartLst)
     local
       list<Absyn.ElementItem> res2,res,res1,ys;
       list<Absyn.ClassPart> rest,xs;
@@ -15145,7 +15116,7 @@ algorithm
         ys = getPublicList(xs);
       then
         ys;
-  end matchcontinue;
+  end match;
 end getPublicList;
 
 protected function getProtectedList "
@@ -15155,7 +15126,7 @@ protected function getProtectedList "
   output list<Absyn.ElementItem> outAbsynElementItemLst;
 algorithm
   outAbsynElementItemLst:=
-  matchcontinue (inAbsynClassPartLst)
+  match (inAbsynClassPartLst)
     local
       list<Absyn.ElementItem> res2,res,res1,ys;
       list<Absyn.ClassPart> rest,xs;
@@ -15172,7 +15143,7 @@ algorithm
         ys = getProtectedList(xs);
       then
         ys;
-  end matchcontinue;
+  end match;
 end getProtectedList;
 
 protected function getEquationList "This function takes a ClassPart List and returns the first EquationItem
@@ -15180,7 +15151,7 @@ protected function getEquationList "This function takes a ClassPart List and ret
   input list<Absyn.ClassPart> inAbsynClassPartLst;
   output list<Absyn.EquationItem> outAbsynEquationItemLst;
 algorithm
-  outAbsynEquationItemLst := matchcontinue (inAbsynClassPartLst)
+  outAbsynEquationItemLst := match (inAbsynClassPartLst)
     local
       list<Absyn.EquationItem> lst,ys;
       list<Absyn.ClassPart> rest,xs;
@@ -15192,7 +15163,7 @@ algorithm
       then
         ys;
     else fail();
-  end matchcontinue;
+  end match;
 end getEquationList;
 
 protected function getInitialEquationList "This function takes a ClassPart List and returns the first InitialEquationItem
@@ -15200,7 +15171,7 @@ protected function getInitialEquationList "This function takes a ClassPart List 
   input list<Absyn.ClassPart> inAbsynClassPartLst;
   output list<Absyn.EquationItem> outAbsynInitialEquationItemLst;
 algorithm
-  outAbsynInitialEquationItemLst := matchcontinue (inAbsynClassPartLst)
+  outAbsynInitialEquationItemLst := match (inAbsynClassPartLst)
     local
       list<Absyn.EquationItem> lst,ys;
       list<Absyn.ClassPart> rest,xs;
@@ -15212,7 +15183,7 @@ algorithm
       then
         ys;
     else fail();
-  end matchcontinue;
+  end match;
 end getInitialEquationList;
 
 protected function getAlgorithmList "This function takes a ClassPart List and returns the first AlgorithmItem
@@ -15220,7 +15191,7 @@ protected function getAlgorithmList "This function takes a ClassPart List and re
   input list<Absyn.ClassPart> inAbsynClassPartLst;
   output list<Absyn.AlgorithmItem> outAbsynAlgorithmItemLst;
 algorithm
-  outAbsynAlgorithmItemLst := matchcontinue (inAbsynClassPartLst)
+  outAbsynAlgorithmItemLst := match (inAbsynClassPartLst)
     local
       list<Absyn.AlgorithmItem> lst,ys;
       list<Absyn.ClassPart> rest,xs;
@@ -15232,7 +15203,7 @@ algorithm
       then
         ys;
     else fail();
-  end matchcontinue;
+  end match;
 end getAlgorithmList;
 
 protected function getInitialAlgorithmList "This function takes a ClassPart List and returns the first InitialAlgorithmItem
@@ -15240,7 +15211,7 @@ protected function getInitialAlgorithmList "This function takes a ClassPart List
   input list<Absyn.ClassPart> inAbsynClassPartLst;
   output list<Absyn.AlgorithmItem> outAbsynInitialAlgorithmItemLst;
 algorithm
-  outAbsynInitialAlgorithmItemLst := matchcontinue (inAbsynClassPartLst)
+  outAbsynInitialAlgorithmItemLst := match (inAbsynClassPartLst)
     local
       list<Absyn.AlgorithmItem> lst,ys;
       list<Absyn.ClassPart> rest,xs;
@@ -15252,7 +15223,7 @@ algorithm
       then
         ys;
     else fail();
-  end matchcontinue;
+  end match;
 end getInitialAlgorithmList;
 
 protected function getClassFromElementitemlist "
@@ -15505,7 +15476,7 @@ protected function getClassesInElts
   output list<Absyn.Class> outAbsynClassLst;
 algorithm
   outAbsynClassLst:=
-  matchcontinue (inAbsynElementItemLst)
+  match (inAbsynElementItemLst)
     local
       list<Absyn.Class> res;
       Absyn.Class class_;
@@ -15525,7 +15496,7 @@ algorithm
       then
         res;
 
-  end matchcontinue;
+  end match;
 end getClassesInElts;
 
 protected function getClassInProgram
@@ -15665,7 +15636,7 @@ protected function modificationToAbsyn2
   output Option<Absyn.Modification> outAbsynModificationOption;
 algorithm
   outAbsynModificationOption:=
-  matchcontinue (inAbsynNamedArgLst)
+  match (inAbsynNamedArgLst)
     local
       Absyn.Exp exp;
       list<Absyn.NamedArg> xs;
@@ -15676,7 +15647,7 @@ algorithm
     case ((Absyn.NAMEDARG(argName = "binding",argValue = exp) :: _)) then SOME(Absyn.CLASSMOD({},Absyn.EQMOD(exp,Absyn.dummyInfo)));
     case ((Absyn.NAMEDARG(argName = "modification",argValue = Absyn.CODE(code = Absyn.C_MODIFICATION(modification = mod))) :: _)) then SOME(mod);
     case ((_ :: xs)) equation res = modificationToAbsyn2(xs); then res;
-  end matchcontinue;
+  end match;
 end modificationToAbsyn2;
 
 protected function selectAnnotation
@@ -15770,14 +15741,13 @@ protected function commentToAbsyn
   output Option<String> outStringOption;
 algorithm
   outStringOption:=
-  matchcontinue (inAbsynNamedArgLst)
+  match (inAbsynNamedArgLst)
     local
       String str;
       Option<String> res;
       list<Absyn.NamedArg> rest;
     case ((Absyn.NAMEDARG(argName = "comment",argValue = Absyn.STRING(value = str)) :: _))
-      equation
-        false = stringEq(str, "");
+        guard not stringEq(str, "")
       then
         SOME(str);
     case ((_ :: rest))
@@ -15786,7 +15756,7 @@ algorithm
       then
         res;
     else NONE();
-  end matchcontinue;
+  end match;
 end commentToAbsyn;
 
 protected function annotationListToAbsyn
@@ -17168,7 +17138,7 @@ protected function getDefinitionDimensions
   input Absyn.ElementAttributes attr;
   output Integer out;
 algorithm
-  out := matchcontinue(ts,attr)
+  out := match(ts,attr)
   local
     list<Absyn.Subscript> l1,l2;
     case (Absyn.TPATH(arrayDim = SOME(l1)), Absyn.ATTR(arrayDim = l2)) then listLength(l1)+listLength(l2);
@@ -17176,7 +17146,7 @@ algorithm
     case (Absyn.TPATH(arrayDim = NONE()), Absyn.ATTR(arrayDim = l2)) then listLength(l2);
     case (Absyn.TCOMPLEX(arrayDim = NONE()), Absyn.ATTR(arrayDim = l2)) then listLength(l2);
     else 0;
-  end matchcontinue;
+  end match;
 end getDefinitionDimensions;
 
 protected function getDefinitionParts
@@ -17842,7 +17812,7 @@ protected function getFunctionsInClasses
   input list<Absyn.Class> acc;
   output list<Absyn.Class> funcs;
 algorithm
-  funcs := matchcontinue (classes,acc)
+  funcs := match (classes,acc)
     local
       Absyn.Class cl;
       list<Absyn.Class> rest;
@@ -17853,7 +17823,7 @@ algorithm
         funcs = getFunctionsInClasses(rest,cl::acc);
       then funcs;
     case (_::rest,_) then getFunctionsInClasses(rest,acc);
-  end matchcontinue;
+  end match;
 end getFunctionsInClasses;
 
 protected function getAllClassesInClass
