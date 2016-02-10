@@ -762,7 +762,7 @@ algorithm
         // do we have the correct libexec stuff?
         true = System.directoryExists(omHome + "\\mingw\\libexec\\gcc\\mingw32\\4.4.0");
         newPath = stringAppendList({omHome,"\\bin;",
-                                    omHome,"\\lib;",
+                                    omHome,"\\lib\\omc\\cpp;",
                                     omHome,"\\mingw\\bin;",
                                     omHome,"\\mingw\\libexec\\gcc\\mingw32\\4.4.0\\;",
                                     oldPath});
