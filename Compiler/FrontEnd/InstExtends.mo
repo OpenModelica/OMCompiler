@@ -34,7 +34,7 @@ encapsulated package InstExtends
   package:     InstExtends
   description: Model instantiation
 
-  RCS: $Id$
+  RCS: $Id: InstExtends.mo 25315 2015-03-30 13:26:21Z jansilar $
 
   This module is responsible for instantiation of the extends and
   class extends constructs in Modelica models.
@@ -998,13 +998,14 @@ algorithm
       SCode.Variability var;
       SCode.Parallelism prl;
       Absyn.Direction dir;
+      Absyn.IsField isf;
       FCore.Cache cache;
       FCore.Graph env;
       HashTableStringToPath.HashTable ht;
       SCode.Element elt;
 
     case (cache,env,SCode.COMPONENT(name, prefixes as SCode.PREFIXES(replaceablePrefix = SCode.REPLACEABLE(_)),
-                                    SCode.ATTR(ad, ct, prl, var, dir), typeSpec, modifications, comment, condition, info),ht)
+                                    SCode.ATTR(ad, ct, prl, var, dir, isf), typeSpec, modifications, comment, condition, info),ht)
       equation
         //fprintln(Flags.DEBUG,"fix comp " + SCodeDump.unparseElementStr(elt,SCodeDump.defaultOptions));
         // lookup as it might have been redeclared!!!
@@ -1014,17 +1015,17 @@ algorithm
         (cache,typeSpec) = fixTypeSpec(cache,env,typeSpec,ht);
         (cache,SOME(ad)) = fixArrayDim(cache, env, SOME(ad), ht);
       then
-        (cache,SCode.COMPONENT(name, prefixes, SCode.ATTR(ad, ct, prl, var, dir), typeSpec, modifications, comment, condition, info));
+        (cache,SCode.COMPONENT(name, prefixes, SCode.ATTR(ad, ct, prl, var, dir, isf), typeSpec, modifications, comment, condition, info));
 
     // we failed above
-    case (cache,env,SCode.COMPONENT(name, prefixes, SCode.ATTR(ad, ct, prl, var, dir), typeSpec, modifications, comment, condition, info),ht)
+    case (cache,env,SCode.COMPONENT(name, prefixes, SCode.ATTR(ad, ct, prl, var, dir, isf), typeSpec, modifications, comment, condition, info),ht)
       equation
         //fprintln(Flags.DEBUG,"fix comp " + SCodeDump.unparseElementStr(elt,SCodeDump.defaultOptions));
         (cache,modifications) = fixModifications(cache,env,modifications,ht);
         (cache,typeSpec) = fixTypeSpec(cache,env,typeSpec,ht);
         (cache,SOME(ad)) = fixArrayDim(cache, env, SOME(ad), ht);
       then
-        (cache,SCode.COMPONENT(name, prefixes, SCode.ATTR(ad, ct, prl, var, dir), typeSpec, modifications, comment, condition, info));
+        (cache,SCode.COMPONENT(name, prefixes, SCode.ATTR(ad, ct, prl, var, dir, isf), typeSpec, modifications, comment, condition, info));
 
     case (cache,env,SCode.CLASS(name, prefixes as SCode.PREFIXES(replaceablePrefix = SCode.REPLACEABLE(_)),
                                 SCode.ENCAPSULATED(), partialPrefix, restriction, classDef, comment, info),ht)
@@ -1234,6 +1235,12 @@ algorithm
         (cache,exp1) = fixExp(cache,env,exp1,ht);
         (cache,exp2) = fixExp(cache,env,exp2,ht);
       then (cache,SCode.EQ_EQUALS(exp1,exp2,comment,info));
+    case (cache,env,SCode.EQ_PDE(exp1,exp2,cref,comment,info),ht)
+      equation
+        (cache,exp1) = fixExp(cache,env,exp1,ht);
+        (cache,exp2) = fixExp(cache,env,exp2,ht);
+        (cache,cref) = fixCref(cache,env,cref,ht);
+      then (cache,SCode.EQ_PDE(exp1,exp2,cref,comment,info));
     case (cache,env,SCode.EQ_CONNECT(cref1,cref2,comment,info),ht)
       equation
         (cache,cref1) = fixCref(cache,env,cref1,ht);
