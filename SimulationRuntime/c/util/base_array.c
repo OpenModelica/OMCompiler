@@ -307,14 +307,24 @@ size_t calc_base_index(int ndims, const _index_t *idx_vec, const base_array_t *a
 
 size_t calc_base_index_dims_subs(int ndims,...)
 {
-
     int i;
     size_t index;
-
-    _index_t *dims = (_index_t*)omc_alloc_interface.malloc(sizeof(_index_t)*ndims);
-    _index_t *subs = (_index_t*)omc_alloc_interface.malloc(sizeof(_index_t)*ndims);
-
     va_list ap;
+
+    // Do not allocate from GC (preferably not at all) during runtime.
+    // GC has issues if client calls from transient threads.
+    enum { max_dims = 256 };
+    _index_t dims[max_dims];
+    _index_t subs[max_dims];
+    if((size_t)ndims > max_dims) {
+        FILE_INFO info = omc_dummyFileInfo;
+        omc_assert(NULL, info, 
+            "Dimension given (%d) is beyond built-in limit (%s)", 
+            ndims, max_dims);
+        return -1;
+    }
+    
+    
     va_start(ap,ndims);
     for(i = 0; i < ndims; ++i) {
         dims[i] = va_arg(ap, _index_t);
