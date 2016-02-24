@@ -12173,100 +12173,51 @@ protected function traversingextendArrExp "author: Frenkel TUD 2010-07.
   output DAE.Exp outExp;
   output Boolean outExpanded;
 algorithm
-  (outExp, outExpanded) := matchcontinue(inExp, inExpanded)
+  (outExp, outExpanded) := match(inExp)
     local
       DAE.ComponentRef cr;
-      list<DAE.ComponentRef> crlst;
-      DAE.Type t,ty;
+      DAE.Type ty;
       DAE.Dimension id, jd;
-      list<DAE.Dimension> ad;
-      Integer i,j;
-      list<list<DAE.Subscript>> subslst,subslst1;
-      list<DAE.Subscript> sublstcref;
+      Integer i, j;
       list<DAE.Exp> expl;
-      DAE.Exp e,e_new;
+      DAE.Exp e;
       list<DAE.Var> varLst;
       Absyn.Path name;
       list<list<DAE.Exp>> mat;
-      Boolean b;
 
     // CASE for Matrix
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty,dims=ad as {id, jd})), _)
+    case DAE.CREF(ty=ty as DAE.T_ARRAY(dims={id, jd}))
       equation
         i = dimensionSize(id);
         j = dimensionSize(jd);
-        subslst = List.map(ad, expandDimension);
-        subslst1 = rangesToSubscripts(subslst);
-        cr = ComponentReference.crefStripLastSubs(cr);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        mat = makeMatrix(expl,j);
-        e_new = DAE.MATRIX(t,i,mat);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
+        expl = expandExpression(inExp);
+        mat = makeMatrix(expl, j);
+        e = DAE.MATRIX(ty, i, mat);
       then
-        (e, b);
-
-    // CASE for Matrix and checkModel is on
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty,dims=ad as {_, _})), _)
-      equation
-        true = Flags.getConfigBool(Flags.CHECK_MODEL);
-        // consider size 1
-        i = dimensionSize(DAE.DIM_INTEGER(1));
-        j = dimensionSize(DAE.DIM_INTEGER(1));
-        subslst = List.map(ad, expandDimension);
-        subslst1 = rangesToSubscripts(subslst);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        mat = makeMatrix(expl,j);
-        e_new = DAE.MATRIX(t,i,mat);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
-      then
-        (e, b);
+        (e, true);
 
     // CASE for Array
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty,dims=ad)), _)
+    case DAE.CREF(ty=ty as DAE.T_ARRAY())
       equation
-        sublstcref = ComponentReference.crefSubs(cr);
-        subslst = List.map(ad, expandDimension);
-        subslst1 = rangesToSubscripts(subslst);
-        subslst = insertSubScripts(sublstcref,subslst1,{});
-        subslst1 = subslst;
-        cr = ComponentReference.crefStripLastSubs(cr);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        e_new = DAE.ARRAY(t,true,expl);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
+        expl = expandExpression(inExp);
+        e = DAE.ARRAY(ty, true, expl);
       then
-        (e, b);
-
-    // CASE for Array and checkModel is on
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty)), _)
-      equation
-        true = Flags.getConfigBool(Flags.CHECK_MODEL);
-        // consider size 1
-        subslst = {{DAE.INDEX(DAE.ICONST(1))}};
-        subslst1 = rangesToSubscripts(subslst);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        e_new = DAE.ARRAY(t,true,expl);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
-      then
-        (e, b);
+        (e, true);
 
     // CASE for Records
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD(name))), _)
+    case DAE.CREF(componentRef=cr, ty=ty as DAE.T_COMPLEX(varLst=varLst, complexClassType=ClassInf.RECORD(name)))
       equation
-        expl = List.map1(varLst,generateCrefsExpFromExpVar,cr);
+        expl = List.map1(varLst, generateCrefsExpFromExpVar, cr);
         i = listLength(expl);
-        true = intGt(i,0);
-        e_new = DAE.CALL(name,expl,DAE.CALL_ATTR(t,false,false,false,false,DAE.NO_INLINE(),DAE.NO_TAIL()));
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
+        true = intGt(i, 0);
+        e = DAE.CALL(name, expl, DAE.CALL_ATTR(ty, false, false, false, false, DAE.NO_INLINE(), DAE.NO_TAIL()));
+        (e, _) = traverseExpBottomUp(e, traversingextendArrExp, true);
       then
-        (e, b);
+        (e, true);
 
     else (inExp, inExpanded);
 
-  end matchcontinue;
+  end match;
 end traversingextendArrExp;
 
 protected function insertSubScripts"traverses the subscripts of the templSubScript and searches for wholedim. the value replaces the wholedim.
