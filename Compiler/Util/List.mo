@@ -116,28 +116,18 @@ public function fill<T>
      Example: fill(2, 3) => {2, 2, 2}"
   input T inElement;
   input Integer inCount;
-  output list<T> outList = {};
-protected
-  Integer i = 0;
+  output list<T> outList;
 algorithm
-  while i < inCount loop
-    outList := inElement :: outList;
-    i := i + 1;
-  end while;
+  outList := list(inElement for i in 1:inCount);
 end fill;
 
 public function intRange
   "Returns a list of n integers from 1 to inStop.
      Example: listIntRange(3) => {1,2,3}"
   input Integer inStop;
-  output list<Integer> outRange = {};
-protected
-  Integer i = inStop;
+  output list<Integer> outRange;
 algorithm
-  while i > 0 loop
-    outRange := i :: outRange;
-    i := i - 1;
-  end while;
+  outRange := list(i for i in 1:inStop);
 end intRange;
 
 public function intRange2
@@ -147,19 +137,10 @@ public function intRange2
   input Integer inStop;
   output list<Integer> outRange = {};
 protected
-  Integer i = inStop;
-algorithm
-  if inStart < inStop then
-    while i >= inStart loop
-      outRange := i :: outRange;
-      i := i - 1;
-    end while;
-  else
-    while i <= inStart loop
-      outRange := i :: outRange;
-      i := i + 1;
-    end while;
-  end if;
+  Integer step;
+ algorithm
+  step := if inStart < inStop then 1 else -1;
+  outRange := list(i for i in inStart:step:inStop);
 end intRange2;
 
 public function intRange3
