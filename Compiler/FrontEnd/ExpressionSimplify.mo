@@ -1551,11 +1551,11 @@ public function cevalBuiltinStringFormat
   output String outString;
 algorithm
   outString := if stringLength >= minLength then inString
-               else
-                 if leftJustified then
-inString + stringAppendList(List.fill(" ", minLength - stringLength))
-                 else 
- stringAppendList(List.fill(" ", minLength - stringLength)) + inString;
+    else
+    if leftJustified then
+      inString + stringAppendList(List.fill(" ", minLength - stringLength))
+    else
+      stringAppendList(List.fill(" ", minLength - stringLength)) + inString;
 end cevalBuiltinStringFormat;
 
 protected function simplifyStringAppendList
