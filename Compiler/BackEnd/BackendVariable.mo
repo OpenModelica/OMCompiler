@@ -57,6 +57,7 @@ protected import ExpressionSimplify;
 protected import Flags;
 protected import HashSet;
 protected import List;
+protected import MetaModelica.Dangerous;
 protected import Util;
 protected import Types;
 
@@ -2050,10 +2051,10 @@ protected
   BackendDAE.Variables v;
   list<BackendDAE.Var> vars;
 algorithm
-  for vs in inVars loop
+  for vs in systs loop
     BackendDAE.EQSYSTEM(orderedVars=v) := vs;
     vars := varList(v);
-    (vars1,tail) := listAppendTail(inVars,tail,vars);
+    (vars,tail) := Dangerous.listAppendTail(inVars,tail,vars);
   end for;
 end equationSystemsVarsLst;
 
