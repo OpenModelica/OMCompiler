@@ -2044,20 +2044,17 @@ end listVar1;
 public function equationSystemsVarsLst
   input BackendDAE.EqSystems systs;
   input list<BackendDAE.Var> inVars;
-  output list<BackendDAE.Var> outVars;
+  output list<BackendDAE.Var> outVars = {};
+protected
+  list<BackendDAE.Var> tail = {};
+  BackendDAE.Variables v;
+  list<BackendDAE.Var> vars;
 algorithm
-  outVars := match (systs)
-    local
-      BackendDAE.EqSystems rest;
-      list<BackendDAE.Var> vars, vars1;
-      BackendDAE.Variables v;
-
-    case {} then inVars;
-    case BackendDAE.EQSYSTEM(orderedVars=v)::rest equation
-      vars = varList(v);
-      vars1 = listAppend(inVars,vars);
-    then equationSystemsVarsLst(rest,vars1);
-  end match;
+  for vs in inVars loop
+    BackendDAE.EQSYSTEM(orderedVars=v) := vs;
+    vars := varList(v);
+    (vars1,tail) := listAppendTail(inVars,tail,vars);
+  end for;
 end equationSystemsVarsLst;
 
 public function daeVars "returns orderedVars"

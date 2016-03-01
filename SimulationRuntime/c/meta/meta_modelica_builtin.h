@@ -98,6 +98,7 @@ extern modelica_metatype listReverse(modelica_metatype);
 extern modelica_metatype listReverseInPlace(modelica_metatype);
 extern modelica_boolean listMember(modelica_metatype, modelica_metatype);
 extern modelica_metatype listAppend(modelica_metatype,modelica_metatype);
+extern modelica_metatype listAppendTail(modelica_metatype,modelica_metatype,modelica_metatype,modelica_metatype *);
 extern modelica_integer listLength(modelica_metatype);
 #define listGet(X,Y) boxptr_listGet(threadData,X,mmc_mk_icon(Y))
 #define listEmpty(LST) MMC_NILTEST(LST)
