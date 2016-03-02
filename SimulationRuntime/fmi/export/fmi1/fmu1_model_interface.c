@@ -173,7 +173,7 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
     functions.logger(NULL, instanceName, fmiError, "error", "fmiInstantiateModel: Out of memory.");
     return NULL;
   }
-  if (comp->loggingOn) comp->functions.logger(NULL, instanceName, fmiOK, "log",
+  if (loggingOn) functions.logger(NULL, instanceName, fmiOK, "log",
       "fmiInstantiateModel: GUID=%s", GUID);
   /* intialize modelData */
   fmu1_model_interface_setupDataStruc(comp->fmuData);
