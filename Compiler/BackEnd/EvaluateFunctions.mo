@@ -56,6 +56,7 @@ protected import List;
 protected import RemoveSimpleEquations;
 protected import SCode;
 protected import Util;
+protected import MetaModelica.Dangerous;
 
 
 // =============================================================================
@@ -2620,7 +2621,7 @@ algorithm
       DAE.Subscript sub;
       list<DAE.Dimension> rest;
       list<DAE.Subscript> subs;
-      list<list<DAE.Subscript>> subsLst, subsLst1, subFold = {};
+      list<list<DAE.Subscript>> subsLst, subsLst1, subFold = {}, tail = {};
   case(dim::rest,_)
     algorithm
       size := Expression.dimensionSize(dim);
@@ -2629,7 +2630,7 @@ algorithm
       subsLst := List.map(subs,List.create);
       for sub in subsIn loop
         subsLst1 := List.map1r(subsLst,listAppend,sub);
-        subFold := listAppend(subFold,subsLst1);
+        (subFold, tail) := Dangerous.listAppendTail(subFold,{},subsLst1);
       end for;
       if listEmpty(subsIn) then subFold := subsLst; end if;
     then expandDimension(rest,subFold);

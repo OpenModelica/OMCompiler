@@ -901,6 +901,14 @@ function listReverseInPlace<A> "O(n). A destructive listReverse. May cause segme
 external "builtin";
 end listReverseInPlace;
 
+function listAppendTail<A> "O(length(lst1)), O(1) if either list is empty"
+  input List<A> lst1;
+  input List<A> tail;
+  input List<A> lst2 = {};
+  output List<A> lst;
+  output List<A> outTail;
+external "builtin";
+end listAppendTail;
 end Dangerous;
 
 end MetaModelica;

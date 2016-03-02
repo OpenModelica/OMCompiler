@@ -443,6 +443,61 @@ modelica_metatype listAppend(modelica_metatype lst1,modelica_metatype lst2)
   return MMC_TAGPTR(res);
 }
 
+modelica_metatype listAppendTail(modelica_metatype lst1, modelica_metatype tail1, modelica_metatype lst2, modelica_metatype *outTail)
+{
+  struct mmc_cons_struct *res = NULL;
+  struct mmc_cons_struct *p = NULL;
+  modelica_metatype tail2;
+  int length;
+  int i;
+  modelica_metatype head = MMC_UNTAGPTR(lst1);
+
+  if (MMC_NILTEST(lst2)) { /* If lst2 is empty, simply return lst1 and old tail of lst1*/
+    *outTail = tail1;
+    return lst1;
+  }
+  if (MMC_NILTEST(lst1)) { /* If lst1 is empty, simply return lst1 and old tail of empty lst1 */
+    *outTail = tail1;
+    return lst2;
+  }
+  length = listLength(lst2);
+  if (MMC_NILTEST(tail1)) {
+    // copy list one if not already done for this instance
+    int length1 = listLength(lst1);
+    res = (struct mmc_cons_struct*)mmc_alloc_words( length1+length * 3 ); /* Do one single big alloc. It's cheaper */
+    head = res;
+    for (i=0; i<length1; i++) { /* Write all except the last element... */
+      p = res+i;
+      p->header = MMC_STRUCTHDR(2, MMC_CONS_CTOR);
+      p->data[0] = MMC_CAR(lst1);
+      p->data[1] = MMC_TAGPTR(res+i+1);
+      lst1 = MMC_CDR(lst1);
+    }
+    res = res + i;
+  } else {
+    res = (struct mmc_cons_struct*)mmc_alloc_words( length * 3 ); /* Do one single big alloc. It's cheaper */
+    p = MMC_UNTAGPTR(tail1);
+    p->data[1] = MMC_TAGPTR(res);
+  }
+
+  // copy list two
+  for (i=0; i<length-1; i++) {
+    p = res+i;
+    p->header = MMC_STRUCTHDR(2, MMC_CONS_CTOR);
+    p->data[0] = MMC_CAR(lst2);
+    p->data[1] = MMC_TAGPTR(res+i+1);
+    lst2 = MMC_CDR(lst2);
+  }
+  // last element terminates the list
+  p = res+i;
+  p->header = MMC_STRUCTHDR(2, MMC_CONS_CTOR);
+  p->data[0] = MMC_CAR(lst2);
+  p->data[1] = MMC_CDR(lst2);
+
+  *outTail = MMC_TAGPTR(p);
+  return MMC_TAGPTR(head);
+}
+
 modelica_integer listLength(modelica_metatype lst)
 {
   modelica_integer res = 0;
