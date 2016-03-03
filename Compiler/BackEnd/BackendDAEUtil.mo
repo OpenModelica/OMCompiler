@@ -2264,8 +2264,8 @@ algorithm
     outIncidenceArrayT := fillincidenceMatrixT(row, row_indices, outIncidenceArrayT);
   end for;
 
-  outIncidenceArray := listArray(listReverse(iarr));
-  omapIncRowEqn := listArray(listReverse(imap));
+  outIncidenceArray := listReverseArray(iarr);
+  omapIncRowEqn := listReverseArray(imap);
 end incidenceMatrixDispatchScalar;
 
 protected function fillincidenceMatrixT
@@ -3864,7 +3864,7 @@ algorithm
     // index = numberOfEqs (we reach the end)
     case (_, _, _, _, _, _,  false, _, _, _, _, _)
       then
-        (listArray(listReverse(inIncidenceArray)),inIncidenceArrayT,listArray(listReverse(imapEqnIncRow)),listArray(listReverse(imapIncRowEqn)));
+        (listReverseArray(inIncidenceArray),inIncidenceArrayT,listReverseArray(imapEqnIncRow),listReverseArray(imapIncRowEqn));
 
     // index < numberOfEqs
     case (_, _, iArr, _, _, _, true, _, _, _, _ , _)
@@ -4149,7 +4149,7 @@ algorithm
         (lst, row, size) = List.fold5(eqnslst, adjacencyRowEnhancedEqnLstIfBranches, vars, mark, rowmark, kvars, trytosolve, (lst, row, size));
 
         lstall = List.map(row, Util.tuple21);
-        (_, lst, _) = List.intersection1OnTrue(lstall, lst, intEq);
+        lst = List.setDifferenceOnTrue(lstall, lst, intEq);
         _ = List.fold1(lst, markNegativ, rowmark, mark);
         row = listAppend(row1,row);
       then

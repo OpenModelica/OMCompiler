@@ -3298,8 +3298,8 @@ algorithm
         simCode = TDS_updateModelInfo(simCode,idcs);
         numDupl = List.fold(List.map(duplComps,listLength),intAdd,0);
         procAss = Array.map(procAss,listReverse);
-        sccSimEqMap = arrayAppend(iSccSimEqMapping,listArray(listReverse(duplSccSimEqMap)));
-        comps = arrayAppend(inComps,listArray(listReverse(duplComps)));
+        sccSimEqMap = arrayAppend(iSccSimEqMapping,listReverseArray(duplSccSimEqMap));
+        comps = arrayAppend(inComps,listReverseArray(duplComps));
         varCompMapping = arrayAppend(varCompMapping,arrayCreate(numDupl,(0,0,0)));
         eqCompMapping = arrayAppend(eqCompMapping,arrayCreate(numDupl,(0,0,0)));
         compParamMapping = arrayAppend(compParamMapping,arrayCreate(numDupl,{}));

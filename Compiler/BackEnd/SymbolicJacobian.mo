@@ -1751,7 +1751,7 @@ algorithm
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> sorted know diff vars(" + intString(listLength(diffVarsTmp)) + ") for Jacobian DAE time: " + realString(clock()) + "\n");
         end if;
-        (_,knvarsTmp,_) = List.intersection1OnTrue(diffVarsTmp, knvarsTmp, BackendVariable.varEqual);
+        knvarsTmp = List.setDifferenceOnTrue(diffVarsTmp, knvarsTmp, BackendVariable.varEqual);
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> sorted know vars(" + intString(listLength(knvarsTmp)) + ") for Jacobian DAE time: " + realString(clock()) + "\n");
         end if;

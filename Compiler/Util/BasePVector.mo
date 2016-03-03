@@ -155,7 +155,7 @@ algorithm
         e :: rest := rest;
         node_lst := VALUE(e) :: node_lst;
       end for;
-      tail := arrayAppend(tail, listArray(listReverse(node_lst)));
+      tail := arrayAppend(tail, listReverseArray(node_lst));
     end if;
 
     // Keep track of the size so we know where to push new nodes.

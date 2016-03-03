@@ -885,7 +885,7 @@ algorithm
         end if;
         // mark tearing var
         markTVars(tSel_always,ass1);
-        (_,unsolv,_) = List.intersection1OnTrue(unsolvables,tSel_always,intEq);
+        unsolv = List.setDifferenceOnTrue(unsolvables,tSel_always,intEq);
         // equations not yet assigned containing the tvars
         vareqns = findVareqns(ass2,isAssignedSaveEnhanced,mt,tSel_always);
         if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
@@ -990,7 +990,7 @@ algorithm
           print("omcTearingSelectTearingVar Candidates(unassigned vars):\n");
           BackendDump.debuglst(freeVars,intString,", ","\n");
         end if;
-        (_,freeVars,_) = List.intersection1OnTrue(freeVars,tSel_never,intEq);
+        freeVars = List.setDifferenceOnTrue(freeVars,tSel_never,intEq);
         if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
           print("Candidates without variables with annotation attribute 'never':\n");
           BackendDump.debuglst(freeVars,intString,", ","\n");
@@ -2108,7 +2108,7 @@ algorithm
 
       // ascertain if there are new unsolvables now
       unsolvables = getUnsolvableVarsConsiderMatching(1,arrayLength(meTIn),meTIn,ass1In,ass2In,{});
-      (_,unsolvables,_) = List.intersection1OnTrue(unsolvables,tvars,intEq);
+      unsolvables = List.setDifferenceOnTrue(unsolvables,tvars,intEq);
 
       // repeat until system is causal
       (tvars, order) = CellierTearing2(causal,mIn,mtIn,meIn,meTIn,ass1In,ass2In,unsolvables,tvars,discreteVars,tSel_always,tSel_prefer,tSel_avoid,tSel_never,order,mapEqnIncRow,mapIncRowEqn);
@@ -2160,7 +2160,7 @@ algorithm
 
       // ascertain if there are new unsolvables now
       unsolvables = getUnsolvableVarsConsiderMatching(1,arrayLength(meTIn),meTIn,ass1In,ass2In,{});
-      (_,unsolvables,_) = List.intersection1OnTrue(unsolvables,tvars,intEq);
+      unsolvables = List.setDifferenceOnTrue(unsolvables,tvars,intEq);
 
       // repeat until system is causal
       (tvars, order) = CellierTearing2(causal,mIn,mtIn,meIn,meTIn,ass1In,ass2In,unsolvables,tvars,discreteVars,{},tSel_prefer,tSel_avoid,tSel_never,order,mapEqnIncRow,mapIncRowEqn);
@@ -2272,7 +2272,7 @@ algorithm
     print("1st: " + stringDelimitList(List.map(selectedcols1,intString),",") + "\n");
   end if;
   // Without discrete:
-  (_,selectedcols1,_) := List.intersection1OnTrue(selectedcols1,discreteVars,intEq);
+  selectedcols1 := List.setDifferenceOnTrue(selectedcols1,discreteVars,intEq);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("Without Discrete: " + stringDelimitList(List.map(selectedcols1,intString),",") + "\n(Variables in the equation(s) with most Variables)\n\n");
   end if;
@@ -2292,7 +2292,7 @@ algorithm
 
   // 5. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2322,7 +2322,7 @@ algorithm
 
   // 0. Consider only non-discrete Vars
   varlst := List.intRange(arrayLength(mtIn));
-  (_,selectedcols0,_) := List.intersection1OnTrue(varlst,discreteVars,intEq);
+  selectedcols0 := List.setDifferenceOnTrue(varlst,discreteVars,intEq);
   mtsel := Array.select(mtIn,selectedcols0);
 
   // 1. choose rows (vars) with most nonzero entries and write the indexes in a list
@@ -2337,7 +2337,7 @@ algorithm
 
   // 2. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2374,7 +2374,7 @@ algorithm
   end if;
 
   // Without discrete:
-  (_,selectedcols1,_) := List.intersection1OnTrue(selectedcols1,discreteVars,intEq);
+  selectedcols1 := List.setDifferenceOnTrue(selectedcols1,discreteVars,intEq);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("Without Discrete: " + stringDelimitList(List.map(selectedcols1,intString),",") + "\n(Variables in the equation(s) with most Variables)\n\n");
   end if;
@@ -2394,7 +2394,7 @@ algorithm
 
   // 5. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2430,7 +2430,7 @@ algorithm
 
   // 0. Consider only non-discrete Vars
   varlst := List.intRange(arrayLength(mtIn));
-  (_,selectedcols0,_) := List.intersection1OnTrue(varlst,discreteVars,intEq);
+  selectedcols0 := List.setDifferenceOnTrue(varlst,discreteVars,intEq);
   mtsel := Array.select(mtIn,selectedcols0);
 
   // 1. choose rows (vars) with most nonzero entries and write the indexes in a list
@@ -2445,7 +2445,7 @@ algorithm
 
   // 2. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2488,7 +2488,7 @@ algorithm
   end if;
 
   // Without discrete:
-  (_,selectedcols1,_) := List.intersection1OnTrue(selectedcols1,discreteVars,intEq);
+  selectedcols1 := List.setDifferenceOnTrue(selectedcols1,discreteVars,intEq);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("Without Discrete: " + stringDelimitList(List.map(selectedcols1,intString),",") + "\n(Variables in the equation(s) with most Variables)\n\n");
   end if;
@@ -2514,7 +2514,7 @@ algorithm
 
   // 6. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2544,7 +2544,7 @@ algorithm
 
   // 0. Consider only non-discrete Vars
   varlst := List.intRange(arrayLength(mtIn));
-  (_,selectedcols0,_) := List.intersection1OnTrue(varlst,discreteVars,intEq);
+  selectedcols0 := List.setDifferenceOnTrue(varlst,discreteVars,intEq);
   mtsel := Array.select(mtIn,selectedcols0);
 
   // 1. choose rows (vars) with most nonzero entries and write the indexes in a list
@@ -2565,7 +2565,7 @@ algorithm
 
   // 3. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2602,7 +2602,7 @@ algorithm
   end if;
 
   // Without discrete:
-  (_,selectedcols1,_) := List.intersection1OnTrue(selectedcols1,discreteVars,intEq);
+  selectedcols1 := List.setDifferenceOnTrue(selectedcols1,discreteVars,intEq);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("Without Discrete: " + stringDelimitList(List.map(selectedcols1,intString),",") + "\n(Variables in the equation(s) with most Variables)\n\n");
   end if;
@@ -2622,7 +2622,7 @@ algorithm
 
   // 5. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2664,7 +2664,7 @@ algorithm
 
   // 0. Consider only non-discrete Vars
   varlst := List.intRange(arrayLength(mtIn));
-  (_,selectedcols0,_) := List.intersection1OnTrue(varlst,discreteVars,intEq);
+  selectedcols0 := List.setDifferenceOnTrue(varlst,discreteVars,intEq);
   mtsel := Array.select(mtIn,selectedcols0);
 
   // 1. choose rows (vars) with most nonzero entries and write the indexes in a list
@@ -2679,7 +2679,7 @@ algorithm
 
   // 3. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2726,7 +2726,7 @@ algorithm
 
   // 0. Consider only non-discrete Vars
   varlst := List.intRange(arrayLength(mtIn));
-  (_,selectedcols0,_) := List.intersection1OnTrue(varlst,discreteVars,intEq);
+  selectedcols0 := List.setDifferenceOnTrue(varlst,discreteVars,intEq);
   mtsel := Array.select(mtIn,selectedcols0);
 
   // 1. choose rows (vars) with most nonzero entries and write the indexes in a list
@@ -2741,7 +2741,7 @@ algorithm
 
   // 3. select the rows(eqs) from mIn which could be causalized by knowing one more Var
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   selectedrows := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print(stringDelimitList(List.map(selectedrows,intString),",")+"\n(Equations which could be causalized by knowing one more Var)\n\n");
@@ -2830,7 +2830,7 @@ algorithm
   end if;
 
   // 2. Determine the equations with size(equation)+1 variables and save them in causEq
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,1);
   causEq := listAppend(assEq_multi,assEq_single);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("2nd: "+ stringDelimitList(List.map(causEq,intString),",")+"\n(Equations from (1st) which could be causalized by knowing one more variable)\n\n");
@@ -2844,8 +2844,8 @@ algorithm
   end if;
 
   // 4. Remove the discrete variables and the variables with attribute tearingSelect=never
-  (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,discreteVars,intEq);
-  (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,tSel_never,intEq);
+  potentialTVars := List.setDifferenceOnTrue(potentialTVars,discreteVars,intEq);
+  potentialTVars := List.setDifferenceOnTrue(potentialTVars,tSel_never,intEq);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("4th: "+ stringDelimitList(List.map(potentialTVars,intString),",")+"\n(All non-discrete variables from (3rd) without attribute 'never')\n\n");
   end if;
@@ -2853,8 +2853,8 @@ algorithm
   // 4.1 Check if potentialTVars is empty, if yes, choose all unassigned non-discrete variables without attribute tearingSelect=never as potentialTVars
   if listEmpty(potentialTVars) then
     ((_,potentialTVars)) := Array.fold(ass1In,getUnassigned,(1,{}));
-    (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,discreteVars,intEq);
-    (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,tSel_never,intEq);
+    potentialTVars := List.setDifferenceOnTrue(potentialTVars,discreteVars,intEq);
+    potentialTVars := List.setDifferenceOnTrue(potentialTVars,tSel_never,intEq);
   if listEmpty(potentialTVars) then
     Error.addCompilerError("It is not possible to select a new tearing variable, because all left variables are discrete or have the attribute tearingSelect=never");
     fail();
@@ -3236,7 +3236,7 @@ algorithm
   ((_,assEq)) := Array.fold(ass2In,getUnassigned,(1,{}));
 
   // find equations with one variable
-  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,0,{},{});
+  (assEq_multi,assEq_single) := traverseEqnsforAssignable(assEq,mIn,mapEqnIncRow,mapIncRowEqn,0);
   assEq := listAppend(assEq_multi,assEq_single);
 
   // transform equationlist to equationlist with collective equations
@@ -3325,33 +3325,22 @@ protected function traverseEqnsforAssignable
   input array<list<Integer>> mapEqnIncRow;
   input array<Integer> mapIncRowEqn;
   input Integer prescient;
-  input list<Integer> inAcc1;
-  input list<Integer> inAcc2;
-  output list<Integer> outAssEq_multi;
-  output list<Integer> outAssEq_single;
+  output list<Integer> outAssEq_multi = {};
+  output list<Integer> outAssEq_single = {};
+protected
+  Integer eqnColl,eqnSize;
 algorithm
- (outAssEq_multi,outAssEq_single) := matchcontinue(inAssEq,m,mapEqnIncRow,mapIncRowEqn,prescient,inAcc1,inAcc2)
-   local
-     Integer e,eqnColl,eqnSize;
-   list<Integer> rest,acc1,acc2;
-   case({},_,_,_,_,_,_)
-     then (inAcc1,inAcc2);
-   case(e::rest,_,_,_,_,_,_)
-    equation
-   eqnColl = mapIncRowEqn[e];
-   eqnSize = listLength(mapEqnIncRow[eqnColl]);
-     true = listLength(m[e]) == eqnSize + prescient;
-     if eqnSize == 1 then
-     (acc1,acc2) = traverseEqnsforAssignable(rest,m,mapEqnIncRow,mapIncRowEqn,prescient,inAcc1,e::inAcc2);
-   else
-   (acc1,acc2) = traverseEqnsforAssignable(rest,m,mapEqnIncRow,mapIncRowEqn,prescient,e::inAcc1,inAcc2);
-   end if;
-  then (acc1,acc2);
-   case(_::rest,_,_,_,_,_,_)
-    equation
-     (acc1,acc2) = traverseEqnsforAssignable(rest,m,mapEqnIncRow,mapIncRowEqn,prescient,inAcc1,inAcc2);
-    then (acc1,acc2);
- end matchcontinue;
+  for e in inAssEq loop
+    eqnColl := mapIncRowEqn[e];
+    eqnSize := listLength(mapEqnIncRow[eqnColl]);
+    if listLength(m[e]) == eqnSize + prescient then
+      if eqnSize == 1 then
+        outAssEq_single := e::outAssEq_single;
+      else
+        outAssEq_multi := e::outAssEq_multi;
+      end if;
+    end if;
+  end for;
 end traverseEqnsforAssignable;
 
 

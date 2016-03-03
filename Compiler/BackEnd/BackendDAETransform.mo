@@ -120,7 +120,7 @@ algorithm
     vlst := list(arrayGet(ass2, e) for e guard(arrayGet(ass2, e) > 0) in elst);
   end for;
 
-  outAcc := listArray(listReverse(acc));
+  outAcc := listReverseArray(acc);
 end eqnAssignmentNonScalar;
 
 public function varAssignmentNonScalar
@@ -137,7 +137,7 @@ algorithm
     acc := e :: acc;
   end for;
 
-  outAcc := listArray(listReverse(acc));
+  outAcc := listReverseArray(acc);
 end varAssignmentNonScalar;
 
 protected function analyseStrongComponentsScalar "author: Frenkel TUD 2011-05
@@ -161,7 +161,7 @@ algorithm
     outComps := acomp :: outComps;
   end for;
 
-  outComps := listReverse(outComps);
+  outComps := MetaModelica.Dangerous.listReverseInPlace(outComps);
 end analyseStrongComponentsScalar;
 
 protected function analyseStrongComponentScalar "author: Frenkel TUD 2011-05"
@@ -349,11 +349,11 @@ algorithm
       list<DAE.Exp> expLst;
 
     case BackendDAE.ARRAY_EQUATION(left=DAE.ARRAY(array=expLst)) algorithm
-      (_, _, expLst) := List.intersection1OnTrue(expLst, crefLst, Expression.expEqual);
+      expLst := List.setDifferenceOnTrue(crefLst, expLst, Expression.expEqual);
     then listEmpty(expLst);
 
     case BackendDAE.ARRAY_EQUATION(right=DAE.ARRAY(array=expLst)) algorithm
-      (_, _, expLst) := List.intersection1OnTrue(expLst, crefLst, Expression.expEqual);
+      expLst := List.setDifferenceOnTrue(crefLst, expLst, Expression.expEqual);
     then listEmpty(expLst);
 
     else false;
