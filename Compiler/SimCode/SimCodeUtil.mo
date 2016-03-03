@@ -5525,7 +5525,6 @@ algorithm
     (simEq, outUniqueEqIndex) := makeSolved_SES_SIMPLE_ASSIGN_fromStartValue(p, outUniqueEqIndex);
     outParameterEquations := simEq::outParameterEquations;
   end for;
-  outParameterEquations := listReverse(outParameterEquations);
 
   // get min/max and nominal asserts
   varasserts := {};
@@ -5536,8 +5535,9 @@ algorithm
   varasserts := MetaModelica.Dangerous.listReverseInPlace(varasserts);
   (simvarasserts, outUniqueEqIndex) := List.mapFold(varasserts, dlowAlgToSimEqSystem, outUniqueEqIndex);
 
-  outParameterEquations := listAppend(outParameterEquations, simvarasserts);
-  outParameterEquations := listAppend(outParameterEquations, acc);
+  outParameterEquations := List.append_reverse(simvarasserts, outParameterEquations);
+  outParameterEquations := List.append_reverse(acc, outParameterEquations);
+  outParameterEquations := listReverse(outParameterEquations);
 end createParameterEquations;
 
 protected function createInitialAssignmentsFromStart
@@ -10928,7 +10928,7 @@ protected
   list<Integer> preEqs,reqEqs;
 algorithm
   preEqs := arrayGet(tree,eq);
-  (_,preEqs,_) := List.intersection1OnTrue(preEqs,eqsIn,intEq);
+  preEqs := List.setDifferenceOnTrue(preEqs,eqsIn,intEq);
   reqEqs := listAppend(preEqs,eqsIn);
   eqsOut := List.fold1(preEqs,collectReqSimEqs,tree,reqEqs);
 end collectReqSimEqs;
@@ -11619,15 +11619,15 @@ algorithm
     //print("-- translateSparsePatterCref2DerCref matrixes AB\n");
 
     // collect all variable
-    varsA := getSimVars2Crefs(diffCrefsA, crefSimVarHT);
-    varsB := getSimVars2Crefs(derdiffCrefsA, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
-    varsB := getSimVars2Crefs(diffedCrefsA, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
+    varsA := getSimVars2Crefs(diffedCrefsB, crefSimVarHT);
     varsB := getSimVars2Crefs(diffCrefsB, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
-    varsB := getSimVars2Crefs(diffedCrefsB, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
+    varsA := listAppend(varsB, varsA);
+    varsB := getSimVars2Crefs(diffedCrefsA, crefSimVarHT);
+    varsA := listAppend(varsB, varsA);
+    varsB := getSimVars2Crefs(derdiffCrefsA, crefSimVarHT);
+    varsA := listAppend(varsB, varsA);
+    varsB := getSimVars2Crefs(diffCrefsA, crefSimVarHT);
+    varsA := listAppend(varsB, varsA);
     //print("-- created vars for AB\n");
     sparseInts := sortSparsePattern(varsA, spTA, true);
     //print("-- sorted vars for AB\n");
@@ -11643,12 +11643,12 @@ algorithm
     spTA  := mergeSparsePatter(spTA, spTB, {});
     //print("-- merged matrixes CD\n");
 
-    varsA := getSimVars2Crefs(diffCrefsA, crefSimVarHT);
+    varsB := getSimVars2Crefs(diffedCrefsB, crefSimVarHT);
+    varsA := getSimVars2Crefs(diffCrefsB, crefSimVarHT);
+    varsA := listAppend(varsA, varsB);
     varsB := getSimVars2Crefs(diffedCrefsA, crefSimVarHT);
     varsA := listAppend(varsA, varsB);
-    varsB := getSimVars2Crefs(diffCrefsB, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
-    varsB := getSimVars2Crefs(diffedCrefsB, crefSimVarHT);
+    varsB := getSimVars2Crefs(diffCrefsA, crefSimVarHT);
     varsA := listAppend(varsA, varsB);
     //print("-- created vars for CD\n");
 

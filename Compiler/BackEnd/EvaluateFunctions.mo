@@ -895,7 +895,7 @@ algorithm
 
         //1d records are replaced by their scalar value
         allOutputCrefs2 = List.map(allOutputCrefs,scalarRecCrefsForOneDimRec);
-        (_,_,varScalarCrefsInFunc) = List.intersection1OnTrue(allOutputCrefs,allOutputCrefs2,ComponentReference.crefEqual);
+        varScalarCrefsInFunc = List.setDifferenceOnTrue(allOutputCrefs2,allOutputCrefs,ComponentReference.crefEqual);
         allOutputCrefs = allOutputCrefs2;
         //print("\n allOutputCrefs \n"+stringDelimitList(List.map(allOutputCrefs,ComponentReference.printComponentRefStr),"\n")+"\n");
         //print("\n varScalarCrefsInFunc \n"+stringDelimitList(List.map(varScalarCrefsInFunc,ComponentReference.printComponentRefStr),"\n")+"\n");
@@ -1053,12 +1053,12 @@ algorithm
         //print("scalars to check\n"+stringDelimitList(List.map(scalars,ComponentReference.printComponentRefStr),"\n")+"\n");
 
         false = listEmpty(scalars);
-        (constVars,_,_) = List.intersection1OnTrue(scalars,constCrefs,ComponentReference.crefEqual);
+        constVars = List.intersectionOnTrue(scalars,constCrefs,ComponentReference.crefEqual);
         //print("constVars\n"+stringDelimitList(List.map(constVars,ComponentReference.printComponentRefStr),"\n")+"\n");
 
         const = intEq(listLength(scalars),listLength(constVars));
         constScalarCrefs = List.filter1OnTrue(constCrefs,ComponentReference.crefInLst,constVars);
-        (_,varCrefs,_) = List.intersection1OnTrue(scalars,constScalarCrefs,ComponentReference.crefEqual);
+        varCrefs = List.setDifferenceOnTrue(scalars,constScalarCrefs,ComponentReference.crefEqual);
         //constCompl = if_(const,cref::constComplexLstIn,constComplexLstIn);
         constCompl = if false then cref::constComplexLstIn else constComplexLstIn;
         //varCompl = if_(not const,cref::varComplexLstIn,varComplexLstIn);

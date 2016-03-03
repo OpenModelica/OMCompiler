@@ -187,7 +187,7 @@ algorithm
       list<BackendDAE.Equation> eqLst;
     case(partition::rest,_,_,_,_,_,_,_,_,_)
       equation
-        (_,partition,_) = List.intersection1OnTrue(partition,nonLoopEqs,intEq);
+        partition = List.setDifferenceOnTrue(partition,nonLoopEqs,intEq);
         true = listEmpty(partition);
         eqLst = resolveLoops_resolvePartitions(rest,mIn,mTIn,m_uncut,mT_uncut,eqMapping,varMapping,daeEqs,daeVars,nonLoopEqs);
     then
@@ -195,7 +195,7 @@ algorithm
     case(partition::rest,_,_,_,_,_,_,_,_,_)
       equation
         // search the partitions for loops
-        (_,partition,_) = List.intersection1OnTrue(partition,nonLoopEqs,intEq);
+        partition = List.setDifferenceOnTrue(partition,nonLoopEqs,intEq);
         //print("\nanalyse the partition "+stringDelimitList(List.map(partition,intString),",")+"\n");
         (loops,eqCrossLst,varCrossLst) = resolveLoops_findLoops({partition},mIn,mTIn,{},{},{});
         loops = List.filterOnFalse(loops,listEmpty);
@@ -369,7 +369,7 @@ algorithm
         simpleLoops = getDoubles(paths1,{});  // get 2 adjacent equations which form a simple loop i.e. they share 2 variables
         simpleLoops = List.unique(simpleLoops);
           //print("all simpleLoop-paths: \n"+stringDelimitList(List.map(simpleLoops,HpcOmTaskGraph.intLstString)," / ")+"\n");
-        (_,paths,_) = List.intersection1OnTrue(paths1,simpleLoops,intLstIsEqual);
+        paths = List.setDifferenceOnTrue(paths1,simpleLoops,intLstIsEqual);
 
         paths0 = List.sort(paths,List.listIsLonger);  // solve the small loops first
         (connectedPaths,loopConnectors) = connect2PathsToLoops(paths0,{},{});
@@ -534,7 +534,7 @@ algorithm
 
       // get the equation that will be replaced and the rest
       (crossEqs,eqs,_) = List.intersection1OnTrue(loop1,eqCrossLstIn,intEq);  // replace a crossEq in the loop
-      (replEqs,_,_) = List.intersection1OnTrue(replEqsIn,loop1,intEq);  // just consider the already replaced equations in this loop
+      replEqs = List.intersectionOnTrue(replEqsIn,loop1,intEq);  // just consider the already replaced equations in this loop
 
       // first try to replace a non cross node, otherwise an already replaced eq, or if none of them is available take a crossnode (THIS IS NOT YET CLEAR)
       if not listEmpty(eqs) then
@@ -554,7 +554,7 @@ algorithm
       eqVars = List.map1(loop1,Array.getIndexFirst,mIn);
       vars = List.flatten(eqVars);
       loopVars = doubleEntriesInLst(vars,{},{});  // the vars in the loop
-      (_,adjVars,_) = List.intersection1OnTrue(vars,loopVars,intEq); // the vars adjacent to the loop
+      adjVars = List.setDifferenceOnTrue(vars,loopVars,intEq); // the vars adjacent to the loop
 
       // update incidenceMatrix
       List.map2_0(loopVars,Array.updateIndexFirst,{},mTIn);  //delete the vars in the loop
@@ -605,7 +605,7 @@ algorithm
       (crossVars,loopVars,_) = List.intersection1OnTrue(loopVars,varCrossLstIn,intEq);  // some crossVars have to remain
       //print("loopVars: "+stringDelimitList(List.map(loopVars,intString),",")+"\n");
 
-      (_,adjVars,_) = List.intersection1OnTrue(vars,loopVars,intEq); // the vars adjacent to the loop
+      adjVars = List.setDifferenceOnTrue(vars,loopVars,intEq); // the vars adjacent to the loop
       adjVars = listAppend(crossVars,adjVars);
       adjVars = List.unique(adjVars);
 
@@ -638,7 +638,7 @@ algorithm
       resolvedEq = resolveClosedLoop(loop1,mIn,mTIn,eqMapping,varMapping,eqLstIn,varLstIn);
 
       // update IncidenceMatrix
-      (_,crossEqs,_) = List.intersection1OnTrue(loop1,replEqsIn,intEq);  // do not replace an already replaced Eq
+      crossEqs = List.setDifferenceOnTrue(loop1,replEqsIn,intEq);  // do not replace an already replaced Eq
       (pos::_) = crossEqs;  // the equation that will be replaced = pos
       eqVars = List.map1(loop1,Array.getIndexFirst,mIn);
       vars = List.flatten(eqVars);
@@ -680,11 +680,11 @@ algorithm
       case(secNode::restSecNodes,_,_,_,_)
         equation
           adjPrimNodes = arrayGet(mTIn,secNode);
-          (_,adjPrimNodes,_) = List.intersection1OnTrue(adjPrimNodes,primNodesIn,intEq);
+          adjPrimNodes = List.setDifferenceOnTrue(adjPrimNodes,primNodesIn,intEq);
           adjPrimNodes = List.filter2OnTrue(adjPrimNodes,isNoCrossNode,mIn,secNodesIn);
           adjSecNodesLst = List.map1(adjPrimNodes,Array.getIndexFirst,mIn);
           adjSecNodes = List.flatten(adjSecNodesLst);
-          (_,adjSecNodes,_) = List.intersection1OnTrue(adjSecNodes,secNodesIn,intEq);
+          adjSecNodes = List.setDifferenceOnTrue(adjSecNodes,secNodesIn,intEq);
           adjSecNodes = List.filter2OnTrue(adjSecNodes,arrayEntryLengthIs,mTIn,2);
           restSecNodes = listAppend(restSecNodes,adjSecNodes);
           adjPrimNodes = listAppend(adjPrimNodes,primNodesIn);
@@ -709,7 +709,7 @@ protected
   list<Integer> entry;
 algorithm
   entry := arrayGet(arr,idx);
-  (_,entry,_) := List.intersection1OnTrue(entry,doNotConsider,intEq);
+  entry := List.setDifferenceOnTrue(entry,doNotConsider,intEq);
   noCrossNode := intLe(listLength(entry),1);
 end isNoCrossNode;
 
@@ -721,7 +721,7 @@ protected
   list<Integer> entry;
 algorithm
   entry := arrayGet(arrIn,idx);
-  (_,entry,_) := List.intersection1OnTrue(entry,delEntries,intEq);
+  entry := List.setDifferenceOnTrue(entry,delEntries,intEq);
   _ := arrayUpdate(arrIn,idx,entry);
 end arrayGetDeleteInLst;
 
@@ -909,7 +909,7 @@ algorithm
         varEqs = List.map1(vars,Array.getIndexFirst,mT);
         eqs = List.flatten(varEqs);
         eqs = List.unique(eqs);
-        (eqs,_,_) = List.intersection1OnTrue(eqs,loopIn,intEq);
+        eqs = List.intersectionOnTrue(eqs,loopIn,intEq);
         next = listHead(eqs);
         rest = List.deleteMember(loopIn,next);
         rest = sortLoop(rest,m,mT,next::sortLoopIn);
@@ -1141,7 +1141,7 @@ protected
   list<Integer> eqVars,crossVars;
 algorithm
   eqVars := arrayGet(mIn,eq);
-  (crossVars,_,_) := List.intersection1OnTrue(eqVars,varCrossLst,intEq);
+  crossVars := List.intersectionOnTrue(eqVars,varCrossLst,intEq);
   numCrossVars := listLength(crossVars);
   if numCrossVars == 0 then
     arrayGetAppendLst(1,{eq},priorities);
@@ -1171,9 +1171,9 @@ algorithm
   //print("loopVars : "+stringDelimitList(List.map(loopVars,intString),",")+"\n");
 
   // check if its worth to resolve the loop. Therefore compare the amount of vars in and outside the loop
-  (_,nonLoopVars,_) := List.intersection1OnTrue(allVars,loopVars,intEq);
+  nonLoopVars := List.setDifferenceOnTrue(allVars,loopVars,intEq);
   //print("nonLoopVars : "+stringDelimitList(List.map(nonLoopVars,intString),",")+"\n");
-  (eqCrossLst,_,_) := List.intersection1OnTrue(loopVars,eqCrossLst,intEq);
+  eqCrossLst := List.intersectionOnTrue(loopVars,eqCrossLst,intEq);
   numInLoop := listLength(loopVars);
   numOutLoop := listLength(nonLoopVars);
   r1 := intGe(numInLoop,numOutLoop-1) and intLe(numInLoop,6);
@@ -1992,7 +1992,7 @@ algorithm
         //BackendDump.dumpIncidenceMatrix(m);
         vars1 = List.map(arrayGet(me,startEq),Util.tuple21);
         vars2 = List.map(arrayGet(me,nextEq),Util.tuple21);
-        (vars1,_,_) = List.intersection1OnTrue(vars1,vars2,intEq);
+        vars1 = List.intersectionOnTrue(vars1,vars2,intEq);
         numEqs = List.map(List.map1(vars1,Array.getIndexFirst,meT),listLength);
         (_,vars1) = List.filter1OnTrueSync(numEqs,intEq,2,vars1);
         sharedVar = listHead(vars1);
