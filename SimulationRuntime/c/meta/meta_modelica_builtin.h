@@ -127,6 +127,7 @@ static inline modelica_integer arrayLength(modelica_metatype arr)
 
 extern modelica_metatype arrayList(modelica_metatype);
 extern modelica_metatype listArray(modelica_metatype);
+extern modelica_metatype listReverseArray(modelica_metatype);
 extern modelica_metatype arrayCopy(modelica_metatype);
 #define arrayGet(X,Y) nobox_arrayGet(threadData,X,Y)
 

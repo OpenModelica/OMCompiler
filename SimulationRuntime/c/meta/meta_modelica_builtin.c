@@ -568,6 +568,19 @@ modelica_metatype arrayList(modelica_metatype arr)
   return res;
 }
 
+modelica_metatype listReverseArray(modelica_metatype lst)
+{
+  int nelts = listLength(lst);
+  void* arr = (struct mmc_struct*)mmc_mk_box_no_assign(nelts, MMC_ARRAY_TAG);
+  void **arrp = MMC_STRUCTDATA(arr);
+  int i = 0;
+  for(i=nelts-1; i>=0; i--) {
+    arrp[i] = MMC_CAR(lst);
+    lst = MMC_CDR(lst);
+  }
+  return arr;
+}
+
 modelica_metatype listArray(modelica_metatype lst)
 {
   int nelts = listLength(lst);

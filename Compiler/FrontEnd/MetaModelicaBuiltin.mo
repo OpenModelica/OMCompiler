@@ -674,6 +674,13 @@ function arrayList<A>
 external "builtin";
 end arrayList;
 
+impure function listReverseArray<A>
+  "O(n)"
+  input List<A> lst;
+  output array<A> arr;
+external "builtin";
+end listReverseArray;
+
 impure function listArray<A>
   "O(n)"
   input List<A> lst;
