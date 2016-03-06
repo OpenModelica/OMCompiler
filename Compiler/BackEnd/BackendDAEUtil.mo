@@ -52,64 +52,68 @@ public import DAE;
 public import FCore;
 public import Util;
 
-protected import Algorithm;
-protected import Array;
-protected import BackendDAEOptimize;
-protected import BackendDAETransform;
-protected import BackendDump;
-protected import BackendEquation;
-protected import BackendDAEEXT;
-protected import BackendInline;
-protected import BackendVarTransform;
-protected import BackendVariable;
-protected import BinaryTree;
-protected import Causalize;
-protected import Ceval;
-protected import CheckModel;
-protected import ClassInf;
-protected import ClockIndexes;
-protected import CommonSubExpression;
-protected import ComponentReference;
-protected import Config;
-protected import DAEDump;
-protected import DAEUtil;
-protected import Debug;
-protected import Differentiate;
-protected import DumpGraphML;
-protected import DynamicOptimization;
-protected import Error;
-protected import EvaluateFunctions;
-protected import EvaluateParameter;
-protected import Expression;
-protected import ExpressionDump;
-protected import ExpressionSimplify;
-protected import ExpressionSolve;
-protected import FindZeroCrossings;
-protected import Flags;
-protected import Global;
-protected import HpcOmEqSystems;
-protected import IndexReduction;
-protected import Initialization;
-protected import Inline;
-protected import InlineArrayEquations;
-protected import List;
-protected import Matching;
-protected import MetaModelica.Dangerous.listReverseInPlace;
-protected import OnRelaxation;
-protected import RemoveSimpleEquations;
-protected import ResolveLoops;
-protected import SCode;
-protected import SimCodeFunctionUtil;
-protected import Sorting;
-protected import StateMachineFeatures;
-protected import SymbolicJacobian;
-protected import SynchronousFeatures;
-protected import System;
-protected import Tearing;
-protected import Types;
-protected import UnitCheck;
-protected import Values;
-protected import XMLDump;
+protected
+import Algorithm;
+import Array;
+import BackendDAE.EventInfo.EVENT_INFO;
+import BackendDAEOptimize;
+import BackendDAETransform;
+import BackendDump;
+import BackendEquation;
+import BackendDAEEXT;
+import BackendInline;
+import BackendVarTransform;
+import BackendVariable;
+import BinaryTree;
+import Causalize;
+import Ceval;
+import CheckModel;
+import ClassInf;
+import ClockIndexes;
+import CommonSubExpression;
+import ComponentReference;
+import Config;
+import DAE.Exp;
+import DAE.Operator.{ADD,SUB};
+import DAEDump;
+import DAEUtil;
+import Debug;
+import Differentiate;
+import DumpGraphML;
+import DynamicOptimization;
+import Error;
+import EvaluateFunctions;
+import EvaluateParameter;
+import Expression;
+import ExpressionDump;
+import ExpressionSimplify;
+import ExpressionSolve;
+import FindZeroCrossings;
+import Flags;
+import Global;
+import HpcOmEqSystems;
+import IndexReduction;
+import Initialization;
+import Inline;
+import InlineArrayEquations;
+import List;
+import Matching;
+import MetaModelica.Dangerous.listReverseInPlace;
+import OnRelaxation;
+import RemoveSimpleEquations;
+import ResolveLoops;
+import SCode;
+import SimCodeFunctionUtil;
+import Sorting;
+import StateMachineFeatures;
+import SymbolicJacobian;
+import SynchronousFeatures;
+import System;
+import Tearing;
+import Types;
+import UnitCheck;
+import Values;
+import XMLDump;
 
 public function isInitializationDAE
   input BackendDAE.Shared inShared;
@@ -2697,7 +2701,7 @@ algorithm
       then
         (inExp, false, (vars, pa, ofunctionTree));
 
-    case (DAE.ASUB(exp=e1, sub={DAE.ICONST(i)}), tpl) equation
+    case (DAE.ASUB(exp=e1, sub={DAE.Exp.ICONST(i)}), tpl) equation
       e1 = Expression.nthArrayExp(e1, i);
       (_, tpl) = Expression.traverseExpTopDown(e1, traversingincidenceRowExpSolvableFinder, tpl);
     then (inExp, false, tpl);
@@ -2706,7 +2710,7 @@ algorithm
     case (DAE.ASUB(), _)
     then fail();
 
-    case (DAE.TSUB(exp=e1), tpl) equation
+    case (Exp.TSUB(exp=e1), tpl) equation
       (_, tpl) = Expression.traverseExpTopDown(e1, traversingincidenceRowExpSolvableFinder, tpl);
     then (inExp, false, tpl);
 
@@ -2721,7 +2725,7 @@ algorithm
     then (inExp, false,(vars, pa, ofunctionTree));
 
     /* higher derivative, is only present during index reduction */
-    case (DAE.CALL(path=Absyn.IDENT(name="der"), expLst={DAE.CREF(componentRef=cr), DAE.ICONST(diffindx)}), (vars, pa, ofunctionTree)) equation
+    case (DAE.CALL(path=Absyn.IDENT(name="der"), expLst={DAE.CREF(componentRef=cr), DAE.Exp.ICONST(diffindx)}), (vars, pa, ofunctionTree)) equation
       (varslst, p) = BackendVariable.getVar(cr, vars);
       pa = incidenceRowExp1(varslst, p, pa, diffindx);
     then (inExp, false,(vars, pa, ofunctionTree));
@@ -2887,14 +2891,14 @@ algorithm
         b = Flags.getConfigBool(Flags.DELAY_BREAK_LOOP) and Expression.expEqual(e1,e2);
       then (inExp,not b,inTpl);
 
-    case (DAE.ASUB(exp=DAE.CREF(componentRef=cr), sub={DAE.ICONST(i)}), (vars, pa))
+    case (DAE.ASUB(exp=DAE.CREF(componentRef=cr), sub={DAE.Exp.ICONST(i)}), (vars, pa))
       equation
         cr = ComponentReference.subscriptCrefWithInt(cr, i);
         (varslst, p) = BackendVariable.getVar(cr, vars);
         pa = incidenceRowExp1(varslst, p, pa, 0);
     then (inExp, false, (vars, pa));
 
-    case (DAE.ASUB(exp = e1, sub={DAE.ICONST(i)}),(vars,pa))
+    case (DAE.ASUB(exp = e1, sub={DAE.Exp.ICONST(i)}),(vars,pa))
       equation
         e1 = Expression.nthArrayExp(e1, i);
         (_, (_, res)) = Expression.traverseExpTopDown(e1, traversingincidenceRowExpFinder, (vars, pa));
@@ -4898,7 +4902,7 @@ algorithm
       (_, (vars, _, _, pa)) = Expression.traverseExpTopDown(e3, traversingAdjacencyRowExpSolvableEnhancedFinder, (vars, true, (mark, rowmark), pa));
     then (inExp, false, (vars, bs, (mark, rowmark), pa));
 
-    case (DAE.ASUB(exp=e1, sub={DAE.ICONST(i)}), (vars, bs, (mark, rowmark), pa)) equation
+    case (DAE.ASUB(exp=e1, sub={DAE.Exp.ICONST(i)}), (vars, bs, (mark, rowmark), pa)) equation
       e1 = Expression.nthArrayExp(e1, i);
       (_, (vars, _, _, pa)) = Expression.traverseExpTopDown(e1, traversingAdjacencyRowExpSolvableEnhancedFinder, (vars, bs, (mark, rowmark), pa));
     then (inExp, false, (vars, bs, (mark, rowmark), pa));
@@ -4916,7 +4920,7 @@ algorithm
       res = adjacencyRowExpEnhanced1(varslst, p, pa, false, mark, rowmark, bs);
     then (inExp, false, (vars, bs, (mark, rowmark), res));
 
-    case (DAE.CALL(path=Absyn.IDENT(name="der"), expLst={DAE.CREF(componentRef=cr), DAE.ICONST(_)}), (vars, bs, (mark, rowmark), pa)) equation
+    case (DAE.CALL(path=Absyn.IDENT(name="der"), expLst={DAE.CREF(componentRef=cr), DAE.Exp.ICONST(_)}), (vars, bs, (mark, rowmark), pa)) equation
       (varslst, p) = BackendVariable.getVar(cr, vars);
       res = adjacencyRowExpEnhanced1(varslst, p, pa, false, mark, rowmark, bs);
     then (inExp, false, (vars, bs, (mark, rowmark), res));
@@ -7959,19 +7963,19 @@ algorithm
       then
         e;
 
-    case DAE.BINARY(operator = DAE.ADD(DAE.T_INTEGER()))
+    case DAE.BINARY(operator = ADD(DAE.T_INTEGER()))
       algorithm
         e1 := evalExp(inExp.exp1, inKnVariables);
         e2 := evalExp(inExp.exp2, inKnVariables);
       then
-        DAE.ICONST(Expression.expInt(e1) + Expression.expInt(e2));
+        DAE.Exp.ICONST(Expression.expInt(e1) + Expression.expInt(e2));
 
-    case DAE.BINARY(operator = DAE.SUB(DAE.T_INTEGER()))
+    case DAE.BINARY(operator = SUB(DAE.T_INTEGER()))
       algorithm
         e1 := evalExp(inExp.exp1, inKnVariables);
         e2 := evalExp(inExp.exp2, inKnVariables);
       then
-        DAE.ICONST(Expression.expInt(e1) - Expression.expInt(e2));
+        DAE.Exp.ICONST(Expression.expInt(e1) - Expression.expInt(e2));
 
     else inExp;
   end match;
@@ -7988,7 +7992,7 @@ algorithm
       DAE.ComponentRef cr;
       DAE.Exp e, e1, e2;
 
-    case DAE.ICONST(integer=i2)
+    case DAE.Exp.ICONST(integer=i2)
     then i2;
 
     case DAE.ENUM_LITERAL(index=i2)
@@ -7999,13 +8003,13 @@ algorithm
       i2 = expInt(e, inKnVariables);
     then i2;
 
-    case DAE.BINARY(exp1=e1, operator=DAE.ADD(DAE.T_INTEGER()), exp2=e2) equation
+    case DAE.BINARY(exp1=e1, operator=ADD(DAE.T_INTEGER()), exp2=e2) equation
       i1 = expInt(e1, inKnVariables);
       i2 = expInt(e2, inKnVariables);
       i = i1 + i2;
     then i;
 
-    case DAE.BINARY(exp1=e1, operator=DAE.SUB(DAE.T_INTEGER()), exp2=e2) equation
+    case DAE.BINARY(exp1=e1, operator=SUB(DAE.T_INTEGER()), exp2=e2) equation
       i1 = expInt(e1, inKnVariables);
       i2 = expInt(e2, inKnVariables);
       i = i1 - i2;
@@ -8327,7 +8331,7 @@ end collapseRemovedEqs1;
 public function emptyEventInfo
   output BackendDAE.EventInfo info;
 algorithm
-  info := BackendDAE.EVENT_INFO({}, {}, {}, {}, 0);
+  info := EVENT_INFO({}, {}, {}, {}, 0);
 end emptyEventInfo;
 
 public function getSubClock
