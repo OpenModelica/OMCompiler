@@ -72,6 +72,7 @@ protected import Flags;
 protected import HashSet;
 protected import Inline;
 protected import List;
+protected import MetaModelica.Dangerous;
 protected import Types;
 protected import Util;
 protected import HashTableCrToCrEqLst;
@@ -1373,14 +1374,14 @@ algorithm
     case ({BackendDAE.VAR(varName=cr1)}, _, {i1}, true, true, {BackendDAE.VAR(varName=cr2)}, _, {i2}, false, false, _, _, _, _)
       equation
         colum = iMT[i2];
-        arrayUpdate(iMT, i2, iIndex::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(iMT, i2, iIndex::colum);
       then
         (TIMEALIAS(cr2, negatedCr2, i2, cr1, negatedCr1, i1, eqnAttributes, -1)::iSeqns, iIndex+1, iMT);
 
     case ({BackendDAE.VAR(varName=cr1)}, _, {i1}, false, false, {BackendDAE.VAR(varName=cr2)}, _, {i2}, true, true, _, _, _, _)
       equation
         colum = iMT[i1];
-        arrayUpdate(iMT, i1, iIndex::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(iMT, i1, iIndex::colum);
       then
         (TIMEALIAS(cr1, negatedCr1, i1, cr2, negatedCr2, i2, eqnAttributes, -1)::iSeqns, iIndex+1, iMT);
 
@@ -1426,23 +1427,23 @@ algorithm
       equation
         checkEqualAlias(intEq(i1, i2), v1, negatedCr1, v2, negatedCr2, eqnAttributes);
         colum = iMT[i1];
-        arrayUpdate(iMT, i1, iIndex::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(iMT, i1, iIndex::colum);
         colum = iMT[i2];
-        arrayUpdate(iMT, i2, iIndex::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(iMT, i2, iIndex::colum);
       then
         (ALIAS(cr1, negatedCr1, i1, cr2, negatedCr2, i2, eqnAttributes, -1)::iSeqns, iIndex+1, iMT);
 
     case (BackendDAE.VAR(varName=cr1), _, _, true, BackendDAE.VAR(varName=cr2), _, _, false, _, _, _, _)
       equation
         colum = iMT[i2];
-        arrayUpdate(iMT, i2, iIndex::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(iMT, i2, iIndex::colum);
       then
         (PARAMETERALIAS(cr2, negatedCr2, i2, cr1, negatedCr1, i1, eqnAttributes, -1)::iSeqns, iIndex+1, iMT);
 
     case (BackendDAE.VAR(varName=cr1), _, _, false, BackendDAE.VAR(varName=cr2), _, _, true, _, _, _, _)
       equation
         colum = iMT[i1];
-        arrayUpdate(iMT, i1, iIndex::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(iMT, i1, iIndex::colum);
       then
         (PARAMETERALIAS(cr1, negatedCr1, i1, cr2, negatedCr2, i2, eqnAttributes, -1)::iSeqns, iIndex+1, iMT);
     case (BackendDAE.VAR(varName=cr1), _, _, true, BackendDAE.VAR(varName=cr2), _, _, true, (source, _), _, _, _)
@@ -1761,7 +1762,7 @@ algorithm
           BackendDump.debugStrCrefStrExpStr("Const Equation ", cr, " = ", exp, " found.\n");
         end if;
         colum = mT[i];
-        arrayUpdate(mT, i, index::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(mT, i, index::colum);
       then
         ((vars, shared, eqns, TIMEINDEPENTVAR(cr, i, exp, eqnAttributes, -1)::seqns, index+1, mT, true));
 
@@ -1776,7 +1777,7 @@ algorithm
           BackendDump.debugStrCrefStrExpStr("Const Equation (through Ceval) ", cr, " = ", exp, " found.\n");
         end if;
         colum = mT[i];
-        arrayUpdate(mT, i, index::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(mT, i, index::colum);
       then
         ((vars, shared, eqns, TIMEINDEPENTVAR(cr, i, exp2, eqnAttributes, -1)::seqns, index+1, mT, true));
 
@@ -1788,7 +1789,7 @@ algorithm
           BackendDump.debugStrCrefStrExpStr("Const Equation (through Ceval) ", cr, " = ", exp, " found.\n");
         end if;
         colum = mT[i];
-        arrayUpdate(mT, i, index::colum);
+        Dangerous.arrayUpdateNoBoundsChecking(mT, i, index::colum);
       then ((vars, shared, eqns, TIMEINDEPENTVAR(cr, i, exp, eqnAttributes, -1)::seqns, index+1, mT, true));
 
   end matchcontinue;
@@ -2689,7 +2690,7 @@ algorithm
     case (r::rest, _, _, _, _, _, _, _, _, _, _, _, _, _, _)
       equation
         s = simpleeqnsarr[r];
-        arrayUpdate(simpleeqnsarr, r, setVisited(mark, s));
+        Dangerous.arrayUpdateNoBoundsChecking(simpleeqnsarr, r, setVisited(mark, s));
         (vars, eqnslst, shared, repl, vsattr) = traverseAliasTree1(s, r, ilast, exp, optExp, globalnegate, derReplaceState, mark, simpleeqnsarr, iMT, unReplaceable, iVars, iEqnslst, ishared, iRepl, iAttributes);
         (vars, eqnslst, shared, repl, vsattr) = traverseAliasTree(rest, ilast, exp, optExp, globalnegate, derReplaceState, mark, simpleeqnsarr, iMT, unReplaceable, vars, eqnslst, shared, repl, vsattr);
       then

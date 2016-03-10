@@ -11453,7 +11453,7 @@ protected
 algorithm
   SimCode.HASHTABLE(hashTable=hashTable) := iCrefToSimVarHT;
   for entryIdx in 1:arrayLength(hashTable) loop
-    entry := arrayGet(hashTable, entryIdx);
+    entry := Dangerous.arrayGetNoBoundsChecking(hashTable, entryIdx);
     if(intGt(listLength(entry), 1)) then
       for tupleEntry in entry loop
         print(ComponentReference.printComponentRefStr(Util.tuple21(tupleEntry)) + " mapped to " + intString(Util.tuple22(tupleEntry)) + "\n");
@@ -11851,7 +11851,7 @@ algorithm
   else
     algorithm
       for i in List.intRange(arrayLength(markVarsIn)) loop
-        _ := arrayUpdate(markVarsIn,i,false);
+        _ := Dangerous.arrayUpdateNoBoundsChecking(markVarsIn,i,false);
       end for;
     then derivationIn+1;
   end matchcontinue;

@@ -76,6 +76,7 @@ protected import System;
 protected import Util;
 protected import Values;
 protected import ValuesUtil;
+protected import MetaModelica.Dangerous;
 
 
 // =============================================================================
@@ -1405,7 +1406,7 @@ protected
 algorithm
   numEqs := arrayLength(inOrgEqns);
   for e in List.intRange(numEqs) loop
-    orgeqns := arrayGet(inOrgEqns,e);
+    orgeqns := Dangerous.arrayGetNoBoundsChecking(inOrgEqns,e);
     size := BackendEquation.equationLstSize(orgeqns);
     oCount := oCount + size;
   end for;
@@ -1426,9 +1427,9 @@ algorithm
   outOrgEqns := inOrgEqns;
   numEqs := arrayLength(inOrgEqns);
   for e in List.intRange(numEqs) loop
-   orgeqns := arrayGet(inOrgEqns,e);
+   orgeqns := Dangerous.arrayGetNoBoundsChecking(inOrgEqns,e);
     (orgeqns,_) := BackendInline.inlineEqs(orgeqns, inA,{},false);
-     arrayUpdate(outOrgEqns,e,orgeqns);
+     Dangerous.arrayUpdateNoBoundsChecking(outOrgEqns,e,orgeqns);
   end for;
   //outOrgEqns := listReverse(outOrgEqns);
 end inlineOrgEqns;
@@ -2843,14 +2844,14 @@ algorithm
   outOrgEqns := inOrgEqns;
   numEqs := arrayLength(inOrgEqns);
   for e in List.intRange(numEqs) loop
-    orgeqns := arrayGet(outOrgEqns,e);
+    orgeqns := Dangerous.arrayGetNoBoundsChecking(outOrgEqns,e);
     if not listEmpty(orgeqns) then
 	    (outEqnsLst, orgeqns) := match orgeqns
 	                             local BackendDAE.Equation eqn; list<BackendDAE.Equation> eqns;
 	                             case {eqn} then (eqn :: outEqnsLst, {});
 	                             case eqn::eqns then (eqn :: outEqnsLst, eqns);
 	                             end match;
-	    arrayUpdate(outOrgEqns,e,orgeqns);
+	    Dangerous.arrayUpdateNoBoundsChecking(outOrgEqns,e,orgeqns);
 	  end if;
   end for;
 end removeFirstOrgEqns;
@@ -4336,7 +4337,7 @@ algorithm
   outOrgEqns := inOrgEqns;
   eqs := arrayGet(inOrgEqns,e);
   eqs := inEqn::eqs;
-  arrayUpdate(outOrgEqns,e,eqs);
+  Dangerous.arrayUpdateNoBoundsChecking(outOrgEqns,e,eqs);
   /*
   outOrgEqns :=
   matchcontinue (e,inEqn, inOrgEqns)

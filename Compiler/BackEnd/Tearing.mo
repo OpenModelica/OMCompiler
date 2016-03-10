@@ -58,6 +58,7 @@ protected import ExpressionSolve;
 protected import Flags;
 protected import List;
 protected import Matching;
+protected import MetaModelica.Dangerous;
 protected import Util;
 protected import Sorting;
 
@@ -3936,7 +3937,7 @@ algorithm
   (e1, e2) := ExpressionSolve.collectX(inExp, arrayGet(tear_exp, 1));
 
   for k in 2:arrayLength(tear_exp) loop
-    (lhs, e2) := ExpressionSolve.collectX(e2, arrayGet(tear_exp, k));
+    (lhs, e2) := ExpressionSolve.collectX(e2, Dangerous.arrayGetNoBoundsChecking(tear_exp, k));
     e1 := Expression.expAdd(e1, lhs);
   end for;
   outExp := Expression.expAdd(e2, e1);

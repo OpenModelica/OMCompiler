@@ -503,7 +503,7 @@ public function getEquationAndSolvedVarIndxes "author: Frenkel TUD
   output list<Integer> outEquation;
   output list<Integer> outVar;
 algorithm
-  (outEquation, outVar) := matchcontinue(inComp)
+  (outEquation, outVar) := match (inComp)
     local
       Integer v, e;
       list<Integer> elst, vlst, elst1, vlst1;
@@ -542,7 +542,7 @@ algorithm
       true = Flags.isSet(Flags.FAILTRACE);
       Debug.traceln("BackendDAETransform.getEquationAndSolvedVarIndxes failed!");
     then fail();
-  end matchcontinue;
+  end match;
 end getEquationAndSolvedVarIndxes;
 
 

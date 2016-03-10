@@ -1926,7 +1926,7 @@ algorithm
   num_elems := num_elems + 1;
   arr := Array.expandOnDemand(num_elems, arr, 1.4, NONE());
   size := arrayLength(arr);
-  arrayUpdate(arr, num_elems, SOME(inVar));
+  Dangerous.arrayUpdateNoBoundsChecking(arr, num_elems, SOME(inVar));
   outVariableArray := BackendDAE.VARIABLE_ARRAY(num_elems, size, arr);
 end vararrayAdd;
 
@@ -1938,7 +1938,7 @@ protected function vararraySetnth
   output BackendDAE.VariableArray outVariableArray = inVariableArray;
 algorithm
   true := inIndex <= inVariableArray.numberOfElements;
-  arrayUpdate(inVariableArray.varOptArr, inIndex, SOME(inVar));
+  Dangerous.arrayUpdateNoBoundsChecking(inVariableArray.varOptArr, inIndex, SOME(inVar));
 end vararraySetnth;
 
 protected function vararrayNth
@@ -1948,7 +1948,7 @@ protected function vararrayNth
   output BackendDAE.Var outVar;
 algorithm
   true := inIndex <= inVariableArray.numberOfElements;
-  SOME(outVar) := arrayGet(inVariableArray.varOptArr, inIndex);
+  SOME(outVar) := Dangerous.arrayGetNoBoundsChecking(inVariableArray.varOptArr, inIndex);
 end vararrayNth;
 
 protected function vararrayDelete

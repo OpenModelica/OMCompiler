@@ -3035,7 +3035,7 @@ template algStmtForGeneric_impl(Exp exp, Ident iterator, String type,
         <<
         for (<%tvar%> = <%evar%>, <%len%> = arrayLength(<%tvar%>), <%tmp%> = 1; <%tmp%> <= <%len%>; <%tmp%>++)
         {
-          <%iterName%> = arrayGet(<%tvar%>,<%tmp%>);
+          <%iterName%> = arrayGetNoBoundsChecking(<%tvar%>,<%tmp%>);
           <%body%>
         }
         >>
@@ -6371,7 +6371,7 @@ template daeExpReduction(Exp exp, Context context, Text &preExp,
       (if isMetaArray(iter.exp) then
         <<
         while (<%firstIndex%> <= arrayLength(<%loopVar%>)) {
-          <%iteratorName%> = arrayGet(<%loopVar%>, <%firstIndex%>++);
+          <%iteratorName%> = arrayGetNoBoundsChecking(<%loopVar%>, <%firstIndex%>++);
           <%guardExp%>
         }
         >>

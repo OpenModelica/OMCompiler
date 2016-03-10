@@ -2810,7 +2810,7 @@ public function getStatement
   output list<DAE.Statement> outStatements;
 algorithm
   (outStatements):=
-  matchcontinue (inElement)
+  match (inElement)
     local
       list<DAE.Statement> stmts;
     case (DAE.ALGORITHM(algorithm_ = DAE.ALGORITHM_STMTS(statementLst = stmts)))
@@ -2822,7 +2822,7 @@ algorithm
         Debug.trace("- Differentiatte.getStatement failed\n");
       then
         fail();
-  end matchcontinue;
+  end match;
 end getStatement;
 
 public function getTupleSize "gets the size of a DAE.TUPLE"
@@ -3373,18 +3373,18 @@ protected function evaluateParameter
   input HashTable2.HashTable inPV;
   output DAE.Exp outExp;
 algorithm
-  (outExp) := matchcontinue (inExp,inPV)
+  (outExp) := match (inExp,inPV)
     local
       HashTable2.HashTable pv;
       DAE.Exp e,e1,e2;
       Integer i;
     case (e,_)
-      equation
-        true = Expression.isConst(e);
+      guard
+        Expression.isConst(e)
       then e;
     case (e,_)
-      equation
-        false = Expression.expHasCrefs(e); // {} = Expression.extractCrefsFromExp(e);
+      guard
+        not Expression.expHasCrefs(e) // {} = Expression.extractCrefsFromExp(e);
       then e;
     case (e,pv)
       equation
@@ -3393,7 +3393,7 @@ algorithm
         e2 = evaluateParameter(e1,pv);
       then
         e2;
-  end matchcontinue;
+  end match;
 end evaluateParameter;
 
 protected function evaluateAnnotation2_loop
@@ -3537,11 +3537,12 @@ algorithm
       FCore.Cache cache;
       Values.Value value;
     case (_,_,cr,e,i,j,ht)
-      equation
+      guard
         // there is a paramter with evaluate=true
-        true = intGt(j,0);
+        intGt(j,0) and
         // there are no other crefs
-        true = intEq(i,0);
+        intEq(i,0)
+      equation
         // evalute expression
         (e1,(ht,_,_)) = Expression.traverseExpBottomUp(e,evaluateAnnotationTraverse,(ht,0,0));
         (cache, value,_) = Ceval.ceval(inCache, env, e1, false,NONE(),Absyn.NO_MSG(),0);
@@ -6443,7 +6444,7 @@ public function addDaeExtFunction "
   input DAE.FunctionTree itree;
   output DAE.FunctionTree outTree;
 algorithm
-  outTree := matchcontinue(ifuncs,itree)
+  outTree := match(ifuncs,itree)
     local
       DAE.Function func;
       list<DAE.Function> funcs;
@@ -6456,15 +6457,16 @@ algorithm
       then tree;
 
     case (func::funcs,tree)
+      guard
+        isExtFunction(func)
       equation
-        true = isExtFunction(func);
         // print("Add ext to cache: " + Absyn.pathString(functionName(func)) + "\n");
         tree = avlTreeAdd(tree,functionName(func),SOME(func));
       then addDaeExtFunction(funcs,tree);
 
     case (_::funcs,tree) then addDaeExtFunction(funcs,tree);
 
-  end matchcontinue;
+  end match;
 end addDaeExtFunction;
 
 public function getFunctionsInfo
@@ -6572,7 +6574,7 @@ public function addSymbolicTransformation
   input DAE.SymbolicOperation op;
   output DAE.ElementSource outSource;
 algorithm
-  outSource := matchcontinue (source,op)
+  outSource := match (source,op)
     local
       SourceInfo info "the line and column numbers of the equations and algorithms this element came from";
       list<Absyn.Path> typeLst "the absyn type of the element" ;
@@ -6585,9 +6587,10 @@ algorithm
       list<SCode.Comment> comment;
 
     case (DAE.SOURCE(info, partOfLst, instanceOpt, connectEquationOptLst, typeLst, DAE.SUBSTITUTION(es1 as (h1::_),t1)::operations,comment),DAE.SUBSTITUTION(es2,t2))
-      equation
+      guard
         // The tail of the new substitution chain is the same as the head of the old one...
-        true = Expression.expEqual(t2,h1);
+        Expression.expEqual(t2,h1)
+      equation
         // Reference equality would be fine as otherwise it is not really a chain... But replaceExp is stupid :(
         // true = referenceEq(t2,h1);
         es = listAppend(es2,es1);
@@ -6595,7 +6598,7 @@ algorithm
 
     case (DAE.SOURCE(info, partOfLst, instanceOpt, connectEquationOptLst, typeLst, operations, comment),_)
       then DAE.SOURCE(info, partOfLst, instanceOpt, connectEquationOptLst, typeLst, op::operations,comment);
-  end matchcontinue;
+  end match;
 end addSymbolicTransformation;
 
 public function condAddSymbolicTransformation
