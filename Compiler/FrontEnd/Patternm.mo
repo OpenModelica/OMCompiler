@@ -716,7 +716,9 @@ algorithm
   end matchcontinue;
 end patternStr;
 
-public function elabMatchExpression
+public
+
+function elabMatchExpression
   input FCore.Cache inCache;
   input FCore.Graph inEnv;
   input Absyn.Exp matchExp;
@@ -793,6 +795,22 @@ algorithm
       then fail();
   end matchcontinue;
 end elabMatchExpression;
+
+function patternAlwaysMatches
+  input DAE.Pattern pattern;
+  output Boolean b;
+algorithm
+  b := match pattern
+    case DAE.PAT_WILD() then true;
+    case DAE.PAT_AS() then patternAlwaysMatches(pattern.pat);
+    case DAE.PAT_AS_FUNC_PTR() then patternAlwaysMatches(pattern.pat);
+    case DAE.PAT_META_TUPLE() then min(patternAlwaysMatches(p) for p in pattern.patterns);
+    case DAE.PAT_CALL_TUPLE() then min(patternAlwaysMatches(p) for p in pattern.patterns);
+    case DAE.PAT_CALL(knownSingleton=true) then min(patternAlwaysMatches(p) for p in pattern.patterns);
+    case DAE.PAT_CALL_NAMED() then min(patternAlwaysMatches(Util.tuple31(tpl)) for tpl in pattern.patterns);
+    else false;
+  end match;
+end patternAlwaysMatches;
 
 protected function optimizeMatchToSwitch
   "match str case 'str1' ... case 'str2' case 'str3' => switch hash(str)...

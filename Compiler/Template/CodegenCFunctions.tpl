@@ -3829,9 +3829,18 @@ template patternMatch(Pattern pat, Text rhs, Text onPatternFail, Text &varDecls,
         case PAT_WILD(__) then ""
         else
         let tvar = tempDecl("modelica_metatype", &varDecls)
-        <<<%tvar%> = MMC_FETCH(MMC_OFFSET(MMC_UNTAGPTR(<%rhs%>), <%i1%>));
-        <%patternMatch(p,tvar,onPatternFail,&varDecls,&assignments)%>
-        >>; empty /* increase the counter even if no output is produced */)
+        let res1 = '<%tvar%> = MMC_FETCH(MMC_OFFSET(MMC_UNTAGPTR(<%rhs%>), <%i1%>));<%\n%>'
+        /* If there is no structural check in the pattern, delay until we
+         * have checked the structure. What remains is simply assignments.
+         */
+        if patternAlwaysMatches(p) then
+          let &assignments += res1
+          let &inner = buffer ""
+          let &assignments += patternMatch(p,tvar,onPatternFail,&varDecls,&inner)
+          let &assignments += inner
+          ""
+        else (res1+patternMatch(p,tvar,onPatternFail,&varDecls,&assignments))
+      ;empty) /* increase the counter even if no output is produced */
   case PAT_CALL_TUPLE(__)
     then
       // misnomer. Call expressions no longer return tuples using these structs. match-expressions and if-expressions converted to Modelica tuples do
@@ -3862,9 +3871,18 @@ template patternMatch(Pattern pat, Text rhs, Text onPatternFail, Text &varDecls,
         case PAT_WILD(__) then ""
         else
         let tvar = tempDecl("modelica_metatype", &varDecls)
-        <<<%tvar%> = MMC_FETCH(MMC_OFFSET(MMC_UNTAGPTR(<%rhs%>), <%i2%>));
-        <%patternMatch(p,tvar,onPatternFail,&varDecls,&assignments)%>
-        >> ;empty) /* increase the counter even if no output is produced */
+        let res1 = '<%tvar%> = MMC_FETCH(MMC_OFFSET(MMC_UNTAGPTR(<%rhs%>), <%i2%>));<%\n%>'
+        /* If there is no structural check in the pattern, delay until we
+         * have checked the structure. What remains is simply assignments.
+         */
+        if patternAlwaysMatches(p) then
+          let &assignments += res1
+          let &inner = buffer ""
+          let &assignments += patternMatch(p,tvar,onPatternFail,&varDecls,&inner)
+          let &assignments += inner
+          ""
+        else (res1+patternMatch(p,tvar,onPatternFail,&varDecls,&assignments))
+      ;empty) /* increase the counter even if no output is produced */
       %>
       >>
   case p as PAT_AS_FUNC_PTR(__) then
