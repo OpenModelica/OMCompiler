@@ -1975,7 +1975,7 @@ protected function traversecountOperationsExp
   output DAE.Exp outExp;
   output tuple<Integer,Integer,Integer,Integer,Integer,Integer,Integer,Integer> outTuple;
 algorithm
-  (outExp,outTuple) := matchcontinue (inExp,shared,inTuple)
+  (outExp,outTuple) := match (inExp,shared,inTuple)
     local
       Absyn.Path path;
       DAE.Exp e,cond,exp1,exp2;
@@ -2034,24 +2034,24 @@ algorithm
       (_,tpl) = Expression.traverseExpList(expLst,function countOperationsExp(shared=shared),inTuple);
       then (e, tpl);
 
-    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) equation
-      true = stringEq(opName,"sin") or stringEq(opName,"cos") or stringEq(opName,"tan");
+    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) guard
+      stringEq(opName,"sin") or stringEq(opName,"cos") or stringEq(opName,"tan")
       then (e, (i1,i2,i3,i4+1,i5,i6,i7,i8));
 
-    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) equation
-      true = stringEq(opName,"der");
+    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) guard
+      stringEq(opName,"der")
       then (e, (i1,i2,i3,i4,i5,i6,i7,i8));
 
-    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) equation
-      true = stringEq(opName,"exp");
+    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) guard
+      stringEq(opName,"exp")
       then (e, (i1,i2,i3,i4,i5,i6,i7+1,i8));
 
-    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) equation
-      true = stringEq(opName,"pre");
+    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) guard
+      stringEq(opName,"pre")
       then (e, (i1,i2,i3,i4,i5,i6,i7,i8+1));
 
-    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) equation
-      true = stringEq(opName,"previous");
+    case (e as DAE.CALL(path=Absyn.IDENT(name=opName)),_,(i1,i2,i3,i4,i5,i6,i7,i8)) guard
+      stringEq(opName,"previous")
       then (e, (i1,i2,i3,i4,i5,i6,i7,i8+1));
 
     case (e as DAE.CALL(path=path),_,_) equation
@@ -2065,7 +2065,7 @@ algorithm
       equation
         //print(ExpressionDump.dumpExpStr(inExp,0)+"\n");
         then (inExp,inTuple);
-  end matchcontinue;
+  end match;
 end traversecountOperationsExp;
 
 protected function countOperationsInFunction
@@ -3200,7 +3200,7 @@ algorithm
     case ((eqn as BackendDAE.EQUATION(exp=y),index)::rest,_,_,_)
       equation
         ht = BaseHashTable.add((y,size), iHt);
-        // expand if necesarray
+        // expand if necessary
         eqnsarray = if intGt(size,arrayLength(iEqnsarray)) then Array.expand(5, iEqnsarray, {}) else iEqnsarray;
         eqnsarray = arrayUpdate(eqnsarray,size,{(eqn,index)});
       then
@@ -3227,7 +3227,7 @@ algorithm
     case ({},_,_) then iEqnsarray;
     case ((tpl::{})::rest,_,_)
       equation
-        // expand if necesarray
+        // expand if necessary
         eqnsarray = if intGt(size,arrayLength(iEqnsarray)) then Array.expand(5, iEqnsarray, {}) else iEqnsarray;
         eqnsarray = arrayUpdate(eqnsarray,size,{tpl});
       then
@@ -3287,7 +3287,7 @@ protected function simplifysemiLinearFinder
   output BackendDAE.Equation outEq;
   output tuple<list<tuple<BackendDAE.Equation,Integer>>,Integer,Boolean> outTpl;
 algorithm
-  (outEq,outTpl) := matchcontinue (inEq,inTpl)
+  (outEq,outTpl) := match (inEq,inTpl)
     local
       BackendDAE.Equation eqn;
       list<tuple<BackendDAE.Equation,Integer>> eqnslst;
@@ -3301,24 +3301,24 @@ algorithm
 
     // 0 = semiLinear(0,sa,sb) -> sa=sb
     case (BackendDAE.EQUATION(exp=y,scalar=DAE.CALL(path=Absyn.IDENT("semiLinear"),expLst={x,sa,sb}),source=source,attr=eqAttr),(eqnslst,index,_))
-      equation
-        true = Expression.isZero(y);
-        true = Expression.isZero(x);
+      guard
+        Expression.isZero(y) and
+        Expression.isZero(x)
       then (BackendDAE.EQUATION(sa,sb,source,eqAttr),(eqnslst,index+1,true));
     case (BackendDAE.EQUATION(exp=DAE.CALL(path=Absyn.IDENT("semiLinear"),expLst={x,sa,sb}),scalar=y,source=source,attr=eqAttr),(eqnslst,index,_))
-      equation
-        true = Expression.isZero(y);
-        true = Expression.isZero(x);
+      guard
+        Expression.isZero(y) and
+        Expression.isZero(x)
       then (BackendDAE.EQUATION(sa,sb,source,eqAttr),(eqnslst,index+1,true));
     case (BackendDAE.EQUATION(exp=y,scalar=DAE.UNARY(exp=DAE.CALL(path=Absyn.IDENT("semiLinear"),expLst={x,sa,sb})),source=source,attr=eqAttr),(eqnslst,index,_))
-      equation
-        true = Expression.isZero(y);
-        true = Expression.isZero(x);
+      guard
+        Expression.isZero(y) and
+        Expression.isZero(x)
       then (BackendDAE.EQUATION(sa,sb,source,eqAttr),(eqnslst,index+1,true));
     case (BackendDAE.EQUATION(exp=DAE.UNARY(exp=DAE.CALL(path=Absyn.IDENT("semiLinear"),expLst={x,sa,sb})),scalar=y,source=source,attr=eqAttr),(eqnslst,index,_))
-      equation
-        true = Expression.isZero(y);
-        true = Expression.isZero(x);
+      guard
+        Expression.isZero(y) and
+        Expression.isZero(x)
       then (BackendDAE.EQUATION(sa,sb,source,eqAttr),(eqnslst,index+1,true));
     // y = -semiLinear(-x,sb,sa) -> y = semiLinear(x,sa,sb)
     case (BackendDAE.EQUATION(exp=y,scalar=DAE.UNARY(exp=DAE.CALL(path=path as Absyn.IDENT("semiLinear"),expLst={DAE.UNARY(exp=x),sb,sa},attr=attr)),source=source,attr=eqAttr),(eqnslst,index,_))
@@ -3398,7 +3398,7 @@ algorithm
       then (eqn,((eqn,index)::eqnslst,index+1,true));
 
     case (eqn,(eqnslst,index,b)) then (eqn,(eqnslst,index+1,b));
-  end matchcontinue;
+  end match;
 end simplifysemiLinearFinder;
 
 // =============================================================================
@@ -3865,18 +3865,19 @@ protected function updateStatesVar "
   output BackendDAE.Variables outVars;
   output DAE.Exp oExp;
 algorithm
-  (outVars, oExp) := matchcontinue(inVars, var, iExp)
+  (outVars, oExp) := match(inVars, var, iExp)
     local
       BackendDAE.Variables vars;
       BackendDAE.Var var1;
     case(_, _, _)
-      equation
-        true = BackendVariable.isVarDiscrete(var) "do not change discrete vars to states, because they have no derivative" ;
+      guard
+        BackendVariable.isVarDiscrete(var) "do not change discrete vars to states, because they have no derivative"
       then (inVars, DAE.RCONST(0.0));
     case(_, _, _)
+      guard
+        not BackendVariable.isVarDiscrete(var)
+        and not BackendVariable.isStateVar(var) "do not change discrete vars to states, because they have no derivative"
       equation
-        false = BackendVariable.isVarDiscrete(var) "do not change discrete vars to states, because they have no derivative" ;
-        false = BackendVariable.isStateVar(var);
         var1 = BackendVariable.setVarKind(var, BackendDAE.STATE(1,NONE()));
         vars = BackendVariable.addVar(var1, inVars);
       then (vars, iExp);
@@ -3887,7 +3888,7 @@ algorithm
         Error.addMessage(Error.INTERNAL_ERROR, {str});
         */
       then (inVars, iExp);
-  end matchcontinue;
+  end match;
 end updateStatesVar;
 
 protected function updateStatesVars "
@@ -5059,11 +5060,11 @@ algorithm
         n := arrayLength(equOptArr);
         crlst := {};
         for i in 1:n loop
-          oeqn := arrayGet(equOptArr, i);
+          oeqn := Dangerous.arrayGetNoBoundsChecking(equOptArr, i);
           if isSome(oeqn) then
             SOME(eqn) := oeqn;
             (eqn, (_,crlst)) := BackendEquation.traverseExpsOfEquation(eqn, symEulerUpdateEqn, (b,crlst));
-            arrayUpdate(equOptArr, i, SOME(eqn));
+            Dangerous.arrayUpdateNoBoundsChecking(equOptArr, i, SOME(eqn));
           end if;
         end for;
         // states -> vars

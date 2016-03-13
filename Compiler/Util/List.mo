@@ -96,7 +96,7 @@ encapsulated package List
 "
 
 protected
-import MetaModelica.Dangerous.{listReverseInPlace, arrayGetNoBoundsChecking};
+import MetaModelica.Dangerous.{listReverseInPlace, arrayGetNoBoundsChecking, arrayUpdateNoBoundsChecking};
 
 public function create<T>
   "Creates a list from an element."
@@ -1059,7 +1059,7 @@ algorithm
       outList := i :: outList;
     end if;
 
-    arrayUpdate(arr, i, false);
+    arrayUpdateNoBoundsChecking(arr, i, false);
   end for;
 end uniqueIntN;
 
@@ -1081,7 +1081,7 @@ algorithm
   else
     len := arrayLength(inMarkArray);
     mark := inMarkArray[len];
-    arrayUpdate(inMarkArray, len, mark + 1);
+    arrayUpdateNoBoundsChecking(inMarkArray, len, mark + 1);
     outAccum := uniqueIntNArr1(inList, len, mark + 1, inMarkArray, inAccum);
   end if;
 end uniqueIntNArr;
@@ -1102,7 +1102,7 @@ algorithm
 
     if arrayGet(inMarkArray, i) <> inMark then
       outAccum := i :: outAccum;
-      _ := arrayUpdate(inMarkArray, i, inMark);
+      _ := arrayUpdateNoBoundsChecking(inMarkArray, i, inMark);
     end if;
   end for;
 end uniqueIntNArr1;

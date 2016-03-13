@@ -2190,7 +2190,7 @@ algorithm
     // Compute the row.
     row := incidenceRow(eq, inVars, inIndexType, functionTree, {});
     // Put it in the arrays.
-    arrayUpdate(outIncidenceArray, idx, row);
+    Dangerous.arrayUpdateNoBoundsChecking(outIncidenceArray, idx, row);
     outIncidenceArrayT := fillincidenceMatrixT(row, {idx}, outIncidenceArrayT);
   end for;
 end incidenceMatrixDispatch;
@@ -2220,7 +2220,7 @@ algorithm
       // Compute the row.
       row := incidenceRow(eq, inVars, inIndexType, functionTree, {});
       // Put it in the arrays.
-      arrayUpdate(outIncidenceArray, idx, row);
+      Dangerous.arrayUpdateNoBoundsChecking(outIncidenceArray, idx, row);
       outIncidenceArrayT := fillincidenceMatrixT(row, {idx}, outIncidenceArrayT);
     end if;
   end for;
@@ -2256,7 +2256,7 @@ algorithm
     (row, size) := incidenceRow(eq, inVars, inIndexType, functionTree, {});
     row_indices := List.intRange2(num_rows + 1, num_rows + size);
     num_rows := num_rows + size;
-    arrayUpdate(omapEqnIncRow, idx, row_indices);
+    Dangerous.arrayUpdateNoBoundsChecking(omapEqnIncRow, idx, row_indices);
     imap := List.consN(size, idx, imap);
 
     // Put it in the arrays
@@ -6090,7 +6090,7 @@ algorithm
     e := inArray[i];
     (new_e, outArg) := inArrayFunc(e, inElemFunc, outArg);
     if not referenceEq(e, new_e) then
-      arrayUpdate(outArray, i, new_e);
+      Dangerous.arrayUpdateNoBoundsChecking(outArray, i, new_e);
     end if;
   end for;
 end traverseArrayNoCopyWithUpdate;

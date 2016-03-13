@@ -73,6 +73,7 @@ protected import ExpressionSimplify;
 protected import Dump;
 protected import Flags;
 protected import List;
+protected import MetaModelica.Dangerous;
 protected import Patternm;
 protected import Prefix;
 protected import Static;
@@ -4222,7 +4223,7 @@ algorithm
     return ;
   end if;
 
-  s := makeSum1(list( expMul(arrayGet(v,i), arrayGet(w,i))  for i in 1:size1 ));
+  s := makeSum1(list( expMul(Dangerous.arrayGetNoBoundsChecking(v,i), Dangerous.arrayGetNoBoundsChecking(w,i))  for i in 1:size1 ));
   (s,_) := ExpressionSimplify.simplify(s);
 
 end makeScalarProduct;
@@ -4248,7 +4249,7 @@ algorithm
   end if;
   y := arrayCreate(size1, DAE.RCONST(0.0));
   for i in 1:size1 loop
-    arrayUpdate(y,i,expAdd(arrayGet(v,i), arrayGet(w,i)));
+    Dangerous.arrayUpdateNoBoundsChecking(y,i,expAdd(Dangerous.arrayGetNoBoundsChecking(v,i), Dangerous.arrayGetNoBoundsChecking(w,i)));
   end for;
 end addVec;
 
@@ -4266,7 +4267,7 @@ algorithm
   end if;
   y := arrayCreate(size1, DAE.RCONST(0.0));
   for i in 1:size1 loop
-    arrayUpdate(y,i,expSub(arrayGet(v,i), arrayGet(w,i)));
+    Dangerous.arrayUpdateNoBoundsChecking(y,i,expSub(Dangerous.arrayGetNoBoundsChecking(v,i), Dangerous.arrayGetNoBoundsChecking(w,i)));
   end for;
 end subVec;
 

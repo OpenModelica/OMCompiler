@@ -936,25 +936,21 @@ protected function lowerKnownVarkind
   input DAE.ConnectorType inConnectorType;
   output BackendDAE.VarKind outVarKind;
 algorithm
-  outVarKind := matchcontinue (inVarKind, inComponentRef, inVarDirection, inConnectorType)
+  outVarKind := match (inVarKind, inComponentRef, inVarDirection, inConnectorType)
 
     case (DAE.PARAM(), _, _, _) then BackendDAE.PARAM();
     case (DAE.CONST(), _, _, _) then BackendDAE.CONST();
     case (DAE.VARIABLE(), _, _, _)
-      equation
-        true = DAEUtil.topLevelInput(inComponentRef, inVarDirection, inConnectorType);
+      guard
+        DAEUtil.topLevelInput(inComponentRef, inVarDirection, inConnectorType)
       then
         BackendDAE.VARIABLE();
-    // adrpo: topLevelInput might fail!
-    // case (DAE.VARIABLE(), cr, dir, flowPrefix)
-    //  then
-    //    BackendDAE.VARIABLE();
     else
       equation
         Error.addInternalError("function lowerKnownVarkind failed", sourceInfo());
       then
         fail();
-  end matchcontinue;
+  end match;
 end lowerKnownVarkind;
 
 protected function lowerType

@@ -50,6 +50,7 @@ protected import Debug;
 protected import ExpressionDump;
 protected import Flags;
 protected import List;
+protected import MetaModelica.Dangerous;
 
 // =============================================================================
 // late inline functions stuff
@@ -153,7 +154,7 @@ algorithm
     (eqn, inlined) := inlineEqOpt(inEqnArray[i], fns);
 
     if inlined then
-      arrayUpdate(inEqnArray, i, eqn);
+      Dangerous.arrayUpdateNoBoundsChecking(inEqnArray, i, eqn);
       oInlined := true;
     end if;
   end for;
