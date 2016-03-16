@@ -212,7 +212,7 @@ algorithm
         //Debug.fcall2(Flags.CHECK_MODEL_BALANCE, checkModelBalancing, SOME(path), dae2);
 
         // let the GC collect these as they are used only by Inst!
-        setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
+        releaseInstHashTable();
       then
         (cache,env_2,ih,dae2);
 
@@ -277,7 +277,7 @@ algorithm
         //print("\nSetSource+DAE: " + realString(System.getTimerIntervalTime()));
 
         // let the GC collect these as they are used only by Inst!
-        setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
+        releaseInstHashTable();
       then
         (cache, env_2, ih, dae);
 
@@ -335,7 +335,7 @@ algorithm
         Error.addMessage(Error.ERROR_FLATTENING, {cname_str});
 
         // let the GC collect these as they are used only by Inst!
-        setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
+        releaseInstHashTable();
       then
         fail();
   end matchcontinue;
@@ -858,149 +858,88 @@ public function instClassIn2
   output FCore.Cache outCache;
   output FCore.Graph outEnv;
   output InnerOuter.InstHierarchy outIH;
-  output UnitAbsyn.InstStore outStore;
+  output UnitAbsyn.InstStore outStore = inStore;
   output DAE.DAElist outDae;
   output Connect.Sets outSets;
   output ClassInf.State outState;
-  output list<DAE.Var> outTypesVarLst;
-  output Option<DAE.Type> outTypesTypeOption;
+  output list<DAE.Var> outVars;
+  output Option<DAE.Type> outType;
   output Option<SCode.Attributes> optDerAttr;
   output DAE.EqualityConstraint outEqualityConstraint;
   output ConnectionGraph.ConnectionGraph outGraph;
+protected
+  Absyn.Path cache_path;
+  CachedInstItemInputs inputs;
+  CachedInstItemOutputs outputs;
+  DAE.Mod mod;
+  Prefix.Prefix pre;
+  Connect.Sets csets;
+  ClassInf.State state;
+  SCode.Element cls;
+  InstDims idims;
+  Boolean impl;
+  Option<DAE.ComponentRef> scr;
+  InstTypes.CallingScope cs;
+  ConnectionGraph.ConnectionGraph graph;
+  InstHashTable instHash;
 algorithm
-  (outCache,outEnv,outIH,outStore,outDae,outSets,outState,outTypesVarLst,outTypesTypeOption,optDerAttr,outEqualityConstraint,outGraph):=
-  matchcontinue (inCache,inEnv,inIH,inStore,inMod,inPrefix,inState,inClass,inVisibility,inInstDims,implicitInstantiation,inCallingScope,inGraph,inSets,instSingleCref)
-    local
-      Option<DAE.Type> bc;
-      FCore.Graph env;
-      DAE.Mod mods;
-      Prefix.Prefix pre;
-      ClassInf.State ci_state;
-      SCode.Element c;
-      InstDims inst_dims;
-      Boolean impl;
-      SCode.Visibility vis;
-      String n;
-      DAE.DAElist dae;
-      Connect.Sets csets;
-      list<DAE.Var> tys;
-      SCode.Restriction r,rCached;
-      SCode.ClassDef d;
-      FCore.Cache cache;
-      Option<SCode.Attributes> oDA;
-      DAE.EqualityConstraint equalityConstraint;
-      InstTypes.CallingScope callscope, ccs;
-      ConnectionGraph.ConnectionGraph graph;
-      InstanceHierarchy ih;
-      InstHashTable instHash;
-      CachedInstItemInputs inputs;
-      CachedInstItemOutputs outputs;
-      Absyn.Path fullEnvPathPlusClass;
-      String className;
-      UnitAbsyn.InstStore store;
+  // Packages derived from partial packages should do partialInstClassIn, since
+  // it filters out a lot of things.
+  if SCode.isPackage(inClass) and SCode.isPartial(inClass) then
+    (outCache, outEnv, outIH, outState) := partialInstClassIn(inCache, inEnv,
+      inIH, inMod, inPrefix, inState, inClass, inVisibility, inInstDims, 0);
+    outDae := DAE.emptyDae;
+    outSets := inSets;
+    outVars := {};
+    outType := NONE();
+    optDerAttr := NONE();
+    outEqualityConstraint := NONE();
+    outGraph := inGraph;
+  else
+    cache_path := generateCachePath(inEnv, inClass, inPrefix, inCallingScope);
 
-      DAE.Mod aa_1;
-      Prefix.Prefix aa_2;
-      Connect.Sets aa_3;
-      ClassInf.State aa_4;
-      SCode.Element aa_5;
-      InstDims aa_7;
-      Boolean aa_8;
-      Option<DAE.ComponentRef> aa_9;
-      tuple<InstDims,Boolean,DAE.Mod,Connect.Sets,ClassInf.State,SCode.Element,Option<DAE.ComponentRef>> bbx, bby;
-      ConnectionGraph.ConnectionGraph graphCached;
-      DAE.FunctionTree functionTree;
+    // See if we have it in the cache.
+    try
+      true := Flags.isSet(Flags.CACHE);
+      instHash := getGlobalRoot(Global.instHashIndex);
+      {SOME(FUNC_instClassIn(inputs, outputs)), _} := BaseHashTable.get(cache_path, instHash);
 
-    // packages derived from partial packages should do partialInstClass, since it filters out a lot of things.
-    case (cache,env,ih,store,mods,pre,ci_state,
-      c as SCode.CLASS(restriction = SCode.R_PACKAGE(), partialPrefix = SCode.PARTIAL()),
-      vis,inst_dims,_,_,graph,_,_)
-      equation
-        (cache,env,ih,ci_state,_) = partialInstClassIn(cache, env, ih, mods, pre, ci_state, c, vis, inst_dims, 0);
-      then
-        (cache,env,ih,store,DAE.emptyDae, inSets,ci_state,{},NONE(),NONE(),NONE(),graph);
+      (_, _, _, _, mod, pre, csets, state, cls as SCode.CLASS(), _, idims, impl, _, scr, cs) := inputs;
 
-    //  see if we have it in the cache
-    case (cache, env, ih, store, mods, pre, ci_state,
-        c as SCode.CLASS(), _, inst_dims, impl,
-        callscope, graph, csets, _)
-      equation
-        true = Flags.isSet(Flags.CACHE);
-        instHash = getGlobalRoot(Global.instHashIndex);
-        fullEnvPathPlusClass = generateCachePath(inEnv, c, pre, callscope);
-        {SOME(FUNC_instClassIn(inputs, outputs)),_} = BaseHashTable.get(fullEnvPathPlusClass, instHash);
-        (_, _, _, _, aa_1, aa_2, aa_3, aa_4, aa_5 as SCode.CLASS(), _, aa_7, aa_8, _, aa_9, ccs) = inputs;
-        // are the important inputs the same??
-        InstUtil.prefixEqualUnlessBasicType(aa_2, pre, c);
-        bbx = (aa_7,      aa_8, aa_1, aa_3, aa_4,     aa_5, aa_9);
-        bby = (inst_dims, impl, mods, csets, ci_state, c,    instSingleCref);
-        equality(bbx = bby);
-        true = callingScopeCacheEq(ccs, callscope);
-        (_,env,dae,csets,ci_state,tys,bc,oDA,equalityConstraint,graphCached) = outputs;
-        graph = ConnectionGraph.merge(graph, graphCached);
+      // Check that the important inputs are the same.
+      InstUtil.prefixEqualUnlessBasicType(pre, inPrefix, inClass);
+      true := callingScopeCacheEq(cs, inCallingScope);
+      true := impl == implicitInstantiation;
+      equality(idims := inInstDims);
+      true := Mod.modEqual(mod, inMod);
+      equality(csets := inSets);
+      equality(state := inState);
+      true := SCode.elementEqual(cls, inClass);
+      true := Util.optionEqual(scr, instSingleCref, ComponentReference.crefEqual);
 
-        // cache = FCore.setCachedFunctionTree(cache, DAEUtil.joinAvlTrees(functionTree, FCore.getFunctionTree(cache)));
-        showCacheInfo("Full Inst Hit: ", fullEnvPathPlusClass);
-        /*
-        fprintln(Flags.CACHE, "IIII->got from instCache: " + Absyn.pathString(fullEnvPathPlusClass) +
-          "\n\tpre: " + PrefixUtil.printPrefixStr(pre) + " class: " +  className +
-          "\n\tmods: " + Mod.printModStr(mods) +
-          "\n\tenv: " + FGraph.printGraphPathStr(inEnv) +
-          "\n\tsingle cref: " + Expression.printComponentRefOptStr(instSingleCref) +
-          "\n\tdims: [" + stringDelimitList(List.map1(inst_dims, DAEDump.unparseDimensions, true), ", ") + "]" +
-          "\n\tdae:\n" + DAEDump.dump2str(dae));
-        */
-      then
-        (cache,env,ih,store,dae,csets,ci_state,tys,bc,oDA,equalityConstraint,graph);
+      (_, outEnv, outDae, outSets, outState, outVars, outType, optDerAttr,
+        outEqualityConstraint, graph) := outputs;
+      outCache := inCache;
+      outIH := inIH;
+      outGraph := ConnectionGraph.merge(inGraph, graph);
+      showCacheInfo("Full Inst Hit: ", cache_path);
+    else
+      // Call the function and then add it in the cache.
+      (outCache, outEnv, outIH, outStore, outDae, outSets, outState, outVars,
+       outType, optDerAttr, outEqualityConstraint, outGraph) :=
+        instClassIn_dispatch(inCache, inEnv, inIH, inStore, inMod, inPrefix,
+          inState, inClass, inVisibility, inInstDims, implicitInstantiation,
+          inCallingScope, inGraph, inSets, instSingleCref);
 
-    // call the function and then add it in the cache
-    case (cache,env,ih,store,_,_,ci_state,
-      SCode.CLASS(),
-      _,_,_,callscope,graph,_,_)
-      equation
-        //System.startTimer();
-        (cache,env,ih,store,dae,csets,ci_state,tys,bc,oDA,equalityConstraint,graph) =
-          instClassIn_dispatch(inCache,inEnv,inIH,store,inMod,inPrefix,inState,inClass,inVisibility,inInstDims,implicitInstantiation,callscope,inGraph,inSets,instSingleCref);
+      inputs := (inCache, inEnv, inIH, inStore, inMod, inPrefix, inSets, inState, inClass,
+        inVisibility, inInstDims, implicitInstantiation, inGraph, instSingleCref, inCallingScope);
+      outputs := (FCore.getFunctionTree(outCache), outEnv, outDae, outSets, outState, outVars,
+        outType, optDerAttr, outEqualityConstraint, outGraph);
 
-        fullEnvPathPlusClass = generateCachePath(inEnv, inClass, inPrefix, callscope);
-
-        inputs = (inCache,inEnv,inIH,store,inMod,inPrefix,inSets,inState,inClass,inVisibility,inInstDims,implicitInstantiation,inGraph,instSingleCref,callscope);
-        outputs = (FCore.getFunctionTree(cache),env,dae,csets,ci_state,tys,bc,oDA,equalityConstraint,graph);
-
-        showCacheInfo("Full Inst Add: ", fullEnvPathPlusClass);
-        addToInstCache(fullEnvPathPlusClass,
-           SOME(FUNC_instClassIn( // result for full instantiation
-             inputs,
-             outputs)),
-           /*SOME(FUNC_partialInstClassIn( // result for partial instantiation
-             (inCache,inEnv,inIH,inMod,inPrefix,inSets,inState,inClass,inVisibility,inInstDims),
-             (env,ci_state)))*/ NONE());
-        /*
-        fprintln(Flags.CACHE, "IIII->added to instCache: " + Absyn.pathString(fullEnvPathPlusClass) +
-          "\n\tpre: " + PrefixUtil.printPrefixStr(pre) + " class: " +  className +
-          "\n\tmods: " + Mod.printModStr(mods) +
-          "\n\tenv: " + FGraph.printGraphPathStr(inEnv) +
-          "\n\tsingle cref: " + Expression.printComponentRefOptStr(instSingleCref) +
-          "\n\tdims: [" + stringDelimitList(List.map1(inst_dims, DAEDump.unparseDimensions, true), ", ") + "]" +
-          "\n\tdae:\n" + DAEDump.dump2str(dae));
-        */
-        //checkModelBalancingFilterByRestriction(r, envPathOpt, dae);
-        //System.stopTimer();
-        //_ = Database.query(0, "insert into Inst values(\"" + Absyn.pathString(fullEnvPathPlusClass) + "\", " + realString(System.getTimerIntervalTime()) + ");");
-        // _ = FGraph.updateClass(inEnv, inClass, inPrefix, inMod, FCore.CLS_FULL(), env);
-      then
-        (cache,env,ih,store,dae,csets,ci_state,tys,bc,oDA,equalityConstraint,graph);
-
-    // failure
-    case (_, env, _, _, _, _, _, SCode.CLASS(name = n), _, _, _, _, _, _, _)
-      equation
-        //print("instClassIn(");print(n);print(") failed\n");
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.traceln("- Inst.instClassIn2 failed on class:" + n + " in environment: " + FGraph.printGraphPathStr(env));
-      then
-        fail();
-
-  end matchcontinue;
+      showCacheInfo("Full Inst Add: ", cache_path);
+      addToInstCache(cache_path, SOME(FUNC_instClassIn(inputs, outputs)), NONE());
+    end try;
+  end if;
 end instClassIn2;
 
 protected function callingScopeCacheEq
@@ -2640,7 +2579,7 @@ algorithm
     case (_, _, InstTypes.TYPE_CALL()) then {};
     // Take the union of the equations in the current scope and equations
     // from extends, to filter out identical equations.
-    else List.unionOnTrue(inEq, inExtEq, SCode.equationEqual);
+    else listAppend(inEq, inExtEq);
   end match;
 end joinExtEquations;
 
@@ -2650,8 +2589,8 @@ protected function joinExtAlgorithms
   input InstTypes.CallingScope inCallingScope;
   output list<SCode.AlgorithmSection> outAlg;
 algorithm
-  outAlg := match(inAlg, inExtAlg, inCallingScope)
-    case (_, _, InstTypes.TYPE_CALL()) then {};
+  outAlg := match inCallingScope
+    case InstTypes.TYPE_CALL() then {};
     else listAppend(inAlg, inExtAlg);
   end match;
 end joinExtAlgorithms;
@@ -5424,19 +5363,20 @@ algorithm
   setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
 end initInstHashTable;
 
+public function releaseInstHashTable
+algorithm
+  setGlobalRoot(Global.instHashIndex, emptyInstHashTableSized(1));
+end releaseInstHashTable;
+
 protected function emptyInstHashTable
-"
-  Returns an empty HashTable.
-  Using the default bucketsize..
-"
+  "Returns an empty HashTable."
   output InstHashTable hashTable;
 algorithm
-  hashTable := emptyInstHashTableSized(BaseHashTable.defaultBucketSize);
+  hashTable := emptyInstHashTableSized(Flags.getConfigInt(Flags.INST_CACHE_SIZE));
 end emptyInstHashTable;
 
 protected function emptyInstHashTableSized
-"Returns an empty HashTable.
-  Using the bucketsize size"
+  "Returns an empty HashTable, using the given bucket size."
   input Integer size;
   output InstHashTable hashTable;
 algorithm
@@ -5446,76 +5386,37 @@ end emptyInstHashTableSized;
 /* end HashTable */
 
 public function getCachedInstance
-  input FCore.Cache inCache;
   input FCore.Graph inEnv;
   input String inName;
   input FCore.Ref inRef;
-  output FCore.Cache outCache;
   output FCore.Graph outGraph;
+protected
+  InstHashTable inst_hash;
+  FCore.Data data;
+  SCode.Element cls;
+  Absyn.Path full_env_path_plus_class;
 algorithm
-  (outCache, outGraph) := matchcontinue(inCache, inEnv, inName, inRef)
-    local
-      FCore.Cache cache;
-      FCore.Graph env;
-      DAE.FunctionTree ft;
-      InstHashTable instHash;
-      Absyn.Path fullEnvPathPlusClass;
-      tuple<FCore.Cache, FCore.Graph, InstanceHierarchy,
-            UnitAbsyn.InstStore, DAE.Mod, Prefix.Prefix, Connect.Sets, ClassInf.State,
-            SCode.Element, SCode.Visibility, InstDims, Boolean,
-            ConnectionGraph.ConnectionGraph, Option<DAE.ComponentRef>, InstTypes.CallingScope>
-            inputs;
-      tuple<DAE.FunctionTree, FCore.Graph, DAE.DAElist, Connect.Sets,
-            ClassInf.State, list<DAE.Var>, Option<DAE.Type>, Option<SCode.Attributes>,
-            DAE.EqualityConstraint, ConnectionGraph.ConnectionGraph> outputs;
-      DAE.Mod m1, m2;
-      Prefix.Prefix pre1, pre2;
-      SCode.Element e1, e2;
-      Boolean b1, b2, b3;
-      SCode.Encapsulated encflag;
-      SCode.Restriction restr;
+  if not Flags.isSet(Flags.CACHE) then
+    outGraph := inEnv;
+    return;
+  end if;
 
-    case (cache, _, _, _)
-      equation
-        true = Flags.isSet(Flags.CACHE);
-        instHash = getGlobalRoot(Global.instHashIndex);
-        FCore.CL(e2 as SCode.CLASS(restriction = restr, encapsulatedPrefix=encflag), pre2, m2, _, _) = FNode.refData(inRef);
-        env = FGraph.openScope(inEnv, encflag, SOME(inName), FGraph.restrictionToScopeType(restr));
-        fullEnvPathPlusClass = generateCachePath(env, e2, pre2, InstTypes.INNER_CALL());
+  inst_hash := getGlobalRoot(Global.instHashIndex);
+  data := FNode.refData(inRef);
 
-        // print("Try cached instance: " + Absyn.pathString(fullEnvPathPlusClass) + "\n");
-        {SOME(FUNC_instClassIn(inputs, (_, env, _, _, _, _, _, _, _, _))),_} = BaseHashTable.get(fullEnvPathPlusClass, instHash);
+  outGraph := matchcontinue data
+    case FCore.CL(e = cls as SCode.CLASS())
+      algorithm
+        outGraph := FGraph.openScope(inEnv, cls.encapsulatedPrefix, SOME(inName),
+          FGraph.restrictionToScopeType(cls.restriction));
+        full_env_path_plus_class := generateCachePath(outGraph, cls, data.pre, InstTypes.INNER_CALL());
 
-        // do some sanity checks
-        (_, _, _, _, m1, pre1, _, _, e1, _, _, _,_ , _, _) = inputs;
-
-        _ = Mod.modEqual(m1, m2);
-        _ = SCode.elementEqual(e1, e2);
-        _ = Absyn.pathEqual(PrefixUtil.prefixToPath(pre1), PrefixUtil.prefixToPath(pre2));
-
-        // cache = FCore.setCachedFunctionTree(cache, DAEUtil.joinAvlTrees(ft, FCore.getFunctionTree(cache)));
-        /*
-        print("Got cached instance: " + Absyn.pathString(fullEnvPathPlusClass) +
-              " mod: " + boolString(b1) +
-              " els: " + boolString(b2) +
-              " pre: " + boolString(b3) +
-              "\n");*/
+        {SOME(FUNC_instClassIn(_, (_, outGraph, _, _, _, _, _, _, _, _))), _} :=
+          BaseHashTable.get(full_env_path_plus_class, inst_hash);
       then
-        (cache, env);
+        outGraph;
 
-    else
-      equation
-        true = Flags.isSet(Flags.CACHE);
-        _ = getGlobalRoot(Global.instHashIndex);
-        FCore.CL(e2 as SCode.CLASS(restriction = restr, encapsulatedPrefix=encflag), pre2, _, _, _) = FNode.refData(inRef);
-        env = FGraph.openScope(inEnv, encflag, SOME(inName), FGraph.restrictionToScopeType(restr));
-        _ = generateCachePath(env, e2, pre2, InstTypes.INNER_CALL());
-
-        // print("Could not get the cached instance: " + Absyn.pathString(fullEnvPathPlusClass) + "\n");
-        env = FGraph.pushScopeRef(inEnv, inRef);
-      then
-        (inCache, env);
-
+    else FGraph.pushScopeRef(inEnv, inRef);
   end matchcontinue;
 end getCachedInstance;
 
