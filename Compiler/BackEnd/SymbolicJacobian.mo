@@ -1794,13 +1794,14 @@ algorithm
                                                                     "evalFunc"},
                                                                    NONE(),
                                                                    NONE(),
-                                                                   {"wrapFunctionCalls",
+                                                                   {
+                                                                    "wrapFunctionCalls",
                                                                     "inlineArrayEqn",
                                                                     "constantLinearSystem",
+                                                                    "solveSimpleEquations",
                                                                     "tearingSystem",
                                                                     "calculateStrongComponentJacobians",
                                                                     "removeConstants",
-                                                                    "solveSimpleEquations",
                                                                     "simplifyTimeIndepFuncCalls"});
           _ = Flags.set(Flags.EXEC_STAT, b);
           if Flags.isSet(Flags.JAC_DUMP) then
