@@ -597,7 +597,7 @@ algorithm
         r = FNode.child(FGraph.lastScopeRef(env), id);
         FCore.CL(status = FCore.CLS_INSTANCE(_)) = FNode.refData(r);
         // fetch the env
-        (cache, env) = Inst.getCachedInstance(cache, env, id, r);
+        env = Inst.getCachedInstance(env, id, r);
         (cache,c,env,prevFrames) = lookupClass2(cache,env,path,{},inState,inInfo);
       then (cache,c,env,prevFrames);
 
@@ -1374,7 +1374,7 @@ algorithm
               rr = FNode.child(FGraph.lastScopeRef(env2), id);
               if FNode.isRefInstance(rr) // is an instance, use it
               then
-                (cache, env5) = Inst.getCachedInstance(cache, env2, id, rr);
+                env5 = Inst.getCachedInstance(env2, id, rr);
               else // not an instance, instantiate it - lookup of constants on form A.B in packages. instantiate package and look inside.
                 env3 = FGraph.openScope(env2, encflag, SOME(n), FGraph.restrictionToScopeType(r));
                 ci_state = ClassInf.start(r, FGraph.getGraphName(env3));
@@ -1813,7 +1813,7 @@ algorithm
         r = FNode.child(FGraph.lastScopeRef(env_1), str);
         if FNode.isRefInstance(r) // we have an instance of a component
         then
-          (cache, env2) = Inst.getCachedInstance(cache, env_1, str, r);
+          env2 = Inst.getCachedInstance(env_1, str, r);
         else
           env2 = FGraph.openScope(env_1, encflag, SOME(str), FGraph.restrictionToScopeType(restr));
           ci_state = ClassInf.start(restr, FGraph.getGraphName(env2));
