@@ -2271,10 +2271,9 @@ algorithm
   end if;
 
   // 6. determine which possible Vars causalize most equations considering impossible assignments and write them into potentials
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((potentials,_,_,_)) := Array.fold(msel2t,function selectCausalVars(
+  potentials := selectCausalVarsLoop(mtIn,selectedcols1,
        me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-     ), ({},0,1,{}));
+     );
 
   // 7. convert indexes from msel2t to indexes from mtIn
   potentials := selectFromList(selectedcols1,potentials);
@@ -2316,10 +2315,9 @@ algorithm
   end if;
 
   // 3. determine which possible Vars causalize most equations considering impossible assignments and write them into potentials
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((potentials,_,_,_)) := Array.fold(msel2t,function selectCausalVars(
+  potentials := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
 
   // 4. convert indexes from msel2t to indexes from mtIn
   potentials := selectFromList(selectedcols1,potentials);
@@ -2373,10 +2371,9 @@ algorithm
   end if;
 
   // 6. determine which possible Vars causalize most equations considering impossible assignments and write them into potentials
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((potentials,_,_,_)) := Array.fold(msel2t,function selectCausalVars(
+  potentials := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
 
   // 7. convert indexes from msel2t to indexes from mtIn
   potentials := selectFromList(selectedcols1,potentials);
@@ -2385,7 +2382,7 @@ algorithm
   end if;
 
   // 8. choose vars with the most impossible assignments
-  (potentials,_,_) := countImpossibleAss(potentials,ass2In,metIn,{},{},0);
+  (_,potentials,_) := countImpossibleAss(potentials,ass2In,metIn);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("\n4th: "+ stringDelimitList(List.map(potentials,intString),",")+"\n(Variables from (3rd) with most incident impossible assignments - potentials)\n\n");
   end if;
@@ -2424,10 +2421,9 @@ algorithm
   end if;
 
   // 3. determine which possible Vars causalize most equations considering impossible assignments and write them into potentials
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((potentials,_,_,_)) := Array.fold(msel2t,function selectCausalVars(
+  potentials := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
 
   // 4. convert indexes from msel2t to indexes from mtIn
   potentials := selectFromList(selectedcols1,potentials);
@@ -2436,7 +2432,7 @@ algorithm
   end if;
 
   // 5. choose vars with the most impossible assignments
-  (potentials,_,_) := countImpossibleAss(potentials,ass2In,metIn,{},{},0);
+  (_,potentials,_) := countImpossibleAss(potentials,ass2In,metIn);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("\n3rd: "+ stringDelimitList(List.map(potentials,intString),",")+"\n(Variables from (2nd) with most incident impossible assignments - potentials)\n\n");
   end if;
@@ -2481,7 +2477,7 @@ algorithm
   end if;
 
   // 5. choose vars with the most impossible assignments
-  (selectedcols1,_,_) := countImpossibleAss(selectedcols1,ass2In,metIn,{},{},0);
+  (_,selectedcols1,_) := countImpossibleAss(selectedcols1,ass2In,metIn);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("\n3rd: "+ stringDelimitList(List.map(selectedcols1,intString),",")+"\n(Variables from (2nd) with most incident impossible assignments)\n\n");
   end if;
@@ -2493,10 +2489,9 @@ algorithm
   end if;
 
   // 7. determine which possible Vars causalize most equations considering impossible assignments and write them into potentials
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((potentials,_,_,_)) := Array.fold(msel2t,function selectCausalVars(
+  potentials := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
 
   // 8. convert indexes from msel2t to indexes from mtIn
   potentials := selectFromList(selectedcols1,potentials);
@@ -2532,7 +2527,7 @@ algorithm
   end if;
 
   // 2. choose vars with the most impossible assignments
-  (selectedcols1,_,_) := countImpossibleAss(selectedcols1,ass2In,metIn,{},{},0);
+  (_,selectedcols1,_) := countImpossibleAss(selectedcols1,ass2In,metIn);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("\n2nd: "+ stringDelimitList(List.map(selectedcols1,intString),",")+"\n(Variables from (1st) with most incident impossible assignments)\n\n");
   end if;
@@ -2544,10 +2539,9 @@ algorithm
   end if;
 
   // 4. determine which possible Vars causalize most equations considering impossible assignments and write them into potentials
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((potentials,_,_,_)) := Array.fold(msel2t,function selectCausalVars(
+  potentials := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
 
   // 5. convert indexes from msel2t to indexes from mtIn
   potentials := selectFromList(selectedcols1,potentials);
@@ -2601,14 +2595,13 @@ algorithm
   end if;
 
   // 6. determine for each variable the number of equations it could causalize considering impossible assignments and save them in counts1
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((_,_,_,counts1)) := Array.fold(msel2t,function selectCausalVars(
+  (_,counts1) := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
   counts1 := listReverse(counts1);
 
   // 8. determine for each variable the number of impossible assignments and save them in counts2
-  (_,counts2,_) := countImpossibleAss(selectedcols1,ass2In,metIn,{},{},0);
+  (_,_,counts2) := countImpossibleAss(selectedcols1,ass2In,metIn);
   counts2 := listReverse(counts2);
 
   // 9. Calculate the sum of number of impossible assignments and causalizable equations for each variable and save them in points
@@ -2658,14 +2651,13 @@ algorithm
   end if;
 
   // 4. determine for each variable the number of equations it could causalize considering impossible assignments and save them in counts1
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((_,_,_,counts1)) := Array.fold(msel2t,function selectCausalVars(
+  (_,counts1) := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
   counts1 := listReverse(counts1);
 
   // 5. determine for each variable the number of impossible assignments and save them in counts2
-  (_,counts2,_) := countImpossibleAss(selectedcols1,ass2In,metIn,{},{},0);
+  (_,_,counts2) := countImpossibleAss(selectedcols1,ass2In,metIn);
   counts2 := listReverse(counts2);
 
   // 6. Calculate the sum of number of impossible assignments and causalizable equations for each variable and save them in points
@@ -2720,14 +2712,13 @@ algorithm
   end if;
 
   // 4. determine for each variable the number of equations it could causalize considering impossible assignments and save them in counts1
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((_,_,_,counts1)) := Array.fold(msel2t,function selectCausalVars(
+  (_,counts1) := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
   counts1 := listReverse(counts1);
 
   // 5. determine for each variable the number of impossible assignments and save them in counts2
-  (_,counts2,_) := countImpossibleAss(selectedcols1,ass2In,metIn,{},{},0);
+  (_,_,counts2) := countImpossibleAss(selectedcols1,ass2In,metIn);
   counts2 := listReverse(counts2);
 
   // 6. Calculate the sum of number of impossible assignments and causalizable equations for each variable and save them in points1
@@ -2755,14 +2746,13 @@ algorithm
   end if;
 
   // 10. determine for each variable the number of equations it could causalize considering impossible assignments and save them in counts1
-  msel2t := Array.select(mtIn,selectedcols1);
-  ((_,_,_,counts1)) := Array.fold(msel2t,function selectCausalVars(
+  (_,counts1) := selectCausalVarsLoop(mtIn,selectedcols1,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(selectedrows, arrayLength(ass1In)),selVars=arrayCreate(1,selectedcols1)
-    ),({},0,1,{}));
+    );
   counts1 := listReverse(counts1);
 
   // 11. determine for each variable the number of impossible assignments and save them in counts2
-  (_,counts2,_) := countImpossibleAss(selectedcols1,ass2In,metIn,{},{},0);
+  (_,_,counts2) := countImpossibleAss(selectedcols1,ass2In,metIn);
   counts2 := listReverse(counts2);
 
   // 12. Calculate the sum of number of impossible assignments and causalizable equations for each variable and save them in points2
@@ -2796,6 +2786,7 @@ protected
   Integer edges,maxpoints,tVar;
   list<Integer> potentialTVars,bestPotentialTVars,assEq,assEq_multi,assEq_single,causEq,points,counts1,counts2;
   BackendDAE.IncidenceMatrix mtsel,msel;
+  array<Boolean> selection; // TODO: Create the array outside the function and just pass it along?
   constant Boolean debug = false;
 algorithm
   // Cellier heuristic [MC3]
@@ -2811,16 +2802,34 @@ algorithm
   if debug then execStat("Tearing.ModifiedCellierHeuristic_3 - 2"); end if;
 
   // 3. Determine the variables in causEq
-  msel := Array.select(mIn,causEq);
-  potentialTVars := List.unique(List.flatten(arrayList(msel)));
-  if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
+  selection := arrayCreate(arrayLength(mIn), false);
+  for i in causEq loop
+    for j in arrayGet(mIn, i) loop
+      arrayUpdate(selection, j, true);
+    end for;
+  end for;
+  // msel := Array.select(mIn,causEq);
+  // potentialTVars := List.unique(List.flatten(arrayList(msel)));
+  /*if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("3rd: "+ stringDelimitList(List.map(potentialTVars,intString),",")+"\n(Variables in the equations from (2nd))\n\n");
-  end if;
+  end if;*/
   if debug then execStat("Tearing.ModifiedCellierHeuristic_3 - 3"); end if;
 
   // 4. Remove the discrete variables and the variables with attribute tearingSelect=never
-  (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,discreteVars,intEq);
-  (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,tSel_never,intEq);
+  for i in discreteVars loop
+    arrayUpdate(selection, i, false);
+  end for;
+  for i in tSel_never loop
+    arrayUpdate(selection, i, false);
+  end for;
+  potentialTVars := {};
+  for i in 1:arrayLength(selection) loop
+    if arrayGet(selection,i) then
+      potentialTVars := i::potentialTVars;
+    end if;
+  end for;
+  // (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,discreteVars,intEq);
+  // (_,potentialTVars,_) := List.intersection1OnTrue(potentialTVars,tSel_never,intEq);
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("4th: "+ stringDelimitList(List.map(potentialTVars,intString),",")+"\n(All non-discrete variables from (3rd) without attribute 'never')\n\n");
   end if;
@@ -2844,14 +2853,13 @@ algorithm
   if debug then execStat("Tearing.ModifiedCellierHeuristic_3 - 4.1"); end if;
 
   // 5.1 Determine for each variable the number of equations it could causalize considering impossible assignments and save them in counts1
-  mtsel := Array.select(mtIn,potentialTVars);
-  ((_,_,_,counts1)) := Array.fold(mtsel,function selectCausalVars(
+  (_,counts1) := selectCausalVarsLoop(mtIn,potentialTVars,
       me=meIn,ass1In=ass1In,selEqsSetArray=selectCausalVarsPrepareSelectionSet(causEq, arrayLength(ass1In)),selVars=arrayCreate(1,potentialTVars)
-    ),({},0,1,{}));
+    );
   if debug then execStat("Tearing.ModifiedCellierHeuristic_3 - 5.1"); end if;
 
   // 5.2 Determine for each variable the number of impossible assignments and save them in counts2
-  (_,counts2,_) := countImpossibleAss(potentialTVars,ass2In,metIn,{},{},0);
+  (_,_,counts2) := countImpossibleAss(potentialTVars,ass2In,metIn);
   if debug then execStat("Tearing.ModifiedCellierHeuristic_3 - 5.2"); end if;
 
   // 5.3 Calculate the sum of number of impossible assignments and causalizable equations for each variable and save them in points
@@ -3024,6 +3032,28 @@ algorithm
  end matchcontinue;
 end preferAvoidVariables;
 
+protected function selectCausalVarsLoop
+" matches causalizable equations with selected variables.
+  author: ptaeuber FHB 2013-2015"
+  input array<list<Integer>> mtIn;
+  input list<Integer> potentialTVars;
+  input BackendDAE.AdjacencyMatrixEnhanced me;
+  input array<Integer> ass1In;
+  input array<Boolean> selEqsSetArray;
+  input array<list<Integer>> selVars;
+  output list<Integer> cVars={};
+  output list<Integer> count={};
+protected
+  list<Integer> row;
+  Integer num=0, indx=1;
+algorithm
+  for i in potentialTVars loop
+    row := arrayGet(mtIn, i);
+    (cVars, num, indx, count) := selectCausalVars(row, cVars, num, indx, count, me, ass1In, selEqsSetArray, selVars);
+  end for;
+end selectCausalVarsLoop;
+
+
 protected function selectCausalVarsPrepareSelectionSet
   "selectCausalVars takes as input an array ass1In. selEqs and each row
   has indexes into ass1In and we need to intersect selEqs with each row.
@@ -3043,18 +3073,19 @@ protected function selectCausalVars
 " matches causalizable equations with selected variables.
   author: ptaeuber FHB 2013-2015"
   input list<Integer> row;
-  input tuple<list<Integer>,Integer,Integer,list<Integer>> inValue;
+  input output list<Integer> cVars;
+  input output Integer num;
+  input output Integer indx;
+  input output list<Integer> counts;
   input BackendDAE.AdjacencyMatrixEnhanced me;
   input array<Integer> ass1In;
   input array<Boolean> selEqsSetArray;
   input array<list<Integer>> selVars;
-  output tuple<list<Integer>,Integer,Integer,list<Integer>> OutValue;
 protected
-  list<Integer> cVars,interEqs,counts,selVarsNext;
-  Integer size,num,indx,Var;
+  list<Integer> interEqs,selVarsNext;
+  Integer size,Var;
   constant Boolean debug = false;
 algorithm
-  (cVars,num,indx,counts) := inValue;
   // interEqs := List.intersectionOnTrue(row,selEqs,intEq);
   interEqs := list(i for i guard arrayGet(selEqsSetArray,i) in row);
   Var::selVarsNext := arrayGet(selVars,1);
@@ -3063,12 +3094,14 @@ algorithm
   size := List.fold2(interEqs,sizeOfAssignable,me,ass1In,0);
   arrayUpdate(ass1In,Var,-1);
 
-  OutValue := if size < num then
-                (cVars,num,indx+1,size::counts)
-              else if size == num then
-                (indx::cVars,num,indx+1,size::counts)
-              else
-                ({indx},size,indx+1,size::counts);
+  indx := indx + 1;
+  counts := size::counts;
+  if size > num then
+    cVars := {indx};
+    num := size;
+  elseif size == num then
+    cVars := indx::cVars;
+  end if;
 
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("Var " + intString(Var) + " would causalize " + intString(size) + " Eqns\n");
@@ -3103,75 +3136,31 @@ protected function countImpossibleAss
   input list<Integer> inPotentials;
   input array<Integer> ass2;
   input BackendDAE.AdjacencyMatrixEnhanced meT;
-  input list<Integer> newPotentials,inCounts;
-  input Integer max;
-  output list<Integer> outPotentials,outCounts;
-  output Integer outMax;
-algorithm
- (outPotentials,outCounts,outMax) := match(inPotentials,ass2,meT,newPotentials,inCounts,max)
-   local
-     Integer v,count,maxi;
-     list<Integer> rest,newPotentials1,counts;
-     BackendDAE.AdjacencyMatrixElementEnhanced elem;
-   case({},_,_,_,_,_)
-     then (newPotentials,inCounts,max);
-   case(v::rest,_,_,_,_,_)
-    equation
-      elem = List.removeOnTrue(ass2,isAssignedSaveEnhanced,meT[v]);
-      count = countImpossibleAss2(elem);
-      if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
-        print("Var " + intString(v) + " has " + intString(count) + " incident impossible assignments\n");
-      end if;
-      (newPotentials1,maxi) = countImpossibleAss3(count,max,v,newPotentials);
-      (newPotentials1,counts,maxi) = countImpossibleAss(rest,ass2,meT,newPotentials1,count::inCounts,maxi);
-    then (newPotentials1,counts,maxi);
-  end match;
-end countImpossibleAss;
-
-
-protected function countImpossibleAss2
-" helper function for countImpossibleAss,
-  traverses AdjacencyMatrixElementEnhanced and counts the number of impossible assignments of one var
-  author: ptaeuber FHB 2013-10"
-  input BackendDAE.AdjacencyMatrixElementEnhanced elem;
-  output Integer outCount = 0;
+  output Boolean dummy = true "So we can use isPresent()";
+  output list<Integer> potentials={},counts={};
 protected
-  BackendDAE.Solvability s;
+  Integer count;
+  Integer max=0;
 algorithm
-  for e in elem loop
-    (_,s,_) := e;
-    if not solvable(s) then
-      outCount := outCount + 1;
+  for v in inPotentials loop
+    count := sum(1 for e
+      guard if not isAssignedSaveEnhanced(ass2, e) then
+      (match e local BackendDAE.Solvability s; case (_,s,_) then not solvable(s); end match)
+      else false in meT[v]);
+    if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
+      print("Var " + intString(v) + " has " + intString(count) + " incident impossible assignments\n");
+    end if;
+    if count==max then
+      if isPresent(potentials) then
+        potentials := v::potentials;
+      end if;
+      max := count;
+    end if;
+    if isPresent(counts) then
+      counts := count::counts;
     end if;
   end for;
-end countImpossibleAss2;
-
-
-protected function countImpossibleAss3
-" helper function for countImpossibleAss,
-  determines if there is a new maximum, returns updated list of potentials and new max
-  author: ptaeuber FHB 2013-10"
-  input Integer inCount;
-  input Integer max;
-  input Integer v;
-  input list<Integer> inPotentials;
-  output list<Integer> outPotentials;
-  output Integer outCount;
-algorithm
-  (outPotentials,outCount) := match(inCount,max,v,inPotentials)
-  case(_,_,_,_)
-   guard
-    inCount == max
-    then (v::inPotentials,inCount);
-  case(_,_,_,_)
-   guard
-     inCount > max
-  then ({v},inCount);
-  else
-    then (inPotentials,max);
-  end match;
-end countImpossibleAss3;
-
+end countImpossibleAss;
 
 protected function TarjanMatching "Modified matching algorithm according to Tarjan as it is used by Cellier.
   author: ptaeuber 2013-2015"
@@ -3549,7 +3538,6 @@ algorithm
     index := index+1;
   end for;
 end maxListInt;
-
 
 protected function selectFromList_rev" selects Ints from inList by indexes given in selList
 author: Waurich TUD 2012-11"
