@@ -1451,11 +1451,11 @@ algorithm
     local
       BackendDAE.BackendDAE backendDAE,backendDAE2,emptyBDAE;
 
-      list<BackendDAE.Var>  varlst, knvarlst,  states, inputvars, inputvars2, outputvars, paramvars, states_inputs, conVarsList, fconVarsList, object;
+      list<BackendDAE.Var>  varlst, knvarlst, glvarlst, states, inputvars, inputvars2, outputvars, paramvars, states_inputs, conVarsList, fconVarsList, object;
       list<DAE.ComponentRef> comref_states, comref_inputvars, comref_outputvars, comref_vars, comref_knvars;
       DAE.ComponentRef leftcref;
 
-      BackendDAE.Variables v,kv,statesarr,inputvarsarr,paramvarsarr,outputvarsarr, optimizer_vars, conVars;
+      BackendDAE.Variables v,knownVars,globalVars,statesarr,inputvarsarr,paramvarsarr,outputvarsarr, optimizer_vars, conVars;
       BackendDAE.EquationArray e;
 
       BackendDAE.SymbolicJacobians linearModelMatrices;
@@ -1476,17 +1476,18 @@ algorithm
         backendDAE2 = BackendDAEUtil.copyBackendDAE(backendDAE);
         backendDAE2 = BackendDAEOptimize.collapseIndependentBlocks(backendDAE2);
         backendDAE2 = BackendDAEUtil.transformBackendDAE(backendDAE2,SOME((BackendDAE.NO_INDEX_REDUCTION(),BackendDAE.EXACT())),NONE(),NONE());
-        BackendDAE.DAE({BackendDAE.EQSYSTEM(orderedVars = v)}, BackendDAE.SHARED(knownVars = kv, functionTree = functionTree, cache=cache, graph=graph, info=ei)) = backendDAE2;
+        BackendDAE.DAE({BackendDAE.EQSYSTEM(orderedVars = v)}, BackendDAE.SHARED(knownVars=knownVars, globalVars=globalVars, functionTree = functionTree, cache=cache, graph=graph, info=ei)) = backendDAE2;
 
 
         emptyBDAE = BackendDAE.DAE({BackendDAEUtil.createEqSystem(BackendVariable.emptyVars(), BackendEquation.emptyEqns())}, BackendDAEUtil.createEmptyShared(BackendDAE.JACOBIAN(), ei, cache, graph));
         // Prepare all needed variables
         varlst = BackendVariable.varList(v);
-        knvarlst = BackendVariable.varList(kv);
+        knvarlst = BackendVariable.varList(knownVars);
+        glvarlst = BackendVariable.varList(globalVars);
         states = BackendVariable.getAllStateVarFromVariables(v);
-        inputvars = List.select(knvarlst,BackendVariable.isInput);
+        inputvars = List.select(glvarlst,BackendVariable.isInput);
         paramvars = List.select(knvarlst, BackendVariable.isParam);
-        inputvars2 = List.select(knvarlst,BackendVariable.isVarOnTopLevelAndInput);
+        inputvars2 = List.select(glvarlst,BackendVariable.isVarOnTopLevelAndInput);
         outputvars = List.select(varlst, BackendVariable.isVarOnTopLevelAndOutput);
 
         statesarr = BackendVariable.listVar1(states);
@@ -1517,15 +1518,16 @@ algorithm
         backendDAE2 = BackendDAEUtil.copyBackendDAE(backendDAE);
         backendDAE2 = BackendDAEOptimize.collapseIndependentBlocks(backendDAE2);
         backendDAE2 = BackendDAEUtil.transformBackendDAE(backendDAE2,SOME((BackendDAE.NO_INDEX_REDUCTION(),BackendDAE.EXACT())),NONE(),NONE());
-        BackendDAE.DAE({BackendDAE.EQSYSTEM(orderedVars = v)}, BackendDAE.SHARED(knownVars = kv)) = backendDAE2;
+        BackendDAE.DAE({BackendDAE.EQSYSTEM(orderedVars = v)}, BackendDAE.SHARED(knownVars=knownVars, globalVars=globalVars)) = backendDAE2;
 
         // Prepare all needed variables
         varlst = BackendVariable.varList(v);
-        knvarlst = BackendVariable.varList(kv);
+        knvarlst = BackendVariable.varList(knownVars);
+        glvarlst = BackendVariable.varList(globalVars);
         states = BackendVariable.getAllStateVarFromVariables(v);
-        inputvars = List.select(knvarlst,BackendVariable.isInput);
+        inputvars = List.select(glvarlst,BackendVariable.isInput);
         paramvars = List.select(knvarlst, BackendVariable.isParam);
-        inputvars2 = List.select(knvarlst,BackendVariable.isVarOnTopLevelAndInput);
+        inputvars2 = List.select(glvarlst,BackendVariable.isVarOnTopLevelAndInput);
         outputvars = List.select(varlst, BackendVariable.isVarOnTopLevelAndOutput);
 
         statesarr = BackendVariable.listVar1(states);
@@ -1580,15 +1582,16 @@ algorithm
         backendDAE2 = BackendDAEUtil.copyBackendDAE(backendDAE);
         backendDAE2 = BackendDAEOptimize.collapseIndependentBlocks(backendDAE2);
         backendDAE2 = BackendDAEUtil.transformBackendDAE(backendDAE2,SOME((BackendDAE.NO_INDEX_REDUCTION(),BackendDAE.EXACT())),NONE(),NONE());
-        BackendDAE.DAE({BackendDAE.EQSYSTEM(orderedVars = v)}, BackendDAE.SHARED(knownVars = kv)) = backendDAE2;
+        BackendDAE.DAE({BackendDAE.EQSYSTEM(orderedVars = v)}, BackendDAE.SHARED(knownVars=knownVars, globalVars=globalVars)) = backendDAE2;
 
         // Prepare all needed variables
         varlst = BackendVariable.varList(v);
-        knvarlst = BackendVariable.varList(kv);
+        knvarlst = BackendVariable.varList(knownVars);
+        glvarlst = BackendVariable.varList(globalVars);
         states = BackendVariable.getAllStateVarFromVariables(v);
-        inputvars = List.select(knvarlst,BackendVariable.isInput);
+        inputvars = List.select(glvarlst,BackendVariable.isInput);
         paramvars = List.select(knvarlst, BackendVariable.isParam);
-        inputvars2 = List.select(knvarlst,BackendVariable.isVarOnTopLevelAndInputNoDerInput); // without der(u)
+        inputvars2 = List.select(glvarlst,BackendVariable.isVarOnTopLevelAndInputNoDerInput); // without der(u)
         outputvars = List.select(varlst, BackendVariable.isVarOnTopLevelAndOutput);
         conVarsList = List.select(varlst, BackendVariable.isRealOptimizeConstraintsVars);
         fconVarsList = List.select(varlst, BackendVariable.isRealOptimizeFinalConstraintsVars); // ToDo: FinalCon

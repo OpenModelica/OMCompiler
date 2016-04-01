@@ -3027,12 +3027,11 @@ protected function lowerVarsElementVars
   output list< BackendDAE.Equation> eqnsLst;
   output list< BackendDAE.Equation> reqnsLst;
 protected
-  list<BackendDAE.Var> vars, knvars, exvars;
+  list<BackendDAE.Var> vars, knvars, glvars, exvars;
 algorithm
   try
-    (vars, knvars, exvars, eqnsLst, reqnsLst) :=
-      BackendDAECreate.lowerVars(inElementLstVars, functions);
-    varsLst := listAppend(exvars, listAppend(vars, knvars));
+    (vars, knvars, glvars, exvars, eqnsLst, reqnsLst) := BackendDAECreate.lowerVars(inElementLstVars, functions);
+    varsLst := listAppend(exvars, listAppend(vars, listAppend(knvars, glvars)));
   else
     true := Flags.isSet(Flags.FAILTRACE);
     Debug.traceln("- Differentiate.lowerVarsElementVars failed.");

@@ -172,6 +172,7 @@ protected import System;        // for stringReplace
 
   protected constant String ORDERED  = "ordered";
   protected constant String KNOWN    = "known";
+  protected constant String GLOBAL   = "global";
   protected constant String EXTERNAL = "external";
   protected constant String ALIAS = "alias";
   protected constant String CLASSES  = "classes";
@@ -973,7 +974,7 @@ the relative tag is not printed.
 algorithm
   _ := matchcontinue (inBackendDAE,addOriginalIncidenceMatrix,addSolvingInfo,addMathMLCode,dumpResiduals,dumpSolvedEquations)
     local
-      list<BackendDAE.Var> vars,knvars,extvars,aliasvars;
+      list<BackendDAE.Var> vars,knvars,glvars,extvars,aliasvars;
 
       //Ordered Variables: state & algebraic variables.
       //VARIABLES record for vars.
@@ -985,6 +986,9 @@ algorithm
       BackendDAE.VariableArray varArr_knownVars;
       Integer bucketSize_knownVars;
       Integer numberOfVars_knownVars;
+
+      BackendDAE.Variables vars_globalVars;
+      array<list<BackendDAE.CrefIndex>> crefIdxLstArr_globalVars;
 
       //External Object: external variables.
       BackendDAE.Variables vars_externalObject;
@@ -1024,6 +1028,7 @@ algorithm
     case (BackendDAE.DAE(systs,
                  BackendDAE.SHARED(
                  vars_knownVars as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_knownVars),
+                 vars_globalVars as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_globalVars),
                  vars_externalObject as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_externalObject),
                  vars_aliasVars as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_aliasVars),
                  ieqns,_,constrs,_,_,_,funcs,eventInfo,
@@ -1031,6 +1036,7 @@ algorithm
       equation
 
         knvars  = BackendVariable.varList(vars_knownVars);
+        glvars  = BackendVariable.varList(vars_globalVars);
         extvars = BackendVariable.varList(vars_externalObject);
         aliasvars = BackendVariable.varList(vars_aliasVars);
 
@@ -1043,6 +1049,7 @@ algorithm
         vars = List.fold(systs,getOrderedVars,{});
         dumpVars(vars,arrayCreate(1,{}),stringAppend(ORDERED,VARIABLES_),addMML);
         dumpVars(knvars,crefIdxLstArr_knownVars,stringAppend(KNOWN,VARIABLES_),addMML);
+        dumpVars(glvars,crefIdxLstArr_globalVars,stringAppend(GLOBAL,VARIABLES_),addMML);
         dumpVars(extvars,crefIdxLstArr_externalObject,stringAppend(EXTERNAL,VARIABLES_),addMML);
         dumpVars(aliasvars,crefIdxLstArr_aliasVars,stringAppend(ALIAS,VARIABLES_),addMML);
         dumpExtObjCls(extObjCls,stringAppend(EXTERNAL,CLASSES_));
@@ -1066,6 +1073,7 @@ algorithm
     case (BackendDAE.DAE(systs,
                  BackendDAE.SHARED(
                  vars_knownVars as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_knownVars),
+                 vars_globalVars as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_globalVars),
                  vars_externalObject as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_externalObject),
                  vars_aliasVars as BackendDAE.VARIABLES(crefIndices=crefIdxLstArr_aliasVars),
                  ieqns,_,constrs,_,_,_,funcs,eventInfo,
@@ -1073,6 +1081,7 @@ algorithm
       equation
 
         knvars  = BackendVariable.varList(vars_knownVars);
+        glvars  = BackendVariable.varList(vars_globalVars);
         extvars = BackendVariable.varList(vars_externalObject);
         aliasvars = BackendVariable.varList(vars_aliasVars);
 
@@ -1085,6 +1094,7 @@ algorithm
         vars = List.fold(systs,getOrderedVars,{});
         dumpVars(vars,arrayCreate(1,{}),stringAppend(ORDERED,VARIABLES_),addMML);
         dumpVars(knvars,crefIdxLstArr_knownVars,stringAppend(KNOWN,VARIABLES_),addMML);
+        dumpVars(glvars,crefIdxLstArr_globalVars,stringAppend(GLOBAL,VARIABLES_),addMML);
         dumpVars(extvars,crefIdxLstArr_externalObject,stringAppend(EXTERNAL,VARIABLES_),addMML);
         dumpVars(aliasvars,crefIdxLstArr_aliasVars,stringAppend(ALIAS,VARIABLES_),addMML);
         dumpExtObjCls(extObjCls,stringAppend(EXTERNAL,CLASSES_));
