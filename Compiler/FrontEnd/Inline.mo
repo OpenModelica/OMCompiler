@@ -40,29 +40,31 @@ encapsulated package Inline
   The entry point is the inlineCalls function, or inlineCallsInFunctions
   "
 
-public import Absyn;
-public import BaseHashTable;
-public import DAE;
-public import HashTableCG;
-public import SCode;
-public import Util;
+import Absyn;
+import BaseHashTable;
+import DAE;
+import HashTableCG;
+import SCode;
+import Util;
 
-public type Functiontuple = tuple<Option<DAE.FunctionTree>,list<DAE.InlineType>>;
+type Functiontuple = tuple<Option<DAE.FunctionTree>,list<DAE.InlineType>>;
 
-protected import Ceval;
-protected import ClassInf;
-protected import ComponentReference;
-protected import Config;
-protected import DAEUtil;
-protected import Debug;
-protected import Error;
-protected import Expression;
-protected import ExpressionDump;
-protected import ExpressionSimplify;
-protected import Flags;
-protected import List;
-protected import Types;
-protected import VarTransform;
+protected
+
+import Ceval;
+import ClassInf;
+import ComponentReference;
+import Config;
+import DAEUtil;
+import Debug;
+import Error;
+import Expression;
+import ExpressionDump;
+import ExpressionSimplify;
+import Flags;
+import List;
+import Types;
+import VarTransform;
 
 public function inlineStartAttribute
   input Option<DAE.VariableAttributes> inVariableAttributesOption;
@@ -824,7 +826,7 @@ algorithm
           (newExp1,(_,_,assrtLst)) = Expression.Expression.traverseExpBottomUp(newExp,inlineCall,(fns,true,assrtLstIn));
         else // normal Modelica
           // get inputs, body and output
-          (crefs,lst_cr,stmts,repl) = getFunctionInputsOutputBody(fn,{},{},{},VarTransform.emptyReplacements());
+          (crefs,lst_cr,stmts,repl) = getFunctionInputsOutputBody(fn,{},{},{},VarTransform.emptyReplacementsSized(BaseHashTable.lowBucketSize));
           // merge statements to one line
           (repl,assrtStmts) = mergeFunctionBody(stmts,repl,{});
           // depend on detection of assert or not
@@ -950,7 +952,7 @@ algorithm
         true = checkInlineType(inlineType,fns);
         (fn,comment) = getFunctionBody(p,fns);
         // get inputs, body and output
-        (crefs,lst_cr,stmts,repl) = getFunctionInputsOutputBody(fn,{},{},{},VarTransform.emptyReplacements());
+        (crefs,lst_cr,stmts,repl) = getFunctionInputsOutputBody(fn,{},{},{},VarTransform.emptyReplacementsSized(BaseHashTable.lowBucketSize));
         // merge statements to one line
         (repl,_) = mergeFunctionBody(stmts,repl,{});
         //newExp = VarTransform.getReplacement(repl,cr);
