@@ -1237,7 +1237,7 @@ algorithm
   foldArg := (iuniqueEqIndex, {}, {}, {}, {}, itempvars, {}, {}, iBackendMapping, iSccOffset);
   (ouniqueEqIndex, oodeEquations, oalgebraicEquations, oallEquations, oequationsForZeroCrossings, otempvars,
   oeqSccMapping, oeqBackendSimCodeMapping, obackendMapping, oSccOffset) := List.fold1(inSysts, createEquationsForSystems1, arg, foldArg);
-  oequationsForZeroCrossings := Dangerous.listReverseInPlace(oequationsForZeroCrossings);
+  oequationsForZeroCrossings := listReverse(oequationsForZeroCrossings);
 end createEquationsForSystems;
 
 protected function createEquationsForSystems1
@@ -5326,7 +5326,7 @@ algorithm
   // generate equations from the alias variables
   ((uniqueEqIndex, aliasEquations)) := BackendVariable.traverseBackendDAEVars(aliasVars, traverseAliasVarsToSimEqSystem, (uniqueEqIndex, {}));
 
-  allEquations := Dangerous.listReverseInPlace(aliasEquations);
+  allEquations := listReverse(aliasEquations);
   allEquations := listAppend(removedEquations, allEquations);
   allEquations := List.append_reverse(solvedEquations, allEquations);
   allEquations := listAppend(knownVarEquations, allEquations);
@@ -5675,7 +5675,7 @@ algorithm
     varasserts2 := createVarAsserts(p);
     varasserts := List.append_reverse(varasserts2, varasserts);
   end for;
-  varasserts := MetaModelica.Dangerous.listReverseInPlace(varasserts);
+  varasserts := listReverse(varasserts);
   (simvarasserts, outUniqueEqIndex) := List.mapFold(varasserts, dlowAlgToSimEqSystem, outUniqueEqIndex);
 
   outParameterEquations := List.append_reverse(simvarasserts, outParameterEquations);
@@ -6042,7 +6042,7 @@ algorithm
   rest := eqIndexes;
   while not listEmpty(rest) or not listEmpty(workList) loop
     if listEmpty(rest) then
-      rest := Dangerous.listReverseInPlace(workList);
+      rest := listReverse(workList);
       workList := {};
     end if;
     eqIdx::rest := rest;

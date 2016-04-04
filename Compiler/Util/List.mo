@@ -963,7 +963,7 @@ algorithm
       then
         merge(l_rest, r_rest, inCompFunc, el :: acc);
 
-    case ({}, {}) then listReverseInPlace(acc);
+    case ({}, {}) then listReverse(acc);
     case ({}, _) then append_reverse(acc,inRight);
     case (_, {}) then append_reverse(acc,inLeft);
 

@@ -102,7 +102,7 @@ algorithm
       else eq::removedEqsList;
     end match;
   end for;
-  shared.removedEqs := BackendEquation.listEquation(MetaModelica.Dangerous.listReverseInPlace(removedEqsList));
+  shared.removedEqs := BackendEquation.listEquation(Dangerous.listReverseInPlace(removedEqsList));
   outDAE.shared := shared;
 end simplifyAllExpressions;
 
@@ -4337,7 +4337,7 @@ algorithm
             end if;
             expLst := e :: expLst;
           end for; // lhs
-          left := DAE.TUPLE(MetaModelica.Dangerous.listReverseInPlace(expLst));
+          left := DAE.TUPLE(Dangerous.listReverseInPlace(expLst));
           eqn := BackendEquation.generateEquation(left, right, source, attr);
           eqns := BackendEquation.setAtIndex(eqns, i, eqn);
         end if; // lhs <-> rhs
@@ -5703,7 +5703,7 @@ algorithm
           eqLstNew := List.unique(listAppend(eqLstNew,BackendDAEUtil.getStrongComponentEquations(addComps,eqs,vars)));
         end if;
       end while;
-      stateTasks := Dangerous.listReverseInPlace(stateTasks);
+      stateTasks := listReverse(stateTasks);
 
       //get all necessary components to calculate the outputs and the state derivatives
       predecessors := HpcOmTaskGraph.getAllSuccessors(listAppend(outputTasks,stateTasks),taskGraphT);
