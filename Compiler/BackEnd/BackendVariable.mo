@@ -2142,7 +2142,7 @@ algorithm
     vars := varList(v);
     outVars := List.append_reverse(vars, outVars);
   end for;
-  outVars := MetaModelica.Dangerous.listReverseInPlace(outVars);
+  outVars := listReverse(outVars);
 end equationSystemsVarsLst;
 
 public function daeVars "returns orderedVars"

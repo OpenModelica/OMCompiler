@@ -989,7 +989,7 @@ algorithm
       else ();
     end match;
   end for;
-  outElementLst := Dangerous.listReverseInPlace(l);
+  outElementLst := listReverse(l);
 end translateEitemlist;
 
 // stefan

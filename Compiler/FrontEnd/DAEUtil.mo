@@ -5837,7 +5837,7 @@ algorithm
       else ();
     end match;
   end for;
-  outEls := MetaModelica.Dangerous.listReverseInPlace(outEls);
+  outEls := listReverse(outEls);
 end getDAEDeclsFromValueblocks;
 
 // protected function transformDerInline "This is not used.
@@ -6500,7 +6500,7 @@ algorithm
     end match;
   end for;
   outDaeEls := List.append_reverse(inDaeEls, outDaeEls);
-  outDaeEls := MetaModelica.Dangerous.listReverseInPlace(outDaeEls);
+  outDaeEls := listReverse(outDaeEls);
 end sortDAEElementsInModelicaCodeOrder;
 
 protected function splitVariableNamed
