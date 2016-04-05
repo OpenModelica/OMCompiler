@@ -478,6 +478,26 @@ int importStartValues(DATA *data, threadData_t *threadData, const char *pInitFil
 }
 #endif
 
+/*! \fn int doOverride(DATA *data, threadData_t *threadData, const char *override, const char *overrideFile)
+ *
+ *  \param [ref] [data]
+ *  \param [ref] [threadData]
+ *  \param [in]  [override]
+ *  \param [in]  [overrideFile]
+ *
+ *  \author lochel
+ */
+int doOverride(DATA *data, threadData_t *threadData, const char *override, const char *overrideFile)
+{
+  if(strcmp(override, "") && strcmp(overrideFile, "")) {
+    throwStreamPrint(NULL, "It is not possible to have both -override and -overrideFile active at the same time.\nSee 'Model -?' for more info!");
+    return 1;
+  }
+
+  throwStreamPrint(NULL, "doOverride is not yet implemented");
+  return 0;
+}
+
 /*! \fn initSample
  *
  *  \param [ref] [data]
@@ -551,6 +571,15 @@ int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod
     }
   }
 #endif
+  /* import start values from override flags */
+  if(strcmp(override, "") || strcmp(overrideFile, ""))
+  {
+    if(doOverride(data, threadData, override, overrideFile)) {
+      TRACE_POP
+      return 1;
+    }
+  }
+
   /* set up all variables with their start-values */
   setAllVarsToStart(data);
 
