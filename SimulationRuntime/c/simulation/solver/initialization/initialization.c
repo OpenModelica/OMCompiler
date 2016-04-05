@@ -517,13 +517,17 @@ void initSample(DATA* data, threadData_t *threadData, double startTime, double s
 /*! \fn int initialization(DATA *data, const char* pInitMethod, const char* pOptiMethod, const char* pInitFile, double initTime)
  *
  *  \param [ref] [data]
+ *  \param [ref] [threadData]
  *  \param [in]  [pInitMethod] user defined initialization method
- *  \param [in]  [pInitFile] extra argument for initialization-method "file"
- *  \param [in]  [initTime] extra argument for initialization-method "file"
+ *  \param [in]  [pInitFile]
+ *  \param [in]  [initTime]
+ *  \param [in]  [lambda_steps] number of steps for homotopy method
+ *  \param [in]  [override] -override value
+ *  \param [in]  [overrideFile] -overrideFile value
  *
  *  \author lochel
  */
-int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod, const char* pInitFile, double initTime, int lambda_steps)
+int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod, const char* pInitFile, double initTime, int lambda_steps, const char *override, const char *overrideFile)
 {
   TRACE_PUSH
   int initMethod = IIM_SYMBOLIC; /* default method */

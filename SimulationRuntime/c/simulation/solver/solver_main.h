@@ -79,14 +79,14 @@ typedef struct SOLVER_INFO
 
 extern int solver_main(DATA* data, threadData_t *threadData, const char* init_initMethod,
     const char* init_file, double init_time, int lambda_steps,
-    int solverID, const char* outputVariablesAtEnd, const char *argv_0);
+    int solverID, const char* outputVariablesAtEnd, const char *argv_0, const char *override, const char *overrideFile);
 
 /* Provide solver interface to interactive stuff */
 extern int initializeSolverData(DATA* data, threadData_t *threadData, SOLVER_INFO* solverInfo);
 extern int freeSolverData(DATA* data, SOLVER_INFO* solverInfo);
 
 extern int initializeModel(DATA* data, threadData_t *threadData, const char* init_initMethod,
-    const char* init_file, double init_time, int lambda_steps);
+    const char* init_file, double init_time, int lambda_steps, const char *override, const char *overrideFile);
 
 extern int finishSimulation(DATA* data, threadData_t *threadData, SOLVER_INFO* solverInfo, const char* outputVariablesAtEnd);
 
