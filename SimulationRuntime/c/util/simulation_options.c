@@ -83,6 +83,7 @@ const char *FLAG_NAME[FLAG_MAX+1] = {
   /* FLAG_OUTPUT */                "output",
   /* FLAG_OVERRIDE */              "override",
   /* FLAG_OVERRIDE_FILE */         "overrideFile",
+  /* FLAG_OVERRIDE_SETTINGS */     "overrideSettings",
   /* FLAG_PORT */                  "port",
   /* FLAG_R */                     "r",
   /* FLAG_RT */                    "rt",
@@ -144,8 +145,9 @@ const char *FLAG_DESC[FLAG_MAX+1] = {
   /* FLAG_OPTIMIZER_NP */          "value specifies the number of points in a subinterval",
   /* FLAG_OPTIMIZER_TGRID */       "value specifies external file with time points.",
   /* FLAG_OUTPUT */                "output the variables a, b and c at the end of the simulation to the standard output",
-  /* FLAG_OVERRIDE */              "override the variables or the simulation settings in the XML setup file",
-  /* FLAG_OVERRIDE_FILE */         "will override the variables or the simulation settings in the XML setup file with the values from the file",
+  /* FLAG_OVERRIDE */              "override the variables in the XML setup file",
+  /* FLAG_OVERRIDE_FILE */         "will override the variables in the XML setup file with the values from the file",
+  /* FLAG_OVERRIDE_SETTINGS */     "will override the simulation settings in the XML setup file",
   /* FLAG_PORT */                  "value specifies the port for simulation status (default disabled)",
   /* FLAG_R */                     "value specifies a new result file than the default Model_res.mat",
   /* FLAG_RT */                    "value specifies the scaling factor for real-time synchronization (0 disables)",
@@ -289,14 +291,16 @@ const char *FLAG_DETAILED_DESC[FLAG_MAX+1] = {
   "  Output the variables a, b and c at the end of the simulation to the standard\n"
   "  output: time = value, a = value, b = value, c = value",
   /* FLAG_OVERRIDE */
-  "  Override the variables or the simulation settings in the XML setup file\n"
-  "  For example: var1=start1,var2=start2,par3=start3,startTime=val1,stopTime=val2",
+  "  Override the variables in the XML setup file\n"
+  "  For example: var1=start1,var2=start2,par3=start3",
   /* FLAG_OVERRIDE_FILE */
-  "  Will override the variables or the simulation settings in the XML setup file\n"
-  "  with the values from the file.\n"
+  "  Will override the variables in the XML setup file with the values from the file.\n"
   "  Note that: -overrideFile CANNOT be used with -override.\n"
   "  Use when variables for -override are too many.\n"
   "  overrideFileName contains lines of the form: var1=start1",
+  /* FLAG_OVERRIDE_SETTINGS */
+  "  Override the simulation settings in the XML setup file\n"
+  "  For example: startTime=val1,stopTime=val2",
   /* FLAG_PORT */
   "  Value specifies the port for simulation status (default disabled).",
   /* FLAG_R */
@@ -369,6 +373,7 @@ const int FLAG_TYPE[FLAG_MAX] = {
   /* FLAG_OUTPUT */                FLAG_TYPE_OPTION,
   /* FLAG_OVERRIDE */              FLAG_TYPE_OPTION,
   /* FLAG_OVERRIDE_FILE */         FLAG_TYPE_OPTION,
+  /* FLAG_OVERRIDE_SETTINGS */     FLAG_TYPE_OPTION,
   /* FLAG_PORT */                  FLAG_TYPE_OPTION,
   /* FLAG_R */                     FLAG_TYPE_OPTION,
   /* FLAG_RT */                    FLAG_TYPE_OPTION,
