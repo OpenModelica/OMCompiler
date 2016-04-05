@@ -900,7 +900,7 @@ void doOverrideSettings(omc_ModelInput *mi, MODEL_DATA *modelData, const char *o
   overrideStr = strdup(overrideSettings);
 
   /* read override values */
-  infoStreamPrint(LOG_SOLVER, 0, "read override settings: %s", overrideStr);
+  infoStreamPrint(LOG_SOLVER, 1, "read override settings: %s", overrideStr);
 
   /* fix overrideStr to contain | instead of , for splitting */
   parseVariableStr(overrideStr);
@@ -922,16 +922,12 @@ void doOverrideSettings(omc_ModelInput *mi, MODEL_DATA *modelData, const char *o
     {
       if (!strcmp(key, strs[i]))
       {
+        addHashStringString(&mi->de, strs[i], value);
         if(used[i])
-        {
-          warningStreamPrint(LOG_STDOUT, 0, "It is only allowed to override each setting once.\nskipping %s = %s", strs[i], value);
-        }
+          warningStreamPrint(LOG_SOLVER, 0, "override %s = %s", strs[i], value);
         else
-        {
-          addHashStringString(&mi->de, strs[i], value);
           infoStreamPrint(LOG_SOLVER, 0, "override %s = %s", strs[i], value);
-          used[i] = 1;
-        }
+        used[i] = 1;
       }
     }
 
@@ -940,7 +936,7 @@ void doOverrideSettings(omc_ModelInput *mi, MODEL_DATA *modelData, const char *o
   }
 
   free(overrideStr);
-  infoStreamPrint(LOG_SOLVER, 0, "override done!");
+  messageClose(LOG_SOLVER);
 }
 
 void parseVariableStr(char* variableStr)
