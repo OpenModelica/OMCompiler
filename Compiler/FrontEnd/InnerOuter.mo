@@ -1579,7 +1579,7 @@ public function prefixOuterCrefWithTheInnerPrefix
   This function searches for outer crefs and prefixes them with the inner prefix"
   input InstHierarchy inIH;
   input DAE.ComponentRef inOuterComponentRef;
-  input Prefix.Prefix inPrefix;
+  input Prefix.ComponentPrefix inPrefix;
   output DAE.ComponentRef outInnerComponentRef;
 algorithm
   outInnerComponentRef := match(inIH, inOuterComponentRef, inPrefix)
@@ -1595,7 +1595,7 @@ algorithm
     // we have some outer references, search for our prefix + cref in them
     case ({TOP_INSTANCE(_, _, outerPrefixes as _::_, _)}, _, _)
       equation
-        (_,fullCref) = PrefixUtil.prefixCref(FCore.emptyCache(), FGraph.empty(), emptyInstHierarchy, inPrefix, inOuterComponentRef);
+        (_,fullCref) = PrefixUtil.prefixCrefWork(FCore.emptyCache(), FGraph.empty(), emptyInstHierarchy, inPrefix, inOuterComponentRef);
 
         // this will fail if we don't find it so prefixing can happen in the calling function
         (outerCrefPrefix, innerCrefPrefix) = searchForInnerPrefix(fullCref, outerPrefixes);
