@@ -41,11 +41,13 @@ algorithm
 end mergeSources;
 
 function addCommentToSource
-  input DAE.ElementSource src1;
-  input Option<SCode.Comment> commentIn;
-  output DAE.ElementSource mergedSrc;
+  input output DAE.ElementSource source;
+  input SCode.Comment commentIn;
 algorithm
-  mergedSrc := match(src1,commentIn)
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match (source,commentIn)
     local
       SourceInfo info;
       list<Absyn.Within> partOfLst1;
@@ -55,13 +57,11 @@ algorithm
       list<DAE.SymbolicOperation> operations1;
       list<SCode.Comment> comment1,comment2;
       SCode.Comment comment;
-    case (DAE.SOURCE(info, partOfLst1, instanceOpt1, connectEquationOptLst1, typeLst1, operations1, comment1),SOME(comment))
+    case (DAE.SOURCE(info, partOfLst1, instanceOpt1, connectEquationOptLst1, typeLst1, operations1, comment1),comment)
       equation
         comment2 = comment::comment1;
       then DAE.SOURCE(info,partOfLst1,instanceOpt1,connectEquationOptLst1,typeLst1, operations1,comment2);
-    else
-      then
-        src1;
+    else source;
  end match;
 end addCommentToSource;
 
@@ -76,6 +76,10 @@ function createElementSource
   output DAE.ElementSource source;
 algorithm
   // TODO: Optimize this to only do 1 allocation?
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    source := addElementSourceFileInfo(DAE.emptyElementSource, fileInfo);
+    return;
+  end if;
   source := addElementSourceFileInfo(DAE.emptyElementSource, fileInfo);
   source := addElementSourcePartOfOpt(source, partOf);
   source := addElementSourceInstanceOpt(source, instanceOpt);
@@ -84,11 +88,13 @@ algorithm
 end createElementSource;
 
 function addAdditionalComment
-  input DAE.ElementSource source;
+  input output DAE.ElementSource source;
   input String message;
-  output DAE.ElementSource outSource;
 algorithm
-  outSource := match (source,message)
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match (source,message)
     local
       SourceInfo info "the line and column numbers of the equations and algorithms this element came from";
       list<Absyn.Path> typeLst "the absyn type of the element" ;
@@ -112,11 +118,13 @@ algorithm
 end addAdditionalComment;
 
 function addAnnotation
-  input DAE.ElementSource source;
+  input output DAE.ElementSource source;
   input SCode.Comment comment;
-  output DAE.ElementSource outSource;
 algorithm
-  outSource := match (source,comment)
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match (source,comment)
     local
       SourceInfo info "the line and column numbers of the equations and algorithms this element came from";
       list<Absyn.Path> typeLst "the absyn type of the element" ;
@@ -137,8 +145,11 @@ end addAnnotation;
 
 function getCommentsFromSource
   input DAE.ElementSource source;
-  output list<SCode.Comment> outComments;
+  output list<SCode.Comment> outComments={};
 algorithm
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
   outComments := match (source)
     local
       list<SCode.Comment> comment;
@@ -342,9 +353,14 @@ end addSymbolicTransformationSolve;
 
 function getSymbolicTransformations
   input DAE.ElementSource source;
-  output list<DAE.SymbolicOperation> ops;
+  output list<DAE.SymbolicOperation> ops={};
 algorithm
-  ops := source.operations;
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  ops := match source
+    case DAE.SOURCE() then source.operations;
+  end match;
 end getSymbolicTransformations;
 
 function getElementSource
@@ -414,87 +430,120 @@ If there are several candidates, select the first one."
   input DAE.ElementSource source;
   output SourceInfo info;
 algorithm
-  info := source.info;
+  info := match source
+    case DAE.SOURCE() then source.info;
+  end match;
 end getElementSourceFileInfo;
 
 function getElementSourceTypes
 "@author: adrpo
  retrieves the paths from the DAE.ElementSource.SOURCE.typeLst"
  input DAE.ElementSource source "the source of the element";
- output list<Absyn.Path> pathLst;
+ output list<Absyn.Path> pathLst={};
 algorithm
-  pathLst := source.typeLst;
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  pathLst := match source
+    case DAE.SOURCE() then source.typeLst;
+  end match;
 end getElementSourceTypes;
 
 function getElementSourceInstances
 "@author: adrpo
  retrieves the paths from the DAE.ElementSource.SOURCE.instanceOpt"
  input DAE.ElementSource source "the source of the element";
- output Option<DAE.ComponentRef> instanceOpt;
+ output Option<DAE.ComponentRef> instanceOpt=NONE();
 algorithm
-  instanceOpt := source.instanceOpt;
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  instanceOpt := match source
+    case DAE.SOURCE() then source.instanceOpt;
+  end match;
 end getElementSourceInstances;
 
 function getElementSourceConnects
 "@author: adrpo
  retrieves the paths from the DAE.ElementSource.SOURCE.connectEquationOptLst"
  input DAE.ElementSource source "the source of the element";
- output list<Option<tuple<DAE.ComponentRef, DAE.ComponentRef>>> connectEquationOptLst;
+ output list<Option<tuple<DAE.ComponentRef, DAE.ComponentRef>>> connectEquationOptLst={};
 algorithm
-  connectEquationOptLst := source.connectEquationOptLst;
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  connectEquationOptLst := match source
+    case DAE.SOURCE() then source.connectEquationOptLst;
+  end match;
 end getElementSourceConnects;
 
 function getElementSourcePartOfs
 "@author: adrpo
  retrieves the withins from the DAE.ElementSource.SOURCE.partOfLst"
  input DAE.ElementSource source "the source of the element";
- output list<Absyn.Within> withinLst;
+ output list<Absyn.Within> withinLst={};
 algorithm
-  withinLst := source.partOfLst;
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  withinLst := match source
+    case DAE.SOURCE() then source.partOfLst;
+  end match;
 end getElementSourcePartOfs;
 
 function addElementSourcePartOf
   input output DAE.ElementSource source;
   input Absyn.Within withinPath;
 algorithm
-  source.partOfLst := withinPath::source.partOfLst;
+  if not Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  _ := match source
+    case DAE.SOURCE() algorithm source.partOfLst := withinPath::source.partOfLst; then ();
+  end match;
 end addElementSourcePartOf;
 
 function addElementSourcePartOfOpt
-  input DAE.ElementSource inSource;
+  input output DAE.ElementSource source;
   input Option<Absyn.Path> classPathOpt;
-  output DAE.ElementSource outSource;
 algorithm
-  outSource := match(inSource, classPathOpt)
+  if Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match classPathOpt
     local
       Absyn.Path classPath;
       DAE.ElementSource src;
     // a top level
-    case (_, NONE())
-      equation
-        _ = addElementSourcePartOf(inSource, Absyn.TOP());
-      then inSource;
-    case (_, SOME(classPath))
-      equation
-        src = addElementSourcePartOf(inSource, Absyn.WITHIN(classPath));
-      then src;
+    case NONE() then source;
+    case SOME(classPath) then addElementSourcePartOf(source, Absyn.WITHIN(classPath));
   end match;
 end addElementSourcePartOfOpt;
 
 function addElementSourceFileInfo
-  input DAE.ElementSource source;
+  input output DAE.ElementSource source;
   input SourceInfo fileInfo;
-  output DAE.ElementSource outSource = source;
+protected
+  DAE.ElementSource s;
 algorithm
-  outSource.info := fileInfo;
+  source := match source
+    case DAE.SOURCE()
+      algorithm
+        if Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+          source.info := fileInfo;
+        end if;
+      then source;
+  end match;
 end addElementSourceFileInfo;
 
 function addElementSourceConnectOpt
-  input DAE.ElementSource inSource;
+  input output DAE.ElementSource source;
   input Option<tuple<DAE.ComponentRef,DAE.ComponentRef>> connectEquationOpt;
-  output DAE.ElementSource outSource;
 algorithm
-  outSource := match(inSource, connectEquationOpt)
+  if Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match (source,connectEquationOpt)
     local
       SourceInfo info "the line and column numbers of the equations and algorithms this element came from";
       list<Absyn.Within> partOfLst "the models this element came from" ;
@@ -505,18 +554,20 @@ algorithm
       list<SCode.Comment> comment;
 
     // a top level
-    case (_, NONE()) then inSource;
+    case (_, NONE()) then source;
     case (DAE.SOURCE(info,partOfLst,instanceOpt,connectEquationOptLst,typeLst,operations,comment), _)
       then DAE.SOURCE(info,partOfLst,instanceOpt,connectEquationOpt::connectEquationOptLst,typeLst,operations,comment);
   end match;
 end addElementSourceConnectOpt;
 
 function addElementSourceType
-  input DAE.ElementSource inSource;
+  input output DAE.ElementSource source;
   input Absyn.Path classPath;
-  output DAE.ElementSource outSource;
 algorithm
-  outSource := match(inSource, classPath)
+  if Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match(source, classPath)
     local
       SourceInfo info "the line and column numbers of the equations and algorithms this element came from";
       list<Absyn.Path> typeLst "the absyn type of the element" ;
@@ -534,11 +585,13 @@ end addElementSourceType;
 protected
 
 function addElementSourceInstanceOpt
-  input DAE.ElementSource inSource;
+  input output DAE.ElementSource source;
   input Option<DAE.ComponentRef> instanceOpt;
-  output DAE.ElementSource outSource;
 algorithm
-  outSource := match(inSource, instanceOpt)
+  if Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match(source, instanceOpt)
     local
       SourceInfo info "the line and column numbers of the equations and algorithms this element came from";
       list<Absyn.Within> partOfLst "the models this element came from" ;
@@ -550,26 +603,25 @@ algorithm
 
     // a NONE() means top level (equivalent to NO_PRE, SOME(cref) means subcomponent
     case (_, NONE())
-      then inSource;
+      then source;
     case (DAE.SOURCE(info,partOfLst,_,connectEquationOptLst,typeLst,operations,comment), SOME(cr))
       then DAE.SOURCE(info,partOfLst,SOME(cr),connectEquationOptLst,typeLst,operations,comment);
   end match;
 end addElementSourceInstanceOpt;
 
 function addElementSourceTypeOpt
-  input DAE.ElementSource inSource;
+  input output DAE.ElementSource source;
   input Option<Absyn.Path> classPathOpt;
-  output DAE.ElementSource outSource;
 algorithm
-  outSource := match(inSource, classPathOpt)
+  if Flags.isSet(Flags.INFO_XML_OPERATIONS) then
+    return;
+  end if;
+  source := match classPathOpt
     local
       Absyn.Path classPath;
-      DAE.ElementSource src;
-    case (_, NONE()) then inSource; // no source change.
-    case (_, SOME(classPath))
-      equation
-        src = addElementSourceType(inSource, classPath);
-      then src;
+    case NONE() then source; // no source change.
+    case SOME(classPath)
+      then addElementSourceType(source, classPath);
   end match;
 end addElementSourceTypeOpt;
 

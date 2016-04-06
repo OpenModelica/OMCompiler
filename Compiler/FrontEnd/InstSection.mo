@@ -353,7 +353,7 @@ algorithm
 
         // Set the source of this element.
         source := makeEqSource(info, inEnv, inPrefix, inFlattenOp);
-        source := ElementSource.addCommentToSource(source, SOME(comment));
+        source := ElementSource.addCommentToSource(source, comment);
 
         // Check that the lhs and rhs get along.
         outDae := instEqEquation(lhs_exp, lhs_prop, rhs_exp, rhs_prop, source, inInitial, inImpl);
