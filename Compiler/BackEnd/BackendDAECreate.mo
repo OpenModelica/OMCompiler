@@ -96,8 +96,8 @@ public function lower "This function translates a DAE, which is the result from 
   input BackendDAE.ExtraInfo inExtraInfo;
   output BackendDAE.BackendDAE outBackendDAE;
 protected
-  list<BackendDAE.Var> varlst, knvarlst, extvarlst;
-  BackendDAE.Variables vars, knvars, vars_1, extVars, aliasVars;
+  list<BackendDAE.Var> varlst, knvarlst, glvarlst, extvarlst;
+  BackendDAE.Variables vars, knvars, glvars, vars_1, extVars, aliasVars;
   list<BackendDAE.Equation> eqns, reqns, ieqns, algeqns, algeqns1, ialgeqns, multidimeqns, imultidimeqns, eqns_1, ceeqns, iceeqns;
   list<DAE.Constraint> constrs;
   list<DAE.ClassAttributes> clsAttrs;
@@ -117,10 +117,11 @@ algorithm
   functionTree := FCore.getFunctionTree(inCache);
   //deactivated because of some codegen errors: functionTree := renameFunctionParameter(functionTree);
   (DAE.DAE(elems), functionTree, timeEvents) := processBuiltinExpressions(lst, functionTree);
-  (varlst, knvarlst, extvarlst, eqns, reqns, ieqns, constrs, clsAttrs, extObjCls, aliaseqns, _) :=
+  (varlst, knvarlst, glvarlst, extvarlst, eqns, reqns, ieqns, constrs, clsAttrs, extObjCls, aliaseqns, _) :=
     lower2(listReverse(elems), functionTree, HashTableExpToExp.emptyHashTable());
   vars := BackendVariable.listVar(varlst);
   knvars := BackendVariable.listVar(knvarlst);
+  glvars := BackendVariable.listVar(glvarlst);
   extVars := BackendVariable.listVar(extvarlst);
   aliasVars := BackendVariable.emptyVars();
   if Flags.isSet(Flags.VECTORIZE) then
@@ -138,6 +139,7 @@ algorithm
   symjacs := {(NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {})};
   outBackendDAE := BackendDAE.DAE(BackendDAEUtil.createEqSystem(vars_1, eqnarr, {}, BackendDAE.UNKNOWN_PARTITION(), reqnarr)::{},
                                   BackendDAE.SHARED(knvars,
+                                                    glvars,
                                                     extVars,
                                                     aliasVars,
                                                     ieqnarr,
@@ -165,6 +167,7 @@ protected function lower2
   input HashTableExpToExp.HashTable inInlineHT "Workaround to speed up inlining of array parameters.";
   input list<BackendDAE.Var> inVars = {};
   input list<BackendDAE.Var> inKnVars = {};
+  input list<BackendDAE.Var> inGlVars = {};
   input list<BackendDAE.Var> inExVars = {};
   input list<BackendDAE.Equation> inEqns = {};
   input list<BackendDAE.Equation> inREqns = {};
@@ -175,6 +178,7 @@ protected function lower2
   input list<DAE.Element> inAliasEqns = {};
   output list<BackendDAE.Var> outVars = inVars "Time dependent variables.";
   output list<BackendDAE.Var> outKnVars = inKnVars "Time independent variables.";
+  output list<BackendDAE.Var> outGlVars = inGlVars "Time, inputs, states dependent variables.";
   output list<BackendDAE.Var> outExVars = inExVars "External variables.";
   output list<BackendDAE.Equation> outEqns  = inEqns "Dynamic equations/algorithms.";
   output list<BackendDAE.Equation> outREqns = inREqns "Algebraic equations.";
@@ -209,8 +213,8 @@ algorithm
       // variables
       case DAE.VAR()
         algorithm
-          (outVars, outKnVars, outExVars, outEqns, outREqns, outInlineHT) :=
-            lowerVar(el, inFunctions, outVars, outKnVars, outExVars, outEqns, outREqns, outInlineHT);
+          (outVars, outKnVars, outGlVars, outExVars, outEqns, outREqns, outInlineHT) :=
+            lowerVar(el, inFunctions, outVars, outKnVars, outGlVars, outExVars, outEqns, outREqns, outInlineHT);
         then
           ();
 
@@ -285,9 +289,9 @@ algorithm
             (outEqns, outVars, eq_attrs) := createWhenClock(whenClkCnt, e, outEqns, outVars);
             whenClkCnt := whenClkCnt + 1;
 
-            ( outVars, outKnVars, outExVars, eqns, reqns, outIEqns, outConstraints, outClassAttributes,
+            ( outVars, outKnVars, outGlVars, outExVars, eqns, reqns, outIEqns, outConstraints, outClassAttributes,
               outExtObjClasses, outAliasEqns, outInlineHT ) :=
-                  lower2( dae_elts, inFunctions, outInlineHT, outVars, outKnVars, outExVars, {}, {}, outIEqns,
+                  lower2( dae_elts, inFunctions, outInlineHT, outVars, outKnVars, outGlVars, outExVars, {}, {}, outIEqns,
                           outConstraints, outClassAttributes, outExtObjClasses, outAliasEqns );
 
             outEqns := listAppend(List.map1(eqns, BackendEquation.setEquationAttributes, eq_attrs), outEqns);
@@ -333,10 +337,10 @@ algorithm
       // flat class / COMP
       case DAE.COMP(dAElist = dae_elts)
         algorithm
-          (outVars, outKnVars, outExVars, outEqns, outREqns, outIEqns, outConstraints,
+          (outVars, outKnVars, outGlVars, outExVars, outEqns, outREqns, outIEqns, outConstraints,
            outClassAttributes, outExtObjClasses, outAliasEqns, outInlineHT)
           := lower2(listReverse(dae_elts), inFunctions, outInlineHT, outVars,
-            outKnVars, outExVars, outEqns, outREqns, outIEqns, outConstraints,
+            outKnVars, outGlVars, outExVars, outEqns, outREqns, outIEqns, outConstraints,
             outClassAttributes, outExtObjClasses, outAliasEqns);
         then
           ();
@@ -472,13 +476,15 @@ end transformBuiltinExpression;
 public function lowerVars
   input list<DAE.Element> inElements;
   input DAE.FunctionTree functionTree;
-  input list<BackendDAE.Var> inVars = {} "The time depend Variables";
-  input list<BackendDAE.Var> inKnVars = {} "The time independend Variables";
+  input list<BackendDAE.Var> inVars = {} "The time depend variables";
+  input list<BackendDAE.Var> inKnVars = {} "The time independend variables";
+  input list<BackendDAE.Var> inGlVars = {} "The time, state, and input dependend variables";
   input list<BackendDAE.Var> inExVars = {} "The external Variables";
   input list<BackendDAE.Equation> inEqns = {} "The dynamic Equations/Algoritms";
   input list<BackendDAE.Equation> inREqns = {};
   output list<BackendDAE.Var> outVars = inVars;
   output list<BackendDAE.Var> outKnVars = inKnVars;
+  output list<BackendDAE.Var> outGlVars = inGlVars;
   output list<BackendDAE.Var> outExVars = inExVars;
   output list<BackendDAE.Equation> outEqns = inEqns;
   output list<BackendDAE.Equation> outREqns = inREqns;
@@ -495,11 +501,11 @@ algorithm
       crefs := ComponentReference.expandCref(cr, false);
       el := DAEUtil.replaceTypeInVar(arr_ty, el);
       new_vars := list(DAEUtil.replaceCrefInVar(c, el) for c in crefs);
-      (outVars, outKnVars, outExVars, outEqns, outREqns) :=
-        lowerVars(new_vars, functionTree, outVars, outKnVars, outExVars, outEqns, outREqns);
+      (outVars, outKnVars, outGlVars, outExVars, outEqns, outREqns) :=
+        lowerVars(new_vars, functionTree, outVars, outKnVars, outGlVars, outExVars, outEqns, outREqns);
     else
-      (outVars, outKnVars, outExVars, outEqns, outREqns) := lowerVar(el, functionTree,
-        outVars, outKnVars, outExVars, outEqns, outREqns, inline_ht);
+      (outVars, outKnVars, outGlVars, outExVars, outEqns, outREqns) := lowerVar(el, functionTree,
+        outVars, outKnVars, outGlVars, outExVars, outEqns, outREqns, inline_ht);
     end try;
   end for;
 end lowerVars;
@@ -509,12 +515,14 @@ protected function lowerVar
   input DAE.FunctionTree inFunctions;
   input list<BackendDAE.Var> inVars;
   input list<BackendDAE.Var> inKnVars;
+  input list<BackendDAE.Var> inGlVars;
   input list<BackendDAE.Var> inExVars;
   input list<BackendDAE.Equation> inEqns;
   input list<BackendDAE.Equation> inREqns;
   input HashTableExpToExp.HashTable inInlineHT;
   output list<BackendDAE.Var> outVars = inVars;
   output list<BackendDAE.Var> outKnVars = inKnVars;
+  output list<BackendDAE.Var> outGlVars = inGlVars;
   output list<BackendDAE.Var> outExVars = inExVars;
   output list<BackendDAE.Equation> outEqns = inEqns;
   output list<BackendDAE.Equation> outREqns = inREqns;
@@ -556,11 +564,10 @@ algorithm
         ();
 
     // known variables: parameters and constants
+    // global variables: top-level inputs
     case DAE.VAR()
       algorithm
-        (var, outInlineHT, outREqns) :=
-          lowerKnownVar(inElement, inFunctions, outInlineHT, outREqns);
-        outKnVars := var :: outKnVars;
+        (outInlineHT, outREqns, outKnVars, outGlVars) := lowerKnownAndGlobalVar(inElement, inFunctions, outInlineHT, outREqns, outKnVars, outGlVars);
       then
         ();
 
@@ -642,17 +649,18 @@ algorithm
   end match;
 end lowerDynamicVar;
 
-protected function lowerKnownVar
+protected function lowerKnownAndGlobalVar
 "Helper function to lower2"
   input DAE.Element inElement;
   input DAE.FunctionTree functionTree;
   input HashTableExpToExp.HashTable iInlineHT "workaround to speed up inlining of array parameters";
   input list<BackendDAE.Equation> assrtEqIn;
-  output BackendDAE.Var outVar;
   output HashTableExpToExp.HashTable oInlineHT "workaround to speed up inlining of array parameters";
   output list<BackendDAE.Equation> assrtEqOut;
+  input output list<BackendDAE.Var> knVars;
+  input output list<BackendDAE.Var> glVars;
 algorithm
-  (outVar,oInlineHT,assrtEqOut) := matchcontinue (inElement)
+  (oInlineHT,assrtEqOut) := matchcontinue (inElement)
     local
       list<DAE.Dimension> dims;
       DAE.ComponentRef name;
@@ -665,7 +673,7 @@ algorithm
       DAE.ConnectorType ct;
       DAE.ElementSource source;
       Option<DAE.VariableAttributes> dae_var_attr;
-    Option<BackendDAE.TearingSelect> ts;
+      Option<BackendDAE.TearingSelect> ts;
       Option<SCode.Comment> comment;
       DAE.Type t;
       DAE.VarVisibility protection;
@@ -676,6 +684,8 @@ algorithm
       list<DAE.Statement> assrtLst;
       list<BackendDAE.Equation> eqLst;
       Absyn.InnerOuter io;
+      BackendDAE.Var var;
+
      case DAE.VAR(componentRef = name,
                   kind = kind,
                   direction = dir,
@@ -690,7 +700,7 @@ algorithm
                   comment = comment,
                   innerOuter = io)
       equation
-        kind_1 = lowerKnownVarkind(kind, name, dir, ct);
+        kind_1 = lowerKnownAndGlobalVarkind(kind, name, dir, ct);
         // bind = fixParameterStartBinding(bind, t, dae_var_attr, kind_1);
         tp = lowerType(t);
         b = DAEUtil.boolVarVisibility(protection);
@@ -702,17 +712,24 @@ algorithm
         eqLst = buildAssertAlgorithms(assrtLst,source,assrtEqIn);
         // building an algorithm of the assert
         (dae_var_attr, source, _) = Inline.inlineStartAttribute(dae_var_attr, source, fnstpl);
-    ts = NONE();
-      then
-        (BackendDAE.VAR(name, kind_1, dir, prl, tp, bind1, NONE(), dims, source, dae_var_attr, ts, comment, ct, DAEUtil.toDAEInnerOuter(io), false), inlineHT, eqLst);
+        ts = NONE();
 
-    else
-      equation
-        str = "BackendDAECreate.lowerKnownVar failed for " + DAEDump.dumpElementsStr({inElement});
-        Error.addMessage(Error.INTERNAL_ERROR, {str});
-      then fail();
+        var = BackendDAE.VAR(name, kind_1, dir, prl, tp, bind1, NONE(), dims, source, dae_var_attr, ts, comment, ct, DAEUtil.toDAEInnerOuter(io), false);
+
+        if DAEUtil.topLevelInput(name, dir, ct) then
+          glVars = var :: glVars;
+        else
+          knVars = var :: knVars;
+        end if;
+      then
+        (inlineHT, eqLst);
+
+    else equation
+      str = "BackendDAECreate.lowerKnownAndGlobalVar failed for " + DAEDump.dumpElementsStr({inElement});
+      Error.addMessage(Error.INTERNAL_ERROR, {str});
+    then fail();
   end matchcontinue;
-end lowerKnownVar;
+end lowerKnownAndGlobalVar;
 
 
 protected function buildAssertAlgorithms "builds BackendDAE.ALGORITHM out of the given assert statements
@@ -928,9 +945,9 @@ algorithm
   end match;
 end lowerVarkind;
 
-protected function lowerKnownVarkind
-"Helper function to lowerKnownVar.
-  NOTE: Fails for everything but parameters and constants and top level inputs"
+protected function lowerKnownAndGlobalVarkind
+"Helper function to lowerKnownAndGlobalVar.
+  NOTE: Fails for everything but parameters and constants"
   input DAE.VarKind inVarKind;
   input DAE.ComponentRef inComponentRef;
   input DAE.VarDirection inVarDirection;
@@ -952,11 +969,11 @@ algorithm
     //    BackendDAE.VARIABLE();
     else
       equation
-        Error.addInternalError("function lowerKnownVarkind failed", sourceInfo());
+        Error.addInternalError("function lowerKnownAndGlobalVarkind failed", sourceInfo());
       then
         fail();
   end matchcontinue;
-end lowerKnownVarkind;
+end lowerKnownAndGlobalVarkind;
 
 protected function lowerType
 "Transforms a DAE.Type to Type"

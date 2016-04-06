@@ -106,6 +106,7 @@ public
 uniontype Shared "Data shared for all equation-systems"
   record SHARED
     Variables knownVars                     "Known variables, i.e. constants and parameters";
+    Variables globalVars                    "Global variables, i.e. time, state, or input dependent";
     Variables externalObjects               "External object variables";
     Variables aliasVars                     "Data originating from removed simple equations needed to build
                                              variables' lookup table (in C output).

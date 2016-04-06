@@ -8215,7 +8215,7 @@ protected
   BackendDAE.EquationArray emptyEqs = BackendEquation.emptyEqns();
   DAE.FunctionTree functions = DAEUtil.avlTreeNew();
 algorithm
-  shared := BackendDAE.SHARED( emptyVars, emptyVars, emptyVars, emptyEqs, emptyEqs, {}, {}, cache, graph,
+  shared := BackendDAE.SHARED( emptyVars, emptyVars, emptyVars, emptyVars, emptyEqs, emptyEqs, {}, {}, cache, graph,
                                DAEUtil.avlTreeNew(), emptyEventInfo(), {}, backendDAEType, {}, ei,
                                emptyPartitionsInfo() );
 end createEmptyShared;
@@ -8453,6 +8453,14 @@ public function setSharedKnVars
 algorithm
   outShared.knownVars := knownVars;
 end setSharedKnVars;
+
+public function setSharedGlobalVars
+  input BackendDAE.Shared inShared;
+  input BackendDAE.Variables globalVars;
+  output BackendDAE.Shared outShared = inShared;
+algorithm
+  outShared.globalVars := globalVars;
+end setSharedGlobalVars;
 
 public function setSharedAliasVars
   input BackendDAE.Shared inShared;

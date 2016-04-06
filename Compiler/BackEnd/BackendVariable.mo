@@ -2537,6 +2537,16 @@ algorithm
   outShared := BackendDAEUtil.setSharedKnVars(inShared, addVar(inVar, inShared.knownVars));
 end addKnVarDAE;
 
+public function addGlobalVarDAE "author: lochel
+  Add a variable to globalVars of a Shared object.
+  If the variable already exists, the function updates the variable."
+  input BackendDAE.Var inVar;
+  input BackendDAE.Shared inShared;
+  output BackendDAE.Shared outShared;
+algorithm
+  outShared := BackendDAEUtil.setSharedGlobalVars(inShared, addVar(inVar, inShared.knownVars));
+end addGlobalVarDAE;
+
 public function addNewKnVarDAE
 "author: Frenkel TUD 2011-04
   Add a variable to Variables of a BackendDAE.
