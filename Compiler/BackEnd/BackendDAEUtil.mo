@@ -8213,10 +8213,10 @@ public function createEmptyShared
 protected
   BackendDAE.Variables emptyVars = BackendVariable.emptyVars();
   BackendDAE.EquationArray emptyEqs = BackendEquation.emptyEqns();
-  DAE.FunctionTree functions = DAEUtil.avlTreeNew();
+  DAE.FunctionTree functions = DAE.AvlTreePathFunction.new();
 algorithm
   shared := BackendDAE.SHARED( emptyVars, emptyVars, emptyVars, emptyEqs, emptyEqs, {}, {}, cache, graph,
-                               DAEUtil.avlTreeNew(), emptyEventInfo(), {}, backendDAEType, {}, ei,
+                               DAE.AvlTreePathFunction.new(), emptyEventInfo(), {}, backendDAEType, {}, ei,
                                emptyPartitionsInfo() );
 end createEmptyShared;
 
@@ -8748,7 +8748,7 @@ algorithm
       DAE.Function func;
     case (DAE.CALL(path=path),_)
       equation
-        SOME(func) = DAEUtil.avlTreeGet(funcsIn,path);
+        SOME(func) = DAE.AvlTreePathFunction.get(funcsIn,path);
          then listEmpty(DAEUtil.getFunctionElements(func));
     else true;
   end matchcontinue;
