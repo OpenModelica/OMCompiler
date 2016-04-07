@@ -945,7 +945,7 @@ algorithm
         (_,env,dae,csets,ci_state,tys,bc,oDA,equalityConstraint,graphCached) = outputs;
         graph = ConnectionGraph.merge(graph, graphCached);
 
-        // cache = FCore.setCachedFunctionTree(cache, DAEUtil.joinAvlTrees(functionTree, FCore.getFunctionTree(cache)));
+        // cache = FCore.setCachedFunctionTree(cache, DAE.AvlTreePathFunction.join(functionTree, FCore.getFunctionTree(cache)));
         showCacheInfo("Full Inst Hit: ", fullEnvPathPlusClass);
         /*
         fprintln(Flags.CACHE, "IIII->got from instCache: " + Absyn.pathString(fullEnvPathPlusClass) +
@@ -1643,7 +1643,7 @@ algorithm
         equality(bbx = bby);
         (_,env,ci_state_1,vars) = outputs;
 
-        // cache = FCore.setCachedFunctionTree(cache, DAEUtil.joinAvlTrees(functionTree, FCore.getFunctionTree(cache)));
+        // cache = FCore.setCachedFunctionTree(cache, DAE.AvlTreePathFunction.join(functionTree, FCore.getFunctionTree(cache)));
         showCacheInfo("Partial Inst Hit: ", fullEnvPathPlusClass);
       then
         (cache,env,ih,ci_state_1,vars);
@@ -5493,7 +5493,7 @@ algorithm
         _ = SCode.elementEqual(e1, e2);
         _ = Absyn.pathEqual(PrefixUtil.prefixToPath(pre1), PrefixUtil.prefixToPath(pre2));
 
-        // cache = FCore.setCachedFunctionTree(cache, DAEUtil.joinAvlTrees(ft, FCore.getFunctionTree(cache)));
+        // cache = FCore.setCachedFunctionTree(cache, DAE.AvlTreePathFunction.join(ft, FCore.getFunctionTree(cache)));
         /*
         print("Got cached instance: " + Absyn.pathString(fullEnvPathPlusClass) +
               " mod: " + boolString(b1) +
