@@ -571,8 +571,8 @@ protected
   DAE.ElementSource source;
 algorithm
   try
-    comp_name := Absyn.pathString(PrefixUtil.prefixPath(Absyn.IDENT(inName), inPrefix));
-    Error.updateCurrentComponent(comp_name, inInfo);
+    // comp_name := Absyn.pathString(PrefixUtil.prefixPath(Absyn.IDENT(inName), inPrefix));
+    Error.updateCurrentComponent(inName, inInfo);
 
     (outCache, dims, cls, type_mods) :=
       InstUtil.getUsertypeDimensions(inCache, inEnv, inIH, inPrefix, inClass, inInstDims, inImpl);
