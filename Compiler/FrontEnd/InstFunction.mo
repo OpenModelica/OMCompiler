@@ -123,7 +123,7 @@ algorithm
 
         // set the  of this element
        source = ElementSource.addElementSourcePartOfOpt(DAE.emptyElementSource, FGraph.getScopePath(env));
-       source = ElementSource.addCommentToSource(source, SOME(comment));
+       source = ElementSource.addCommentToSource(source, comment);
        source = ElementSource.addElementSourceFileInfo(source, info);
       then
         (cache,env,ih,DAE.DAE({DAE.EXTOBJECTCLASS(classNameFQ,source)}),ClassInf.EXTERNAL_OBJ(classNameFQ));
