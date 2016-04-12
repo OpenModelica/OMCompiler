@@ -5252,7 +5252,7 @@ end CachedInstItem;
 protected type CachedInstItems = list<Option<CachedInstItem>>;
 
 /* Begin inline HashTable */
-protected type Key = tuple<Integer,InstTypes.CallingScope,SCode.Restriction,Prefix.ComponentPrefix,Absyn.Path>;
+protected type Key = Absyn.Path;
 protected type Value = CachedInstItems;
 
 protected type HashTableKeyFunctionsType = tuple<FuncHashKey,FuncKeyEqual,FuncKeyStr,FuncValueStr>;
@@ -5319,7 +5319,7 @@ protected function emptyInstHashTableSized
   input Integer size;
   output InstHashTable hashTable;
 algorithm
-  hashTable := BaseHashTable.emptyHashTableWork(size,(keyHashMod,keyEqual,keyStr,opaqVal));
+  hashTable := BaseHashTable.emptyHashTableWork(size,(Absyn.pathHashMod,Absyn.pathEqual,Absyn.pathStringDefault,opaqVal));
 end emptyInstHashTableSized;
 
 /* end HashTable */
@@ -5366,32 +5366,18 @@ protected
   SCode.Restriction re = SCode.getClassRestriction(cls);
   Prefix.ComponentPrefix cp = PrefixUtil.componentPrefix(prefix);
   Absyn.Path scope = FGraph.getGraphName(env);
+  String name, str1, str2,str3;
   InstHashTable inst_hash;
-  Integer hash, hash_mod, ix, bsize;
-  array<list<tuple<Key,Integer>>> hv;
-  array<Option<tuple<Key,Value>>> vals;
-  constant Boolean debug = false;
 algorithm
   inst_hash := getGlobalRoot(Global.instHashIndex);
-  (hv,(_,_,vals),bsize,_) := inst_hash;
-  hash := keyHash(callScope, re, cp, scope);
-  hash_mod := intAbs(intMod(hash,bsize))+1;
-  // Re-use old key when possible
-  for tpl in hv[hash_mod] loop
-    (key,ix) := tpl;
-    if keyEqual2(key, callScope, re, cp, scope) then
-      SOME((key,val)) := arrayGet(vals,ix);
-      if debug and not BaseHashTable.hasKey(key, inst_hash) then
-        Error.addInternalError("generateCacheKey failed (1)", sourceInfo());
-      end if;
-      return;
-    end if;
-  end for;
-  key := (hash_mod-1, callScope, re, cp, scope);
-  val := {};
-  if debug and BaseHashTable.hasKey(key, inst_hash) then
-    Error.addInternalError("generateCacheKey failed (2)", sourceInfo());
-  end if;
+  // TODO: Hash the Path before building it (should be possible), to see if there already exists an item with the same hash.
+  // Then check if the key exists without building it...
+  str1 := InstTypes.callingScopeStr(callScope);
+  str2 := SCodeDump.restrString(re);
+  str3 := generatePrefixStr(cp);
+  name := StringUtil.stringAppend6(str1, "$", str2, "$", str3, "$");
+  key := Absyn.joinPaths(Absyn.IDENT(name), FGraph.getGraphName(env));
+  (key, val) := BaseHashTable.getReturnKeyValueOrDefault(inst_hash, key, {});
 end generateCacheKey;
 
 protected function generatePrefixStr
@@ -5405,96 +5391,13 @@ algorithm
   end try;
 end generatePrefixStr;
 
-protected function keyHashMod "Hashes a key."
-  input Key key;
-  input Integer mod;
-  output Integer hash;
-algorithm
-  (hash,_,_,_,_) := key;
-  hash := intAbs(intMod(hash,mod));
-end keyHashMod;
-
-protected function keyHash "Hashes a key."
-  input InstTypes.CallingScope callingScope;
-  input SCode.Restriction re;
-  input Prefix.ComponentPrefix prefix;
-  input Absyn.Path scope;
-  output Integer hash;
-algorithm
-  hash := StringUtil.stringHashDjb2Work(InstTypes.callingScopeStr(callingScope));
-  hash := StringUtil.stringHashDjb2Work(SCodeDump.restrString(re), hash);
-  hash := PrefixUtil.prefixHashWork(prefix, hash);
-  hash := Absyn.pathHashModWork(scope, hash);
-end keyHash;
-
-protected function keyEqual "Compare two keys."
-  input Key key1,key2;
-  output Boolean eq=false;
-protected
-  InstTypes.CallingScope callingScope1,callingScope2;
-  SCode.Restriction re1,re2;
-  Prefix.ComponentPrefix prefix1,prefix2;
-  Absyn.Path scope1,scope2;
-algorithm
-  eq := referenceEq(key1,key2); // We tried hard to cache the keys as well
-  if eq then
-    return;
-  end if;
-  (_,callingScope2,re2,prefix2,scope2) := key2;
-  eq := keyEqual2(key1,callingScope2,re2,prefix2,scope2);
-end keyEqual;
-
-protected function keyEqual2 "Compare two keys."
-  input Key key1;
-  input InstTypes.CallingScope callingScope2;
-  input SCode.Restriction re2;
-  input Prefix.ComponentPrefix prefix2;
-  input Absyn.Path scope2;
-  output Boolean eq=false;
-protected
-  InstTypes.CallingScope callingScope1;
-  SCode.Restriction re1;
-  Prefix.ComponentPrefix prefix1;
-  Absyn.Path scope1;
-algorithm
-  (_,callingScope1,re1,prefix1,scope1) := key1;
-
-  if valueConstructor(callingScope1)<>valueConstructor(callingScope2) then
-  elseif not SCode.restrictionEqual(re1,re2) then
-  elseif not PrefixUtil.componentPrefixPathEqual(prefix1,prefix2) then
-  elseif not Absyn.pathEqual(scope1, scope2) then
-  else
-    eq := true;
-  end if;
-end keyEqual2;
-
-protected function keyStr
-  input Key key;
-  output String str;
-protected
-  InstTypes.CallingScope callingScope;
-  SCode.Restriction re;
-  Prefix.ComponentPrefix prefix;
-  Absyn.Path scope;
-algorithm
-  (_,callingScope,re,prefix,scope) := key;
-  str := stringAppendList(
-    {
-      InstTypes.callingScopeStr(callingScope), "$",
-      SCodeDump.restrString(re), "$",
-      generatePrefixStr(prefix),
-      ".", Absyn.pathString(scope)
-    }
-  );
-end keyStr;
-
 protected function showCacheInfo
   input String inMsg;
   input Key key;
 algorithm
   if Flags.isSet(Flags.SHOW_INST_CACHE_INFO) then
     print(inMsg);
-    print(keyStr(key));
+    print(Absyn.pathString(key));
     print("\n");
   end if;
 end showCacheInfo;
