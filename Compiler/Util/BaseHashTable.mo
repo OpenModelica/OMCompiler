@@ -336,6 +336,23 @@ algorithm
   (_, value) := getValueArray(varr, i);
 end get;
 
+public function getReturnKeyValueOrDefault
+  "Returns a (Key,Value) given a Key and a HashTable. This makes it possible to compare keys using referenceEq."
+  input HashTable hashTable;
+  input output Key key;
+  input output Value value;
+protected
+  Integer i;
+  ValueArray varr;
+algorithm
+  i := hasKeyIndex(key, hashTable);
+  if i == -1 then
+    return;
+  end if;
+  (_, varr, _, _) := hashTable;
+  (key, value) := getValueArray(varr, i);
+end getReturnKeyValueOrDefault;
+
 protected function hasKeyIndex
   "help function to get and hasKey"
   input Key key;

@@ -2554,8 +2554,11 @@ end printComponentRefStr;
 public function pathEqual "Returns true if two paths are equal."
   input Path inPath1;
   input Path inPath2;
-  output Boolean outBoolean;
+  output Boolean outBoolean = referenceEq(inPath1, inPath2);
 algorithm
+  if outBoolean then
+    return;
+  end if;
   outBoolean := match (inPath1, inPath2)
     local
       String id1,id2;
