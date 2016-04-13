@@ -999,7 +999,7 @@ algorithm
       equation
         true = Config.splitArrays();
         false = ClassInf.isFunction(ci_state);
-
+        false = Expression.dimensionUnknown(dim);
         // dim = InstUtil.evalEnumAndBoolDim(dim);
         inst_dims_1 = List.appendLastList(inst_dims, {dim});
 
@@ -1163,7 +1163,7 @@ algorithm
         start = InstBinding.instStartBindingExp(inMod /* Yup, let's keep the start-binding. It seems sane. */, ty, vt);
 
         // Propagate the final prefix from the modifier.
-        //fin = InstUtil.propagateModFinal(mod, fin);
+        fin = InstUtil.propagateModFinal(mod, fin);
 
         if not Flags.getConfigBool(Flags.USE_LOCAL_DIRECTION) then
           attr = stripVarAttrDirection(cr, ih, inState, inPrefix, attr);
