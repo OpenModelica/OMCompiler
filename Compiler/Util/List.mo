@@ -3660,7 +3660,7 @@ public function mapFold<TI, TO, FT>
   input list<TI> inList;
   input FuncType inFunc;
   input FT inArg;
-  output list<TO> outList = {};
+  output list<TO> outList;
   output FT outArg = inArg;
 
   partial function FuncType
@@ -3669,14 +3669,15 @@ public function mapFold<TI, TO, FT>
     output TO outResult;
     output FT outArg;
   end FuncType;
-protected
-  TO res;
 algorithm
-  for e in inList loop
-    (res, outArg) := inFunc(e, outArg);
-    outList := res :: outList;
-  end for;
-  outList := listReverseInPlace(outList);
+  outList := list(match e
+    local
+      TO res;
+      case _
+        algorithm
+        (res, outArg) := inFunc(e, outArg);
+        then res;
+    end match for e in inList);
 end mapFold;
 
 public function mapFold2<TI, TO, FT1, FT2>
@@ -3687,7 +3688,7 @@ public function mapFold2<TI, TO, FT1, FT2>
   input FuncType inFunc;
   input FT1 inArg1;
   input FT2 inArg2;
-  output list<TO> outList = {};
+  output list<TO> outList;
   output FT1 outArg1 = inArg1;
   output FT2 outArg2 = inArg2;
 
@@ -3699,14 +3700,15 @@ public function mapFold2<TI, TO, FT1, FT2>
     output FT1 outArg1;
     output FT2 outArg2;
   end FuncType;
-protected
-  TO res;
 algorithm
-  for e in inList loop
-    (res, outArg1, outArg2) := inFunc(e, outArg1, outArg2);
-    outList := res::outList;
-  end for;
-  outList := listReverseInPlace(outList);
+  outList := list(match e
+    local
+      TO res;
+      case _
+        algorithm
+        (res, outArg1, outArg2) := inFunc(e, outArg1, outArg2);
+        then res;
+    end match for e in inList);
 end mapFold2;
 
 public function map1Fold<TI, TO, FT, ArgT1>
@@ -3717,7 +3719,7 @@ public function map1Fold<TI, TO, FT, ArgT1>
   input FuncType inFunc;
   input ArgT1 inConstArg;
   input FT inArg;
-  output list<TO> outList = {};
+  output list<TO> outList;
   output FT outArg = inArg;
 
   partial function FuncType
@@ -3727,14 +3729,15 @@ public function map1Fold<TI, TO, FT, ArgT1>
     output TO outResult;
     output FT outArg;
   end FuncType;
-protected
-  TO res;
 algorithm
-  for e in inList loop
-    (res, outArg) := inFunc(e, inConstArg, outArg);
-    outList := res :: outList;
-  end for;
-  outList := listReverseInPlace(outList);
+  outList := list(match e
+    local
+      TO res;
+      case _
+        algorithm
+        (res, outArg) := inFunc(e, inConstArg, outArg);
+        then res;
+    end match for e in inList);
 end map1Fold;
 
 public function map2Fold<TI, TO, FT, ArgT1, ArgT2>
@@ -3746,8 +3749,7 @@ public function map2Fold<TI, TO, FT, ArgT1, ArgT2>
   input ArgT1 inConstArg;
   input ArgT2 inConstArg2;
   input FT inArg;
-  input list<TO> inAccum = {};
-  output list<TO> outList = inAccum;
+  output list<TO> outList;
   output FT outArg = inArg;
 
   partial function FuncType
@@ -3758,14 +3760,15 @@ public function map2Fold<TI, TO, FT, ArgT1, ArgT2>
     output TO outResult;
     output FT outArg;
   end FuncType;
-protected
-  TO res;
 algorithm
-  for e in inList loop
-    (res, outArg) := inFunc(e, inConstArg, inConstArg2, outArg);
-    outList := res :: outList;
-  end for;
-  outList := listReverseInPlace(outList);
+  outList := list(match e
+    local
+      TO res;
+      case _
+        algorithm
+        (res, outArg) := inFunc(e, inConstArg, inConstArg2, outArg);
+        then res;
+    end match for e in inList);
 end map2Fold;
 
 public function map2FoldCheckReferenceEq<TIO, FT, ArgT1, ArgT2>
@@ -3826,7 +3829,7 @@ public function map3Fold<TI, TO, FT, ArgT1, ArgT2, ArgT3>
   input ArgT2 inConstArg2;
   input ArgT3 inConstArg3;
   input FT inArg;
-  output list<TO> outList = {};
+  output list<TO> outList;
   output FT outArg = inArg;
 
   partial function FuncType
@@ -3838,14 +3841,15 @@ public function map3Fold<TI, TO, FT, ArgT1, ArgT2, ArgT3>
     output TO outResult;
     output FT outArg;
   end FuncType;
-protected
-  TO res;
 algorithm
-  for e in inList loop
-    (res, outArg) := inFunc(e, inConstArg, inConstArg2, inConstArg3, outArg);
-    outList := res :: outList;
-  end for;
-  outList := listReverseInPlace(outList);
+  outList := list(match e
+    local
+      TO res;
+      case _
+        algorithm
+        (res, outArg) := inFunc(e, inConstArg, inConstArg2, inConstArg3, outArg);
+        then res;
+    end match for e in inList);
 end map3Fold;
 
 public function map4Fold<TI, TO, FT, ArgT1, ArgT2, ArgT3, ArgT4>
@@ -3859,7 +3863,7 @@ public function map4Fold<TI, TO, FT, ArgT1, ArgT2, ArgT3, ArgT4>
   input ArgT3 inConstArg3;
   input ArgT4 inConstArg4;
   input FT inArg;
-  output list<TO> outList = {};
+  output list<TO> outList;
   output FT outArg = inArg;
 
   partial function FuncType
@@ -3872,15 +3876,15 @@ public function map4Fold<TI, TO, FT, ArgT1, ArgT2, ArgT3, ArgT4>
     output TO outResult;
     output FT outArg;
   end FuncType;
-protected
-  TO res;
 algorithm
-  for e in inList loop
-    (res, outArg) := inFunc(e, inConstArg, inConstArg2, inConstArg3,
-        inConstArg4, outArg);
-    outList := res :: outList;
-  end for;
-  outList := listReverseInPlace(outList);
+  outList := list(match e
+    local
+      TO res;
+      case _
+        algorithm
+        (res, outArg) := inFunc(e, inConstArg, inConstArg2, inConstArg3, inConstArg4, outArg);
+        then res;
+    end match for e in inList);
 end map4Fold;
 
 public function mapFoldTuple<TI, TO, FT>
@@ -3891,21 +3895,22 @@ public function mapFoldTuple<TI, TO, FT>
   input list<TI> inList;
   input FuncType inFunc;
   input FT inArg;
-  output list<TO> outList = {};
+  output list<TO> outList;
   output FT outArg = inArg;
 
   partial function FuncType
     input tuple<TI, FT> inTuple;
     output tuple<TO, FT> outTuple;
   end FuncType;
-protected
-  TO res;
 algorithm
-  for e in inList loop
-    ((res, outArg)) := inFunc((e, outArg));
-    outList := res :: outList;
-  end for;
-  outList := listReverseInPlace(outList);
+  outList := list(match e
+    local
+      TO res;
+      case _
+        algorithm
+        ((res, outArg)) := inFunc((e, outArg));
+        then res;
+    end match for e in inList);
 end mapFoldTuple;
 
 public function mapFoldList<TI, TO, FT>
