@@ -145,7 +145,7 @@ template dumpEqs(list<SimEqSystem> eqs, Integer parent, Boolean withOperations)
         <statement>
           <%uniqcrefs%>
           <stmt>
-          <%e.statements |> stmt => escapeModelicaStringToXmlString(ppStmtStr(stmt,2)) %>
+          <%e.statements |> stmt => escapeModelicaStringToXmlString(dumpStatement(stmt)) %>
           </stmt>
         </statement>
       </equation><%\n%>

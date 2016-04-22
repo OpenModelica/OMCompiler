@@ -35,6 +35,7 @@ uniontype Text
     array<Integer> nchars, aind;
     array<Boolean> isstart;
     array<list<BlockTypeFileText>> blocksStack;
+    array<File.Escape> escape;
   end FILE_TEXT;
 end Text;
 
@@ -937,9 +938,10 @@ protected function tokensFile
   input output Integer actualPositionOnLine;
   input output Boolean atStartOfLine;
   input output Integer afterNewLineIndent;
+  input File.Escape escape;
 algorithm
   for tok in inTokens loop
-    (actualPositionOnLine, atStartOfLine, afterNewLineIndent) := tokFile(file, tok, actualPositionOnLine, atStartOfLine, afterNewLineIndent);
+    (actualPositionOnLine, atStartOfLine, afterNewLineIndent) := tokFile(file, tok, actualPositionOnLine, atStartOfLine, afterNewLineIndent, escape);
   end for;
 end tokensFile;
 
@@ -1044,7 +1046,7 @@ algorithm
       nchars := arrayGet(inText.nchars, 1);
       aind := arrayGet(inText.aind, 1);
       isstart := arrayGet(inText.isstart, 1);
-      (nchars, isstart, aind) := tokFile(file, inStringToken, nchars, isstart, aind);
+      (nchars, isstart, aind) := tokFile(file, inStringToken, nchars, isstart, aind, arrayGet(inText.escape,1));
       arrayUpdate(inText.nchars, 1, nchars);
       arrayUpdate(inText.aind, 1, aind);
       arrayUpdate(inText.isstart, 1, isstart);
@@ -1058,6 +1060,7 @@ protected function tokFile
   input output Integer nchars;
   input output Boolean isstart;
   input output Integer aind;
+  input File.Escape escape;
 algorithm
   (nchars, isstart, aind) := match (inStringToken, nchars, isstart, aind)
     local
@@ -1074,33 +1077,33 @@ algorithm
     case (ST_STRING(value = str), nchars, true, aind)
       equation
         File.writeSpace(file, nchars);
-        File.write(file, str);
+        File.writeEscape(file, str, escape);
       then
         (nchars+stringLength(str), false, aind);
 
     case (ST_STRING(value = str), nchars, false, aind)
       equation
-        File.write(file, str);
+        File.writeEscape(file, str, escape);
       then
         (nchars + stringLength(str), false, aind);
 
     case (ST_LINE(line = str), nchars, true, aind)
       equation
         File.writeSpace(file, nchars);
-        File.write(file, str);
+        File.writeEscape(file, str, escape);
       then
         (aind, true, aind);
 
     case (ST_LINE(line = str), _, false, aind)
       equation
-        File.write(file, str);
+        File.writeEscape(file, str, escape);
       then
         (aind, true, aind);
 
     case (ST_STRING_LIST( strList = strLst ), nchars, isstart, aind)
       equation
         (nchars, isstart, aind)
-          = stringListFile(file, strLst, nchars, isstart, aind);
+          = stringListFile(file, strLst, nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
 
@@ -1109,7 +1112,7 @@ algorithm
            blockType = bt), nchars, isstart, aind)
       equation
         (nchars, isstart, aind)
-          = blockFile(file, bt, listReverse(toks), nchars, isstart, aind);
+          = blockFile(file, bt, listReverse(toks), nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
   end match;
@@ -1186,6 +1189,7 @@ protected function stringListFile
   input output Integer nchars;
   input output Boolean isstart;
   input output Integer aind;
+  input File.Escape escape;
 algorithm
   (nchars, isstart, aind)
    := match (inStringList, nchars, isstart, aind)
@@ -1202,7 +1206,7 @@ algorithm
     case ("" :: strLst, nchars, isstart, aind)
       equation
         (nchars, isstart, aind)
-         = stringListFile(file, strLst, nchars, isstart, aind);
+         = stringListFile(file, strLst, nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
 
@@ -1211,20 +1215,20 @@ algorithm
     case (str :: strLst, nchars, true, aind)
       equation
         File.writeSpace(file, nchars);
-        File.write(file, str);
+        File.writeEscape(file, str, escape);
         hasNL = StringUtil.endsWithNewline(str);
         nchars = if hasNL then aind else (nchars+stringLength(str));
-        (nchars, isstart, aind) = stringListFile(file, strLst, nchars, hasNL, aind);
+        (nchars, isstart, aind) = stringListFile(file, strLst, nchars, hasNL, aind, escape);
       then
         (nchars, isstart, aind);
 
     //not at start, new line or no new line
     case (str :: strLst, nchars, false, aind)
       equation
-        File.write(file, str);
+        File.writeEscape(file, str, escape);
         hasNL = StringUtil.endsWithNewline(str);
         nchars = if hasNL then aind else (nchars+stringLength(str));
-        (nchars, isstart, aind) = stringListFile(file, strLst, nchars, hasNL, aind);
+        (nchars, isstart, aind) = stringListFile(file, strLst, nchars, hasNL, aind, escape);
       then
         (nchars, isstart, aind);
 
@@ -1592,6 +1596,7 @@ protected function blockFile
   input Integer inActualPositionOnLine;
   input Boolean inAtStartOfLine;
   input Integer inAfterNewLineIndent;
+  input File.Escape escape;
 
   output Integer outActualPositionOnLine;
   output Boolean outAtStartOfLine;
@@ -1608,14 +1613,14 @@ algorithm
     case (BT_TEXT(), toks, nchars, isstart, aind)
       equation
         (nchars, isstart, aind)
-          = tokensFile(file, toks, nchars, isstart, aind);
+          = tokensFile(file, toks, nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
 
     case (BT_INDENT(width = w), toks, nchars, true, aind)
       equation
         (tsnchars, isstart)
-          = tokensFile(file, toks, w + nchars, true, w + aind);
+          = tokensFile(file, toks, w + nchars, true, w + aind, escape);
         nchars = if isstart then nchars else tsnchars; //pop indent when at the start of a line
       then
         (nchars, isstart, aind);
@@ -1624,7 +1629,7 @@ algorithm
       equation
         File.writeSpace(file, w);
         (tsnchars, isstart)
-          = tokensFile(file, toks, w + nchars, false, w + aind);
+          = tokensFile(file, toks, w + nchars, false, w + aind, escape);
         nchars = if isstart then aind else tsnchars; //pop indent when at the start of a line - there were a new line, so use the aind
       then
         (nchars, isstart, aind);
@@ -1633,7 +1638,7 @@ algorithm
       equation
         blen = File.tell(file);
         (tsnchars, isstart)
-          = tokensFile(file, toks, 0, true, w); //discard an indent when at the start of a line
+          = tokensFile(file, toks, 0, true, w, escape); //discard an indent when at the start of a line
         blen = File.tell(file) - blen;
         nchars = if blen == 0 then nchars else (if isstart then aind else tsnchars); //when no chars -> pop indent; when something written -> aind for the start of a line otherwise actual position
       then
@@ -1642,7 +1647,7 @@ algorithm
     case (BT_ABS_INDENT(width = w), toks, nchars, false, aind)
       equation
         (tsnchars, isstart)
-          = tokensFile(file, toks, nchars, false, w);
+          = tokensFile(file, toks, nchars, false, w, escape);
         nchars = if isstart then aind else tsnchars; //pop indent when at the start of a line - there were a new line, so use the aind
       then
         (nchars, isstart, aind);
@@ -1651,7 +1656,7 @@ algorithm
       equation
         blen = File.tell(file);
         (tsnchars, isstart)
-          = tokensFile(file, toks, nchars, true, aind + w);
+          = tokensFile(file, toks, nchars, true, aind + w, escape);
         blen = File.tell(file) - blen;
         nchars = if blen == 0 then nchars else (if isstart then aind else tsnchars); //when no chars -> pop indent; when something written -> aind for the start of a line otherwise actual position
       then
@@ -1660,7 +1665,7 @@ algorithm
     case (BT_REL_INDENT(offset = w), toks, nchars, false, aind)
       equation
         (tsnchars, isstart)
-          = tokensFile(file, toks, nchars, false, aind + w);
+          = tokensFile(file, toks, nchars, false, aind + w, escape);
         nchars = if isstart then aind else tsnchars; //pop indent when at the start of a line - there were a new line, so use the aind
       then
         (nchars, isstart, aind);
@@ -1669,7 +1674,7 @@ algorithm
       equation
         blen = File.tell(file);
         (tsnchars, isstart)
-          = tokensFile(file, toks, nchars, true, nchars + w);
+          = tokensFile(file, toks, nchars, true, nchars + w, escape);
         blen = File.tell(file) - blen;
         nchars = if blen == 0 then nchars else (if isstart then aind else tsnchars); //when no chars -> pop indent; when something written -> aind for the start of a line otherwise actual position
       then
@@ -1678,7 +1683,7 @@ algorithm
     case (BT_ANCHOR(offset = w), toks, nchars, false, aind)
       equation
         (tsnchars, isstart)
-          = tokensFile(file, toks, nchars, false, nchars + w);
+          = tokensFile(file, toks, nchars, false, nchars + w, escape);
         nchars = if isstart then aind else tsnchars; //pop indent when at the start of a line - there were a new line, so use the aind
       then
         (nchars, isstart, aind);
@@ -1696,7 +1701,7 @@ algorithm
                               wrapWidth = 0)), toks, nchars, isstart, aind)
       equation
         (nchars, isstart, aind)
-          = tokensFile(file,toks, nchars, isstart, aind);
+          = tokensFile(file,toks, nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
 
@@ -1708,9 +1713,9 @@ algorithm
                               wrapWidth = 0)), tok :: toks, nchars, isstart, aind)
       equation
         // put the first token, all the others with separator
-        (nchars, isstart, aind) = tokFile(file, tok, nchars, isstart, aind);
+        (nchars, isstart, aind) = tokFile(file, tok, nchars, isstart, aind, escape);
         (nchars, isstart)
-          = iterSeparatorFile(file, toks, septok, nchars, isstart, aind);
+          = iterSeparatorFile(file, toks, septok, nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
 
@@ -1724,9 +1729,9 @@ algorithm
                               wrapSeparator = wsep)), tok :: toks, nchars, isstart, aind)
       equation
         // put the first token, all the others with separator
-        (nchars, isstart, aind) = tokFile(file, tok, nchars, isstart, aind);
+        (nchars, isstart, aind) = tokFile(file, tok, nchars, isstart, aind, escape);
         (nchars, isstart)
-          = iterSeparatorAlignWrapFile(file, toks, septok, 1 + aoffset, anum, asep, wwidth, wsep, nchars, isstart, aind);
+          = iterSeparatorAlignWrapFile(file, toks, septok, 1 + aoffset, anum, asep, wwidth, wsep, nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
 
@@ -1740,7 +1745,7 @@ algorithm
                               wrapSeparator = wsep)), toks, nchars, isstart, aind)
       equation
         (nchars, isstart)
-          = iterAlignWrapFile(file, toks, aoffset, anum, asep, wwidth, wsep, nchars, isstart, aind);
+          = iterAlignWrapFile(file, toks, aoffset, anum, asep, wwidth, wsep, nchars, isstart, aind, escape);
       then
         (nchars, isstart, aind);
 
@@ -1761,6 +1766,7 @@ protected function iterSeparatorFile
   input Integer inActualPositionOnLine;
   input Boolean inAtStartOfLine;
   input Integer inAfterNewLineIndent;
+  input File.Escape escape;
 
   output Integer outActualPositionOnLine;
   output Boolean outAtStartOfLine;
@@ -1778,10 +1784,10 @@ algorithm
 
     case (tok :: toks, septok, pos, isstart, aind)
       equation
-        (pos, isstart, aind) = tokFile(file, septok, pos, isstart, aind);
-        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind);
+        (pos, isstart, aind) = tokFile(file, septok, pos, isstart, aind, escape);
+        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind, escape);
         (pos, isstart)
-         = iterSeparatorFile(file, toks, septok, pos, isstart, aind);
+         = iterSeparatorFile(file, toks, septok, pos, isstart, aind, escape);
       then
         (pos, isstart);
   end match;
@@ -1800,6 +1806,7 @@ protected function iterSeparatorAlignWrapFile
   input Integer inActualPositionOnLine;
   input Boolean inAtStartOfLine;
   input Integer inAfterNewLineIndent;
+  input File.Escape escape;
 
   output Integer outActualPositionOnLine;
   output Boolean outAtStartOfLine;
@@ -1819,12 +1826,12 @@ algorithm
   while (boolNot(listEmpty(toks))) loop
     tok::toks := toks;
     if((idx > 0) and (intMod(idx,anum) == 0)) then
-      (pos, isstart, aind) := tokFile(file, asep, pos, isstart, aind);
+      (pos, isstart, aind) := tokFile(file, asep, pos, isstart, aind, escape);
     else
-      (pos, isstart, aind) := tokFile(file, septok, pos, isstart, aind);
+      (pos, isstart, aind) := tokFile(file, septok, pos, isstart, aind, escape);
     end if;
-    (pos, isstart, aind) := tryWrapFile(file, wwidth, wsep, pos, isstart, aind);
-    (pos, isstart, aind) := tokFile(file, tok, pos, isstart, aind);
+    (pos, isstart, aind) := tryWrapFile(file, wwidth, wsep, pos, isstart, aind, escape);
+    (pos, isstart, aind) := tokFile(file, tok, pos, isstart, aind, escape);
     idx := idx + 1;
   end while;
   (outActualPositionOnLine, outAtStartOfLine) := (pos, isstart);
@@ -1842,6 +1849,7 @@ protected function iterAlignWrapFile
   input Integer inActualPositionOnLine;
   input Boolean inAtStartOfLine;
   input Integer inAfterNewLineIndent;
+  input File.Escape escape;
 
   output Integer outActualPositionOnLine;
   output Boolean outAtStartOfLine;
@@ -1862,12 +1870,12 @@ algorithm
     case (tok :: toks, idx, anum, asep, wwidth, wsep, pos, isstart, aind)
       equation
         true = (idx > 0) and (intMod(idx,anum) == 0);
-        (pos, isstart, aind) = tokFile(file, asep, pos, isstart, aind);
-        (pos, isstart, aind) = tryWrapFile(file, wwidth, wsep, pos, isstart, aind);
-        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind);
+        (pos, isstart, aind) = tokFile(file, asep, pos, isstart, aind, escape);
+        (pos, isstart, aind) = tryWrapFile(file, wwidth, wsep, pos, isstart, aind, escape);
+        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind, escape);
         (pos, isstart)
          = iterAlignWrapFile(file, toks, idx + 1, anum, asep, wwidth, wsep,
-                pos, isstart, aind);
+                pos, isstart, aind, escape);
       then
         (pos, isstart);
     //wrap
@@ -1875,11 +1883,11 @@ algorithm
       equation
         //false = (idx > 0) and (intMod(idx,anum) == 0);
         true = (wwidth > 0) and (pos >= wwidth); //check wwidth for the invariant that should be always true here
-        (pos, isstart, aind) = tokFile(file, wsep, pos, isstart, aind);
-        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind);
+        (pos, isstart, aind) = tokFile(file, wsep, pos, isstart, aind, escape);
+        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind, escape);
         (pos, isstart)
           = iterAlignWrapFile(file, toks, idx + 1, anum, asep, wwidth, wsep,
-                pos, isstart, aind);
+                pos, isstart, aind, escape);
       then
         (pos, isstart);
 
@@ -1888,10 +1896,10 @@ algorithm
       equation
         //false = (idx > 0) and (intMod(idx,anum) == 0);
         //false = (wwidth > 0) and (pos >= wwidth); //check wwidth for the invariant that should be always true here
-        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind);
+        (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind, escape);
         (pos, isstart)
          = iterAlignWrapFile(file, toks, idx + 1, anum, asep, wwidth, wsep,
-              pos, isstart, aind);
+              pos, isstart, aind, escape);
       then
         (pos, isstart);
 
@@ -1912,6 +1920,7 @@ protected function tryWrapFile
   input Integer inActualPositionOnLine;
   input Boolean inAtStartOfLine;
   input Integer inAfterNewLineIndent;
+  input File.Escape escape;
 
   output Integer outActualPositionOnLine;
   output Boolean outAtStartOfLine;
@@ -1928,7 +1937,7 @@ algorithm
     case (wwidth, wsep, pos, isstart, aind)
       equation
         true = (wwidth > 0) and (pos >= wwidth); //check wwidth for the invariant that should be always true here
-        (pos, isstart, aind) = tokFile(file, wsep, pos, isstart, aind);
+        (pos, isstart, aind) = tokFile(file, wsep, pos, isstart, aind, escape);
       then
         (pos, isstart, aind);
 
@@ -2470,12 +2479,22 @@ public function redirectToFile
 "Magic sourceInfo() function implementation"
   input output Text text;
   input String fileName;
+  input File.Escape escape=File.Escape.None;
 protected
   File.File file = File.File();
 algorithm
   File.open(file, fileName, File.Mode.Write);
-  text := writeText(FILE_TEXT(File.getReference(file), arrayCreate(1, 0), arrayCreate(1, 0), arrayCreate(1, true), arrayCreate(1, {})), text);
+  text := writeText(FILE_TEXT(File.getReference(file), arrayCreate(1, 0), arrayCreate(1, 0), arrayCreate(1, true), arrayCreate(1, {}), arrayCreate(1, escape)), text);
 end redirectToFile;
+
+public function redirectToOpenFile
+"Magic sourceInfo() function implementation"
+  input output Text text;
+  input File.File file;
+  input File.Escape escape=File.Escape.None;
+algorithm
+  text := writeText(FILE_TEXT(File.getReference(file), arrayCreate(1, 0), arrayCreate(1, 0), arrayCreate(1, true), arrayCreate(1, {}), arrayCreate(1, escape)), text);
+end redirectToOpenFile;
 
 public function closeFile
 "Magic sourceInfo() function implementation"
@@ -2526,11 +2545,11 @@ algorithm
     if not line then
       if arrayGet(inText.isstart,1) then
         File.writeSpace(file, nchars);
-        File.write(file, str);
+        File.writeEscape(file, str, arrayGet(inText.escape,1));
         arrayUpdate(inText.nchars, 1, nchars+stringLength(str));
         arrayUpdate(inText.isstart, 1, false);
       else
-        File.write(file, str);
+        File.writeEscape(file, str, arrayGet(inText.escape,1));
         arrayUpdate(inText.nchars, 1, nchars+stringLength(str));
       end if;
     else
@@ -2539,7 +2558,7 @@ algorithm
       else
         arrayUpdate(inText.isstart,1,true);
       end if;
-      File.write(file, str);
+      File.writeEscape(file, str, arrayGet(inText.escape,1));
       arrayUpdate(inText.nchars,1,arrayGet(inText.aind,1));
     end if;
   then ();

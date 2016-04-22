@@ -3328,16 +3328,6 @@ package ValuesUtil
   end valueExp;
 end ValuesUtil;
 
-package DAEDump
-
-  function ppStmtStr
-    input DAE.Statement stmt;
-    input Integer inInteger;
-    output String outString;
-  end ppStmtStr;
-
-end DAEDump;
-
 package Algorithm
   function getStatementSource
     input DAE.Statement stmt;

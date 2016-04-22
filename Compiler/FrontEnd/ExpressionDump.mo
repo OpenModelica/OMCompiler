@@ -41,6 +41,7 @@ encapsulated package ExpressionDump
 // public imports
 public import Absyn;
 public import DAE;
+public import File;
 public import Graphviz;
 
 // protected imports
@@ -441,6 +442,21 @@ public function printExpStr
 algorithm
   s := Tpl.tplString2(ExpressionDumpTpl.dumpExp, e, "\"");
 end printExpStr;
+
+public function writeExp
+"This function prints a complete expression."
+  input File.File file;
+  input DAE.Exp e;
+protected
+  Tpl.Text txt = Tpl.emptyTxt;
+algorithm
+  txt := Tpl.redirectToOpenFile(txt, file);
+  try
+    txt := ExpressionDumpTpl.dumpExp(txt, e, "\"");
+  else
+  end try;
+  Tpl.closeFile(txt);
+end writeExp;
 
 public function printCrefsFromExpStr
   input DAE.Exp e;

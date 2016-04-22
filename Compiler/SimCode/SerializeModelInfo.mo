@@ -46,18 +46,20 @@ import SimCode;
 
 protected
 import Algorithm;
-import DAEDump;
+import DAEDumpTpl;
 import Error;
 import Expression;
 import File;
 import File.Escape.JSON;
 import writeCref = ComponentReference.writeCref;
-import expStr = ExpressionDump.printExpStr;
+import ExpressionDumpTpl.dumpExp;
 import List;
 import PrefixUtil;
 import SimCodeUtil;
 import SimCodeFunctionUtil;
+import SCodeDumpTpl;
 import SCodeDump;
+import Tpl;
 import Util;
 
 function serializeWork "Always succeeds in order to clean-up external objects"
@@ -67,6 +69,7 @@ function serializeWork "Always succeeds in order to clean-up external objects"
   output String fileName;
 protected
   File.File file = File.File();
+  Tpl.Text txt = Tpl.emptyTxt;
 algorithm
   (success,fileName) := matchcontinue code
     local
@@ -77,32 +80,37 @@ algorithm
       equation
         fileName = code.fileNamePrefix + "_info.json";
         File.open(file,fileName,File.Mode.Write);
+        txt=Tpl.redirectToOpenFile(txt,file,escape=JSON);
         File.write(file, "{\"format\":\"Transformational debugger info\",\"version\":1,\n\"info\":{\"name\":");
-        serializePath(file, mi.name);
+        serializePath(file, txt, mi.name);
         File.write(file, ",\"description\":\"");
         File.writeEscape(file, mi.description, escape=JSON);
         File.write(file, "\"},\n\"variables\":{\n");
-        serializeVars(file,vars,withOperations);
+        serializeVars(file,txt,vars,withOperations);
         File.write(file, "\n},\n\"equations\":[");
         // Handle no comma for the first equation
         File.write(file,"{\"eqIndex\":0,\"tag\":\"dummy\"}");
-        min(serializeEquation(file,eq,"initial",withOperations) for eq in SimCodeUtil.sortEqSystems(code.initialEquations));
-        min(serializeEquation(file,eq,"removed-initial",withOperations) for eq in SimCodeUtil.sortEqSystems(code.removedInitialEquations));
-        min(serializeEquation(file,eq,"initial-lambda0",withOperations) for eq in SimCodeUtil.sortEqSystems(code.initialEquations_lambda0));
-        min(serializeEquation(file,eq,"regular",withOperations) for eq in SimCodeUtil.sortEqSystems(code.allEquations));
-        min(serializeEquation(file,eq,"start",withOperations) for eq in SimCodeUtil.sortEqSystems(code.startValueEquations));
-        min(serializeEquation(file,eq,"nominal",withOperations) for eq in SimCodeUtil.sortEqSystems(code.nominalValueEquations));
-        min(serializeEquation(file,eq,"min",withOperations) for eq in SimCodeUtil.sortEqSystems(code.minValueEquations));
-        min(serializeEquation(file,eq,"max",withOperations) for eq in SimCodeUtil.sortEqSystems(code.maxValueEquations));
-        min(serializeEquation(file,eq,"parameter",withOperations) for eq in SimCodeUtil.sortEqSystems(code.parameterEquations));
-        min(serializeEquation(file,eq,"assertions",withOperations) for eq in SimCodeUtil.sortEqSystems(code.algorithmAndEquationAsserts));
-        min(serializeEquation(file,eq,"jacobian",withOperations) for eq in SimCodeUtil.sortEqSystems(code.jacobianEquations));
+        min(serializeEquation(file,txt,eq,"initial",withOperations) for eq in SimCodeUtil.sortEqSystems(code.initialEquations));
+        min(serializeEquation(file,txt,eq,"removed-initial",withOperations) for eq in SimCodeUtil.sortEqSystems(code.removedInitialEquations));
+        min(serializeEquation(file,txt,eq,"initial-lambda0",withOperations) for eq in SimCodeUtil.sortEqSystems(code.initialEquations_lambda0));
+        min(serializeEquation(file,txt,eq,"regular",withOperations) for eq in SimCodeUtil.sortEqSystems(code.allEquations));
+        min(serializeEquation(file,txt,eq,"start",withOperations) for eq in SimCodeUtil.sortEqSystems(code.startValueEquations));
+        min(serializeEquation(file,txt,eq,"nominal",withOperations) for eq in SimCodeUtil.sortEqSystems(code.nominalValueEquations));
+        min(serializeEquation(file,txt,eq,"min",withOperations) for eq in SimCodeUtil.sortEqSystems(code.minValueEquations));
+        min(serializeEquation(file,txt,eq,"max",withOperations) for eq in SimCodeUtil.sortEqSystems(code.maxValueEquations));
+        min(serializeEquation(file,txt,eq,"parameter",withOperations) for eq in SimCodeUtil.sortEqSystems(code.parameterEquations));
+        min(serializeEquation(file,txt,eq,"assertions",withOperations) for eq in SimCodeUtil.sortEqSystems(code.algorithmAndEquationAsserts));
+        min(serializeEquation(file,txt,eq,"jacobian",withOperations) for eq in SimCodeUtil.sortEqSystems(code.jacobianEquations));
         File.write(file, "\n],\n\"functions\":[");
-        serializeList(file,mi.functions,serializeFunction);
+        serializeList(file,txt,mi.functions,serializeFunction);
         File.write(file, "\n]\n}");
       then (true,fileName);
     else
-      equation
+      algorithm
+        try
+          Tpl.closeFile(txt);
+        else
+        end try;
         Error.addInternalError("SerializeModelInfo.serialize failed", sourceInfo());
       then (false,"");
   end matchcontinue;
@@ -110,6 +118,7 @@ end serializeWork;
 
 function serializeVars
   input File.File file;
+  input Tpl.Text txt;
   input SimCodeVar.SimVars vars;
   input Boolean withOperations;
 algorithm
@@ -118,22 +127,22 @@ algorithm
       Boolean b;
     case SimCodeVar.SIMVARS()
       equation
-        b = serializeVarsHelp(file, vars.stateVars, withOperations, false);
-        b = serializeVarsHelp(file, vars.derivativeVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.algVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.intAlgVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.boolAlgVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.inputVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.intAliasVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.boolAliasVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.paramVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.intParamVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.boolParamVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.stringAlgVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.stringAliasVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.extObjVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.constVars, withOperations, b);
-        b = serializeVarsHelp(file, vars.jacobianVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.stateVars, withOperations, false);
+        b = serializeVarsHelp(file, txt, vars.derivativeVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.algVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.intAlgVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.boolAlgVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.inputVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.intAliasVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.boolAliasVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.paramVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.intParamVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.boolParamVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.stringAlgVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.stringAliasVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.extObjVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.constVars, withOperations, b);
+        b = serializeVarsHelp(file, txt, vars.jacobianVars, withOperations, b);
       then ();
     else
       equation
@@ -144,6 +153,7 @@ end serializeVars;
 
 function serializeVarsHelp
   input File.File file;
+  input Tpl.Text txt;
   input list<SimCodeVar.SimVar> vars;
   input Boolean withOperations;
   input Boolean inFirst;
@@ -157,8 +167,8 @@ algorithm
 
   case (var::rest)
     equation
-      serializeVar(file,var,withOperations,not inFirst);
-      min(serializeVar(file,v,withOperations) for v in List.restOrEmpty(rest));
+      serializeVar(file,txt,var,withOperations,not inFirst);
+      min(serializeVar(file,txt,v,withOperations) for v in List.restOrEmpty(rest));
    then true;
 
   end match;
@@ -166,6 +176,7 @@ end serializeVarsHelp;
 
 function serializeVar
   input File.File file;
+  input Tpl.Text txt;
   input SimCodeVar.SimVar var;
   input Boolean withOperations;
   input Boolean first = false;
@@ -189,7 +200,7 @@ algorithm
         File.write(file,"\",\"displayUnit\":\"");
         File.writeEscape(file,var.displayUnit,escape=JSON);
         File.write(file,"\",\"source\":");
-        serializeSource(file,var.source,withOperations);
+        serializeSource(file,txt,var.source,withOperations);
         File.write(file,"}");
       then true;
     else
@@ -215,6 +226,7 @@ end serializeTypeName;
 
 function serializeSource
   input File.File file;
+  input Tpl.Text txt;
   input DAE.ElementSource source;
   input Boolean withOperations;
 protected
@@ -234,7 +246,7 @@ algorithm
                   for w guard (match w case Absyn.TOP() then false; else true; end match)
                   in partOfLst);
     File.write(file,",\"within\":[");
-    serializeList(file,paths,serializePath);
+    serializeList(file,txt,paths,serializePath);
     File.write(file,"]");
   end if;
 
@@ -250,13 +262,13 @@ algorithm
 
   if not listEmpty(typeLst) then
     File.write(file,",\"typeLst\":[");
-    serializeList(file,typeLst,serializePath);
+    serializeList(file,txt,typeLst,serializePath);
     File.write(file,"]");
   end if;
 
   if withOperations and not listEmpty(operations) then
     File.write(file,",\"operations\":[");
-    serializeList(file, operations, serializeOperation);
+    serializeList(file, txt, operations, serializeOperation);
     File.write(file,"]}");
   else
     File.write(file,"}");
@@ -287,6 +299,7 @@ end serializeInfo;
 
 function serializeOperation
   input File.File file;
+  input Tpl.Text txt;
   input DAE.SymbolicOperation op;
 algorithm
   _ := match op
@@ -295,76 +308,76 @@ algorithm
     case DAE.FLATTEN(dae=SOME(elt))
       equation
         File.write(file,"{\"op\":\"before-after\",\"display\":\"flattening\",\"data\":[\"");
-        File.writeEscape(file,System.trim(SCodeDump.equationStr(op.scode,SCodeDump.defaultOptions)),escape=JSON);
+        SCodeDumpTpl.dumpEEquation(txt, op.scode, SCodeDump.defaultOptions);
         File.write(file,"\",\"");
-        File.writeEscape(file,System.trim(DAEDump.dumpEquationStr(elt)),escape=JSON);
+        DAEDumpTpl.dumpEquationElement(txt,elt);
         File.write(file,"\"]}");
       then ();
     case DAE.FLATTEN()
       equation
         File.write(file,"{\"op\":\"info\",\"display\":\"scode\",\"data\":[\"");
-        File.writeEscape(file,System.trim(SCodeDump.equationStr(op.scode,SCodeDump.defaultOptions)),escape=JSON);
+        SCodeDumpTpl.dumpEEquation(txt, op.scode, SCodeDump.defaultOptions);
         File.write(file,"\"]}");
       then ();
     case DAE.SIMPLIFY()
       equation
         File.write(file,"{\"op\":\"before-after\",\"display\":\"simplify\",\"data\":[\"");
-        writeEqExpStr(file,op.before);
+        writeEqExpStr(file,txt,op.before);
         File.write(file,"\",\"");
-        writeEqExpStr(file,op.after);
+        writeEqExpStr(file,txt,op.after);
         File.write(file,"\"]}");
       then ();
     case DAE.OP_INLINE()
       equation
         File.write(file,"{\"op\":\"before-after\",\"display\":\"inline\",\"data\":[\"");
-        writeEqExpStr(file,op.before);
+        writeEqExpStr(file,txt,op.before);
         File.write(file,"\",\"");
-        writeEqExpStr(file,op.after);
+        writeEqExpStr(file,txt,op.after);
         File.write(file,"\"]}");
       then ();
     case DAE.SOLVE(assertConds={})
       equation
         File.write(file,"{\"op\":\"before-after\",\"display\":\"solved\",\"data\":[\"");
-        File.writeEscape(file,expStr(op.exp1),escape=JSON);
+        dumpExp(txt,op.exp1,"\"");
         File.write(file," = ");
-        File.writeEscape(file,expStr(op.exp2),escape=JSON);
+        dumpExp(txt,op.exp2,"\"");
         File.write(file,"\",\"");
         writeCref(file,op.cr,escape=JSON);
         File.write(file," = ");
-        File.writeEscape(file,expStr(op.res),escape=JSON);
+        dumpExp(txt,op.res,"\"");
         File.write(file,"\"]}");
       then ();
     case DAE.SOLVE()
       equation
         File.write(file,"{\"op\":\"before-after-assert\",\"display\":\"solved\",\"data\":[\"");
-        File.writeEscape(file,expStr(op.exp1),escape=JSON);
+        dumpExp(txt,op.exp1,"\"");
         File.write(file," = ");
-        File.writeEscape(file,expStr(op.exp2),escape=JSON);
+        dumpExp(txt,op.exp2,"\"");
         File.write(file,"\",\"");
         writeCref(file,op.cr,escape=JSON);
         File.write(file," = ");
-        File.writeEscape(file,expStr(op.res),escape=JSON);
+        dumpExp(txt,op.res,"\"");
         File.write(file,"\"");
-        min(match () case () equation File.write(file,",\""); File.writeEscape(file,expStr(e),escape=JSON); File.write(file,"\""); then true; end match
+        min(match () case () equation File.write(file,",\""); dumpExp(txt,e,"\""); File.write(file,"\""); then true; end match
             for e in op.assertConds);
         File.write(file,"]}");
       then ();
     case DAE.OP_RESIDUAL()
       equation
         File.write(file,"{\"op\":\"before-after\",\"display\":\"residual\",\"data\":[");
-        File.writeEscape(file,expStr(op.e1),escape=JSON);
+        dumpExp(txt,op.e1,"\"");
         File.write(file," = ");
-        File.writeEscape(file,expStr(op.e2),escape=JSON);
+        dumpExp(txt,op.e2,"\"");
         File.write(file,",\"0 = ");
-        File.writeEscape(file,expStr(op.e),escape=JSON);
+        dumpExp(txt,op.e,"\"");
         File.write(file,"\"]}");
       then ();
     case DAE.SUBSTITUTION()
       equation
         File.write(file,"{\"op\":\"chain\",\"display\":\"substitution\",\"data\":[\"");
-        File.writeEscape(file,expStr(op.source),escape=JSON);
+        dumpExp(txt,op.source,"\"");
         File.write(file,"\"");
-        min(match () case () equation File.write(file,",\""); File.writeEscape(file,expStr(e),escape=JSON); File.write(file,"\""); then true; end match
+        min(match () case () equation File.write(file,",\""); dumpExp(txt,e,"\""); File.write(file,"\""); then true; end match
             for e in op.substitutions);
         File.write(file,"]}");
       then ();
@@ -373,7 +386,7 @@ algorithm
         File.write(file,"{\"op\":\"info\",\"display\":\"solved\",\"data\":[\"");
         writeCref(file,op.cr,escape=JSON);
         File.write(file," = ");
-        File.writeEscape(file,expStr(op.exp),escape=JSON);
+        dumpExp(txt, op.exp, "\"");
         File.write(file,"\"]}");
       then ();
     case DAE.OP_DIFFERENTIATE()
@@ -381,9 +394,9 @@ algorithm
         File.write(file,"{\"op\":\"before-after\",\"display\":\"differentiate d/d");
         writeCref(file,op.cr,escape=JSON);
         File.write(file,"\",\"data\":[\"");
-        File.writeEscape(file,expStr(op.before),escape=JSON);
+        dumpExp(txt, op.before, "\"");
         File.write(file,"\",\"");
-        File.writeEscape(file,expStr(op.after),escape=JSON);
+        dumpExp(txt, op.after, "\"");
         File.write(file,"\"]}");
       then ();
 
@@ -392,9 +405,9 @@ algorithm
         File.write(file,"{\"op\":\"before-after\",\"display\":\"scalarize [");
         File.write(file,intString(op.index));
         File.write(file,"]\",\"data\":[\"");
-        writeEqExpStr(file,op.before);
+        writeEqExpStr(file,txt,op.before);
         File.write(file,"\",\"");
-        writeEqExpStr(file,op.after);
+        writeEqExpStr(file,txt,op.after);
         File.write(file,"\"]}");
       then ();
 
@@ -419,6 +432,7 @@ end serializeOperation;
 
 function serializeEquation
   input File.File file;
+  input Tpl.Text txt;
   input SimCode.SimEqSystem eq;
   input String section;
   input Boolean withOperations;
@@ -451,9 +465,9 @@ algorithm
       File.write(file, "\",\"tag\":\"residual\",\"uses\":[");
       serializeUses(file,Expression.extractUniqueCrefsFromExp(eq.exp));
       File.write(file, "],\"equation\":[\"");
-      File.writeEscape(file,expStr(eq.exp),escape=JSON);
+      dumpExp(txt, eq.exp, "\"");
       File.write(file, "\"],\"source\":");
-      serializeSource(file,eq.source,withOperations);
+      serializeSource(file,txt,eq.source,withOperations);
       File.write(file, "}");
     then true;
 
@@ -471,9 +485,9 @@ algorithm
       File.write(file, "\"],\"uses\":[");
       serializeUses(file,Expression.extractUniqueCrefsFromExp(eq.exp));
       File.write(file, "],\"equation\":[\"");
-      File.writeEscape(file,expStr(eq.exp),escape=JSON);
+      dumpExp(txt, eq.exp, "\"");
       File.write(file, "\"],\"source\":");
-      serializeSource(file,eq.source,withOperations);
+      serializeSource(file,txt,eq.source,withOperations);
       File.write(file, "}");
     then true;
 
@@ -491,9 +505,9 @@ algorithm
       File.write(file, "\"],\"uses\":[");
       serializeUses(file,Expression.extractUniqueCrefsFromExp(eq.exp));
       File.write(file, "],\"equation\":[\"");
-      File.writeEscape(file,expStr(eq.exp),escape=JSON);
+      dumpExp(txt, eq.exp, "\"");
       File.write(file, "\"],\"source\":");
-      serializeSource(file,eq.source,withOperations);
+      serializeSource(file,txt,eq.source,withOperations);
       File.write(file, "}");
     then true;
 
@@ -510,8 +524,8 @@ algorithm
       if listEmpty(eqs) then
         File.write(file, "\n{\"eqIndex\":");
       else
-        serializeEquation(file,listHead(eqs),section,withOperations,parent=lSystem.index,first=true);
-        min(serializeEquation(file,e,section,withOperations,parent=lSystem.index) for e in listRest(eqs));
+        serializeEquation(file,txt,listHead(eqs),section,withOperations,parent=lSystem.index,first=true);
+        min(serializeEquation(file,txt,e,section,withOperations,parent=lSystem.index) for e in listRest(eqs));
         File.write(file, ",\n{\"eqIndex\":");
       end if;
       File.writeInt(file, lSystem.index);
@@ -532,9 +546,9 @@ algorithm
         File.writeReal(file,j / (i*i),format="%.2f");
       end if;
       File.write(file,",\"A\":[");
-      serializeList1(file,lSystem.simJac,withOperations,serializeLinearCell);
+      serializeList1(file,txt,lSystem.simJac,withOperations,serializeLinearCell);
       File.write(file,"],\"b\":[");
-      serializeList(file,lSystem.beqs,serializeExp);
+      serializeList(file,txt,lSystem.beqs,serializeExp);
       File.write(file,"]}]}");
     then true;
 
@@ -552,8 +566,8 @@ algorithm
       if listEmpty(eqs) then
         File.write(file, "\n{\"eqIndex\":");
       else
-        serializeEquation(file,listHead(eqs),section,withOperations,parent=lSystem.index,first=true);
-        min(serializeEquation(file,e,section,withOperations,parent=lSystem.index) for e in listRest(eqs));
+        serializeEquation(file,txt,listHead(eqs),section,withOperations,parent=lSystem.index,first=true);
+        min(serializeEquation(file,txt,e,section,withOperations,parent=lSystem.index) for e in listRest(eqs));
         File.write(file, ",\n{\"eqIndex\":");
       end if;
       File.writeInt(file, lSystem.index);
@@ -574,9 +588,9 @@ algorithm
         File.writeReal(file,j / (i*i),format="%.2f");
       end if;
       File.write(file,",\"A\":[");
-      serializeList1(file,lSystem.simJac,withOperations,serializeLinearCell);
+      serializeList1(file,txt,lSystem.simJac,withOperations,serializeLinearCell);
       File.write(file,"],\"b\":[");
-      serializeList(file,lSystem.beqs,serializeExp);
+      serializeList(file,txt,lSystem.beqs,serializeExp);
       File.write(file,"]}]},");
 
       // for casual tearing set
@@ -591,8 +605,8 @@ algorithm
       if listEmpty(eqs) then
         File.write(file, "\n{\"eqIndex\":");
       else
-        serializeEquation(file,listHead(eqs),section,withOperations,parent=atL.index,first=true);
-        min(serializeEquation(file,e,section,withOperations,parent=atL.index) for e in listRest(eqs));
+        serializeEquation(file,txt,listHead(eqs),section,withOperations,parent=atL.index,first=true);
+        min(serializeEquation(file,txt,e,section,withOperations,parent=atL.index) for e in listRest(eqs));
         File.write(file, ",\n{\"eqIndex\":");
       end if;
       File.writeInt(file, atL.index);
@@ -613,9 +627,9 @@ algorithm
         File.writeReal(file,j / (i*i),format="%.2f");
       end if;
       File.write(file,",\"A\":[");
-      serializeList1(file,atL.simJac,withOperations,serializeLinearCell);
+      serializeList1(file,txt,atL.simJac,withOperations,serializeLinearCell);
       File.write(file,"],\"b\":[");
-      serializeList(file,atL.beqs,serializeExp);
+      serializeList(file,txt,atL.beqs,serializeExp);
       File.write(file,"]}]}");
     then true;
 
@@ -633,9 +647,9 @@ algorithm
       File.write(file, "\"],\"uses\":[");
       serializeUses(file,Expression.extractUniqueCrefsFromExp(stmt.exp));
       File.write(file, "],\"equation\":[");
-      serializeList(file,eq.statements,serializeStatement);
+      serializeList(file,txt,eq.statements,serializeStatement);
       File.write(file, "],\"source\":");
-      serializeSource(file,Algorithm.getStatementSource(stmt),withOperations);
+      serializeSource(file,txt,Algorithm.getStatementSource(stmt),withOperations);
       File.write(file, "}");
     then true;
 
@@ -649,9 +663,9 @@ algorithm
       File.write(file, ",\"section\":\"");
       File.write(file, section);
       File.write(file, "\",\"tag\":\"algorithm\",\"equation\":[");
-      serializeList(file,eq.statements,serializeStatement);
+      serializeList(file,txt,eq.statements,serializeStatement);
       File.write(file, "],\"source\":");
-      serializeSource(file,Algorithm.getStatementSource(stmt),withOperations);
+      serializeSource(file,txt,Algorithm.getStatementSource(stmt),withOperations);
       File.write(file, "}");
     then true;
 
@@ -665,22 +679,22 @@ algorithm
       File.write(file, ",\"section\":\"");
       File.write(file, section);
       File.write(file, "\",\"tag\":\"algorithm\",\"equation\":[");
-      serializeList(file,eq.statements,serializeStatement);
+      serializeList(file,txt,eq.statements,serializeStatement);
       File.write(file, "],\"source\":");
-      serializeSource(file,Algorithm.getStatementSource(stmt),withOperations);
+      serializeSource(file,txt,Algorithm.getStatementSource(stmt),withOperations);
       File.write(file, "}");
     then true;
 
     // no dynamic tearing
     case SimCode.SES_NONLINEAR(nlSystem = nlSystem as SimCode.NONLINEARSYSTEM(), alternativeTearing = NONE()) equation
       eqs = SimCodeUtil.sortEqSystems(nlSystem.eqs);
-      serializeEquation(file,listHead(eqs),section,withOperations,parent=nlSystem.index,first=true);
-      min(serializeEquation(file,e,section,withOperations,parent=nlSystem.index) for e in List.rest(eqs));
+      serializeEquation(file,txt,listHead(eqs),section,withOperations,parent=nlSystem.index,first=true);
+      min(serializeEquation(file,txt,e,section,withOperations,parent=nlSystem.index) for e in List.rest(eqs));
       jeqs = match nlSystem.jacobianMatrix
         case SOME(({(jeqs,_,_)},_,_,_,_,_,_)) then SimCodeUtil.sortEqSystems(jeqs);
         else {};
       end match;
-      min(serializeEquation(file,e,section,withOperations) for e in jeqs);
+      min(serializeEquation(file,txt,e,section,withOperations) for e in jeqs);
 
       File.write(file, ",\n{\"eqIndex\":");
       File.writeInt(file, nlSystem.index);
@@ -694,9 +708,9 @@ algorithm
       File.write(file, ",\"defines\":[");
       serializeUses(file,nlSystem.crefs);
       File.write(file, "],\"equation\":[[");
-      serializeList(file,eqs,serializeEquationIndex);
+      serializeList(file,txt,eqs,serializeEquationIndex);
       File.write(file, "],[");
-      serializeList(file,jeqs,serializeEquationIndex);
+      serializeList(file,txt,jeqs,serializeEquationIndex);
       File.write(file, "]]}");
     then true;
 
@@ -704,13 +718,13 @@ algorithm
     case SimCode.SES_NONLINEAR(nlSystem = nlSystem as SimCode.NONLINEARSYSTEM(), alternativeTearing = SOME(atNL as SimCode.NONLINEARSYSTEM())) equation
       // for strict tearing set
       eqs = SimCodeUtil.sortEqSystems(nlSystem.eqs);
-      serializeEquation(file,listHead(eqs),section,withOperations,parent=nlSystem.index,first=true);
-      min(serializeEquation(file,e,section,withOperations,parent=nlSystem.index) for e in List.rest(eqs));
+      serializeEquation(file,txt,listHead(eqs),section,withOperations,parent=nlSystem.index,first=true);
+      min(serializeEquation(file,txt,e,section,withOperations,parent=nlSystem.index) for e in List.rest(eqs));
       jeqs = match nlSystem.jacobianMatrix
         case SOME(({(jeqs,_,_)},_,_,_,_,_,_)) then SimCodeUtil.sortEqSystems(jeqs);
         else {};
       end match;
-      min(serializeEquation(file,e,section,withOperations) for e in jeqs);
+      min(serializeEquation(file,txt,e,section,withOperations) for e in jeqs);
 
       File.write(file, ",\n{\"eqIndex\":");
       File.writeInt(file, nlSystem.index);
@@ -724,20 +738,20 @@ algorithm
       File.write(file, ",\"defines\":[");
       serializeUses(file,nlSystem.crefs);
       File.write(file, "],\"equation\":[[");
-      serializeList(file,eqs,serializeEquationIndex);
+      serializeList(file,txt,eqs,serializeEquationIndex);
       File.write(file, "],[");
-      serializeList(file,jeqs,serializeEquationIndex);
+      serializeList(file,txt,jeqs,serializeEquationIndex);
       File.write(file, "]]},");
 
       // for casual tearing set
       eqs = SimCodeUtil.sortEqSystems(atNL.eqs);
-      serializeEquation(file,listHead(eqs),section,withOperations,parent=atNL.index,first=true);
-      min(serializeEquation(file,e,section,withOperations,parent=atNL.index) for e in List.rest(eqs));
+      serializeEquation(file,txt,listHead(eqs),section,withOperations,parent=atNL.index,first=true);
+      min(serializeEquation(file,txt,e,section,withOperations,parent=atNL.index) for e in List.rest(eqs));
       jeqs = match atNL.jacobianMatrix
         case SOME(({(jeqs,_,_)},_,_,_,_,_,_)) then SimCodeUtil.sortEqSystems(jeqs);
         else {};
       end match;
-      min(serializeEquation(file,e,section,withOperations) for e in jeqs);
+      min(serializeEquation(file,txt,e,section,withOperations) for e in jeqs);
 
       File.write(file, ",\n{\"eqIndex\":");
       File.writeInt(file, atNL.index);
@@ -751,16 +765,16 @@ algorithm
       File.write(file, ",\"defines\":[");
       serializeUses(file,atNL.crefs);
       File.write(file, "],\"equation\":[[");
-      serializeList(file,eqs,serializeEquationIndex);
+      serializeList(file,txt,eqs,serializeEquationIndex);
       File.write(file, "],[");
-      serializeList(file,jeqs,serializeEquationIndex);
+      serializeList(file,txt,jeqs,serializeEquationIndex);
       File.write(file, "]]}");
     then true;
 
     case SimCode.SES_IFEQUATION() equation
       eqs = listAppend(List.flatten(list(Util.tuple22(e) for e in eq.ifbranches)), eq.elsebranch);
-      serializeEquation(file,listHead(eqs),section,withOperations,first=true);
-      min(serializeEquation(file,e,section,withOperations) for e in List.rest(eqs));
+      serializeEquation(file,txt,listHead(eqs),section,withOperations,first=true);
+      min(serializeEquation(file,txt,e,section,withOperations) for e in List.rest(eqs));
       File.write(file, ",\n{\"eqIndex\":");
       File.writeInt(file, eq.index);
       if parent <> 0 then
@@ -770,16 +784,16 @@ algorithm
       File.write(file, ",\"section\":\"");
       File.write(file, section);
       File.write(file, "\",\"tag\":\"if-equation\",\"display\":\"if-equation\",\"equation\":[");
-      serializeList(file,eq.ifbranches,serializeIfBranch);
+      serializeList(file,txt,eq.ifbranches,serializeIfBranch);
       File.write(file, ",");
-      serializeIfBranch(file,(DAE.BCONST(true),eq.elsebranch));
+      serializeIfBranch(file,txt,(DAE.BCONST(true),eq.elsebranch));
       File.write(file, "]}");
     then true;
 
     case SimCode.SES_MIXED()
       algorithm
-        serializeEquation(file,eq.cont,section,withOperations,first=true);
-        min(serializeEquation(file,e,section,withOperations) for e in eq.discEqs);
+        serializeEquation(file,txt,eq.cont,section,withOperations,first=true);
+        min(serializeEquation(file,txt,e,section,withOperations) for e in eq.discEqs);
         File.write(file, ",\n{\"eqIndex\":");
         File.writeInt(file, eq.index);
         if parent <> 0 then
@@ -791,10 +805,10 @@ algorithm
         File.write(file, "\",\"tag\":\"container\",\"display\":\"mixed\",\"defines\":[");
         serializeUses(file,list(SimCodeFunctionUtil.varName(v) for v in eq.discVars));
         File.write(file, "],\"equation\":[");
-        serializeEquationIndex(file,eq.cont);
+        serializeEquationIndex(file,txt,eq.cont);
         for e1 in eq.discEqs loop
           File.write(file,",");
-          serializeEquationIndex(file,e1);
+          serializeEquationIndex(file,txt,e1);
         end for;
         File.write(file, "]}");
       then true;
@@ -816,9 +830,9 @@ algorithm
             File.write(file, "],\"uses\":[");
             serializeUses(file,List.union(eq.conditions,Expression.extractUniqueCrefsFromExp(whenOp.right)));
             File.write(file, "],\"equation\":[");
-            serializeExp(file,whenOp.right);
+            serializeExp(file,txt,whenOp.right);
             File.write(file, "],\"source\":");
-            serializeSource(file,eq.source,withOperations);
+            serializeSource(file,txt,eq.source,withOperations);
             File.write(file, "}");
           then ();
           case whenOp as BackendDAE.REINIT() equation
@@ -827,9 +841,9 @@ algorithm
             File.write(file, "],\"uses\":[");
             serializeUses(file,List.union(eq.conditions,Expression.extractUniqueCrefsFromExp(whenOp.value)));
             File.write(file, "],\"equation\":[");
-            serializeExp(file,whenOp.value);
+            serializeExp(file,txt,whenOp.value);
             File.write(file, "],\"source\":");
-            serializeSource(file,eq.source,withOperations);
+            serializeSource(file,txt,eq.source,withOperations);
             File.write(file, "}");
           then ();
           case whenOp as BackendDAE.ASSERT() equation
@@ -838,9 +852,9 @@ algorithm
             crefs = listAppend(Expression.extractUniqueCrefsFromExp(whenOp.condition), Expression.extractUniqueCrefsFromExp(whenOp.message));
             serializeUses(file,List.union(eq.conditions,crefs));
             File.write(file, "],\"equation\":[");
-            serializeExp(file,whenOp.message);
+            serializeExp(file,txt,whenOp.message);
             File.write(file, "],\"source\":");
-            serializeSource(file,eq.source,withOperations);
+            serializeSource(file,txt,eq.source,withOperations);
             File.write(file, "}");
           then ();
           case whenOp as BackendDAE.TERMINATE() equation
@@ -848,9 +862,9 @@ algorithm
             File.write(file, ",\"uses\":[");
             serializeUses(file,List.union(eq.conditions,Expression.extractUniqueCrefsFromExp(whenOp.message)));
             File.write(file, "],\"equation\":[");
-            serializeExp(file,whenOp.message);
+            serializeExp(file,txt,whenOp.message);
             File.write(file, "],\"source\":");
-            serializeSource(file,eq.source,withOperations);
+            serializeSource(file,txt,eq.source,withOperations);
             File.write(file, "}");
           then ();
           case whenOp as BackendDAE.NORETCALL() equation
@@ -858,9 +872,9 @@ algorithm
             File.write(file, ",\"uses\":[");
             serializeUses(file,List.union(eq.conditions,Expression.extractUniqueCrefsFromExp(whenOp.exp)));
             File.write(file, "],\"equation\":[");
-            serializeExp(file,whenOp.exp);
+            serializeExp(file,txt,whenOp.exp);
             File.write(file, "],\"source\":");
-            serializeSource(file,eq.source,withOperations);
+            serializeSource(file,txt,eq.source,withOperations);
             File.write(file, "}");
           then ();
         end match;
@@ -868,7 +882,7 @@ algorithm
       _ := match eq.elseWhen
         local
           SimCode.SimEqSystem e;
-        case SOME(e) equation if SimCodeUtil.simEqSystemIndex(e) <>0 then serializeEquation(file,e,section,withOperations); end if; then ();
+        case SOME(e) equation if SimCodeUtil.simEqSystemIndex(e) <>0 then serializeEquation(file,txt,e,section,withOperations); end if; then ();
         else ();
       end match;
     then true;
@@ -887,9 +901,9 @@ algorithm
       File.write(file, "\"],\"uses\":[");
       serializeUses(file,Expression.extractUniqueCrefsFromExp(eq.exp));
       File.write(file, "],\"equation\":[\"");
-      File.writeEscape(file,expStr(eq.exp),escape=JSON);
+      dumpExp(txt, eq.exp, "\"");
       File.write(file, "\"],\"source\":");
-      serializeSource(file,eq.source,withOperations);
+      serializeSource(file,txt,eq.source,withOperations);
       File.write(file, "}");
     then true;
 
@@ -901,6 +915,7 @@ end serializeEquation;
 
 function serializeLinearCell
   input File.File file;
+  input Tpl.Text txt;
   input tuple<Integer, Integer, SimCode.SimEqSystem> cell;
   input Boolean withOperations;
 algorithm
@@ -915,9 +930,9 @@ algorithm
         File.write(file,",\"column\":");
         File.write(file,intString(j));
         File.write(file,",\"exp\":\"");
-        File.writeEscape(file,expStr(eq.exp),escape=JSON);
+        dumpExp(txt, eq.exp, "\"");
         File.write(file,"\",\"source\":");
-        serializeSource(file,eq.source,withOperations);
+        serializeSource(file,txt,eq.source,withOperations);
         File.write(file,"}");
       then ();
     else
@@ -1042,20 +1057,23 @@ end serializeUses;
 
 function serializeStatement
   input File.File file;
+  input Tpl.Text txt;
   input DAE.Statement stmt;
 algorithm
   File.write(file,"\"");
-  File.writeEscape(file, System.trim(DAEDump.ppStatementStr(stmt)), escape=JSON);
+  DAEDumpTpl.dumpStatement(txt,stmt);
   File.write(file,"\"");
 end serializeStatement;
 
 function serializeList<ArgType>
   input File.File file;
+  input Tpl.Text txt;
   input list<ArgType> lst;
   input FuncType func;
 
   partial function FuncType
     input File.File file;
+    input Tpl.Text txt;
     input ArgType a;
   end FuncType;
 algorithm
@@ -1066,25 +1084,27 @@ algorithm
     case {} then ();
     case {a}
       equation
-        func(file,a);
+        func(file,txt,a);
       then ();
     case a::rest
       equation
-        func(file,a);
+        func(file,txt,a);
         File.write(file, ",");
-        serializeList(file,rest,func);
+        serializeList(file,txt,rest,func);
       then ();
   end match;
 end serializeList;
 
 function serializeList1<ArgType,Extra>
   input File.File file;
+  input Tpl.Text txt;
   input list<ArgType> lst;
   input Extra extra;
   input FuncType func;
 
   partial function FuncType
     input File.File file;
+    input Tpl.Text txt;
     input ArgType a;
     input Extra extra;
   end FuncType;
@@ -1096,23 +1116,24 @@ algorithm
     case {} then ();
     case {a}
       equation
-        func(file,a,extra);
+        func(file,txt,a,extra);
       then ();
     case a::rest
       equation
-        func(file,a,extra);
+        func(file,txt,a,extra);
         File.write(file, ",");
-        serializeList1(file,rest,extra,func);
+        serializeList1(file,txt,rest,extra,func);
       then ();
   end match;
 end serializeList1;
 
 function serializeExp
   input File.File file;
+  input Tpl.Text txt;
   input DAE.Exp exp;
 algorithm
   File.write(file, "\"");
-  File.writeEscape(file, expStr(exp), escape=JSON);
+  dumpExp(txt, exp, "\"");
   File.write(file, "\"");
 end serializeExp;
 
@@ -1136,6 +1157,7 @@ end serializeString;
 
 function serializePath
   input File.File file;
+  input Tpl.Text txt;
   input Absyn.Path path;
 protected
   Absyn.Path p=path;
@@ -1162,6 +1184,7 @@ end serializePath;
 
 function serializeEquationIndex
   input File.File file;
+  input Tpl.Text txt;
   input SimCode.SimEqSystem eq;
 algorithm
   File.writeInt(file, SimCodeUtil.simEqSystemIndex(eq));
@@ -1169,6 +1192,7 @@ end serializeEquationIndex;
 
 function serializeIfBranch
   input File.File file;
+  input Tpl.Text txt;
   input tuple<DAE.Exp,list<SimCode.SimEqSystem>> branch;
 protected
   DAE.Exp exp;
@@ -1176,41 +1200,43 @@ protected
 algorithm
   (exp,eqs) := branch;
   File.write(file,"[");
-  serializeExp(file,exp);
+  serializeExp(file,txt,exp);
   File.write(file,",");
-  serializeList(file,eqs,serializeEquationIndex);
+  serializeList(file,txt,eqs,serializeEquationIndex);
   File.write(file,"]");
 end serializeIfBranch;
 
 function writeEqExpStr
   input File.File file;
+  input Tpl.Text txt;
   input DAE.EquationExp eqExp;
 algorithm
   _ := match eqExp
     case DAE.PARTIAL_EQUATION()
       equation
-        File.writeEscape(file,expStr(eqExp.exp),escape=JSON);
+        dumpExp(txt,eqExp.exp,"\"");
       then ();
     case DAE.RESIDUAL_EXP()
       equation
         File.write(file,"0 = ");
-        File.writeEscape(file,expStr(eqExp.exp),escape=JSON);
+        dumpExp(txt,eqExp.exp,"\"");
       then ();
     case DAE.EQUALITY_EXPS()
       equation
-        File.writeEscape(file,expStr(eqExp.lhs),escape=JSON);
+        dumpExp(txt,eqExp.lhs,"\"");
         File.write(file," = ");
-        File.writeEscape(file,expStr(eqExp.rhs),escape=JSON);
+        dumpExp(txt,eqExp.rhs,"\"");
       then ();
   end match;
 end writeEqExpStr;
 
 function serializeFunction
   input File.File file;
+  input Tpl.Text txt;
   input SimCode.Function func;
 algorithm
   File.write(file, "\n");
-  serializePath(file, SimCodeUtil.functionPath(func));
+  serializePath(file, txt, SimCodeUtil.functionPath(func));
 end serializeFunction;
 
 annotation(__OpenModelica_Interface="backend");

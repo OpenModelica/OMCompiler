@@ -46,6 +46,7 @@
 package CodegenUtil
 
 import ExpressionDumpTpl.*;
+import DAEDumpTpl.*;
 import interface SimCodeTV;
 
 /* public */ template symbolName(String modelNamePrefix, String symbolName)
@@ -400,14 +401,14 @@ template dumpEqs(list<SimEqSystem> eqs)
       equation index: <%equationIndex(eq)%>
       type: ALGORITHM
 
-      <%e.statements |> stmt => escapeCComments(ppStmtStr(stmt,2))%>
+      <%e.statements |> stmt => escapeCComments(dumpStatement(stmt))%>
       >>
     case e as SES_INVERSE_ALGORITHM(statements=first::_) then
       <<
       equation index: <%equationIndex(eq)%>
       type: INVERSE ALGORITHM
 
-      <%e.statements |> stmt => escapeCComments(ppStmtStr(stmt,2))%>
+      <%e.statements |> stmt => escapeCComments(dumpStatement(stmt))%>
       >>
     case e as SES_LINEAR(lSystem=ls as LINEARSYSTEM(__)) then
       <<
