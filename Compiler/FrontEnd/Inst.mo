@@ -2089,20 +2089,7 @@ algorithm
         elementSource = ElementSource.createElementSource(info, FGraph.getScopePath(env3), pre);
         csets1 = ConnectUtil.addConnectorVariablesFromDAE(zero_dims, ci_state1, pre, vars, info, elementSource, csets);
 
-        // Reorder the connect equations to have non-expandable connect first:
-        //   connect(non_expandable, non_expandable);
-        //   connect(non_expandable, expandable);
-        //   connect(expandable, non_expandable);
-        //   connect(expandable, expandable);
-        ErrorExt.setCheckpoint("expandableConnectorsOrder");
-        (cache, eqs_1, expandableEqs) = InstUtil.splitConnectEquationsExpandable(cache, env5, ih, pre, eqs_1, impl, {}, {});
-        // put expandable at the begining
-        eqs_1 = listAppend(expandableEqs, eqs_1);
-        // put expandable at the end
-        eqs_1 = listAppend(eqs_1, expandableEqs);
-        // duplicate expandable to get the union
-        eqs_1 = InstUtil.addExpandable(eqs_1, expandableEqs);
-        ErrorExt.rollBack("expandableConnectorsOrder");
+        (cache, eqs_1) = InstUtil.reorderConnectEquationsExpandable(cache, env5, eqs_1);
 
         //Discretization of PDEs:
         if intEq(Flags.getConfigEnum(Flags.GRAMMAR), Flags.PDEMODELICA) then
