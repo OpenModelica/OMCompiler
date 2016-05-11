@@ -436,12 +436,14 @@ int freeSolverData(DATA* data, SOLVER_INFO* solverInfo)
  *  \param [in]  [pInitMethod] user defined initialization method
  *  \param [in]  [pInitFile] extra argument for initialization-method "file"
  *  \param [in]  [initTime] extra argument for initialization-method "file"
- *  \param [in]  [lambda_steps] ???
+ *  \param [in]  [lambda_steps] number of steps for homotopy method
+ *  \param [in]  [override] -override value
+ *  \param [in]  [overrideFile] -overrideFile value
  *
  *  This function starts the initialization process of the model .
  */
 int initializeModel(DATA* data, threadData_t *threadData, const char* init_initMethod,
-    const char* init_file, double init_time, int lambda_steps)
+    const char* init_file, double init_time, int lambda_steps, const char *override, const char *overrideFile)
 {
   TRACE_PUSH
   int retValue = 0;
@@ -469,7 +471,7 @@ int initializeModel(DATA* data, threadData_t *threadData, const char* init_initM
   {
     int success = 0;
     MMC_TRY_INTERNAL(simulationJumpBuffer)
-    if(initialization(data, threadData, init_initMethod, init_file, init_time, lambda_steps))
+    if(initialization(data, threadData, init_initMethod, init_file, init_time, lambda_steps, override, overrideFile))
     {
       warningStreamPrint(LOG_STDOUT, 0, "Error in initialization. Storing results and exiting.\nUse -lv=LOG_INIT -w for more information.");
       simInfo->stopTime = simInfo->startTime;
@@ -634,7 +636,7 @@ int finishSimulation(DATA* data, threadData_t *threadData, SOLVER_INFO* solverIn
  *  This is the main function of the solver, it performs the simulation.
  */
 int solver_main(DATA* data, threadData_t *threadData, const char* init_initMethod, const char* init_file,
-    double init_time, int lambda_steps, int solverID, const char* outputVariablesAtEnd, const char *argv_0)
+    double init_time, int lambda_steps, int solverID, const char* outputVariablesAtEnd, const char *argv_0, const char *override, const char *overrideFile)
 {
   TRACE_PUSH
 
@@ -676,7 +678,7 @@ int solver_main(DATA* data, threadData_t *threadData, const char* init_initMetho
 
   /* initialize all parts of the model */
   if(0 == retVal) {
-    retVal = initializeModel(data, threadData, init_initMethod, init_file, init_time, lambda_steps);
+    retVal = initializeModel(data, threadData, init_initMethod, init_file, init_time, lambda_steps, override, overrideFile);
   }
   omc_alloc_interface.collect_a_little();
 

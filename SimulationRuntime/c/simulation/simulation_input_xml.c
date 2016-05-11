@@ -196,15 +196,15 @@ typedef struct omc_ModelInput
   omc_ModelVariables**  lastCT; /* type (classification) */
 } omc_ModelInput;
 
-// a map for overrides
+/* a map for overrides */
 typedef hash_string_string omc_CommandLineOverrides;
-// a map to find out which names were used
+/* a map to find out which names were used */
 #define OMC_OVERRIDE_UNUSED 0
 #define OMC_OVERRIDE_USED   1
 typedef hash_string_long omc_CommandLineOverridesUses;
 
-// function to handle command line settings override
-void doOverride(omc_ModelInput *mi, MODEL_DATA* modelData, const char* override, const char* overrideFile);
+/* function to handle command line settings override */
+void doOverrideSettings(omc_ModelInput *mi, MODEL_DATA* modelData, const char* overrideSettings);
 
 static const double REAL_MIN = -DBL_MAX;
 static const double REAL_MAX = DBL_MAX;
@@ -422,7 +422,7 @@ void read_input_xml(MODEL_DATA* modelData,
     SIMULATION_INFO* simulationInfo)
 {
   omc_ModelInput mi = {0};
-  const char *filename, *guid, *override, *overrideFile;
+  const char *filename, *guid, *overrideSettings;
   FILE* file = NULL;
   XML_Parser parser = NULL;
   hash_string_long *mapAlias = NULL, *mapAliasParam = NULL;
@@ -514,10 +514,9 @@ void read_input_xml(MODEL_DATA* modelData,
     throwStreamPrint(NULL, "see last warning");
   }
 
-  // deal with override
-  override = omc_flagValue[FLAG_OVERRIDE];
-  overrideFile = omc_flagValue[FLAG_OVERRIDE_FILE];
-  doOverride(&mi, modelData, override, overrideFile);
+  /* deal with override of simulation settings */
+  overrideSettings = omc_flagValue[FLAG_OVERRIDE_SETTINGS];
+  doOverrideSettings(&mi, modelData, overrideSettings);
 
   /* read all the DefaultExperiment values */
   infoStreamPrint(LOG_SIMULATION, 1, "read all the DefaultExperiment values:");
@@ -884,169 +883,60 @@ static const char* getOverrideValue(omc_CommandLineOverrides *mOverrides, omc_Co
   return findHashStringString(mOverrides, name);
 }
 
-void doOverride(omc_ModelInput *mi, MODEL_DATA *modelData, const char *override, const char *overrideFile)
+void doOverrideSettings(omc_ModelInput *mi, MODEL_DATA *modelData, const char *overrideSettings)
 {
-  omc_CommandLineOverrides *mOverrides = NULL;
-  omc_CommandLineOverridesUses *mOverridesUses = NULL, *it = NULL, *ittmp = NULL;
-  mmc_sint_t i;
+  char *value, *key;
   char* overrideStr = NULL;
-  if((override != NULL) && (overrideFile != NULL)) {
-    throwStreamPrint(NULL, "simulation_input_xml.c: usage error you cannot have both -override and -overrideFile active at the same time. see Model -? for more info!");
-  }
+  mmc_sint_t i;
+  const char *strs[] = {"solver", "startTime", "stopTime", "stepSize", "tolerance", "outputFormat", "variableFilter"};
+  char used[] = {0, 0, 0, 0, 0, 0, 0};
 
-  if(override != NULL) {
-    overrideStr = strdup(override);
-  }
-
-  if(overrideFile != NULL) {
-    FILE *infile = NULL;
-    char *line=NULL, *tline=NULL, *tline2=NULL;
-    char *overrideLine;
-    size_t n=0;
-
-    /* read override values from file */
-    infoStreamPrint(LOG_SOLVER, 0, "read override values from file: %s", overrideFile);
-
-    infile = fopen(overrideFile, "rb");
-    if (0==infile) {
-      throwStreamPrint(NULL, "simulation_input_xml.c: could not open the file given to -overrideFile=%s", overrideFile);
-    }
-
-    free(overrideStr);
-    fseek(infile, 0L, SEEK_END);
-    n = ftell(infile);
-    line = (char*) malloc(n+1);
-    line[0] = '\0';
-    fseek(infile, 0L, SEEK_SET);
-    errno = 0;
-    if (1 != fread(line, n, 1, infile)) {
-      free(line);
-      throwStreamPrint(NULL, "simulation_input_xml.c: could not read overrideFile %s: %s", overrideFile, strerror(errno));
-    }
-    line[n] = '\0';
-    overrideLine = (char*) malloc(n+1);
-    overrideLine[0] = '\0';
-    overrideStr = overrideLine;
-    tline = line;
-
-    /* get the lines */
-    while (0 != (tline2=strchr(tline,'\n'))) {
-      *tline2 = '\0';
-
-      tline = trim(tline);
-      // if is comment //, ignore line
-      if (tline[0] && tline[0] != '/' && tline[1] != '/') {
-        if (overrideLine != overrideStr) {
-          overrideLine[0] = ',';
-          ++overrideLine;
-        }
-        overrideLine = strcpy(overrideLine,tline)+strlen(tline);
-      }
-      tline = tline2+1;
-    }
-    fclose(infile);
-    free(line);
-  }
-
-  if (overrideStr != NULL) {
-    char *value, *p;
-    const char *strs[] = {"solver","startTime","stopTime","stepSize","tolerance","outputFormat","variableFilter"};
-    /* read override values */
-    infoStreamPrint(LOG_SOLVER, 0, "read override values: %s", overrideStr);
-    /* fix overrideStr to contain | instead of , for splitting */
-    parseVariableStr(overrideStr);
-    p = strtok(overrideStr, "!");
-
-    while (p) {
-      // split it key = value => map[key]=value
-      value = strchr(p, '=');
-      if (*value == '\0') {
-        warningStreamPrint(LOG_SOLVER, 0, "failed to parse override string %s", p);
-        p = strtok(NULL, "!");
-      }
-      *value = '\0';
-      value++;
-      // map[key]=value
-      addHashStringString(&mOverrides, p, value);
-      addHashStringLong(&mOverridesUses, p, OMC_OVERRIDE_UNUSED);
-
-      infoStreamPrint(LOG_SOLVER, 0, "override %s = %s", p, value);
-
-      // move to next
-      p = strtok(NULL, "!");
-    }
-
-    free(overrideStr);
-
-    // now we have all overrides in mOverrides, override mi now
-    for (i=0; i<sizeof(strs)/sizeof(char*); i++) {
-      if (findHashStringStringNull(mOverrides, strs[i])) {
-        addHashStringString(&mi->de, strs[i], getOverrideValue(mOverrides, &mOverridesUses, strs[i]));
-      }
-    }
-
-    #define CHECK_OVERRIDE(v) \
-      if (findHashStringStringNull(mOverrides, findHashStringString(*findHashLongVar(mi->v,i),"name"))) { \
-        addHashStringString(findHashLongVar(mi->v,i), "start", getOverrideValue(mOverrides, &mOverridesUses, findHashStringString(*findHashLongVar(mi->v,i),"name"))); \
-      }
-
-    // override all found!
-    for(i=0; i<modelData->nStates; i++) {
-      CHECK_OVERRIDE(rSta);
-      CHECK_OVERRIDE(rDer);
-    }
-    for(i=0; i<(modelData->nVariablesReal - 2*modelData->nStates); i++) {
-      CHECK_OVERRIDE(rAlg);
-    }
-    for(i=0; i<modelData->nVariablesInteger; i++) {
-      CHECK_OVERRIDE(iAlg);
-    }
-    for(i=0; i<modelData->nVariablesBoolean; i++) {
-      CHECK_OVERRIDE(bAlg);
-    }
-    for(i=0; i<modelData->nVariablesString; i++) {
-      CHECK_OVERRIDE(sAlg);
-    }
-    for(i=0; i<modelData->nParametersReal; i++) {
-      // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(rPar);
-    }
-    for(i=0; i<modelData->nParametersInteger; i++) {
-      // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(iPar);
-    }
-    for(i=0; i<modelData->nParametersBoolean; i++) {
-      // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(bPar);
-    }
-    for(i=0; i<modelData->nParametersString; i++) {
-      // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(sPar);
-    }
-    for(i=0; i<modelData->nAliasReal; i++) {
-      CHECK_OVERRIDE(rAli);
-    }
-    for(i=0; i<modelData->nAliasInteger; i++) {
-      CHECK_OVERRIDE(iAli);
-    }
-    for(i=0; i<modelData->nAliasBoolean; i++) {
-      CHECK_OVERRIDE(bAli);
-    }
-    for(i=0; i<modelData->nAliasString; i++) {
-      CHECK_OVERRIDE(sAli);
-    }
-
-    // give a warning if an override is not used #3204
-    HASH_ITER(hh, mOverridesUses, it, ittmp) {
-      if (it->val == OMC_OVERRIDE_UNUSED) {
-        warningStreamPrint(LOG_STDOUT, 0, "simulation_input_xml.c: override variable name not found in model: %s\n", it->id);
-      }
-    }
-
-    infoStreamPrint(LOG_SOLVER, 0, "override done!");
-  } else {
+  if(overrideSettings == NULL)
+  {
     infoStreamPrint(LOG_SOLVER, 0, "NO override given on the command line.");
+    return;
   }
+
+  overrideStr = strdup(overrideSettings);
+
+  /* read override values */
+  infoStreamPrint(LOG_SOLVER, 1, "read override settings: %s", overrideStr);
+
+  /* fix overrideStr to contain | instead of , for splitting */
+  parseVariableStr(overrideStr);
+  key = strtok(overrideStr, "!");
+
+  while (key)
+  {
+    /* split it key = value */
+    value = strchr(key, '=');
+    if (*value == '\0')
+    {
+      warningStreamPrint(LOG_SOLVER, 0, "failed to parse override string %s", key);
+      key = strtok(NULL, "!");
+    }
+    *value = '\0';
+    value++;
+
+    for(i=0; i<sizeof(strs)/sizeof(char*); i++)
+    {
+      if (!strcmp(key, strs[i]))
+      {
+        addHashStringString(&mi->de, strs[i], value);
+        if(used[i])
+          warningStreamPrint(LOG_SOLVER, 0, "override %s = %s", strs[i], value);
+        else
+          infoStreamPrint(LOG_SOLVER, 0, "override %s = %s", strs[i], value);
+        used[i] = 1;
+      }
+    }
+
+    /* move to next */
+    key = strtok(NULL, "!");
+  }
+
+  free(overrideStr);
+  messageClose(LOG_SOLVER);
 }
 
 void parseVariableStr(char* variableStr)

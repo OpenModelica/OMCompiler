@@ -478,6 +478,171 @@ int importStartValues(DATA *data, threadData_t *threadData, const char *pInitFil
 }
 #endif
 
+void overrideValue(DATA *data, threadData_t *threadData, const char *key, const char *value)
+{
+  MODEL_DATA *mData = data->modelData;
+  long i;
+
+  for(i=0; i<mData->nVariablesReal; ++i) {
+    if(!strcmp(key, mData->realVarsData[i].info.name)) {
+      mData->realVarsData[i].attribute.start = atof(value);
+      infoStreamPrint(LOG_INIT, 0, "Real %s(start=%g)", mData->realVarsData[i].info.name, mData->realVarsData[i].attribute.start);
+      return;
+    }
+  }
+
+  for(i=0; i<mData->nParametersReal; ++i) {
+    if(!strcmp(key, mData->realParameterData[i].info.name)) {
+      mData->realParameterData[i].attribute.start = atof(value);
+      infoStreamPrint(LOG_INIT, 0, "parameter Real %s(start=%g)", mData->realParameterData[i].info.name, mData->realParameterData[i].attribute.start);
+      return;
+    }
+  }
+
+  for(i=mData->nVariablesReal-mData->nDiscreteReal; i<mData->nDiscreteReal; ++i) {
+    if(!strcmp(key, mData->realParameterData[i].info.name)) {
+      mData->realParameterData[i].attribute.start = atof(value);
+      infoStreamPrint(LOG_INIT, 0, "discrete Real %s(start=%g)", mData->realParameterData[i].info.name, mData->realParameterData[i].attribute.start);
+      return;
+    }
+  }
+
+  for(i=0; i<mData->nParametersInteger; ++i) {
+    if(!strcmp(key, mData->integerParameterData[i].info.name)) {
+      mData->integerParameterData[i].attribute.start = atoi(value);
+      infoStreamPrint(LOG_INIT, 0, "parameter Integer %s(start=%ld)", mData->integerParameterData[i].info.name, mData->integerParameterData[i].attribute.start);
+      return;
+    }
+  }
+
+  for(i=0; i<mData->nParametersBoolean; ++i) {
+    if(!strcmp(key, mData->booleanParameterData[i].info.name)) {
+      mData->booleanParameterData[i].attribute.start = strcmp("false", value) ? 0 : 1;
+      infoStreamPrint(LOG_INIT, 0, "parameter Boolean %s(start=%s)", mData->booleanParameterData[i].info.name, mData->booleanParameterData[i].attribute.start ? "true" : "false");
+      return;
+    }
+  }
+
+  warningStreamPrint(LOG_INIT, 0, "unable to override variable %s", key);
+}
+
+static char* trim(char *str) {
+  char *res=str,*end=str+strlen(str)-1;
+  while (isspace(*res)) {
+    res++;
+  }
+  while (isspace(*end)) {
+    *end='\0';
+    end--;
+  }
+  return res;
+}
+
+/*! \fn int doOverride(DATA *data, threadData_t *threadData, const char *override, const char *overrideFile)
+ *
+ *  \param [ref] [data]
+ *  \param [ref] [threadData]
+ *  \param [in]  [override]
+ *  \param [in]  [overrideFile]
+ *
+ *  \author lochel
+ */
+int doOverride(DATA *data, threadData_t *threadData, const char *override, const char *overrideFile)
+{
+  char* overrideStr = NULL;
+
+  if(strcmp(override, "") && strcmp(overrideFile, "")) {
+    throwStreamPrint(NULL, "It is not possible to have both -override and -overrideFile active at the same time.\nSee 'Model -?' for more info!");
+    return 1;
+  }
+
+  if(strcmp(override, "")) {
+    overrideStr = strdup(override);
+  }
+
+  if(strcmp(overrideFile, "")) {
+    FILE *infile = NULL;
+    char *line=NULL, *tline=NULL, *tline2=NULL;
+    char *overrideLine;
+    size_t n=0;
+
+    /* read override values from file */
+    infoStreamPrint(LOG_INIT, 0, "read override values from file: %s", overrideFile);
+
+    infile = fopen(overrideFile, "rb");
+    if (0==infile) {
+      throwStreamPrint(NULL, "initialization.c: could not open the file given to -overrideFile=%s", overrideFile);
+    }
+
+    free(overrideStr);
+    fseek(infile, 0L, SEEK_END);
+    n = ftell(infile);
+    line = (char*) malloc(n+1);
+    line[0] = '\0';
+    fseek(infile, 0L, SEEK_SET);
+    errno = 0;
+    if (1 != fread(line, n, 1, infile)) {
+      free(line);
+      throwStreamPrint(NULL, "initialization.c: could not read overrideFile %s: %s", overrideFile, strerror(errno));
+    }
+    line[n] = '\0';
+    overrideLine = (char*) malloc(n+1);
+    overrideLine[0] = '\0';
+    overrideStr = overrideLine;
+    tline = line;
+
+    /* get the lines */
+    while (0 != (tline2=strchr(tline,'\n'))) {
+      *tline2 = '\0';
+
+      tline = trim(tline);
+      // if is comment //, ignore line
+      if (tline[0] && tline[0] != '/' && tline[1] != '/') {
+        if (overrideLine != overrideStr) {
+          overrideLine[0] = ',';
+          ++overrideLine;
+        }
+        overrideLine = strcpy(overrideLine,tline)+strlen(tline);
+      }
+      tline = tline2+1;
+    }
+    fclose(infile);
+    free(line);
+  }
+
+  if (overrideStr != NULL) {
+    char *value, *key;
+
+    /* read override values */
+    infoStreamPrint(LOG_INIT, 1, "read override values: %s", overrideStr);
+
+    /* fix overrideStr to contain | instead of , for splitting */
+    parseVariableStr(overrideStr);
+    key = strtok(overrideStr, "!");
+
+    while (key) {
+      // split it key = value
+      value = strchr(key, '=');
+      if (*value == '\0') {
+        warningStreamPrint(LOG_INIT, 0, "failed to parse override string %s", key);
+        key = strtok(NULL, "!");
+      }
+      *value = '\0';
+      value++;
+
+      overrideValue(data, threadData, key, value);
+
+      // move to next
+      key = strtok(NULL, "!");
+    }
+
+    free(overrideStr);
+    messageClose(LOG_INIT);
+  }
+
+  return 0;
+}
+
 /*! \fn initSample
  *
  *  \param [ref] [data]
@@ -517,13 +682,17 @@ void initSample(DATA* data, threadData_t *threadData, double startTime, double s
 /*! \fn int initialization(DATA *data, const char* pInitMethod, const char* pOptiMethod, const char* pInitFile, double initTime)
  *
  *  \param [ref] [data]
+ *  \param [ref] [threadData]
  *  \param [in]  [pInitMethod] user defined initialization method
- *  \param [in]  [pInitFile] extra argument for initialization-method "file"
- *  \param [in]  [initTime] extra argument for initialization-method "file"
+ *  \param [in]  [pInitFile]
+ *  \param [in]  [initTime]
+ *  \param [in]  [lambda_steps] number of steps for homotopy method
+ *  \param [in]  [override] -override value
+ *  \param [in]  [overrideFile] -overrideFile value
  *
  *  \author lochel
  */
-int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod, const char* pInitFile, double initTime, int lambda_steps)
+int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod, const char* pInitFile, double initTime, int lambda_steps, const char *override, const char *overrideFile)
 {
   TRACE_PUSH
   int initMethod = IIM_SYMBOLIC; /* default method */
@@ -547,6 +716,15 @@ int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod
     }
   }
 #endif
+  /* import start values from override flags */
+  if(strcmp(override, "") || strcmp(overrideFile, ""))
+  {
+    if(doOverride(data, threadData, override, overrideFile)) {
+      TRACE_POP
+      return 1;
+    }
+  }
+
   /* set up all variables with their start-values */
   setAllVarsToStart(data);
 
