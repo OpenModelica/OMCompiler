@@ -37,28 +37,30 @@ encapsulated package FindZeroCrossings
 
 "
 
-public import Absyn;
-public import BackendDAE;
-public import DAE;
-public import FCore;
+import Absyn;
+import BackendDAE;
+import DAE;
+import FCore;
 
-protected import BackendDAEOptimize;
-protected import BackendDAEUtil;
-protected import BackendDump;
-protected import BackendEquation;
-protected import BackendVariable;
-protected import CheckModel;
-protected import ComponentReference;
-protected import DAEDump;
-protected import Error;
-protected import Expression;
-protected import ExpressionDump;
-protected import Flags;
-protected import HashTableExpToIndex;
-protected import List;
-protected import MetaModelica.Dangerous;
-protected import SynchronousFeatures;
-protected import Util;
+protected
+
+import BackendDAEOptimize;
+import BackendDAEUtil;
+import BackendDump;
+import BackendEquation;
+import BackendVariable;
+import CheckModel;
+import ComponentReference;
+import DAEDump;
+import Error;
+import Expression;
+import ExpressionDump;
+import Flags;
+import HashTableExpToIndex;
+import List;
+import MetaModelica.Dangerous;
+import SynchronousFeatures;
+import Util;
 
 // =============================================================================
 // section for preOptModule >>encapsulateWhenConditions<<
@@ -95,7 +97,7 @@ algorithm
   eqns_ := BackendEquation.listEquation(eqns);
   vars_ := BackendVariable.listVar(vars);
   syst := BackendDAEUtil.createEqSystem(vars_, eqns_, {}, BackendDAE.UNSPECIFIED_PARTITION(), BackendEquation.emptyEqns());
-  systs := listAppend(systs, {syst});
+  systs := syst::systs;
 
   outDAE := BackendDAE.DAE(systs, shared);
   if index > 1 then
@@ -906,7 +908,7 @@ algorithm
       e_1 = DAE.LUNARY(op, e1);
       zc = createZeroCrossing(e_1, {eq_count});
       zc_lst = List.select1(zeroCrossings, zcEqual, zc);
-      zeroCrossings = if listEmpty(zc_lst) then listAppend(zeroCrossings, {zc}) else zeroCrossings;
+      zeroCrossings = if listEmpty(zc_lst) then zc::zeroCrossings else zeroCrossings;
       if Flags.isSet(Flags.RELIDX) then
         BackendDump.debugExpStr(e_1, "\n");
       end if;
@@ -923,7 +925,7 @@ algorithm
       e_1 = DAE.LBINARY(e_1, op, e_2);
       zc = createZeroCrossing(e_1, {eq_count});
       zc_lst = List.select1(zeroCrossings, zcEqual, zc);
-      zeroCrossings = if listEmpty(zc_lst) then listAppend(zeroCrossings, {zc}) else zeroCrossings;
+      zeroCrossings = if listEmpty(zc_lst) then zc::zeroCrossings else zeroCrossings;
       if Flags.isSet(Flags.RELIDX) then
         BackendDump.dumpZeroCrossingList(zeroCrossings, "");
       end if;
@@ -1093,7 +1095,7 @@ algorithm
     case (DAE.CALL(path=Absyn.IDENT(name="sample")), (iterator, inExpLst, range, (zeroCrossings, relations, samples, numRelations, numMathFunctions), tp1 as (alg_indx, _, _))) equation
       eqs = {alg_indx};
       zc = createZeroCrossing(inExp, eqs);
-      samples = listAppend(samples, {zc});
+      samples = zc::samples;
       // lochel: don't merge zero crossings in algorithms (see #3358)
       // samples = mergeZeroCrossings(samples);
       if Flags.isSet(Flags.RELIDX) then
@@ -1117,7 +1119,7 @@ algorithm
       e_1 = DAE.LUNARY(op, e1);
       (explst, itmp) = replaceIteratorWithStaticValues(e_1, iterator, inExpLst, numRelations);
       zc_lst = createZeroCrossings(explst, {alg_indx});
-      zc_lst = listAppend(zeroCrossings, zc_lst);
+      zc_lst = listAppend(zc_lst, zeroCrossings);
       // lochel: don't merge zero crossings in algorithms (see #3358)
       // zc_lst = mergeZeroCrossings(zc_lst);
       itmp = (listLength(zc_lst)-listLength(zeroCrossings));
@@ -1137,7 +1139,7 @@ algorithm
       e_1 = DAE.LUNARY(op, e1);
       zc = createZeroCrossing(e_1, {alg_indx});
       zc_lst = List.select1(zeroCrossings, zcEqual, zc);
-      zeroCrossings = if listEmpty(zc_lst) then listAppend(zeroCrossings, {zc}) else zeroCrossings;
+      zeroCrossings = if listEmpty(zc_lst) then zc::zeroCrossings else zeroCrossings;
       if Flags.isSet(Flags.RELIDX) then
         print("collectZCAlgsFor LUNARY result zc: ");
         BackendDump.debugExpStr(e_1, "\n");
@@ -1164,7 +1166,7 @@ algorithm
       e_1 = DAE.LBINARY(e_1, op, e_2);
       (explst, itmp) = replaceIteratorWithStaticValues(e_1, iterator, inExpLst, numRelations1);
       zc_lst = createZeroCrossings(explst, {alg_indx});
-      zc_lst = listAppend(zeroCrossings, zc_lst);
+      zc_lst = listAppend(zc_lst, zeroCrossings);
       // lochel: don't merge zero crossings in algorithms (see #3358)
       // zc_lst = mergeZeroCrossings(zc_lst);
       itmp = (listLength(zc_lst)-listLength(zeroCrossings));
@@ -1185,7 +1187,7 @@ algorithm
       e_1 = DAE.LBINARY(e_1, op, e_2);
       zc = createZeroCrossing(e_1, {alg_indx});
       zc_lst = List.select1(zeroCrossings, zcEqual, zc);
-      zeroCrossings = if listEmpty(zc_lst) then listAppend(zeroCrossings, {zc}) else zeroCrossings;
+      zeroCrossings = if listEmpty(zc_lst) then zc::zeroCrossings else zeroCrossings;
       if Flags.isSet(Flags.RELIDX) then
         BackendDump.dumpZeroCrossingList(zeroCrossings, "collectZCAlgsFor LBINARY2 result zc");
       end if;
@@ -1214,7 +1216,7 @@ algorithm
         print(" number of new zc: " + intString(listLength(explst)) + "\n");
       end if;
       zcLstNew = createZeroCrossings(explst, {alg_indx});
-      zc_lst = listAppend(relations, zcLstNew);
+      zc_lst = listAppend(zcLstNew, relations);
       // lochel: don't merge zero crossings in algorithms (see #3358)
       // zc_lst = mergeZeroCrossings(zc_lst);
       if Flags.isSet(Flags.RELIDX) then
@@ -1225,7 +1227,7 @@ algorithm
         print(" itmp: " + intString(itmp) + "\n");
       end if;
       numRelations = intAdd(itmp, numRelations);
-      zeroCrossings = listAppend(zeroCrossings, zcLstNew);
+      zeroCrossings = listAppend(zcLstNew, zeroCrossings);
       // lochel: don't merge zero crossings in algorithms (see #3358)
       // zeroCrossings = mergeZeroCrossings(zeroCrossings);
       if Flags.isSet(Flags.RELIDX) then
@@ -1240,12 +1242,12 @@ algorithm
       false = Expression.expContains(e2, iterator);
       eres = DAE.RELATION(e1, op, e2, numRelations, NONE());
       zc = createZeroCrossing(eres, {alg_indx});
-      zc_lst = listAppend(relations, {zc});
+      zc_lst = zc::relations;
       // lochel: don't merge zero crossings in algorithms (see #3358)
       // zc_lst = mergeZeroCrossings(zc_lst);
       itmp = (listLength(zc_lst)-listLength(relations));
       numRelations = numRelations + itmp;
-      zeroCrossings = listAppend(zeroCrossings, {zc});
+      zeroCrossings = zc::zeroCrossings;
       // lochel: don't merge zero crossings in algorithms (see #3358)
       // zeroCrossings = mergeZeroCrossings(zeroCrossings);
       if Flags.isSet(Flags.RELIDX) then
@@ -1422,19 +1424,19 @@ algorithm
 
     case DAE.RELATION() equation
       {} = duplicate;
-      zcLst = listAppend(inZeroCrossings, {inZeroCrossing});
+      zcLst = inZeroCrossing::inZeroCrossings;
     then (inRelation, zcLst, inIndex+1);
 
     // math function with one argument and index
     case DAE.CALL(expLst={_, _}) equation
       {} = duplicate;
-      zcLst = listAppend(inZeroCrossings, {inZeroCrossing});
+      zcLst = inZeroCrossing::inZeroCrossings;
     then (inRelation, zcLst, inIndex+1);
 
     // math function with two arguments and index
     case DAE.CALL(expLst={_, _, _}) equation
       {} = duplicate;
-      zcLst = listAppend(inZeroCrossings, {inZeroCrossing});
+      zcLst = inZeroCrossing::inZeroCrossings;
     then (inRelation, zcLst, inIndex+2);
 
     case _ equation
