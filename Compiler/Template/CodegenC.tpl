@@ -614,19 +614,40 @@ template simulationFile_dly(SimCode simCode)
   end match
 end simulationFile_dly;
 
-template simulationFile_bnd(SimCode simCode)
+template simulationFile_attr(SimCode simCode)
 "update bound parameters and variable attributes (start, nominal, min, max)"
 ::=
   match simCode
     case simCode as SIMCODE(__) then
     <<
-    /* update bound parameters and variable attributes (start, nominal, min, max) */
+    /* update variable attributes (start, nominal, min, max) */
     <%simulationFileHeader(simCode)%>
     #if defined(__cplusplus)
     extern "C" {
     #endif
 
     <%functionUpdateBoundVariableAttributes(simCode, startValueEquations, nominalValueEquations, minValueEquations, maxValueEquations, modelNamePrefix(simCode))%>
+
+    #if defined(__cplusplus)
+    }
+    #endif
+    <%\n%>
+    >>
+    /* adrpo: leave a newline at the end of file to get rid of the warning */
+  end match
+end simulationFile_attr;
+
+template simulationFile_bnd(SimCode simCode)
+"update bound parameters and variable attributes (start, nominal, min, max)"
+::=
+  match simCode
+    case simCode as SIMCODE(__) then
+    <<
+    /* update bound parameters */
+    <%simulationFileHeader(simCode)%>
+    #if defined(__cplusplus)
+    extern "C" {
+    #endif
 
     <%functionUpdateBoundParameters(parameterEquations, modelNamePrefix(simCode))%>
 
@@ -5470,7 +5491,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   CFILES=<%fileNamePrefix%>_functions.c <%fileNamePrefix%>_records.c \
   <%fileNamePrefix%>_01exo.c <%fileNamePrefix%>_02nls.c <%fileNamePrefix%>_03lsy.c <%fileNamePrefix%>_04set.c <%fileNamePrefix%>_05evt.c <%fileNamePrefix%>_06inz.c <%fileNamePrefix%>_07dly.c \
   <%fileNamePrefix%>_08bnd.c <%fileNamePrefix%>_09alg.c <%fileNamePrefix%>_10asr.c <%fileNamePrefix%>_11mix.c <%fileNamePrefix%>_12jac.c <%fileNamePrefix%>_13opt.c <%fileNamePrefix%>_14lnz.c \
-  <%fileNamePrefix%>_15syn.c <%fileNamePrefix%>_16dae.c
+  <%fileNamePrefix%>_15syn.c <%fileNamePrefix%>_16dae.c <%fileNamePrefix%>_17attr.c
   OFILES=$(CFILES:.c=.obj)
   GENERATEDFILES=$(MAINFILE) $(FILEPREFIX)_functions.h $(FILEPREFIX).makefile $(CFILES)
 
@@ -5521,7 +5542,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   CFILES=<%fileNamePrefix%>_functions.c <%fileNamePrefix%>_records.c \
   <%fileNamePrefix%>_01exo.c <%fileNamePrefix%>_02nls.c <%fileNamePrefix%>_03lsy.c <%fileNamePrefix%>_04set.c <%fileNamePrefix%>_05evt.c <%fileNamePrefix%>_06inz.c <%fileNamePrefix%>_07dly.c \
   <%fileNamePrefix%>_08bnd.c <%fileNamePrefix%>_09alg.c <%fileNamePrefix%>_10asr.c <%fileNamePrefix%>_11mix.c <%fileNamePrefix%>_12jac.c <%fileNamePrefix%>_13opt.c <%fileNamePrefix%>_14lnz.c \
-  <%fileNamePrefix%>_15syn.c <%fileNamePrefix%>_16dae.c
+  <%fileNamePrefix%>_15syn.c <%fileNamePrefix%>_16dae.c <%fileNamePrefix%>_17attr.c
   OFILES=$(CFILES:.c=.o)
   GENERATEDFILES=$(MAINFILE) <%fileNamePrefix%>.makefile <%fileNamePrefix%>_literals.h <%fileNamePrefix%>_functions.h $(CFILES)
 
