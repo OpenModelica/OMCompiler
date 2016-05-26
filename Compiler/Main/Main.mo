@@ -491,9 +491,10 @@ algorithm
 
         Print.clearBuf();
         execStat("Transformations before Dump");
-        s = DAEDump.dumpStr(d, funcs);
+        if not Config.silent() then
+          DAEDump.dumpStdout(d, funcs);
+        end if;
         execStat("DAEDump done");
-        Print.printBuf(s);
         if Flags.isSet(Flags.DAE_DUMP_GRAPHV) then
           DAEDump.dumpGraphviz(d);
         end if;
@@ -502,10 +503,11 @@ algorithm
         // Do any transformations required before going into code generation, e.g. if-equations to expressions.
         d = if boolNot(Flags.isSet(Flags.TRANSFORMS_BEFORE_DUMP)) then DAEUtil.transformationsBeforeBackend(cache,env,d) else  d;
 
+        execStat("Transformations before backend");
+
         if not Config.silent() then
           print(Print.getString());
         end if;
-        execStat("Transformations before backend");
 
         // Run the backend.
         optimizeDae(cache, env, d, p, cname);

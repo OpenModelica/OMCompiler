@@ -44,7 +44,7 @@ class File
 static inline void* om_file_new(void *fromID)
 {
   if (isNone(fromID)) {
-    FILE **res = (FILE**) GC_malloc(sizeof(FILE*));
+    FILE **res = (FILE**) GC_malloc(2*sizeof(FILE*));
     res[0] = NULL;
     res[1] = 0;
     return res;
@@ -68,7 +68,9 @@ static inline void om_file_free(FILE **file)
     ((long**)file)[1]--;
     return;
   }
-  fclose(*file);
+  if (*file && *file!=stdout) {
+    fclose(*file);
+  }
   *file = 0;
   GC_free(file);
 }
@@ -91,7 +93,7 @@ external "C" om_file_open(file,filename,mode) annotation(Include="
 #include \"ModelicaUtilities.h\"
 static inline void om_file_open(FILE **file,const char *filename,int mode)
 {
-  if (*file) {
+  if (*file && *file!=stdout) {
     fclose(*file);
   }
   *file = fopen(filename, mode == 1 ? \"rb\" : \"wb\");
@@ -102,6 +104,23 @@ static inline void om_file_open(FILE **file,const char *filename,int mode)
 #endif
 ");
 end open;
+
+function openStdout
+  input File file;
+external "C" om_file_open_stdout(file) annotation(Include="
+#ifndef __OMC_FILE_OPEN_STDOUT
+#define __OMC_FILE_OPEN_STDOUT
+#include <stdio.h>
+static inline void om_file_open_stdout(FILE **file)
+{
+  if (*file && *file!=stdout) {
+    fclose(*file);
+  }
+  *file = stdout;
+}
+#endif
+");
+end openStdout;
 
 function write
   input File file;

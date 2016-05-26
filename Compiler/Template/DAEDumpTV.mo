@@ -1417,5 +1417,14 @@ package Flags
   end getConfigBool;
 end Flags;
 
+package builtin
+
+  function listEmpty
+    replaceable type TypeVar subtypeof Any;
+    input list<TypeVar> lst;
+    output Boolean b;
+  end listEmpty;
+
+end builtin;
 
 end DAEDumpTV;

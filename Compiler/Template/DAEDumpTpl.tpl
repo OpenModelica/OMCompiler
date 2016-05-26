@@ -9,17 +9,8 @@ import SCodeDumpTpl;
  *****************************************************************************/
 template dumpDAE(list<DAEDump.compWithSplitElements> fixedDaeList, DAEDump.functionList funLists)
 ::=
- let comp_str =(fixedDaeList |> dae => dumpComp(dae) ;separator="\n")
- let fun_str = match funLists case FUNCTION_LIST(__) then dumpFunctions(funcs)
-   if fun_str then
-     <<
-     <%fun_str%><%\n\n%>
-     <%comp_str%>
-     >>
-   else
-     <<
-     <%comp_str%>
-     >>
+ (match funLists case FUNCTION_LIST(__) then (dumpFunctions(funcs) + (if listEmpty(funcs) then "" else \n\n))) +
+ (fixedDaeList |> dae => dumpComp(dae) ;separator="\n")
 end dumpDAE;
 
 template dumpComp(DAEDump.compWithSplitElements fixedDae)

@@ -2046,7 +2046,7 @@ public function tplCallWithFailError2
   input Tpl_Fun inFun;
   input ArgType1 inArgA;
   input ArgType2 inArgB;
-  output Text outTxt;
+  input output Text txt = emptyTxt;
 
   partial function Tpl_Fun
     input Text in_txt;
@@ -2057,15 +2057,12 @@ public function tplCallWithFailError2
 protected
   ArgType1 argA;
   ArgType2 argB;
-  Text txt;
 algorithm
- outTxt := matchcontinue(inFun, inArgA, inArgB)
+ txt := matchcontinue(inFun, inArgA, inArgB)
     local
       String file,symbol;
     case(_, argA, argB)
-      equation
-        txt = inFun(emptyTxt, argA, argB);
-      then txt;
+      then inFun(txt, argA, argB);
     else
       equation
         addTemplateErrorFunc(2, inFun);
@@ -2476,6 +2473,16 @@ algorithm
   File.open(file, fileName, File.Mode.Write);
   text := writeText(FILE_TEXT(File.getReference(file), arrayCreate(1, 0), arrayCreate(1, 0), arrayCreate(1, true), arrayCreate(1, {})), text);
 end redirectToFile;
+
+public function redirectToStdout
+"Magic sourceInfo() function implementation"
+  input output Text text;
+protected
+  File.File file = File.File();
+algorithm
+  File.openStdout(file);
+  text := writeText(FILE_TEXT(File.getReference(file), arrayCreate(1, 0), arrayCreate(1, 0), arrayCreate(1, true), arrayCreate(1, {})), text);
+end redirectToStdout;
 
 public function closeFile
 "Magic sourceInfo() function implementation"
