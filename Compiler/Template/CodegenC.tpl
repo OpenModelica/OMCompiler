@@ -2411,7 +2411,6 @@ template functionInitialNonLinearSystemsTemp(list<SimEqSystem> allEquations, Str
        <%innerEqs%>
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].equationIndex = <%nls.index%>;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].size = <%size%>;
-       nonLinearSystemData[<%nls.indexNonLinearSystem%>].method = 0;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].homotopySupport = <%boolStrC(nls.homotopySupport)%>;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].mixedSystem = <%boolStrC(nls.mixedSystem)%>;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].residualFunc = residualFunc<%nls.index%>;
@@ -2439,7 +2438,6 @@ template functionInitialNonLinearSystemsTemp(list<SimEqSystem> allEquations, Str
        <%innerEqs%>
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].equationIndex = <%nls.index%>;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].size = <%size%>;
-       nonLinearSystemData[<%nls.indexNonLinearSystem%>].method = 0;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].homotopySupport = <%if nls.homotopySupport then '1' else '0'%>;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].mixedSystem = <%if nls.mixedSystem then '1' else '0'%>;
        nonLinearSystemData[<%nls.indexNonLinearSystem%>].residualFunc = residualFunc<%nls.index%>;
@@ -2453,7 +2451,6 @@ template functionInitialNonLinearSystemsTemp(list<SimEqSystem> allEquations, Str
        <%innerEqs2%>
        nonLinearSystemData[<%at.indexNonLinearSystem%>].equationIndex = <%at.index%>;
        nonLinearSystemData[<%at.indexNonLinearSystem%>].size = <%size2%>;
-       nonLinearSystemData[<%at.indexNonLinearSystem%>].method = 0;
        nonLinearSystemData[<%at.indexNonLinearSystem%>].homotopySupport = <%if at.homotopySupport then '1' else '0'%>;
        nonLinearSystemData[<%at.indexNonLinearSystem%>].mixedSystem = <%if at.mixedSystem then '1' else '0'%>;
        nonLinearSystemData[<%at.indexNonLinearSystem%>].residualFunc = residualFunc<%at.index%>;
@@ -5091,9 +5088,9 @@ template equationNonlinear(SimEqSystem eq, Context context, String modelNamePref
       SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%nls.index%>).profileBlockIndex,-1);
       >>
       %>
-      /* extrapolate data */
+      /* get old value */
       <%nls.crefs |> name hasindex i0 =>
-        'data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsxOld[<%i0%>] = <%cref(name)%>;'
+        'data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsxOld[<%i0%>] = <%crefOld(name, 1)%>;'
       ;separator="\n"%>
       retValue = solve_nonlinear_system(data, threadData, <%nls.indexNonLinearSystem%>);
       /* check if solution process was successful */
@@ -5133,16 +5130,9 @@ template equationNonlinearAlternativeTearing(SimEqSystem eq, Context context, St
       SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%at.index%>).profileBlockIndex,-1);
       >>
       %>
-      /* extrapolate data */
+      /* get old value */
       <%at.crefs |> name hasindex i0 =>
-        let namestr = cref(name)
-        let namestrOld1 = crefOld(name,1)
-        let namestrOld2 = crefOld(name,2)
-        <<
-        data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsx[<%i0%>] = <%namestr%>;
-        data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsxOld[<%i0%>] = <%namestrOld1%>;
-        data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsxExtrapolation[<%i0%>] = extraPolate(data, <%namestrOld1%>, <%namestrOld2%>, <%crefAttributes(name)%>.min, <%crefAttributes(name)%>.max);
-        >>
+        'data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsxOld[<%i0%>] = <%crefOld(name, 1)%>;'
       ;separator="\n"%>
       retValue = solve_nonlinear_system(data, threadData, <%at.indexNonLinearSystem%>);
       /* The casual tearing set found a solution */
