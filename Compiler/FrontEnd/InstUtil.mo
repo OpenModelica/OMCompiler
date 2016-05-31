@@ -8391,7 +8391,7 @@ end propagateModFinal;
 //------------------------------
 //------  PDE extension:  ------
 //------------------------------
-
+public type DomainFieldOpt = Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>>;
 public type DomainFieldsLst = list<tuple<DAE.ComponentRef,list<Absyn.ComponentRef>>>;
 
 public function elabField
@@ -8407,7 +8407,7 @@ public function elabField
   input SourceInfo inInfo;
   output DAE.Dimensions outDims;
   output DAE.Mod outMod;
-  output Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>> outFieldDomOpt;
+  output DomainFieldOpt outFieldDomOpt;
 
 algorithm
   (outDims, outMod, outFieldDomOpt) := match(attr, inMod)
@@ -8529,7 +8529,7 @@ end addEach;
 
 public function optAppendField
   input DomainFieldsLst inDomFieldsLst;
-  input Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>> fieldDomOpt;
+  input DomainFieldOpt fieldDomOpt;
   output DomainFieldsLst outDomFieldsLst;
 algorithm
   outDomFieldsLst := matchcontinue fieldDomOpt
