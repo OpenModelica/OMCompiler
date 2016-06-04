@@ -506,7 +506,7 @@ algorithm
         (globalKnownVars,cache,repl,repleval);
     case (BackendDAE.VAR(varName = cr,varKind=BackendDAE.PARAM(),bindValue=SOME(value)),_,_,_,_,_,_,_)
       equation
-        true = BackendVariable.varFixed(var);
+        true = BackendVariable.isVarFixed(var);
         e = ValuesUtil.valueExp(value);
         v = BackendVariable.setVarFinal(var, true);
         // update Vararray
@@ -521,7 +521,7 @@ algorithm
     //waurich: if there is unevaluated binding, dont take the start value as a binding replacement. compute the unevaluated binding!
     case (BackendDAE.VAR(varName = cr,varKind=BackendDAE.PARAM(),values=attr),_,_,_,_,_,_,_)
       equation
-        true = BackendVariable.varFixed(var);
+        true = BackendVariable.isVarFixed(var);
         false = BackendVariable.varHasBindExp(var);
         e = DAEUtil.getStartAttrFail(attr);
         // apply replacements
@@ -586,7 +586,7 @@ algorithm
         (globalKnownVars,cache,repl);
     case BackendDAE.VAR(varName = cr,varKind=BackendDAE.PARAM(),bindValue=SOME(value))
       equation
-        true = BackendVariable.varFixed(var);
+        true = BackendVariable.isVarFixed(var);
         e = ValuesUtil.valueExp(value);
         // save replacement
         repl = BackendVarTransform.addReplacement(repl, cr, e, NONE());
@@ -595,7 +595,7 @@ algorithm
         (globalKnownVars,cache,repl);
     case BackendDAE.VAR(varName = cr,varKind=BackendDAE.PARAM(),values=attr)
       equation
-        true = BackendVariable.varFixed(var);
+        true = BackendVariable.isVarFixed(var);
         e = DAEUtil.getStartAttrFail(attr);
         // applay replacements
         (e,_) = BackendVarTransform.replaceExp(e, repl, NONE());
@@ -864,7 +864,7 @@ algorithm
         (globalKnownVars,repl,repleval,iCache,iMark);
     case (BackendDAE.VAR(varName = cr,varKind=BackendDAE.PARAM(),bindValue=NONE(),values=attr),_,_,_,_,_,_,_,_,_,_)
       equation
-        true = BackendVariable.varFixed(var);
+        true = BackendVariable.isVarFixed(var);
         e = DAEUtil.getStartAttrFail(attr);
         // apply replacements
         (e,true) = BackendVarTransform.replaceExp(e, iReplEvaluate, NONE());

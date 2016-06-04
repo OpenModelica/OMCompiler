@@ -1642,7 +1642,7 @@ protected function toplevelInputOrUnfixed "author: Frenkel TUD 2012-12
   output Boolean b;
 algorithm
   b := BackendVariable.isVarOnTopLevelAndInput(inVar) or
-       BackendVariable.isParam(inVar) and not BackendVariable.varFixed(inVar);
+       BackendVariable.isParam(inVar) and not BackendVariable.isVarFixed(inVar);
 end toplevelInputOrUnfixed;
 
 protected function traversingTimeVarsFinder "author: Frenkel 2012-12"
@@ -2882,7 +2882,7 @@ algorithm
   (fixedset, startvalues, nominalset, minmaxset) := iAttributes;
   // get attributes
   // fixed
-  fixed := BackendVariable.varFixed(inVar);
+  fixed := BackendVariable.isVarFixed(inVar);
   // start, add only if fixed == fixedset or fixed
   start := BackendVariable.varStartValueOption(inVar);
   origin := BackendVariable.varStartOrigin(inVar);

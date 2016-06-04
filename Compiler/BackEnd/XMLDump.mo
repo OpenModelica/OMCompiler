@@ -3318,7 +3318,7 @@ algorithm
                             connectorType = ct)) :: xs),varno,addMMLCode)
       equation
         dumpVariable(intString(varno),ComponentReference.printComponentRefStr(cr),dumpKind(kind),dumpDirectionStr(dir),dumpTypeStr(var_type),
-                     getIndex(kind),getDerName(kind),boolString(BackendVariable.varFixed(v)),dumpFlowStr(ct),
+                     getIndex(kind),getDerName(kind),boolString(BackendVariable.isVarFixed(v)),dumpFlowStr(ct),
                      dumpStreamStr(ct),unparseCommentOptionNoAnnotation(comment));
         dumpBindValueExpression(e,b,addMMLCode);
         //The command below adds information to the XML about the dimension of the
@@ -3381,7 +3381,7 @@ algorithm
                             connectorType = ct)) :: xs),_,varno,_)
       equation
         dumpVariable(intString(varno),ComponentReference.printComponentRefStr(cr),dumpKind(kind),dumpDirectionStr(dir),dumpTypeStr(var_type),
-                        getIndex(kind),getDerName(kind),boolString(BackendVariable.varFixed(v)),dumpFlowStr(ct),dumpStreamStr(ct),
+                        getIndex(kind),getDerName(kind),boolString(BackendVariable.isVarFixed(v)),dumpFlowStr(ct),dumpStreamStr(ct),
                         DAEDump.dumpCommentAnnotationStr(comment));
         dumpBindValueExpression(e,b,addMMLCode);
         //The command below adds information to the XML about the dimension of the

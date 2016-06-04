@@ -100,7 +100,7 @@ algorithm
   outVar.values := DAEUtil.setFixedAttr(oattr, SOME(DAE.BCONST(inBoolean)));
 end setVarFixed;
 
-public function varFixed "author: PA
+public function isVarFixed "author: PA
   Extracts the fixed attribute of a variable.
   The default fixed value is used if not found. Default is true for parameters
   (and constants) and false for variables."
@@ -123,7 +123,7 @@ algorithm
     // rest defaults to false
     else false;
   end match;
-end varFixed;
+end isVarFixed;
 
 public function setVarStartValue "author: Frenkel TUD
   Sets the start value attribute of a variable."
@@ -3429,8 +3429,8 @@ protected
 algorithm
   // get attributes
   // fixed
-  fixed := varFixed(inVar);
-  fixeda := varFixed(inAVar);
+  fixed := isVarFixed(inVar);
+  fixeda := isVarFixed(inAVar);
   // start
   sv := varStartValueOption(inVar);
   sva := varStartValueOption(inAVar);

@@ -5911,7 +5911,7 @@ algorithm
       DAE.ElementSource source;
     case (v as BackendDAE.VAR(varName = cr, bindExp=SOME(exp), source=source), (uniqueEqIndex, eqns))
       equation
-        //false = BackendVariable.varFixed(v);
+        //false = BackendVariable.isVarFixed(v);
         false = BackendVariable.isVarOnTopLevelAndInput(v);
       then
         (v, (uniqueEqIndex+1, SimCode.SES_SIMPLE_ASSIGN(uniqueEqIndex, cr, exp, source)::eqns));
@@ -8270,7 +8270,7 @@ algorithm
         initVal = getStartValue(dlowVar);
         nomVal = getNominalValue(dlowVar);
         // checkInitVal(initVal, source);
-        isFixed = BackendVariable.varFixed(dlowVar);
+        isFixed = BackendVariable.isVarFixed(dlowVar);
         type_ = tp;
         isDiscrete = BackendVariable.isVarDiscrete(dlowVar);
         arrayCref = ComponentReference.getArrayCref(cr);
@@ -8305,7 +8305,7 @@ algorithm
         initVal = getStartValue(dlowVar);
         nomVal = getNominalValue(dlowVar);
         // checkInitVal(initVal, source);
-        isFixed = BackendVariable.varFixed(dlowVar);
+        isFixed = BackendVariable.isVarFixed(dlowVar);
         type_ = tp;
         isDiscrete = BackendVariable.isVarDiscrete(dlowVar);
         arrayCref = ComponentReference.getArrayCref(cr);
@@ -8333,7 +8333,7 @@ algorithm
         initVal = getStartValue(dlowVar);
         nomVal = getNominalValue(dlowVar);
         // checkInitVal(initVal, source);
-        isFixed = BackendVariable.varFixed(dlowVar);
+        isFixed = BackendVariable.isVarFixed(dlowVar);
         type_ = tp;
         isDiscrete = BackendVariable.isVarDiscrete(dlowVar);
         arrayCref = ComponentReference.getArrayCref(cr);

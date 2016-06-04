@@ -460,7 +460,7 @@ protected function toplevelInputOrUnfixed
   output Boolean b;
 algorithm
   b := BackendVariable.isVarOnTopLevelAndInput(inVar) or
-       BackendVariable.isParam(inVar) and not BackendVariable.varFixed(inVar);
+       BackendVariable.isParam(inVar) and not BackendVariable.isVarFixed(inVar);
 end toplevelInputOrUnfixed;
 
 protected function traversingTimeEqnsFinder "author: Frenkel 2010-12"
@@ -909,7 +909,7 @@ algorithm
     case (v as BackendDAE.VAR(varName=varName,varKind=BackendDAE.PARAM(),bindValue=SOME(bindValue),values=values),repl)
       equation
         true = DAEUtil.getProtectedAttr(values);
-        true = BackendVariable.varFixed(v);
+        true = BackendVariable.isVarFixed(v);
         exp = ValuesUtil.valueExp(bindValue);
         repl_1 = BackendVarTransform.addReplacement(repl, varName, exp,NONE());
       then (v,repl_1);

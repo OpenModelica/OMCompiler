@@ -846,7 +846,7 @@ algorithm
     // fixed=false
     case i::rest equation
       param = BackendVariable.getVarAt(inParameters, i);
-      secondaryParams = if (not BackendVariable.varFixed(param)) or 1 == inSecondaryParams[i]
+      secondaryParams = if (not BackendVariable.isVarFixed(param)) or 1 == inSecondaryParams[i]
         then List.fold(inM[i], markIndex, inSecondaryParams)
         else inSecondaryParams;
       secondaryParams = selectSecondaryParameters(rest, inParameters, inM, secondaryParams);
@@ -950,13 +950,13 @@ algorithm
 
     // unfixed state
     case (BackendDAE.VAR(varKind=BackendDAE.STATE()), vars) equation
-      false = BackendVariable.varFixed(inVar);
+      false = BackendVariable.isVarFixed(inVar);
       vars = BackendVariable.addVar(inVar, vars);
     then (inVar, vars);
 
     // unfixed discrete -> pre(vd)
     case (BackendDAE.VAR(varName=cr, varKind=BackendDAE.DISCRETE(), varType=ty, arryDim=arryDim), vars) equation
-      false = BackendVariable.varFixed(inVar);
+      false = BackendVariable.isVarFixed(inVar);
       preCR = ComponentReference.crefPrefixPre(cr);  // cr => $PRE.cr
       preVar = BackendDAE.VAR(preCR, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
       vars = BackendVariable.addVar(preVar, vars);
@@ -1877,7 +1877,7 @@ algorithm
     // discrete-time
     case (var as BackendDAE.VAR(varName=cr, varKind=BackendDAE.DISCRETE(), varType=ty, arryDim=arryDim), (vars, fixvars, eqns, hs)) equation
       preUsed = BaseHashSet.has(cr, hs);
-      isFixed = BackendVariable.varFixed(var);
+      isFixed = BackendVariable.isVarFixed(var);
       startValue = BackendVariable.varStartValue(var);
 
       preCR = ComponentReference.crefPrefixPre(cr);  // cr => $PRE.cr
@@ -1999,7 +1999,7 @@ algorithm
 
     // state
     case (var as BackendDAE.VAR(varName=cr, varKind=BackendDAE.STATE(), varType=ty), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
-      isFixed = BackendVariable.varFixed(var);
+      isFixed = BackendVariable.isVarFixed(var);
       _ = BackendVariable.varStartValueOption(var);
       preUsed = BaseHashSet.has(cr, hs);
 
@@ -2043,7 +2043,7 @@ algorithm
     // discrete (preUsed=true)
     case (var as BackendDAE.VAR(varName=cr, varKind=BackendDAE.DISCRETE(), varType=ty), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
       true = BaseHashSet.has(cr, hs);
-      true = BackendVariable.varFixed(var);
+      true = BackendVariable.isVarFixed(var);
       startValue_ = BackendVariable.varStartValue(var);
 
       var = BackendVariable.setVarFixed(var, false);
@@ -2084,7 +2084,7 @@ algorithm
 
     // parameter without binding and fixed=true
     case (var as BackendDAE.VAR(varName=cr, varKind=BackendDAE.PARAM(), bindExp=NONE()), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
-      true = BackendVariable.varFixed(var);
+      true = BackendVariable.isVarFixed(var);
       startExp = BackendVariable.varStartValueType(var);
 
       s = ComponentReference.printComponentRefStr(cr);
@@ -2107,7 +2107,7 @@ algorithm
     // parameter with binding and fixed=false
     case (var as BackendDAE.VAR(varName=cr, varKind=BackendDAE.PARAM(), bindExp=SOME(bindExp), varType=ty), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
       true = intGt(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 31);
-      false = BackendVariable.varFixed(var);
+      false = BackendVariable.isVarFixed(var);
       var = BackendVariable.setVarKind(var, BackendDAE.VARIABLE());
       var = BackendVariable.setBindExp(var, NONE());
 
@@ -2127,7 +2127,7 @@ algorithm
     // use the binding as start value
     case (var as BackendDAE.VAR(varName=cr, varKind=BackendDAE.PARAM(), bindExp=SOME(bindExp)), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
       true = intLe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 31);
-      false = BackendVariable.varFixed(var);
+      false = BackendVariable.isVarFixed(var);
       var = BackendVariable.setVarKind(var, BackendDAE.VARIABLE());
       var = BackendVariable.setBindExp(var, NONE());
       NONE() = BackendVariable.varStartValueOption(var);
@@ -2146,7 +2146,7 @@ algorithm
     // ignore the binding and use the start value
     case (var as BackendDAE.VAR(varName=cr, varKind=BackendDAE.PARAM(), bindExp=SOME(bindExp)), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
       true = intLe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 31);
-      false = BackendVariable.varFixed(var);
+      false = BackendVariable.isVarFixed(var);
       var = BackendVariable.setVarKind(var, BackendDAE.VARIABLE());
       var = BackendVariable.setBindExp(var, NONE());
       SOME(startExp) = BackendVariable.varStartValueOption(var);
@@ -2181,7 +2181,7 @@ algorithm
     // VARIABLE (fixed=true)
     // DUMMY_STATE
     case (var as BackendDAE.VAR(varName=cr, varType=ty), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
-      true = BackendVariable.varFixed(var);
+      true = BackendVariable.isVarFixed(var);
       isInput = BackendVariable.isVarOnTopLevelAndInput(var);
       startValue_ = BackendVariable.varStartValue(var);
       preUsed = BaseHashSet.has(cr, hs);
@@ -2209,7 +2209,7 @@ algorithm
     // VARIABLE (fixed=false)
     // DUMMY_STATE
     case (var as BackendDAE.VAR(varName=cr, varType=ty), (vars, fixvars, eqns, hs, allPrimaryParameters)) equation
-      false = BackendVariable.varFixed(var);
+      false = BackendVariable.isVarFixed(var);
       isInput = BackendVariable.isVarOnTopLevelAndInput(var);
       preUsed = BaseHashSet.has(cr, hs);
 
