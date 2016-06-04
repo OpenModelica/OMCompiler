@@ -2965,7 +2965,7 @@ algorithm
   // start?
   bstart := isSome(BackendVariable.varStartValueOption(v));
   // fixed?
-  bfixed := BackendVariable.varFixed(v);
+  bfixed := BackendVariable.isVarFixed(v);
   if bstart and bfixed then
     prio1 := 0.5;
     prio2 := 0.5;
