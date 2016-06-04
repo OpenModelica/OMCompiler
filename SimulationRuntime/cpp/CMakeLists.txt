@@ -321,26 +321,8 @@ IF(WIN32)
   SET(MICO_LIB_HOME $ENV{OMDEV}/lib/mico-msys-mingw/)
   SET(MICO_INCLUDE_HOME  $ENV{OMDEV}/include/mico-msys-mingw/)
 
-
-
-
-
-
   SET(INSTALL_OMDEV_LIBS ON)
 ENDIF(WIN32)
-
-#set sundials solvers include and library directories
-IF(MSVC)
- SET(Sundials_Path "${CMAKE_SOURCE_DIR}/../../3rdParty/sundials/build_msvc")
-ELSE(MSVC)
- SET(Sundials_Path "${CMAKE_SOURCE_DIR}/../../3rdParty/sundials/build")
-ENDIF(MSVC)
-SET(SUNDIALS_INLCUDE_HOME  ${Sundials_Path}/include)
-SET(SUNDIALS_LIBRARY_RELEASE_HOME  ${Sundials_Path}/lib)
-MESSAGE(STATUS "Sundials include:")
-MESSAGE(STATUS "${SUNDIALS_INLCUDE_HOME}")
-MESSAGE(STATUS "Sundials library:")
-MESSAGE(STATUS "${SUNDIALS_LIBRARY_RELEASE_HOME}")
 
 # Find OpenMP
 FIND_PACKAGE(OpenMP)
@@ -495,10 +477,24 @@ MESSAGE(STATUS ${LAPACK_LIBRARIES})
 
 # Find Sundials solvers
 IF(USE_SUNDIALS)
+  #set sundials solvers include and library directories
+  IF(MSVC)
+    SET(Sundials_Path "${CMAKE_SOURCE_DIR}/../../3rdParty/sundials/build_msvc")
+  ELSE(MSVC)
+    SET(Sundials_Path "${CMAKE_SOURCE_DIR}/../../3rdParty/sundials/build")
+  ENDIF(MSVC)
+  SET(SUNDIALS_INLCUDE_HOME  ${Sundials_Path}/include)
+  SET(SUNDIALS_LIBRARY_RELEASE_HOME  ${Sundials_Path}/lib)
+  MESSAGE(STATUS "Sundials include:")
+  MESSAGE(STATUS "${SUNDIALS_INLCUDE_HOME}")
+  MESSAGE(STATUS "Sundials library:")
+  MESSAGE(STATUS "${SUNDIALS_LIBRARY_RELEASE_HOME}")
+
   FIND_PATH(SUNDIALS_INCLUDE_DIR cvode/cvode.h PATHS ${SUNDIALS_INLCUDE_HOME} $ENV{SUNDIALS_ROOT}/include)
   IF (NOT SUNDIALS_INCLUDE_DIR)
     MESSAGE(FATAL_ERROR "Could not find Sundials, specify environment variable SUNDIALS_ROOT")
   ELSE(NOT SUNDIALS_INCLUDE_DIR)
+    INCLUDE_DIRECTORIES(${SUNDIALS_INCLUDE_DIR})
     # Extract the version number from sundials_config.h
     FIND_PATH(SUNDIALS_CONFIG_FILE "sundials_config.h" ${SUNDIALS_INCLUDE_DIR} "${SUNDIALS_INCLUDE_DIR}/sundials")
     SET(SUNDIALS_CONFIG_FILE "${SUNDIALS_CONFIG_FILE}/sundials_config.h")
@@ -528,13 +524,11 @@ IF(USE_SUNDIALS)
   GET_FILENAME_COMPONENT(SUNDIALS_LIBS "${SUNDIALS_NVECSERIAL_LIB}" PATH)
 
   FIND_LIBRARY(SUNDIALS_CVODES_LIB "sundials_cvodes" NO_DEFAULT_PATH NO_SYSTEM_ENVIRONMENT_PATH  PATHS ${SUNDIALS_LIBRARY_RELEASE_HOME}  $ENV{SUNDIALS_ROOT}/lib)
-  include_directories(${SUNDIALS_INCLUDE_DIR}/cvodes ${SUNDIALS_INCLUDE_DIR}/nvector  ${SUNDIALS_INCLUDE_DIR}/sundials ${SUNDIALS_INCLUDE_DIR})
   IF(NOT SUNDIALS_CVODES_LIB)
     MESSAGE(FATAL_ERROR "Could not find libsundials_cvodes!")
   ENDIF()
 
   FIND_LIBRARY(SUNDIALS_CVODE_LIB "sundials_cvode" NO_DEFAULT_PATH NO_SYSTEM_ENVIRONMENT_PATH  PATHS ${SUNDIALS_LIBRARY_RELEASE_HOME}  $ENV{SUNDIALS_ROOT}/lib)
-  include_directories(${SUNDIALS_INCLUDE_DIR}/cvode ${SUNDIALS_INCLUDE_DIR}/nvector  ${SUNDIALS_INCLUDE_DIR}/sundials ${SUNDIALS_INCLUDE_DIR})
   IF(NOT SUNDIALS_CVODES_LIB)
     MESSAGE(FATAL_ERROR "Could not find libsundials_cvodes!")
   ENDIF()
@@ -545,7 +539,6 @@ IF(USE_SUNDIALS)
 #  ENDIF()
 
   FIND_LIBRARY(SUNDIALS_IDA_LIB "sundials_idas" NO_DEFAULT_PATH NO_SYSTEM_ENVIRONMENT_PATH  PATHS ${SUNDIALS_LIBRARY_RELEASE_HOME}  $ENV{SUNDIALS_ROOT}/lib)
-  include_directories(${SUNDIALS_INCLUDE_DIR}/ida ${SUNDIALS_INCLUDE_DIR}/nvector  ${SUNDIALS_INCLUDE_DIR}/sundials ${SUNDIALS_INCLUDE_DIR})
   IF(NOT SUNDIALS_IDA_LIB)
     MESSAGE(FATAL_ERROR "Could not find libsundials_ida!")
   ENDIF()
