@@ -227,15 +227,17 @@ protected
   list<Values.Value> vals;
   list<String> fields;
   Boolean isTestType,notest;
+  Values.Value resRecord;
 algorithm
   resultValues := listReverse(inAddResultValues);
   //TODO: maybe we should test if the fields are the ones in simulationResultType_full
   notest := not Config.getRunningTestsuite();
   fields := if notest then List.map(resultValues, Util.tuple21) else {};
   vals := if notest then List.map(resultValues, Util.tuple22) else {};
-  res := Values.RECORD(Absyn.IDENT("SimulationResult"),
+  resRecord := Values.RECORD(Absyn.IDENT("SimulationResult"),
     Values.STRING(resultFile)::Values.STRING(options)::Values.STRING(message)::vals,
     "resultFile"::"simulationOptions"::"messages"::fields,-1);
+  res := Values.STRING(ValuesUtil.valString(resRecord));
 end createSimulationResult;
 
 public function createDrModelicaSimulationResult
