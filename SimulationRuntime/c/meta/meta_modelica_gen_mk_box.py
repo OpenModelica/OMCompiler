@@ -10,7 +10,10 @@ print ''
 for i in range(start,end+1):
   print 'static inline void *mmc_mk_box%d(unsigned int ctor' % i +''.join([', void *x%d' % j for j in range(0,i)]) + ')'
   print '{'
-  print '  struct mmc_struct *p = (struct mmc_struct *) mmc_alloc_words(%d);' % (i+1)
+  if i == 0:
+    print '  struct mmc_struct *p = (struct mmc_struct *) mmc_alloc_words_atomic(%d);' % (i+1)
+  if i > 0:
+    print '  struct mmc_struct *p = (struct mmc_struct *) mmc_alloc_words(%d);' % (i+1)
   if i > 0:
     print '  void **data = p->data;'
   print '  p->header = MMC_STRUCTHDR(%d, ctor);' % i
