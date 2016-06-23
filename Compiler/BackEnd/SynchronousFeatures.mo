@@ -300,7 +300,7 @@ algorithm
       var := BackendVariable.getVarAt(inSyst.orderedVars, i);
       var := BackendVariable.setVarKind(var, BackendDAE.CLOCKED_STATE(
                previousName = ComponentReference.crefPrefixPrevious(var.varName),
-               isStartFixed = isDerVarArr[i] or BackendVariable.varFixed(var)));
+               isStartFixed = isDerVarArr[i]));
       var := BackendVariable.setVarFixed(var, true);
       BackendVariable.setVarAt(inSyst.orderedVars, i, var);
       prevVars := var.varName::prevVars;
@@ -1180,11 +1180,18 @@ algorithm
         setContClockedPartition(false, inPartitionIdx, inContPartitions, source);
       then
         (DAE.CALL(inPath, inExpLst, inAttr), inNewEqs, inNewVars, inClkCnt);
+    case (Absyn.IDENT("firstTick"), _)
+      algorithm
+        setContClockedPartition(false, inPartitionIdx, inContPartitions, source);
+      then
+        // Note: remove optional argument (inExpLst) to avoid algebraic loop
+        (DAE.CALL(inPath, {}, inAttr), inNewEqs, inNewVars, inClkCnt);
     case (Absyn.IDENT("interval"), _)
       algorithm
         setContClockedPartition(false, inPartitionIdx, inContPartitions, source);
       then
-        (DAE.CALL(inPath, inExpLst, inAttr), inNewEqs, inNewVars, inClkCnt);
+        // Note: remove optional argument (inExpLst) to avoid algebraic loop
+        (DAE.CALL(inPath, {}, inAttr), inNewEqs, inNewVars, inClkCnt);
 
     case (Absyn.IDENT("sample"), 2)
       algorithm
