@@ -99,6 +99,7 @@ protected
 import MetaModelica.Dangerous.{listReverseInPlace, arrayGetNoBoundsChecking, arrayUpdateNoBoundsChecking, arrayCreateNoInit};
 import MetaModelica.Dangerous;
 import DoubleEndedList;
+import GC;
 
 public function create<T>
   "Creates a list from an element."
@@ -1010,6 +1011,7 @@ algorithm
       outSorted := i :: outSorted;
     end if;
   end for;
+  GC.free(a1);
 end sortIntN;
 
 public function unique<T>
@@ -1044,6 +1046,7 @@ algorithm
 
     arrayUpdate(arr, i, false);
   end for;
+  GC.free(arr);
 end uniqueIntN;
 
 public function uniqueIntNArr
@@ -1559,6 +1562,7 @@ algorithm
     a := addPos(inList1, a, 1);
     a := addPos(inList2, a, 1);
     outResult := intersectionIntVec(a, inList1);
+    GC.free(a);
   else
     outResult := {};
   end if;
@@ -1678,6 +1682,7 @@ algorithm
         outDifference := i :: outDifference;
       end if;
     end for;
+    GC.free(a);
   end if;
 end setDifferenceIntN;
 
@@ -1745,6 +1750,7 @@ algorithm
         outUnion := i :: outUnion;
       end if;
     end for;
+    GC.free(a);
   end if;
 end unionIntN;
 
