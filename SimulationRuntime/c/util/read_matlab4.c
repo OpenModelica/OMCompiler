@@ -195,7 +195,7 @@ const char* omc_new_matlab4_reader(const char *filename, ModelicaMatReader *read
       return "Corrupt header (3)";
     }
     /* fprintf(stderr, "  Name of matrix: %s\n", name); */
-    matrix_length = hdr.mrows*hdr.ncols*(1+hdr.imagf)*element_length;
+    matrix_length = (size_t)(hdr.mrows)*(size_t)(hdr.ncols)*(size_t)(1+hdr.imagf)*element_length;
     if(0 != strcmp(name,matrixNames[i])) {
       free(name);
       return matrixNamesMismatch[i];
@@ -544,15 +544,15 @@ ModelicaMatVariable_t *omc_matlab4_find_var(ModelicaMatReader *reader, const cha
 double* omc_matlab4_read_vals(ModelicaMatReader *reader, int varIndex)
 {
   size_t absVarIndex = abs(varIndex);
-  size_t ix = (varIndex < 0 ? absVarIndex + reader->nvar : absVarIndex) -1;
-  assert(absVarIndex > 0 && absVarIndex <= reader->nvar);
+  size_t ix = (varIndex < 0 ? absVarIndex + (size_t)(reader->nvar) : absVarIndex) -1;
+  assert(absVarIndex > 0 && absVarIndex <= (size_t)(reader->nvar));
   if(!reader->vars[ix]) {
     unsigned int i;
-    double *tmp = (double*) malloc(reader->nrows*sizeof(double));
+    double *tmp = (double*) malloc((size_t)(reader->nrows)*sizeof(double));
     if(reader->doublePrecision==1)
     {
       for(i=0; i<reader->nrows; i++) {
-        fseek(reader->file,reader->var_offset + sizeof(double)*(i*reader->nvar + absVarIndex-1), SEEK_SET);
+        fseek(reader->file,reader->var_offset + sizeof(double)*((size_t)(i)*(size_t)(reader->nvar) + absVarIndex-1), SEEK_SET);
         if(1 != fread(&tmp[i], sizeof(double), 1, reader->file)) {
           /* fprintf(stderr, "Corrupt file at %d of %d? nvar %d\n", i, reader->nrows, reader->nvar); */
           free(tmp);
@@ -565,9 +565,9 @@ double* omc_matlab4_read_vals(ModelicaMatReader *reader, int varIndex)
     }
     else
     {
-      float *buffer = (float*) malloc(reader->nrows*sizeof(float));
+      float *buffer = (float*) malloc((size_t)(reader->nrows)*sizeof(float));
       for(i=0; i<reader->nrows; i++) {
-        fseek(reader->file,reader->var_offset + sizeof(float)*(i*reader->nvar + absVarIndex-1), SEEK_SET);
+        fseek(reader->file,reader->var_offset + sizeof(float)*((size_t)(i)*(size_t)(reader->nvar) + absVarIndex-1), SEEK_SET);
         if(1 != fread(&buffer[i], sizeof(float), 1, reader->file)) {
           /* fprintf(stderr, "Corrupt file at %d of %d? nvar %d\n", i, reader->nrows, reader->nvar); */
           free(buffer);
@@ -690,21 +690,21 @@ int omc_matlab4_read_all_vals(ModelicaMatReader *reader)
 double omc_matlab4_read_single_val(double *res, ModelicaMatReader *reader, int varIndex, int timeIndex)
 {
   size_t absVarIndex = abs(varIndex);
-  size_t ix = (varIndex < 0 ? absVarIndex + reader->nvar : absVarIndex) -1;
-  assert(absVarIndex > 0 && absVarIndex <= reader->nvar);
+  size_t ix = (varIndex < 0 ? absVarIndex + (size_t)(reader->nvar) : absVarIndex) -1;
+  assert(absVarIndex > 0 && absVarIndex <= (size_t)(reader->nvar));
   if(reader->vars[ix]) {
     *res = reader->vars[ix][timeIndex];
     return 0;
   }
   if(reader->doublePrecision==1) {
-    fseek(reader->file,reader->var_offset + sizeof(double)*(timeIndex*reader->nvar + absVarIndex-1), SEEK_SET);
+    fseek(reader->file,reader->var_offset + sizeof(double)*((size_t)(timeIndex)*(size_t)(reader->nvar) + absVarIndex-1), SEEK_SET);
     if(1 != fread(res, sizeof(double), 1, reader->file)) {
       *res = 0;
       return 1;
     }
   } else {
     float tmpres;
-    fseek(reader->file,reader->var_offset + sizeof(float)*(timeIndex*reader->nvar + absVarIndex-1), SEEK_SET);
+    fseek(reader->file,reader->var_offset + sizeof(float)*((size_t)(timeIndex)*(size_t)(reader->nvar) + absVarIndex-1), SEEK_SET);
     if(1 != fread(&tmpres, sizeof(float), 1, reader->file)) {
       *res = 0;
       return 1;
