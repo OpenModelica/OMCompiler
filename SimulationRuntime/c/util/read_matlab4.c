@@ -397,6 +397,29 @@ const char* omc_new_matlab4_reader(const char *filename, ModelicaMatReader *read
       break;
     }
     case 5: { /* "data_2" */
+      /* Check for incomplete file (e.g., from solve cancel), truncate to the largest full data set */
+      if(hdr.ncols == 0 || hdr.mrows == 0){
+        size_t pos = ftello64(reader->file);
+        if(-1==fseeko64(reader->file,0,SEEK_END)) return "Corrupt data_2 matrix";
+        size_t fsize = ftello64(reader->file);
+        if(binTrans==1) {
+          if(reader->doublePrecision==1){
+            hdr.ncols = (fsize - pos) / sizeof(double) / hdr.mrows;
+          }else{
+            hdr.ncols = (fsize - pos) / sizeof(float) / hdr.mrows;
+          }
+	}else{
+          if(reader->doublePrecision==1){
+            hdr.mrows = (fsize - pos) / sizeof(double) / hdr.ncols;
+          }else{
+            hdr.mrows = (fsize - pos) / sizeof(float) / hdr.ncols;
+          }
+	}
+        fseeko64(reader->file, pos, SEEK_SET);
+        matrix_length = (size_t)(hdr.mrows)*(size_t)(hdr.ncols)*(size_t)(1+hdr.imagf)*element_length;
+        fprintf(stderr, "Warning: reading truncated result file\n");
+      }
+
       if(binTrans==1) {
         reader->nrows = hdr.ncols;
         /* Allow empty matrix; it's not a complete file, but ok... */
