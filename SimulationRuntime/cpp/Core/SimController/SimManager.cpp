@@ -586,10 +586,12 @@ void SimManager::runSingleProcess()
     _cont_system->evaluateAll(IContinuous::CONTINUOUS);      // vxworksupdate
     _event_system->getZeroFunc(zeroVal_new);
 
-    for (int i = 0; i < _dimZeroFunc; i++)
-        _events[i] = bool(zeroVal_new[i]);
-    _mixed_system->handleSystemEvents(_events);
-    //_cont_system->evaluateODE(IContinuous::CONTINUOUS);
+	if (_dimZeroFunc>0){
+		for (int i = 0; i < _dimZeroFunc; i++)
+			_events[i] = bool(zeroVal_new[i]);
+		_mixed_system->handleSystemEvents(_events);
+	}
+	//_cont_system->evaluateODE(IContinuous::CONTINUOUS);
     // Reset the time-events
     if (_dimtimeevent)
     {
@@ -645,9 +647,11 @@ void SimManager::runSingleProcess()
                     _timeevent_system->handleTimeEvent(_timeEventCounter);
 
                     _event_system->getZeroFunc(zeroVal_new);
-                    for (int i = 0; i < _dimZeroFunc; i++)
-                      _events[i] = bool(zeroVal_new[i]);
-                    _mixed_system->handleSystemEvents(_events);
+					if (_dimZeroFunc>0){
+						for (int i = 0; i < _dimZeroFunc; i++)
+							_events[i] = bool(zeroVal_new[i]);
+						_mixed_system->handleSystemEvents(_events);
+					}
                     // Reset time-events
                     _timeevent_system->handleTimeEvent(_timeEventCounter);
 					_cont_system->evaluateAll(IContinuous::CONTINUOUS);
@@ -706,9 +710,11 @@ void SimManager::runSingleProcess()
                     _timeevent_system->handleTimeEvent(_timeEventCounter);
                     _cont_system->evaluateAll(IContinuous::CONTINUOUS);   // vxworksupdate
                     _event_system->getZeroFunc(zeroVal_new);
-                    for (int i = 0; i < _dimZeroFunc; i++)
-                        _events[i] = bool(zeroVal_new[i]);
-                    _mixed_system->handleSystemEvents(_events);
+					if (_dimZeroFunc>0){
+						for (int i = 0; i < _dimZeroFunc; i++)
+							_events[i] = bool(zeroVal_new[i]);
+						_mixed_system->handleSystemEvents(_events);
+					}
                     //_cont_system->evaluateODE(IContinuous::CONTINUOUS);
                     //reset time-events
                     _timeevent_system->handleTimeEvent(_timeEventCounter);
