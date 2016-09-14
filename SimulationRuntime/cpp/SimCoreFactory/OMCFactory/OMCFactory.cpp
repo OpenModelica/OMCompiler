@@ -95,7 +95,7 @@ class LoggerXMLTCP: public LoggerXML
 OMCFactory::OMCFactory(PATH library_path, PATH modelicasystem_path)
     : _library_path(library_path)
     , _modelicasystem_path(modelicasystem_path)
-    , _defaultLinSolver("kinsol")
+    , _defaultLinSolver("linearSolver")
     , _defaultNonLinSolver("kinsol")
 {
   fillArgumentsToIgnore();
@@ -105,7 +105,7 @@ OMCFactory::OMCFactory(PATH library_path, PATH modelicasystem_path)
 OMCFactory::OMCFactory()
     : _library_path("")
     , _modelicasystem_path("")
-    , _defaultLinSolver("kinsol")
+    , _defaultLinSolver("linearSolver")
     , _defaultNonLinSolver("kinsol")
 {
   fillArgumentsToIgnore();
