@@ -2903,7 +2903,7 @@ int SystemImpl__covertTextFileToCLiteral(const char *textFile, const char *outFi
   errno = 0;
   fout = fopen(outFile, "w");
   if (!fout) {
-    printf("SystemImpl__covertTextFileToCLiteral could not create file. The total file name might be too long. Error %d \n", errno);
+    fprintf(stderr , "SystemImpl__covertTextFileToCLiteral failed: %s Maybe the total file name is too long.", strerror(errno));
     goto done;
   }
 

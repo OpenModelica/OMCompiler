@@ -733,7 +733,7 @@ algorithm
         str := fmutmp + "/sources/" + simCode.fileNamePrefix;
         b := System.covertTextFileToCLiteral(simCode.fileNamePrefix+"_info.json", str+"_info.c", Flags.getConfigString(Flags.TARGET));
         if not b then
-          print("System.covertTextFileToCLiteral failed\n Could not write "+str+"_info.c\n");
+          Error.addMessage(Error.INTERNAL_ERROR, {"System.covertTextFileToCLiteral failed. Could not write "+str+"_info.c\n"});
           fail();
         end if;
         Tpl.tplNoret3(CodegenFMU.translateModel, simCode, FMUVersion, FMUType);
