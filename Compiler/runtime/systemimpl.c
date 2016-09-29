@@ -2892,6 +2892,7 @@ int SystemImpl__covertTextFileToCLiteral(const char *textFile, const char *outFi
 {
   FILE *fin;
   FILE *fout = NULL;
+  errno = 0;
   int result = 0, n, i, j, k, isMSVC = !strcmp(target, "msvc");
   char buffer[512];
   char obuffer[1024];
@@ -2899,8 +2900,10 @@ int SystemImpl__covertTextFileToCLiteral(const char *textFile, const char *outFi
   if (!fin) {
     goto done;
   }
+  errno = 0;
   fout = fopen(outFile, "w");
   if (!fout) {
+    printf("SystemImpl__covertTextFileToCLiteral could not create file. The total file name might be too long. Error %d \n", errno);
     goto done;
   }
 
