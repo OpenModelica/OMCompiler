@@ -2892,6 +2892,7 @@ int SystemImpl__covertTextFileToCLiteral(const char *textFile, const char *outFi
 {
   FILE *fin;
   FILE *fout = NULL;
+  errno = 0;
   int result = 0, n, i, j, k, isMSVC = !strcmp(target, "msvc");
   char buffer[512];
   char obuffer[1024];
