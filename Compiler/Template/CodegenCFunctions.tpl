@@ -2355,7 +2355,7 @@ template extArg(SimExtArg extArg, Text &preExp, Text &varDecls, Text &auxFunctio
     '(<%extType(t,isInput,true)%>) <%name%>_c89'
   case SIMEXTARG(cref=c, isInput=ii, outputIndex=0, type_=t) then
     let cr = match t case T_STRING(__) then contextCref(c,contextFunction,&auxFunction) else extVarName(c)
-    (match t case T_STRING(__) then 'MMC_STRINGDATA(<%cr%>)' else cr)
+    (match t case T_STRING(__) then '<%cr%>' else cr)
   case SIMEXTARG(cref=c, isInput=ii, outputIndex=oi, type_=t) then
     '&<%extVarName(c)%>'
   case SIMEXTARGEXP(__) then
