@@ -2903,7 +2903,13 @@ int SystemImpl__covertTextFileToCLiteral(const char *textFile, const char *outFi
   errno = 0;
   fout = fopen(outFile, "w");
   if (!fout) {
-    fprintf(stderr , "SystemImpl__covertTextFileToCLiteral failed: %s Maybe the total file name is too long.", strerror(errno));
+    const char *c_token[1]={strerror(errno)};
+    c_add_message(NULL,85,
+        ErrorType_scripting,
+        ErrorLevel_error,
+        gettext("SystemImpl__covertTextFileToCLiteral failed: %s. Maybe the total file name is too long."),
+        c_token,
+        1);
     goto done;
   }
 
