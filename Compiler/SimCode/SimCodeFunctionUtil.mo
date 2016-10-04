@@ -2123,6 +2123,27 @@ algorithm
     case Absyn.STRING("lapack") then ({},{});
     case Absyn.STRING("Lapack") then ({},{});
 
+    //pthreads is already linked under windows
+    case Absyn.STRING(str as "pthreads")
+      equation
+        if "Windows_NT" <> System.os() then fail(); end if;
+        Error.addCompilerNotification("pthreads library is already available. It is not linked from the external library resource directory.\n");
+      then  ({},{});
+
+    //user32 is already linked under windows
+    case Absyn.STRING(str as "User32")
+      equation
+        if "Windows_NT" <> System.os() then fail(); end if;
+        Error.addCompilerNotification("User32 library is already available. It is not linked from the external library resource directory.\n");
+      then  ({},{});
+
+    //do not link X11.dll for Modelica Device Drivers as it is not needed under windows
+    case Absyn.STRING(str as "X11")
+      equation
+        if "Windows_NT" <> System.os() then fail(); end if;
+        Error.addCompilerNotification("X11 library is not needed under Windows. It is not linked from the external library resource directory.\n");
+      then  ({},{});
+
     case Absyn.STRING(str as "omcruntime")
       equation
         if "Windows_NT" == System.os() then
