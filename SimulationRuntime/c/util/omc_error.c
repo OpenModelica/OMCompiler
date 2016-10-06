@@ -404,6 +404,10 @@ void debugStreamPrintWithEquationIndexes(int stream, int indentNext, const int *
 
 static inline jmp_buf* getBestJumpBuffer(threadData_t *threadData)
 {
+  if (!threadData) {
+    fprintf(stderr, "OpenModelica threadData is NULL; this should not be possible");
+    abort();
+  }
   switch (threadData->currentErrorStage) {
   case ERROR_EVENTSEARCH:
   case ERROR_SIMULATION:
