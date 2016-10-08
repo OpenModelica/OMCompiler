@@ -1099,7 +1099,7 @@ void UnitParser::initSIUnits() {
       Rational(1), Rational(0), true);
   addDerived("inductance", "henry", "H", "Wb/A", Rational(0), Rational(1),
       Rational(0), true);
-  addDerived("Celsius temperature", "degree Celsius", "degC", "K",
+  addDerived("thermodynamic temperature", "degree Celsius", "degC", "K",
       Rational(0), Rational(1), Rational(27315, 100), true);
   addDerived("luminous flux", "lumen", "lm", "cd.sr", Rational(0),
       Rational(1), Rational(0), true);
@@ -1117,27 +1117,55 @@ void UnitParser::initSIUnits() {
       Rational(1), Rational(0), true);
 
   // More derived units
-  addDerived("length", "kilometre", "km", "m", Rational(0), Rational(1000), Rational(0), true);
-  addDerived("length", "millimetre", "mm", "m", Rational(0), Rational(1, 1000), Rational(0), true);
+  addDerived("plane angle", "degree", "deg", "rad", Rational(0),
+      Rational(31415926535897932, 1800000000000000000), Rational(0), true);
+  addDerived("plane angle", "revolutions", "rev", "rad", Rational(0),
+      Rational(31415926535897932, 5000000000000000), Rational(0), true);
 
-  addDerived("electric current", "kiloampere", "kA", "A", Rational(0), Rational(1000), Rational(0), true);
-  addDerived("electric current", "milliampere", "mA", "A", Rational(0), Rational(1, 1000), Rational(0), true);
+  addDerived("angular velocity", "revolutions per minute", "rpm", "rad/s", Rational(0),
+      Rational(31415926535897932, 300000000000000000), Rational(0), true);
 
-  addDerived("power, radiant flux", "kilowatt", "kW", "J/s", Rational(0), Rational(1000), Rational(0), true);
-  addDerived("power, radiant flux", "milliwatt", "mW", "J/s", Rational(0), Rational(1, 1000), Rational(0), true);
-  addDerived("power, radiant flux", "megawatt", "MW", "J/s", Rational(0), Rational(1000000), Rational(0), true);
+  addDerived("velocity", "knot", "kn", "m/s", Rational(0),
+      Rational(1852, 3600), Rational(0), true);
 
-  addDerived("electric potential difference, electromotive force", "kilovolt", "kV", "W/A", Rational(0), Rational(1000), Rational(0), true);
-  addDerived("electric potential difference, electromotive force", "millivolt", "mV", "W/A", Rational(0), Rational(1, 1000), Rational(0), true);
+  addDerived("mass", "metric ton", "t", "kg", Rational(3),
+      Rational(1), Rational(0), true);
 
-  addDerived("plane angle", "degree", "deg", "rad", Rational(0), Rational(3141592653589793, 180000000000000000), Rational(0), true);
+  addDerived("volume", "litre", "l", "m3", Rational(0),
+      Rational(1, 1000), Rational(0), true);
+
+  addDerived("apparent power", "volt-ampere", "VA", "J/s", Rational(0),
+      Rational(1), Rational(0), true);
+  addDerived("reactive power", "volt-ampere reactive", "var", "J/s", Rational(0),
+      Rational(1), Rational(0), true);
+
+  addDerived("thermodynamic temperature", "degree Fahrenheit", "degF", "K",
+      Rational(0), Rational(5, 9), Rational(27315*9-3200*5, 900), true);
+  addDerived("thermodynamic temperature", "degree Rankine", "degRk", "K",
+      Rational(0), Rational(5, 9), Rational(0), true);
 
   addDerived("pressure", "bar", "bar", "Pa", Rational(0), Rational(100000), Rational(0), true);
 
-  addDerived("time", "millisecond", "ms", "s", Rational(0), Rational(1, 1000), Rational(0), true);
   addDerived("time", "minute", "min", "s", Rational(0), Rational(60), Rational(0), true);
   addDerived("time", "hour", "h", "s", Rational(0), Rational(60 * 60), Rational(0), true);
   addDerived("time", "day", "d", "s", Rational(0), Rational(60 * 60 * 24), Rational(0), true);
+
+  // Imperial units
+  addDerived("length", "inch", "in", "m", Rational(0),
+      Rational(254, 10000), Rational(0), true);
+  addDerived("length", "foot", "ft", "m", Rational(0),
+      Rational(3048, 10000), Rational(0), true);
+
+  addDerived("velocity", "miles per hour", "mph", "m/s", Rational(0),
+      Rational(44704, 100000), Rational(0), true);
+
+  addDerived("mass", "pound", "lb", "kg", Rational(0),
+      Rational(45359237, 100000000), Rational(0), true);
+
+  addDerived("pressure", "pound per square inch", "psi", "Pa", Rational(0),
+      Rational(689475729, 100000), Rational(0), true);
+  addDerived("pressure", "inch water gauge", "inWG", "Pa", Rational(0),
+      Rational(249088908333, 1000000000), Rational(0), true);
 
   commit();
 }
