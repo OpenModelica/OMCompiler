@@ -1575,6 +1575,18 @@ algorithm
       then
         (cache,Values.STRING(filename_1),st);
 
+    case (cache,_,"importFMUModelDescription",{Values.STRING(filename),Values.STRING(_),Values.INTEGER(_),Values.BOOL(_), Values.BOOL(_), Values.BOOL(_), Values.BOOL(_)},st,_)
+      equation
+        false = System.regularFileExists(filename);
+        Error.clearMessages() "Clear messages";
+        Error.addMessage(Error.FILE_NOT_FOUND_ERROR, {filename});
+      then
+        (cache,Values.STRING(""),st);
+
+    case (cache,_,"importFMUModelDescription",{Values.STRING(_),Values.STRING(_),Values.INTEGER(_),Values.BOOL(_), Values.BOOL(_), Values.BOOL(_), Values.BOOL(_)},st,_)
+      then
+        (cache,Values.STRING(""),st);
+
     case (cache,_,"getIndexReductionMethod",_,st,_)
       equation
         str = Config.getIndexReductionMethod();
