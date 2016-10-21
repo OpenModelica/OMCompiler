@@ -86,9 +86,10 @@ bool ContinuousEvents::startEventIteration(bool& state_vars_reinitialized)
 
   unsigned int dim = _event_system->getDimZeroFunc();
   //unsigned int dimClock = _event_system->getDimClock();
-
-  _event_system->getConditions(_conditions0);
-  //_event_system->getClockConditions(_clockconditions0);
+ if(dim>0)
+ {
+	  _event_system->getConditions(_conditions0);
+	  //_event_system->getClockConditions(_clockconditions0);
 
   //Handle all events
 
@@ -111,6 +112,8 @@ bool ContinuousEvents::startEventIteration(bool& state_vars_reinitialized)
   }
 */
   return((drestart||crestart)); //returns true if new events occurred
+  }
+  return false;
 }
 /** @} */ // end of coreSystem
 /*
