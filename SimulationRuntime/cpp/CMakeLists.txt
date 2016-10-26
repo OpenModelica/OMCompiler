@@ -140,7 +140,6 @@ IF(NOT(USE_CPP_03))
         SET(CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE} "${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}} -std=c++11")
         SET(CXX11_FLAGS " -std=c++11") #used for precompiled header
       ENDIF(APPLE)
-      ADD_DEFINITIONS(-D_GLIBCXX_USE_CXX11_ABI=0)
     ELSE()
       SET(COMPILER_SUPPORTS_CXX11 False)
     ENDIF(COMPILER_SUPPORTS_CXX11)
@@ -384,6 +383,12 @@ ELSE()
 ENDIF(NOT(COMPILER_SUPPORTS_CXX11))
 
 FIND_PACKAGE(Boost REQUIRED COMPONENTS filesystem system serialization program_options)
+
+# This helps with gcc5 when having compiled boost with gcc4
+#IF(NOT MSVC)
+#  ADD_DEFINITIONS(-D_GLIBCXX_USE_CXX11_ABI=0)
+#ENDIF(NOT MSVC)
+
 SET(Boost_LIBRARIES_TMP ${Boost_LIBRARIES_TMP} ${Boost_LIBRARIES})
 SET(Boost_LIBRARIES ${Boost_LIBRARIES_TMP})
 MESSAGE(STATUS "Boost Libraries")
