@@ -365,8 +365,7 @@ int prefixedName_performQSSSimulation(DATA* data, threadData_t *threadData, SOLV
     /* check if terminate()=true */
     if (terminationTerminate)
     {
-      printInfo(stdout, TermInfo);
-      fputc('\n', stdout);
+      printInfo(LOG_STDOUT, TermInfo);
       infoStreamPrint(LOG_STDOUT, 0, "Simulation call terminate() at time %f\nMessage : %s", data->localData[0]->timeValue, TermMsg);
       simInfo->stopTime = solverInfo->currentTime;
     }

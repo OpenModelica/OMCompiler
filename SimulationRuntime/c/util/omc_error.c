@@ -159,19 +159,18 @@ void initDumpSystem()
   useStream[LOG_ASSERT] = 1;
 }
 
-void printInfo(FILE *stream, FILE_INFO info)
+void printInfo(int stream, FILE_INFO info)
 {
-  fprintf(stream, "[%s:%d:%d-%d:%d:%s]", info.filename, info.lineStart, info.colStart, info.lineEnd, info.colEnd, info.readonly ? "readonly" : "writable");
+  infoStreamPrint(stream, 0, "[%s:%d:%d-%d:%d:%s]", info.filename, info.lineStart, info.colStart, info.lineEnd, info.colEnd, info.readonly ? "readonly" : "writable");
 }
 
 void omc_assert_function(threadData_t* threadData, FILE_INFO info, const char *msg, ...)
 {
   va_list ap;
   va_start(ap,msg);
-  printInfo(stderr, info);
-  fputs("Modelica Assert: ", stderr);
-  vfprintf(stderr,msg,ap);
-  fputs("!\n", stderr);
+  printInfo(LOG_ASSERT, info);
+  errorStreamPrint(LOG_ASSERT, 0, "Modelica Assert: ");
+  va_errorStreamPrint(LOG_ASSERT, 0, msg, ap);
   va_end(ap);
   fflush(NULL);
   if (threadData) {
@@ -185,10 +184,9 @@ void omc_assert_warning_function(FILE_INFO info, const char *msg, ...)
 {
   va_list ap;
   va_start(ap,msg);
-  printInfo(stderr, info);
-  fputs("Warning, assertion triggered: ", stderr);
-  vfprintf(stderr,msg,ap);
-  fputs("!\n", stderr);
+  printInfo(LOG_ASSERT, info);
+  warningStreamPrint(LOG_ASSERT, 0, "Warning, assertion triggered: ");
+  va_warningStreamPrint(LOG_ASSERT, 0, msg, ap);
   va_end(ap);
   fflush(NULL);
 }
@@ -206,10 +204,9 @@ void omc_terminate_function(FILE_INFO info, const char *msg, ...)
 {
   va_list ap;
   va_start(ap,msg);
-  printInfo(stderr, info);
-  fputs("Modelica Terminate: ", stderr);
-  vfprintf(stderr,msg,ap);
-  fputs("!\n", stderr);
+  printInfo(LOG_STDOUT, info);
+  infoStreamPrint(LOG_STDOUT, 0, "Modelica Terminate: ");
+  va_infoStreamPrint(LOG_STDOUT, 0, msg, ap);
   va_end(ap);
   fflush(NULL);
   MMC_THROW();

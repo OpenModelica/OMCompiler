@@ -55,7 +55,7 @@ typedef struct _FILE_INFO
 
 #define omc_dummyFileInfo {"",-1,-1,-1,-1,1}
 
-DLLExport extern void printInfo(FILE *stream, FILE_INFO info);
+DLLExport extern void printInfo(int stream, FILE_INFO info);
 DLLExport extern void (*omc_assert)(threadData_t*, FILE_INFO, const char*, ...) __attribute__ ((noreturn));
 DLLExport extern void (*omc_assert_warning)(FILE_INFO, const char*, ...);
 DLLExport extern void (*omc_terminate)(FILE_INFO, const char*, ...);
