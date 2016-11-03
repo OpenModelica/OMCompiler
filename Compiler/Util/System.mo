@@ -861,7 +861,7 @@ See man 3 basename."
 end basename;
 
 public function dirname
-"Returns the name of the file without any leading directory path.
+"Returns the name of the directory path.
 See man 3 dirname."
   input String filename;
   output String base;

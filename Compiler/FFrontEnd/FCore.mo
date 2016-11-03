@@ -49,6 +49,8 @@ import Prefix;
 protected
 import DAEUtil;
 import Config;
+import Global;
+import System;
 
 // ************************ FNode structures ***************************
 // ************************ FNode structures ***************************
@@ -241,6 +243,19 @@ type Refs = list<Ref>;
 type Parents = Refs;
 type Scope = Refs;
 type Children = RefTree.Tree;
+
+public
+uniontype Resource "external resources"
+  record RESOURCE
+    String original "original resource, i.e. modelica:// or so";
+    String absolute "calculated absolute resource";
+    String libraryName "the name of the library";
+    String libraryDirectory "the absolute library directory";
+  end RESOURCE;
+end Resource;
+
+public
+type Resources = list<Resource>;
 
 public constant Scope emptyScope = {} "empty scope";
 
@@ -778,6 +793,104 @@ algorithm
     outPath := Absyn.pathSetLastIdent(inPath, Absyn.makeIdentPathFromString(lastId));
   end if;
 end getRecordConstructorPath;
+
+public function addResource
+  input String original;
+  input String absolute;
+  input String libraryName;
+  input String libraryDirectory;
+protected
+  Resources r;
+algorithm
+  r := getResources();
+  r := addUniqueResource(original, absolute, libraryName, libraryDirectory, {}, r);
+  setResources(r);
+end addResource;
+
+protected function addUniqueResource
+  input String original;
+  input String absolute;
+  input String libraryName;
+  input String libraryDirectory;
+  input Resources inResources;
+  input Resources acc;
+  output Resources outResources;
+protected
+   String o, a, ln, ld;
+   Resources res;
+   Resource r;
+algorithm
+  outResources := match(inResources, acc)
+    case ({}, _) then listReverse(RESOURCE(original, absolute, libraryName, libraryDirectory)::acc);
+    case ((r as RESOURCE(o, a, ln, ld))::res, _)
+      algorithm
+        res := if stringEq(o, original) then listAppend(listReverse(acc), inResources) else addUniqueResource(original, absolute, libraryName, libraryDirectory, r::acc, res);
+      then
+        res;
+  end match;
+end addUniqueResource;
+
+public function setResources
+  input Resources r;
+algorithm
+  setGlobalRoot(Global.externalResources, SOME(r));
+end setResources;
+
+public function clearResources
+algorithm
+  setGlobalRoot(Global.externalResources, NONE());
+end clearResources;
+
+public function getResources
+  output Resources resources;
+protected
+  Option<Resources> r;
+  Resources res;
+algorithm
+  r := getGlobalRoot(Global.externalResources);
+  resources := match(r)
+    case (NONE()) then {};
+    case (SOME(res)) then res;
+  end match;
+end getResources;
+
+public function unpackResource
+  input Resource resource;
+  output String original;
+  output String absolute;
+  output String libraryName;
+  output String libraryDirectory;
+algorithm
+  RESOURCE(original, absolute, libraryName, libraryDirectory) := resource;
+end unpackResource;
+
+public function splitAbsoluteResource
+"@author: adrpo
+ splits the absolute resource path/to/Lib/resource/file.txt into (path/to/, Lib/resource/, file.txt)"
+  input String original;
+  input String absolute;
+  input String libraryName;
+  input String libraryDirectory;
+  output String path;
+  output String relative;
+  output String file;
+protected
+  String p, f, pld, ldn;
+algorithm
+  p := System.dirname(absolute);
+  f := System.basename(absolute);
+  if System.directoryExists(absolute) then
+    p := absolute;
+    f := "";
+  end if;
+  // get the parent library directory
+  pld := System.dirname(libraryDirectory);
+  // get the library directory name
+  ldn := System.basename(libraryDirectory);
+  relative := System.stringReplace(p, pld + System.pathDelimiter(), "");
+  path := pld;
+  file := f;
+end splitAbsoluteResource;
 
 annotation(__OpenModelica_Interface="frontend");
 end FCore;

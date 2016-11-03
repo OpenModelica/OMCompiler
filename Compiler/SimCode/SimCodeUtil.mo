@@ -13049,7 +13049,32 @@ algorithm
   files := DoubleEndedList.toListAndClear(delst);
 end getFunctionIndex;
 
-public function nVariablesReal
+public function handleExternalResources
+"@author: adrpo
+ copy external resources to the FMU if we have any"
+  input String directory;
+protected
+  FCore.Resources resources;
+  FCore.Resource r;
+  String o, a, ln, ld, d, path, relative, file;
+algorithm
+  resources := FCore.getResources();
+  if listEmpty(resources) then
+    return;
+  end if;
+  d := directory + "/resources/";
+  Util.createDirectoryTree(d);
+  for r in resources loop
+    (o, a, ln, ld) := FCore.unpackResource(r);
+    (path, relative, file) := FCore.splitAbsoluteResource(o, a, ln, ld);
+    Util.createDirectoryTree(d + relative);
+    // copy the file or directory
+    System.systemCall("cp -rf \"" + a + "\" \"" + d + relative + "\"", "");
+    System.appendFile(d + "resourceMapping.txt", a + "\n");
+    System.appendFile(d + "resourceMapping.txt", relative + System.pathDelimiter() + file + "\n");
+  end for;
+end handleExternalResources;
+
   input SimCode.VarInfo varInfo;
   output Integer n;
 algorithm

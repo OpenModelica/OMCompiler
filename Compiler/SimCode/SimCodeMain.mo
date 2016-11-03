@@ -831,6 +831,8 @@ algorithm
         SimCodeUtil.resetFunctionIndex();
         Tpl.tplNoret3(CodegenFMU.translateModel, simCode, FMUVersion, FMUType);
         Tpl.closeFile(Tpl.tplCallWithFailError4(CodegenFMU.fmuMakefile,Config.simulationCodeTarget(),simCode,FMUVersion,SimCodeUtil.getFunctionIndex(),txt=Tpl.redirectToFile(Tpl.emptyTxt, simCode.fileNamePrefix+".fmutmp/sources/Makefile.in")));
+        // handle resources
+        SimCodeUtil.handleExternalResources(fmutmp);
       then ();
     case (_,"Cpp")
       equation

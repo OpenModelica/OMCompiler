@@ -60,7 +60,8 @@ constant Integer inlineHashTable = 21; // TODO: Should be a local root?
 constant Integer currentInstVar = 22;
 constant Integer operatorOverloadingCache = 23;
 constant Integer optionSimCode = 24;
-constant Integer interactiveCache = 25;
+constant Integer externalResources = 25 "index for the external resources";
+constant Integer interactiveCache = 26;
 
 // indexes in System.tick
 // ----------------------
@@ -88,6 +89,7 @@ algorithm
   setGlobalRoot(stackoverFlowIndex, NONE());
   setGlobalRoot(inlineHashTable, NONE());
   setGlobalRoot(currentInstVar, NONE());
+  setGlobalRoot(externalResources, NONE());
   setGlobalRoot(interactiveCache, NONE());
 end initialize;
 

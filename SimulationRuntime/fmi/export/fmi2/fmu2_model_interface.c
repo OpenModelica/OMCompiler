@@ -296,7 +296,7 @@ fmi2Status fmi2SetDebugLogging(fmi2Component c, fmi2Boolean loggingOn, size_t nC
 
 fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2String fmuGUID, fmi2String fmuResourceLocation, const fmi2CallbackFunctions* functions,
     fmi2Boolean visible, fmi2Boolean loggingOn) {
-  // ignoring arguments: fmuResourceLocation, visible
+  // ignoring arguments: visible
   ModelInstance *comp;
   if (!functions->logger) {
     return NULL;
@@ -324,6 +324,7 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
 
     comp->instanceName = (fmi2String)functions->allocateMemory(1 + strlen(instanceName), sizeof(char));
     comp->GUID = (fmi2String)functions->allocateMemory(1 + strlen(fmuGUID), sizeof(char));
+    comp->resourceLocation = (fmi2String)functions->allocateMemory(1 + strlen(fmuResourceLocation), sizeof(char));
     fmudata = (DATA *)functions->allocateMemory(1, sizeof(DATA));
     modelData = (MODEL_DATA *)functions->allocateMemory(1, sizeof(MODEL_DATA));
     simInfo = (SIMULATION_INFO *)functions->allocateMemory(1, sizeof(SIMULATION_INFO));
@@ -355,6 +356,7 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   strcpy((char*)comp->instanceName, (const char*)instanceName);
   comp->type = fmuType;
   strcpy((char*)comp->GUID, (const char*)fmuGUID);
+  strcpy((char*)comp->resourceLocation, (const char*)fmuResourceLocation);
   comp->functions = functions;
   comp->componentEnvironment = functions->componentEnvironment;
   comp->loggingOn = loggingOn;

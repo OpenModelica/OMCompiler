@@ -2331,12 +2331,63 @@ Similar to <a href=\"http://linux.die.net/man/3/realpath\">realpath(3)</a>, but 
 </html>"));
 end realpath;
 
+function addExternalResource "store the resource for postprocessing"
+  input String originalUri;
+  input String absolutePath;
+  input String libraryName;
+  input String libraryDirectory;
+  output String result;
+external "builtin";
+annotation(Documentation(info="<html>
+Remembers the resource to be able to post process it later, such as bundle it in an FMU, etc.
+</html>"),
+  preferredView="text");
+end addExternalResource;
+
+function getExternalResources
+  output String [:,4] resources;
+external "builtin";
+annotation(Documentation(info="<html>
+Returns a list of loaded resources, clears on model instantiation/translation/compile/build:
+<pre>{{\"modelica://Lib/Resource\",\"/usr/lib/omlibrary/Lib/Resource\"}}</pre>
+</html>"));
+end getExternalResources;
+
 function uriToFilename
   input String uri;
   output String filename = "";
   output String message = "";
 protected
+  String ignore;
   String [:,2] libraries;
+  Boolean isPrefixOf, added = false;
+algorithm
+  libraries := getLoadedLibraries();
+  (filename, message) := uriToFilename_dispatch(uri, libraries);
+  for i in 1:sum(1 for lib in libraries) loop
+    isPrefixOf := regexBool(filename, "^" + libraries[i,2 ], caseInsensitive=true);
+    if (isPrefixOf) then
+        ignore := addExternalResource(uri, filename, libraries[i,1], libraries[i,2]);
+        added := true;
+      break;
+    end if;
+  end for;
+  if not added then
+    ignore := addExternalResource(uri, filename, "", "");
+  end if;
+annotation(Documentation(info="<html>
+Handles modelica:// and file:// URI's. The result is an absolute path on the local system.
+modelica:// URI's are only handled if the class is already loaded.
+Returns the empty string on failure.
+</html>"));
+end uriToFilename;
+
+function uriToFilename_dispatch
+  input String uri;
+  input String [:,2] libraries;
+  output String filename = "";
+  output String message = "";
+protected
   Integer numMatches;
   String [:] matches,matches2;
   String path, schema, str;
@@ -2349,7 +2400,6 @@ algorithm
     isFileUriAbsolute := regexBool(uri, "^file:///", caseInsensitive=true);
     isFileUri := regexBool(uri, "^file://", caseInsensitive=true);
     if isModelicaUri then
-      libraries := getLoadedLibraries();
       if sum(1 for lib in libraries) == 0 then
         filename := "";
         return;
@@ -2411,7 +2461,7 @@ Handles modelica:// and file:// URI's. The result is an absolute path on the loc
 modelica:// URI's are only handled if the class is already loaded.
 Returns the empty string on failure.
 </html>"));
-end uriToFilename;
+end uriToFilename_dispatch;
 
 function getLoadedLibraries
   output String [:,2] libraries;

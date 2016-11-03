@@ -1186,6 +1186,8 @@ algorithm
     case "numBits" then cevalNumBits;
     case "integerMax" then cevalIntegerMax;
     case "getLoadedLibraries" then cevalGetLoadedLibraries;
+    case "addExternalResource" then cevalAddExternalResource;
+    case "getExternalResources" then cevalGetExternalResources;
 
     //case "semiLinear" then cevalBuiltinSemiLinear;
     //case "delay" then cevalBuiltinDelay;
@@ -2679,6 +2681,97 @@ algorithm
         (inCache,Values.INTEGER(i),inST);
   end match;
 end cevalIntegerMax;
+
+protected function cevalAddExternalResource
+  input FCore.Cache inCache;
+  input FCore.Graph inGraph;
+  input list<DAE.Exp> inExpExpLst;
+  input Boolean inBoolean;
+  input Option<GlobalScript.SymbolTable> inST;
+  input Absyn.Msg inMsg;
+  input Integer numIter;
+  output FCore.Cache outCache;
+  output Values.Value outValue;
+  output Option<GlobalScript.SymbolTable> outST;
+algorithm
+  (outCache,outValue,outST) := matchcontinue (inCache,inGraph,inExpExpLst,inBoolean,inST,inMsg,numIter)
+    local
+      FCore.Cache cache;
+      FCore.Graph env;
+      Values.Value v1, v2, v3, v4, v;
+      DAE.Exp exp1, exp2, exp3, exp4;
+      String str1, str2, str3, str4;
+      Boolean impl;
+      Option<GlobalScript.SymbolTable> st;
+      Absyn.Msg msg;
+
+    case (cache,env,{exp1, exp2, exp3, exp4},impl,st,msg,_)
+      equation
+        (cache,v1,st) = ceval(cache, env, exp1, impl, st, msg, numIter+1);
+        (cache,v2,st) = ceval(cache, env, exp2, impl, st, msg, numIter+1);
+        (cache,v3,st) = ceval(cache, env, exp3, impl, st, msg, numIter+1);
+        (cache,v4,st) = ceval(cache, env, exp4, impl, st, msg, numIter+1);
+        Values.STRING(str1) = v1;
+        Values.STRING(str2) = v2;
+        Values.STRING(str3) = v3;
+        Values.STRING(str4) = v4;
+        FCore.addResource(str1, str2, str3, str4);
+        v = ValuesUtil.makeArray(List.map({str1, str2, str3, str4},ValuesUtil.makeString));
+      then (cache,v,inST);
+
+    // do NOT fail!
+    case (cache,_,_,_,_,_,_) then (cache,Values.STRING(""),inST);
+
+  end matchcontinue;
+end cevalAddExternalResource;
+
+protected function cevalGetExternalResources
+  input FCore.Cache inCache;
+  input FCore.Graph inGraph;
+  input list<DAE.Exp> inExpExpLst;
+  input Boolean inBoolean;
+  input Option<GlobalScript.SymbolTable> inST;
+  input Absyn.Msg inMsg;
+  input Integer numIter;
+  output FCore.Cache outCache;
+  output Values.Value outValue;
+  output Option<GlobalScript.SymbolTable> outST;
+algorithm
+  (outCache,outValue,outST) := match (inCache,inGraph,inExpExpLst,inBoolean,inST,inMsg,numIter)
+    local
+      FCore.Cache cache;
+      FCore.Graph g;
+      list<SCode.Element> classes;
+      list<Absyn.Class> absynclasses;
+      Values.Value v;
+      FCore.Ref top;
+
+    case (cache,_,{},_,_,_,_)
+      equation
+        v = ValuesUtil.makeArray(List.fold(FCore.getResources(),makeExternalResource,{}));
+      then (cache,v,inST);
+
+  end match;
+end cevalGetExternalResources;
+
+protected function makeExternalResource "from a FCore.Resource to a string: {original, absolute}"
+  input FCore.Resource r;
+  input list<Values.Value> acc;
+  output list<Values.Value> out;
+algorithm
+  out := match (r,acc)
+    local
+      String o, a, ln, ld;
+      Values.Value v;
+      Boolean b;
+
+    case (FCore.RESOURCE(o, a, ln, ld),_)
+      equation
+        v = ValuesUtil.makeArray({Values.STRING(o),Values.STRING(a),Values.STRING(ln),Values.STRING(ld)});
+      then v::acc;
+  end match;
+
+end makeExternalResource;
 
 protected function cevalGetLoadedLibraries
   input FCore.Cache inCache;

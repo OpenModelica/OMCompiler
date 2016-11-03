@@ -2729,6 +2729,7 @@ public function runFrontEnd
 algorithm
   // add program to the cache so it can be used to lookup modelica://
   // URIs in external functions IncludeDirectory/LibraryDirectory
+  FCore.clearResources();
   st := runFrontEndLoadProgram(className, inInteractiveSymbolTable);
   cache := FCore.setProgramInCache(inCache, GlobalScriptUtil.getSymbolTableAST(st));
   if Flags.isSet(Flags.GC_PROF) then

@@ -82,6 +82,8 @@ typedef struct {
   fmi2Boolean stopTimeDefined;
   fmi2Real stopTime;
 
+  fmi2String resourceLocation;
+
   int _need_update;
 #ifdef FMU_EXPERIMENTAL
   int _has_jacobian;
