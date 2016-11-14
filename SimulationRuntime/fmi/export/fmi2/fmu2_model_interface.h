@@ -82,7 +82,7 @@ typedef struct {
   fmi2Boolean stopTimeDefined;
   fmi2Real stopTime;
 
-  fmi2String resourceLocation;
+  fmi2String fmuResourceLocation;
 
   int _need_update;
 #ifdef FMU_EXPERIMENTAL

@@ -494,6 +494,7 @@ typedef struct MODEL_DATA
   const char* modelDir;
   const char* modelGUID;
   const char* initXMLData;
+  char* fmuResourceLocation /* only used for FMU and set to fmuResourceLocation in fmiNInstantiate */;
 
   long nSamples;                       /* number of different sample-calls */
   SAMPLE_INFO* samplesInfo;            /* array containing each sample-call */

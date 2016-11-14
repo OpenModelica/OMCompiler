@@ -254,6 +254,157 @@ fmi2Status fmi2EventIteration(fmi2Component c, fmi2EventInfo *eventInfo)
   return status;
 }
 
+/*
+ * handle fmuResourceLocation translation from file:// to native path
+ */
+const char* TranslateFMUResourceLocation(const fmi2CallbackFunctions* functions, const char* fmuResourceLocation)
+{
+#if defined(WIN32) || defined(WIN64)
+  char psep = '\\';
+  char pseprepl = '/';
+#else
+  char psep = '/';
+  char pseprepl = '\\';
+#endif
+  int path_start = 0;
+  char* path = NULL;
+  unsigned int path_len = 0;
+  unsigned int uri_len = 0;
+  char* pch = NULL;
+  unsigned int i = 0;
+  unsigned int j = 0;
+  char buf[3] = "00";
+
+  if (!fmuResourceLocation)
+  {
+    return NULL;
+  }
+
+  uri_len = (unsigned int) strlen(fmuResourceLocation);
+
+  if (uri_len == 0)
+  {
+    return NULL;
+  }
+
+  /* Check if we got a file:/// fmuResourceLocation */
+  if (strncmp(fmuResourceLocation, "file:///", 8) == 0)
+  {
+    if (fmuResourceLocation[9] == ':')
+    {
+      /* Windows drive letter in the URI (e.g. file:///c:/ fmuResourceLocation
+      /* Remove the file:/// */
+      path_start = 8;
+    }
+    else
+    {
+      /* Remove the file:// but keep the third / */
+      path_start = 7;
+    }
+  }
+#if defined WIN32 || defined WIN64
+  /* Check if we got a file://hostname/path fmuResourceLocation */
+  else if (strncmp(fmuResourceLocation, "file://", 7) == 0)
+  {
+    /* Convert to a network share path: //hostname/path */
+    path_start = 5;
+  }
+#endif
+  /* Check if we got a file:/ fmuResourceLocation */
+  else if (strncmp(fmuResourceLocation, "file:/", 6) == 0)
+  {
+    if (fmuResourceLocation[7] == ':')
+    {
+      /* Windows drive letter in the URI (e.g. file:/c:/ fmuResourceLocation
+      /* Remove the file:/ */
+      path_start = 6;
+    }
+    else
+    {
+      /* Remove the file: but keep the / */
+      path_start = 5;
+    }
+  }
+  /* Assume that it is a native path */
+  else
+  {
+    path_start = 0;
+  }
+
+  /* Check the length of the remaining string */
+  path_len = (int)strlen(&fmuResourceLocation[path_start]);
+  if (path_len == 0)
+  {
+    return NULL;
+  }
+
+  /* Allocate memory for the return value including terminating \0 and extra path separator */
+  if ((functions) &&( functions->allocateMemory != NULL))
+  {
+    path = (char*) functions->allocateMemory(path_len + 2, sizeof(char));
+  }
+  else
+  {
+    path = (char*) malloc(path_len + 2);
+  }
+
+  /* Copy the remainder of the fmuResourceLocation and replace all percent encoded character
+  * by their ASCII character and translate slashes to backslashes on Windows
+  * and backslashes to slashes on other OSses
+  */
+  for (i = path_start, j = 0; i < uri_len; i++, j++)
+  {
+    if (fmuResourceLocation[i] == '%')
+    {
+      /* Replace the precent-encoded hexadecimal digits by its US-ASCII
+      * representation */
+      if (i < uri_len - 2)
+      {
+        if ((isxdigit(fmuResourceLocation[i + 1])) && (isxdigit(fmuResourceLocation[i + 2])))
+        {
+          strncpy(buf, fmuResourceLocation + i + 1, 2);
+          path[j] = (unsigned char)strtol(buf, NULL, 16);
+          i += 2;
+          path_len -= 2;
+        }
+        else
+        {
+          /* Not percent encoded, keep the % */
+          path[j] = fmuResourceLocation[i];
+        }
+      }
+      else
+      {
+        /* Not percent encoded, keep the % */
+        path[j] = fmuResourceLocation[i];
+      }
+    }
+    else if (fmuResourceLocation[i] == pseprepl)
+    {
+      /* Translate slashes to backslashes on Windows and backslashes to slashes on other OSses */
+      path[j] = psep;
+    }
+    else
+    {
+      /* Just copy the character */
+      path[j] = fmuResourceLocation[i];
+    }
+  }
+
+  /* Check if we need to add a path separator at the end */
+  if (path[path_len - 1] == psep)
+  {
+    path[path_len] = '\0';
+  }
+  else
+  {
+    path[path_len] = psep;
+  }
+  /* Make sure that the string is always NULL terminated */
+  path[path_len + 1] = '\0';
+
+  return path;
+}
 
 
 /***************************************************
@@ -317,14 +468,14 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   comp = (ModelInstance *)functions->allocateMemory(1, sizeof(ModelInstance));
   if (comp) {
     DATA* fmudata = NULL;
-  MODEL_DATA* modelData = NULL;
-  SIMULATION_INFO* simInfo = NULL;
+    MODEL_DATA* modelData = NULL;
+    SIMULATION_INFO* simInfo = NULL;
     threadData_t *threadData = NULL;
     int i;
 
     comp->instanceName = (fmi2String)functions->allocateMemory(1 + strlen(instanceName), sizeof(char));
     comp->GUID = (fmi2String)functions->allocateMemory(1 + strlen(fmuGUID), sizeof(char));
-    comp->resourceLocation = (fmi2String)functions->allocateMemory(1 + strlen(fmuResourceLocation), sizeof(char));
+    comp->fmuResourceLocation = TranslateFMUResourceLocation(functions, fmuResourceLocation);
     fmudata = (DATA *)functions->allocateMemory(1, sizeof(DATA));
     modelData = (MODEL_DATA *)functions->allocateMemory(1, sizeof(MODEL_DATA));
     simInfo = (SIMULATION_INFO *)functions->allocateMemory(1, sizeof(SIMULATION_INFO));
@@ -356,13 +507,13 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   strcpy((char*)comp->instanceName, (const char*)instanceName);
   comp->type = fmuType;
   strcpy((char*)comp->GUID, (const char*)fmuGUID);
-  strcpy((char*)comp->resourceLocation, (const char*)fmuResourceLocation);
   comp->functions = functions;
   comp->componentEnvironment = functions->componentEnvironment;
   comp->loggingOn = loggingOn;
   comp->state = modelInstantiated;
   /* intialize modelData */
   fmu2_model_interface_setupDataStruc(comp->fmuData);
+  comp->fmuData->modelData->fmuResourceLocation = TranslateFMUResourceLocation(functions, fmuResourceLocation);
   useStream[LOG_STDOUT] = 1;
   useStream[LOG_ASSERT] = 1;
   initializeDataStruc(comp->fmuData, comp->threadData);
@@ -374,6 +525,9 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
 #if !defined(OMC_MINIMAL_METADATA)
   modelInfoInit(&(comp->fmuData->modelData->modelDataXml));
 #endif
+
+  /* update bound parameters before external constructors! */
+  comp->fmuData->callback->updateBoundParameters(comp->fmuData, comp->threadData);
   /* read input vars */
   /* input_function(comp->fmuData); */
 #if !defined(OMC_NUM_NONLINEAR_SYSTEMS) || OMC_NUM_NONLINEAR_SYSTEMS>0

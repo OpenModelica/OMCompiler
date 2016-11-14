@@ -1065,7 +1065,7 @@ match platform
   <%\t%>cp <%omhome%>/bin/libiconv*.dll ../binaries/<%platform%>/
   <%\t%>cp <%omhome%>/bin/libgcc_s_*.dll ../binaries/<%platform%>/
   <%\t%>cp <%omhome%>/bin/libstdc*.dll ../binaries/<%platform%>/
-  <%\t%>rm -f <%fileNamePrefix%>.def <%fileNamePrefix%>.o <%fileNamePrefix%>$(DLLEXT) $(OFILES) $(RUNTIMEFILES)
+  <%\t%>rm -f <%fileNamePrefix%>.def <%fileNamePrefix%>.o <%fileNamePrefix%>_FMU.o <%fileNamePrefix%>$(DLLEXT) $(OFILES) $(RUNTIMEFILES)
   <%\t%>cd .. && rm -f ../<%fileNamePrefix%>.fmu && zip -r ../<%fileNamePrefix%>.fmu *
 
   >>
@@ -1087,7 +1087,7 @@ match platform
   distclean: clean
   <%\t%>rm -f Makefile config.status config.log
   clean:
-  <%\t%>rm -f <%fileNamePrefix%>.def <%fileNamePrefix%>.o <%fileNamePrefix%>.a <%fileNamePrefix%>$(DLLEXT) $(MAINOBJ) $(OFILES) $(RUNTIMEFILES)
+  <%\t%>rm -f <%fileNamePrefix%>.def <%fileNamePrefix%>.o <%fileNamePrefix%>_FMU.o <%fileNamePrefix%>.a <%fileNamePrefix%>$(DLLEXT) $(MAINOBJ) $(OFILES) $(RUNTIMEFILES)
   >>
 end getPlatformString2;
 

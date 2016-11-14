@@ -1229,6 +1229,7 @@ template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String gu
     data->modelData->resultFileName = NULL;
     data->modelData->modelDir = "<%directory%>";
     data->modelData->modelGUID = "{<%guid%>}";
+    data->modelData->fmuResourceLocation = NULL;
     <% if isModelExchangeFMU then
     <<
     data->modelData->initXMLData = NULL;
