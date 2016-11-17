@@ -14,7 +14,6 @@
 #include <Core/Math/ILapack.h>     // needed for solution of linear system with Lapack
 #include <Core/Math/Constants.h>   // definitializeion of constants like uround
 
-
 Newton::Newton(INonLinearAlgLoop* algLoop, INonLinSolverSettings* settings)
   : _algLoop          (algLoop)
   , _newtonSettings   ((INonLinSolverSettings*)settings)
@@ -135,10 +134,8 @@ void Newton::solve()
 
   // Get current values and residuals from system
   _algLoop->getReal(_y);
-  if (!_algLoop->isLinearTearing()) {
-    _algLoop->evaluate();
-    _algLoop->getRHS(_f);
-  }
+  _algLoop->evaluate();
+  _algLoop->getRHS(_f);
 
   // Reset status flag
   _iterationStatus = CONTINUE;
