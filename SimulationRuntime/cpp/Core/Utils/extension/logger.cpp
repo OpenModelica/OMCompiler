@@ -27,12 +27,15 @@ Logger::~Logger()
 
 void Logger::initialize(LogSettings settings)
 {
+  if (instance != NULL)
+    delete instance;
+
   switch (settings.format) {
-  case LF_TXT:
-    _instance = new Logger(settings, true);
+  case LF_XML:
+    instance = new LoggerXML(settings, true);
     break;
   default:
-    _instance = new LoggerXML(settings, true);
+    instance = new Logger(settings, true);
   }
 }
 
