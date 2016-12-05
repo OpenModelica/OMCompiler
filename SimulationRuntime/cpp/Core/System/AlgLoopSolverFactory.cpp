@@ -22,15 +22,11 @@ AlgLoopSolverFactory::~AlgLoopSolverFactory()
 
 shared_ptr<IAlgLoopSolver> AlgLoopSolverFactory::createLinearAlgLoopSolver(ILinearAlgLoop* algLoop)
 {
-
-
       try
       {
         string linsolver_name = _global_settings->getSelectedLinSolver();
-        shared_ptr<ILinSolverSettings> algsolversetting= createLinSolverSettings(linsolver_name);
-        _linalgsolversettings.push_back(algsolversetting);
-
-
+		shared_ptr<ILinSolverSettings> algsolversetting= createLinSolverSettings(linsolver_name);
+		_linalgsolversettings.push_back(algsolversetting);
         shared_ptr<IAlgLoopSolver> algsolver= createLinSolver(algLoop,linsolver_name,algsolversetting);
         _algsolvers.push_back(algsolver);
         return algsolver;

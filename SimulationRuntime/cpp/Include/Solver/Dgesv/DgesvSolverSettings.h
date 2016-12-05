@@ -1,14 +1,14 @@
 #pragma once
-/** @addtogroup solverLinear
+/** @addtogroup solverDgesv
  *
  *  @{
  */
 #include <Core/Solver/ILinSolverSettings.h>
 
-class LinearSolverSettings :public ILinSolverSettings
+class DgesvSolverSettings :public ILinSolverSettings
 {
 public:
-  LinearSolverSettings();
+  DgesvSolverSettings();
   virtual bool getUseSparseFormat();
   virtual void setUseSparseFormat(bool value);
   virtual void load(std::string);

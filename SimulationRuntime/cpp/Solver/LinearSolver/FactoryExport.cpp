@@ -7,7 +7,6 @@
 #include <Core/Modelica.h>
 #if defined(__vxworks)
 #include <Solver/LinearSolver/LinearSolver.h>
-#include <
 
 extern "C" IAlgLoopSolver* createLinearSolver(ILinearAlgLoop* algLoop,ILinSolverSettings*)
 {
