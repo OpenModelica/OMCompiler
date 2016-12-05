@@ -1,18 +1,14 @@
 #pragma once
-/** @addtogroup solverLinearSolver
+/** @addtogroup solverDgesvSolver
  *
  *  @{
  */
 
-#if defined(klu)
-	#include <klu.h>
-#endif
-
-class LinearSolver : public IAlgLoopSolver
+class DgesvSolver : public IAlgLoopSolver
 {
 public:
-  LinearSolver(ILinearAlgLoop* algLoop, ILinSolverSettings* settings);
-  virtual ~LinearSolver();
+  DgesvSolver(ILinearAlgLoop* algLoop, ILinSolverSettings* settings);
+  virtual ~DgesvSolver();
 
   /// (Re-) initialize the solver
   virtual void initialize();
@@ -44,8 +40,7 @@ private:
   bool
     _firstCall;           ///< Temp   - Denotes the first call to the solver, init() is called
 
-  long int *_ihelpArray,	//pivot indices for lapackroutine
-	  *_jhelpArray;			//pivot indices for lapackroutine
+  long int *_ihelpArray;	//pivot indices for lapackroutine
 
   double
 	  *_y,                  ///< Temp   - Unknowns
@@ -54,19 +49,6 @@ private:
       *_y_new,				//stores new solution
 	  *_b,                  ///< right hand side
 	  *_A,				///coefficients of linear system
-	  *_zeroVec,			///zero vector
-	  *_scale;				//scaling parameter to prevent overflow in singular systems
-  bool _sparse;
-#if defined(klu)
-  int _dim;
-  klu_symbolic* _kluSymbolic ;
-  klu_numeric* _kluNumeric ;
-  klu_common* _kluCommon ;
-  int* _Ai;
-  int* _Ap;
-  double* _Ax;
-  int _nonzeros;
-#endif
-
+	  *_zeroVec;			///zero vector
 };
 /** @} */ // end of solverLinearSolver

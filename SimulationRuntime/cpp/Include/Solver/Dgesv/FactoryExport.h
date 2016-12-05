@@ -1,6 +1,6 @@
 #pragma once
-/** @defgroup solverLinear Solver.Linear
- *  Linear class wrapper from sundials package
+/** @defgroup solverDgesv Solver.Dgesv
+ *  Dgesv class wrapper from sundials package
  *  @{
  */
 #if defined(__vxworks) || defined(__TRICORE__) || defined(RUNTIME_STATIC_LINKING)

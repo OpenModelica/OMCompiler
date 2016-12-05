@@ -11,9 +11,9 @@
 #include <Core/Utils/extension/logger.hpp>
 #include <Solver/LinearSolver/LinearSolver.h>
 
-// #if defined(klu)
-#include <klu.h>
-// #endif
+#if defined(klu)
+	#include <klu.h>
+#endif
 
 #include <iostream>
 
