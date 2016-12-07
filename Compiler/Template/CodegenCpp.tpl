@@ -6191,7 +6191,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
     return empty;
   }
 
-  const sparsematrix_t& <%modelName%>Algloop<%nls.index%>::getSystemSparseMatrix()
+  sparsematrix_t& <%modelName%>Algloop<%nls.index%>::getSystemSparseMatrix()
   {
     throw ModelicaSimulationError(MATH_FUNCTION, "Sparse symbolic Jacobian is not suported yet");
   }
