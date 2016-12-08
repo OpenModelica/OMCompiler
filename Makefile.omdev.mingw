@@ -4,7 +4,8 @@ all : .testvariables settings mkbuilddirs omc
 autoconfGeneratedFiles =
 
 ifeq ($(OMBUILDDIR),)
-OMBUILDDIR=$(CURDIR)/build
+REALPATH = $(realpath ..)
+OMBUILDDIR=$(REALPATH)/build
 endif
 
 ifeq ($(BUILDTYPE),)
@@ -23,7 +24,7 @@ docdir = ${prefix}/doc
 CC = gcc
 CXX = g++
 FC = gfortran
-CFLAGS =-g -O2 -falign-functions
+CFLAGS =-g  -falign-functions
 MSGPACK_CFLAGS = -march=i686
 
 CMAKE = $(OMDEVMSYS)/bin/cmake/bin/cmake

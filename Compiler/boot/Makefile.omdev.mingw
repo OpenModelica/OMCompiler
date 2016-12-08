@@ -1,5 +1,10 @@
 OMDEVMSYS=$(shell cygpath $$OMDEV)
 
+ifeq ($(OMBUILDDIR),)
+REALPATH = $(realpath ../../../)
+OMBUILDDIR=$(REALPATH)/build
+endif
+
 ifeq (MINGW32,$(findstring MINGW32,$(shell uname)))
 	EXTRA_LD_FLAGS = -Wl,--stack,16777216,--large-address-aware -L$(OMDEVMSYS)/lib/omniORB-4.2.0-mingw32/lib/x86_win32
 else
@@ -8,7 +13,7 @@ endif
 
 CC=gcc
 CXX=g++
-override CFLAGS += -fno-ipa-pure-const
+override CFLAGS += -g -fno-ipa-pure-const
 TOP_DIR=../../
 OMHOME=$(OMBUILDDIR)
 LDFLAGS=-L./ $(LOMPARSE) $(LCOMPILERRUNTIME) -L"$(OMHOME)/lib/omc" \
