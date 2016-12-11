@@ -445,7 +445,7 @@ algorithm
 end fillNamedSlot;
 
 protected function isSpecialBuiltinFunctionName
-"@author: adrpo
+"@author: adrpo petfr
  check if the name is special builtin function or
  operator which does not have a definition in ModelicaBuiltin.mo
  TODO FIXME, add all of them"
@@ -480,8 +480,9 @@ algorithm
   end matchcontinue;
 end isSpecialBuiltinFunctionName;
 
+
 protected function isBuiltinFunctionName
-"@author: adrpo
+"@author: adrpo  petfr
  check if the name is a builtin function or operator
  TODO FIXME, add all of them"
   input Absyn.ComponentRef functionName;
@@ -499,8 +500,12 @@ algorithm
 
     case (Absyn.CREF_IDENT(name, {}))
       equation
+
+
+       // See more complete list below from Static.elabbuiltinhandler.
         b = listMember(name,
           {
+            "der",
             "noEvent",
             "smooth",
             "sample",
@@ -533,12 +538,131 @@ algorithm
   end matchcontinue;
 end isBuiltinFunctionName;
 
+
+/*
+from Static.elabBuiltinHandler:
+
+algorithm
+  outHandler := match (inIdent)
+    case "delay" then elabBuiltinDelay;
+    case "smooth" then elabBuiltinSmooth;
+    case "size" then elabBuiltinSize;
+    case "ndims" then elabBuiltinNDims;
+    case "zeros" then elabBuiltinZeros;
+    case "ones" then elabBuiltinOnes;
+    case "fill" then elabBuiltinFill;
+    case "max" then elabBuiltinMax;
+    case "min" then elabBuiltinMin;
+    case "transpose" then elabBuiltinTranspose;
+    case "symmetric" then elabBuiltinSymmetric;
+    case "array" then elabBuiltinArray;
+    case "sum" then elabBuiltinSum;
+    case "product" then elabBuiltinProduct;
+    case "pre" then elabBuiltinPre;
+    case "firstTick" then elabBuiltinFirstTick;
+    case "interval" then elabBuiltinInterval;
+    case "boolean" then elabBuiltinBoolean;
+    case "diagonal" then elabBuiltinDiagonal;
+    case "noEvent" then elabBuiltinNoevent;
+    case "edge" then elabBuiltinEdge;
+    case "der" then elabBuiltinDer;
+    case "change" then elabBuiltinChange;
+    case "cat" then elabBuiltinCat;
+    case "identity" then elabBuiltinIdentity;
+    case "vector" then elabBuiltinVector;
+    case "matrix" then elabBuiltinMatrix;
+    case "scalar" then elabBuiltinScalar;
+    case "String" then elabBuiltinString;
+    case "rooted" then elabBuiltinRooted;
+    case "Integer" then elabBuiltinIntegerEnum;
+    case "EnumToInteger" then elabBuiltinIntegerEnum;
+    case "inStream" then elabBuiltinInStream;
+    case "actualStream" then elabBuiltinActualStream;
+    case "getInstanceName" then elabBuiltinGetInstanceName;
+    case "classDirectory" then elabBuiltinClassDirectory;
+    case "sample" then elabBuiltinSample;
+    case "cardinality" then elabBuiltinCardinality;
+    case "homotopy" then elabBuiltinHomotopy;
+    case "DynamicSelect" then elabBuiltinDynamicSelect;
+    case "Clock"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinClock;
+    case "previous"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinPrevious;
+    case "hold"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinHold;
+    case "subSample"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinSubSample;
+    case "superSample"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinSuperSample;
+    case "shiftSample"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinShiftSample;
+    case "backSample"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinBackSample;
+    case "noClock"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinNoClock;
+    case "transition"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinTransition;
+    case "initialState"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinInitialState;
+    case "activeState"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinActiveState;
+    case "ticksInState"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinTicksInState;
+    case "timeInState"
+      equation
+        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      then elabBuiltinTimeInState;
+    case "sourceInfo"
+      equation
+        true = Config.acceptMetaModelicaGrammar();
+      then elabBuiltinSourceInfo;
+    case "SOME"
+      equation
+        true = Config.acceptMetaModelicaGrammar();
+      then elabBuiltinSome;
+    case "NONE"
+      equation
+        true = Config.acceptMetaModelicaGrammar();
+      then elabBuiltinNone;
+    case "isPresent"
+      equation
+        true = Config.acceptMetaModelicaGrammar();
+      then elabBuiltinIsPresent;
+  end match;
+
+  */
+
+
 // adrpo:
 // - see Static.mo for how to check the input arguments or any other checks we need that should be ported
 // - try to use Expression.makePureBuiltinCall everywhere instead of creating the typedExp via DAE.CALL
 // - this function should handle special builtin operators which are not defined in ModelicaBuiltin.mo
 protected function typeSpecialBuiltinFunctionCall
-"@author: adrpo
+"@author: adrpo petfr
  handle all builtin calls that are not defined at all in ModelicaBuiltin.mo
  TODO FIXME, add all"
   input Absyn.ComponentRef functionName;
@@ -598,6 +722,11 @@ end typeSpecialBuiltinFunctionCall;
 
 
 // adrpo:
+// - petfr: ??slow with a lot of linear search for all the builtin function names?, happens for all
+//  function calls in models
+// - petfr: According to Martin, if we do a match only on the string value, it will do a perfect
+// - hash and avoid the linear search
+//
 // - see Static.mo for how to check the input arguments or any other checks we need that should be ported
 // - try to use Expression.makePureBuiltinCall everywhere instead of creating the typedExp via DAE.CALL
 // - all the fuctions that are defined *with no input/output type* in ModelicaBuiltin.mo such as:
@@ -607,7 +736,7 @@ end typeSpecialBuiltinFunctionCall;
 //   need to be handled here!
 // - the functions which have a type in the ModelicaBuiltin.mo should be handled by the last case in this function
 protected function typeBuiltinFunctionCall
-"@author: adrpo
+"@author: adrpo, petfr
  handle all builtin calls that are not in ModelicaBuiltin.mo
  TODO FIXME, add all"
   input Absyn.ComponentRef functionName;
@@ -626,7 +755,7 @@ protected
    String fnName;
    DAE.Const vr, vr1, vr2;
 algorithm
-  (typedExp, ty, variability) := matchcontinue(functionName, functionArgs)
+  (typedExp, ty, variability) := matchcontinue (functionName, functionArgs)
     local
       Absyn.ComponentRef acref;
       Absyn.Exp aexp1, aexp2;
@@ -666,6 +795,7 @@ algorithm
       then
         (DAE.SIZE(dexp1, NONE()), ty, vr);
 
+    // smooth(p, expr) returns expr and states that expr is p times continuously differentiable
     case (Absyn.CREF_IDENT(name = "smooth"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         call_path := Absyn.crefToPath(functionName);
@@ -678,6 +808,8 @@ algorithm
       then
         (DAE.CALL(call_path, {dexp1,dexp2}, DAE.callAttrBuiltinOther), ty, vr);
 
+    // Connections.rooted(A.R) returns true, if A.R is closer to the root of the spanning tree than B.R;
+    // otherwise false is returned.   rooted(A.R);  is deprecated
     case (Absyn.CREF_IDENT(name = "rooted"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         call_path := Absyn.crefToPath(functionName);
@@ -736,6 +868,8 @@ algorithm
       then
         (typedExp, ty, vr);
 
+     // diagonal(v)  Returns a square matrix with the elements of vector v on the diagonal
+     // and all other elements zero ?? how can you be sure to extract an expression aexp1 if the argument is an ident?
     case (Absyn.CREF_IDENT(name = "diagonal"), Absyn.FUNCTIONARGS(args = aexp1::_))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
@@ -747,56 +881,165 @@ algorithm
       then
         (typedExp, ty, vr);
 
+     // product(A) returns scalar product of all the elements of array expression A   petfr OK?
+     // This means that the type is a scalar type, not an array type
+ /**/   case (Absyn.CREF_IDENT(name = "product"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        // Here, we need to extract the element type of array type dexp1
+        ty := Types.arrayElementType(ty1);
+        typedExp :=  Expression.makePureBuiltinCall("product", {dexp1}, ty);
+        vr := vr1;
+      then
+        (typedExp, ty, vr);
+
+       // pre(y) returns left limit y(tpre) of variable y(t) at a time instant t   petfr OK?
+       // pre() operator can be applied if the following three conditions are fulfilled simultaneously:
+       // (a) variable y is either a subtype of a simple type or is a record component,
+       // (b) y is a discrete-time expression
+       // (c) the operator is not applied in a function class  ?? where is this checked?
+/**/ case (Absyn.CREF_IDENT(name = "pre"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        typedExp :=  Expression.makePureBuiltinCall("pre", {dexp1}, ty1);
+      then
+        (typedExp, ty1, vr1);
+
+      // noEvent(expr)  Real elementary relations within expr are taken literally,   petfr OK?
+      // i.e., no state or time event is triggered
+/**/   case (Absyn.CREF_IDENT(name = "noEvent"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        typedExp :=  Expression.makePureBuiltinCall("noEvent", {dexp1}, ty1);
+      then
+        (typedExp, ty1, vr1);
+
+/**/   // sum(A) Returns the scalar sum of all the elements of array expression    petfr OK?
+    case (Absyn.CREF_IDENT(name = "sum"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      algorithm
+       (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        ty := Types.arrayElementType(ty1);
+        typedExp :=  Expression.makePureBuiltinCall("sum", {dexp1}, ty);
+      then
+       (typedExp, ty, vr1);
+
+  // inst_assert, inst.assert should not be here
+ /* assert is not a function, should not be here? */
+  // Example:  assert(size(a,1)==size(a,2),"Matrix must be square");
+  //   assert(condition, message); // Uses level=AssertionLevel.error
+  //   assert(condition, message, assertionLevel);
+  //   assert(condition, message, level = assertionLevel);
+  //  First argument is Boolean, second is a string, third is an Integer.  COuld be declared?
+  //  ?? an assert statement has no type, or we just ignore it?  Is there a void type?  AnyType?
+
+
+      // edge(b) is expanded into (b and not pre(b)) for Boolean variable b
+      // The same restrictions as for pre() apply, e.g. not to be used inside functions.
+ /**/  case (Absyn.CREF_IDENT(name = "edge"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        typedExp :=  Expression.makePureBuiltinCall("edge", {dexp1}, ty1);
+        ty := DAE.T_BOOL_DEFAULT;
+      then
+        (typedExp, ty, vr1);
+
+      // change(v) is expanded into  (v<>pre(v)).
+      // The same restrictions as for the pre() operator apply.
+ /**/  case (Absyn.CREF_IDENT(name = "change"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        typedExp :=  Expression.makePureBuiltinCall("change", {dexp1}, ty1);
+        ty := DAE.T_BOOL_DEFAULT;
+      then
+        (typedExp, ty, vr1);
+
+  // array(A,B,C,...) constructs an array from its arguments
+  // All arguments must have the same sizes, i.e., size(A)=size(B)=size(C)=...
+  // All arguments must be type compatible expressions
+  // There must be at least one argument [i.e., array() or {} is not defined
+  // {A, B, C, ...} is a shorthand notation for array(A, B, C, ...)
+  // array(alpha, 2, 3.0) or {alpha, 2, 3.0} is a 3-vector of type Real.
+  // Angle[3] a = {1.0, alpha, 4};   // type of a is Real[3]
+
+  // petfr  ?? CHECK elabBuiltinArray in static.mo
+
+ /**/  //  case (Absyn.CREF_IDENT(name = "array"), Absyn.FUNCTIONARGS(args = afargs))
+ // OLD:  ??OBS: this code is not updated yet
+/*      equation
+        call_path = Absyn.crefToPath(functionName);
+        (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
+      then
+        DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
+*/
+
+
     /* adrpo: adapt these to the new structures, see above
-    case (Absyn.CREF_IDENT(name = "product"), Absyn.FUNCTIONARGS(args = afargs))
+ **   case (Absyn.CREF_IDENT(name = "product"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
-    case (Absyn.CREF_IDENT(name = "pre"), Absyn.FUNCTIONARGS(args = afargs))
+    // pre(y) returns left limit y(tpre) of variable y(t) at a time instant t
+ **    case (Absyn.CREF_IDENT(name = "pre"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
-    case (Absyn.CREF_IDENT(name = "noEvent"), Absyn.FUNCTIONARGS(args = afargs))
+
+ **   case (Absyn.CREF_IDENT(name = "noEvent"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
-    case (Absyn.CREF_IDENT(name = "sum"), Absyn.FUNCTIONARGS(args = afargs))
+    // sum(A) Returns the scalar sum of all the elements of array expression
+ **   case (Absyn.CREF_IDENT(name = "sum"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
-    case (Absyn.CREF_IDENT(name = "assert"), Absyn.FUNCTIONARGS(args = afargs))
+  // Example:  assert(size(a,1)==size(a,2),"Matrix must be square");
+  //   assert(condition, message); // Uses level=AssertionLevel.error
+  //   assert(condition, message, assertionLevel);
+  //   assert(condition, message, level = assertionLevel);
+  //  ?? an assert statement has no type, or we just ignore it?
+ **   case (Absyn.CREF_IDENT(name = "assert"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
-    case (Absyn.CREF_IDENT(name = "change"), Absyn.FUNCTIONARGS(args = afargs))
+ **   case (Absyn.CREF_IDENT(name = "change"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
-    case (Absyn.CREF_IDENT(name = "array"), Absyn.FUNCTIONARGS(args = afargs))
+ **   case (Absyn.CREF_IDENT(name = "array"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
+
+// array "(" expression for iterators ")"
+// is an array constructor with iterators.
+// The expressions inside the iterators of an array constructor shall be vector expressions
+//Example: array(i for i in 1:10)
+// Gives the vector 1:10={1,2,3,...,10}
+//Example: {r for r in 1.0 : 1.5 : 5.5}
+// Gives the vector 1.0:1.5:5.5={1.0, 2.5, 4.0, 5.5}
+//Example: Real hilb[:,:]= {(1/(i+j-1) for i in 1:n, j in 1:n};
     case (Absyn.CREF_IDENT(name = "array"), Absyn.FOR_ITER_FARG(exp=aexp1, iterators=iters))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -805,6 +1048,7 @@ algorithm
       then
         DAE.CALL(call_path, {dexp1}, DAE.callAttrBuiltinOther);
 
+   // sum( e(i, ..., j) for  i in u, ...,  j in v)
     case (Absyn.CREF_IDENT(name = "sum"), Absyn.FOR_ITER_FARG(exp=aexp1, iterators=iters))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -813,6 +1057,7 @@ algorithm
       then
         DAE.CALL(call_path, {dexp1}, DAE.callAttrBuiltinOther);
 
+    // min( e(i, ..., j) for  i in u, ...,  j in v)
     case (Absyn.CREF_IDENT(name = "min"), Absyn.FOR_ITER_FARG(exp=aexp1, iterators=iters))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -821,6 +1066,7 @@ algorithm
       then
         DAE.CALL(call_path, {dexp1}, DAE.callAttrBuiltinOther);
 
+    // max( e(i, ..., j) for  i in u, ...,  j in v)
     case (Absyn.CREF_IDENT(name = "max"), Absyn.FOR_ITER_FARG(exp=aexp1, iterators=iters))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -829,6 +1075,7 @@ algorithm
       then
         DAE.CALL(call_path, {dexp1}, DAE.callAttrBuiltinOther);
 
+   // The type of product(e(i, ..., j) for i in u, ..., j in v) is the same as the type of e(i,...j)
     case (Absyn.CREF_IDENT(name = "product"), Absyn.FOR_ITER_FARG(exp=aexp1, iterators=iters))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -837,6 +1084,14 @@ algorithm
       then
         DAE.CALL(call_path, {dexp1}, DAE.callAttrBuiltinOther);
 
+   // function cat(k,A,B,C,...) concatenates arrays A,B,C,... along dimension k
+   // Arrays A, B, C, ... must have the same number of dimensions, i.e., ndims(A) =  ndims(B) =
+   // Arrays A, B, C, ... must be type compatible expressions, integers can become reals
+   // k has to characterize an existing dimension, i.e., 1 <= k <= ndims(A) = ndims(B) = ndims(C);
+   // Size matching: Arrays A, B, C, ... must have identical array sizes with the exception of the size
+   // of dimension k, i.e., size(A,j) = size(B,j), for 1 <= j <= ndims(A) and j <> k
+   // Example: Real[2,3]  r1  = cat(1, {{1.0, 2.0, 3}}, {{4, 5, 6}});
+   // Example: Real[2,6]  r2  = cat(2, r1, 2*r1);
     case (Absyn.CREF_IDENT(name = "cat"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -844,6 +1099,9 @@ algorithm
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
+  // actualStream(v) returns the actual value of the stream variable v för any flow direction
+  // actualStream(port.h_outflow) = if port.m_flow > 0 then inStream(port.h_outflow) else port.h_outflow;
+  // The operator is vectorizable.
     case (Absyn.CREF_IDENT(name = "actualStream"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -851,6 +1109,9 @@ algorithm
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
+  // inStream(v)  is only allowed on stream variables v defined in stream connectors,
+  // and is the value of the stream variable v close to the connection point
+  // The operator is vectorizable.
     case (Absyn.CREF_IDENT(name = "inStream"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -858,6 +1119,16 @@ algorithm
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
+  // String(b, <options>),   String(i, <options>),  String(r, format=s),   String(e, <options>)
+  // String(r, significantDigits=d,  <options>)
+  // Convert a scalar non-String expression to a String representation.
+  // For Real expressions the output shall be according to the Modelica grammar.
+  // String(E.enumvalue) string of enum value, e.g. String(E.Small) gives "Small".
+  // The first argument may be a Boolean b, an Integer i, a Real r or an Enumeration e).
+  // The other arguments must use named arguments. The optional <options> are:
+  //  Integer minimumLength=0: minimum length of the resulting string.
+  //  Boolean leftJustified = true
+  //  Integer significantDigits=6 defines the number of significant digits in the result string
     case (Absyn.CREF_IDENT(name = "String"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -865,6 +1136,10 @@ algorithm
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
+
+  // Integer(e) Returns the ordinal Integer number of the expression e of enumeration type
+  // that evaluates to the enumeration value E.enumvalue, where Integer(E.e1)=1,
+  // Integer(E.en)= n, for an enumeration type E=enumeration(e1, ..., en)
     case (Absyn.CREF_IDENT(name = "Integer"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -872,12 +1147,15 @@ algorithm
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
+  // Real(e) ?? is there a Real conversion function?, could not find it in the 3.3 rev1 spec
     case (Absyn.CREF_IDENT(name = "Real"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
+
+
     */
 
     // TODO! FIXME!
@@ -887,6 +1165,10 @@ algorithm
     /*
     // adrpo: no support for $overload functions yet: div, mod, rem, abs, i.e. ModelicaBuiltin.mo:
     // function mod = $overload(OpenModelica.Internal.intMod,OpenModelica.Internal.realMod)
+
+    // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
+    //   Result and arguments shall have type Real or Integer.
+    //   If either of the arguments is Real the result is Real otherwise Integer.
     case (Absyn.CREF_IDENT(name = "rem"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -894,12 +1176,24 @@ algorithm
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
+    // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
+    //   Result and arguments shall have type Real or Integer.
+    //   If either of the arguments is Real the result is Real otherwise Integer
+
+    // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
+    //   Result and arguments shall have type Real or Integer.
+    //   If either of the arguments is Real the result is Real otherwise Integer
+
+    // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
+    //   Argument v needs to be an Integer or Real expression.
+    //   Result type is Integer or Real depending on the input v
     case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
+
     */
 
     // hopefully all the other ones have a complete entry in ModelicaBuiltin.mo
