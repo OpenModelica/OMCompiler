@@ -748,7 +748,6 @@ protected function typeSpecialBuiltinFunctionCall
   output DAE.Type ty;
   output DAE.Const variability;
 protected
-   String fnName;
    DAE.Const vr, vr1, vr2;
 algorithm
   (typedExp, ty, variability) := matchcontinue(functionName, functionArgs)
@@ -922,7 +921,7 @@ algorithm
 
         ty := el_ty;
         vr := vr1;
-        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1}, ty);
+        typedExp := Expression.makePureBuiltinCall("min", {dexp1}, ty);
       then
         (typedExp, ty, vr);
 
@@ -938,7 +937,7 @@ algorithm
 
         ty := el_ty;
         vr := vr1;
-        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1}, ty);
+        typedExp := Expression.makePureBuiltinCall("max", {dexp1}, ty);
       then
         (typedExp, ty, vr);
 
@@ -955,7 +954,7 @@ algorithm
         (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
         vr := Types.constAnd(vr1, vr2);
         false := Types.isString(ty);
-        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1, dexp2}, ty);
+        typedExp := Expression.makePureBuiltinCall("min", {dexp1, dexp2}, ty);
       then
         (typedExp, ty, vr);
 
@@ -970,7 +969,7 @@ algorithm
         (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
         vr := Types.constAnd(vr1, vr2);
         false := Types.isString(ty);
-        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1, dexp2}, ty);
+        typedExp := Expression.makePureBuiltinCall("max", {dexp1, dexp2}, ty);
       then
         (typedExp, ty, vr);
 
@@ -1067,63 +1066,86 @@ algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
-          true := isIntegerOrRealOrSubTypeOfEither(ty1, ty2);
+          true := Types.isIntegerOrRealOrSubTypeOfEither(ty1);
+          true := Types.isIntegerOrRealOrSubTypeOfEither(ty2);
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer or Real arguments expected", info);
-
+        end try;
         ty := Types.scalarSuperType(ty1, ty2);  // Integer & Integer -> Integer otherwise Real
         (dexp1, _) := Types.matchType(dexp1, ty1, ty, true); // Conv Integer to Real if needed
         (dexp2, _) := Types.matchType(dexp2, ty2, ty, true); // Conv Integer to Real if needed
         vr := Types.constAnd(vr1, vr2);  // Variability of result
 
-        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1, dexp2}, ty);
+        typedExp := Expression.makePureBuiltinCall("rem", {dexp1, dexp2}, ty);
       then
         (typedExp, ty, vr);
-??petfr:
 
-
-function errorFailBuiltinWrongArgTypes
-"@author: petfr  Generate an error message and fail if wrong argument types to builtin function"
-  input Absyn.ComponentRef functionName;
-  input Absyn.FunctionArgs functionArgs;
-  input String specialMsg;
-  input SourceInfo info;
-protected
-  String fn_str, args_str;
-algorithm
-  fn_str := ExpressionDump.printExpStr(functionName);
-  args_str := ExpressionDump.printExpStr(functionName);
-
-  Error.addSourceMessage(Error.ARG_TYPE_MISMATCH,
-    {specialMsg, " function: ", fn_str, "arguments: ", args_str}, info);
-  fail();
-end errorFailWrongBuiltinArgTypes;
-
-
-
-
- ** // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
+/**/ // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
     //   Result and arguments shall have type Real or Integer.
     //   If either of the arguments is Real the result is Real otherwise Integer
+    case (Absyn.CREF_IDENT(name = "div"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
+        try
+          true := Types.isIntegerOrRealOrSubTypeOfEither(ty1);
+          true := Types.isIntegerOrRealOrSubTypeOfEither(ty2);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer or Real arguments expected", info);
+        end try;
+        ty := Types.scalarSuperType(ty1, ty2);  // Integer & Integer -> Integer otherwise Real
+        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true); // Conv Integer to Real if needed
+        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true); // Conv Integer to Real if needed
+        vr := Types.constAnd(vr1, vr2);  // Variability of result
 
- **   // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
+        typedExp := Expression.makePureBuiltinCall("div", {dexp1, dexp2}, ty);
+      then
+        (typedExp, ty, vr);
+
+
+ /**/ // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
     //   Result and arguments shall have type Real or Integer.
     //   If either of the arguments is Real the result is Real otherwise Integer
+    case (Absyn.CREF_IDENT(name = "mod"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
+        try
+          true := Types.isIntegerOrRealOrSubTypeOfEither(ty1);
+          true := Types.isIntegerOrRealOrSubTypeOfEither(ty2);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer or Real arguments expected", info);
+        end try;
+        ty := Types.scalarSuperType(ty1, ty2);  // Integer & Integer -> Integer otherwise Real
+        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true); // Conv Integer to Real if needed
+        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true); // Conv Integer to Real if needed
+        vr := Types.constAnd(vr1, vr2);  // Variability of result
 
- **   // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
+        typedExp := Expression.makePureBuiltinCall("mod", {dexp1, dexp2}, ty);
+      then
+        (typedExp, ty, vr);
+
+
+/**/ // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
     //   Argument v needs to be an Integer or Real expression.
     //   Result type is Integer or Real depending on the input v
-    case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = afargs))
-      equation
-        call_path = Absyn.crefToPath(functionName);
-        (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
+    case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        try
+          true := Types.isSimpleNumericType(ty1);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer or Real argument expected", info);
+        end try;
+        typedExp := Expression.makePureBuiltinCall("abs", {dexp1}, ty1);
       then
-        DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
+        (typedExp, ty1, vr1);
 
-
-
-
+ //??petfr:
 
   // array(A,B,C,...) constructs an array from its arguments
   // All arguments must have the same sizes, i.e., size(A)=size(B)=size(C)=...
@@ -1377,6 +1399,27 @@ end errorFailWrongBuiltinArgTypes;
 
  end matchcontinue;
 end typeBuiltinFunctionCall;
+
+
+function errorFailBuiltinWrongArgTypes
+"@author: petfr  Generate an error message and fail if wrong argument types to builtin function"
+  input Absyn.ComponentRef functionName;
+  input Absyn.FunctionArgs functionArgs;
+  input String specialMsg;
+  input SourceInfo info;
+protected
+  String fn_str, args_str;
+algorithm
+  fn_str := Dump.printComponentRefStr(functionName);
+  args_str := Dump.printFunctionArgsStr(functionArgs);
+
+  Error.addSourceMessage(Error.ARG_TYPE_MISMATCH,
+    {specialMsg, " function: ", fn_str, "arguments: ", args_str}, info);
+  fail();
+end errorFailBuiltinWrongArgTypes;
+
+
+
 
 annotation(__OpenModelica_Interface="frontend");
 end NFFunc;
