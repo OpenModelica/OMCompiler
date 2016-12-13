@@ -501,6 +501,11 @@ algorithm
     case (Absyn.CREF_IDENT(name, {}))
       equation
 
+//   /*
+   // Replaced the linear search listMember below by a match on
+   // name vs constrant strings
+   // which enables OMC to compile match to a perfect hash with direct jump
+   // instead of linear search
 
        // See more complete list below from Static.elabbuiltinhandler.
         b = listMember(name,
@@ -533,6 +538,75 @@ algorithm
             "inStream"});
       then
         b;
+//     */
+
+/*
+   // The more complete list of names below is from Static.elabbuiltinhandler
+
+    b = match (name)
+    case "delay" then true;
+    case "smooth" then true;
+    case "size" then true;
+    case "ndims" then true;
+    case "zeros" then true;
+    case "ones" then true;
+    case "fill" then true;
+    case "max" then true;
+    case "min" then true;
+    case "transpose" then true;
+    case "symmetric" then true;
+    case "array" then true;
+    case "sum" then true;
+    case "product" then true;
+    case "pre" then true;
+    case "firstTick" then true;  // ??petfr   firstTick not present in MLS 3.3 rev1
+    case "interval" then true;
+    case "boolean" then true;
+    case "diagonal" then true;
+    case "noEvent" then true;
+    case "edge" then true;
+    case "der" then true;
+    case "change" then true;
+    case "cat" then true;
+    case "identity" then true;
+    case "vector" then true;
+    case "matrix" then true;
+    case "scalar" then true;
+    case "String" then true;
+    case "rooted" then true;
+    case "Integer" then true;
+    case "EnumToInteger" then true;   // ??petfr  EnumToInteger not present in MLS 3.3 rev1
+    case "inStream" then true;
+    case "actualStream" then true;
+    case "getInstanceName" then true;
+    case "classDirectory" then true;   // ??petfr classDirectory not present in MLS 3.3 rev1
+    case "sample" then true;
+    case "cardinality" then true;
+    case "homotopy" then true;
+    case "DynamicSelect" then true;
+    case "Clock" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "previous" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "hold" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "subSample" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "superSample" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "shiftSample" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "backSample" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "noClock" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "transition" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "initialState" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "activeState" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "ticksInState" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "timeInState" then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case "sourceInfo" then Config.acceptMetaModelicaGrammar();
+    case "SOME" then Config.acceptMetaModelicaGrammar();
+    case "NONE"  then Config.acceptMetaModelicaGrammar();
+    case "isPresent" then Config.acceptMetaModelicaGrammar();
+    else false;
+    end match;
+
+   then
+       b;
+*/
 
     case (_) then false;
   end matchcontinue;
@@ -809,7 +883,7 @@ algorithm
         (DAE.CALL(call_path, {dexp1,dexp2}, DAE.callAttrBuiltinOther), ty, vr);
 
     // Connections.rooted(A.R) returns true, if A.R is closer to the root of the spanning tree than B.R;
-    // otherwise false is returned.   rooted(A.R);  is deprecated
+    // otherwise false is returned.  NOTE: rooted(A.R);  is deprecated
     case (Absyn.CREF_IDENT(name = "rooted"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         call_path := Absyn.crefToPath(functionName);
@@ -835,10 +909,9 @@ algorithm
       then
         (typedExp, ty, vr);
 
-    // min|max(arr)
-    case (Absyn.CREF_IDENT(name = fnName), Absyn.FUNCTIONARGS(args = {aexp1}))
+    // min(arr)  min and max into separate cases, to avoid each function diving into this
+    case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
-        true := listMember(fnName, {"min", "max"});
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
 
         true := Types.isArray(ty1);
@@ -852,10 +925,42 @@ algorithm
       then
         (typedExp, ty, vr);
 
-    // min|max(x,y) where x & y are scalars.
-    case (Absyn.CREF_IDENT(name = fnName), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+   // max(arr)
+    case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
-        true := listMember(fnName, {"min", "max"});
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+
+        true := Types.isArray(ty1);
+        dexp1 := Expression.matrixToArray(dexp1);
+        el_ty := Types.arrayElementType(ty1);
+        false := Types.isString(el_ty);
+
+        ty := el_ty;
+        vr := vr1;
+        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1}, ty);
+      then
+        (typedExp, ty, vr);
+
+
+    // min(x,y) where x & y are scalars.
+    // Made min and max into separate cases, to avoid many functions diving into this
+    case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
+
+        ty := Types.scalarSuperType(ty1, ty2);
+        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
+        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
+        vr := Types.constAnd(vr1, vr2);
+        false := Types.isString(ty);
+        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1, dexp2}, ty);
+      then
+        (typedExp, ty, vr);
+
+    // max(x,y) where x & y are scalars.
+    case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+      algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
 
@@ -869,8 +974,8 @@ algorithm
         (typedExp, ty, vr);
 
      // diagonal(v)  Returns a square matrix with the elements of vector v on the diagonal
-     // and all other elements zero ?? how can you be sure to extract an expression aexp1 if the argument is an ident?
-    case (Absyn.CREF_IDENT(name = "diagonal"), Absyn.FUNCTIONARGS(args = aexp1::_))
+     // and all other elements zero
+    case (Absyn.CREF_IDENT(name = "diagonal"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         DAE.T_ARRAY(dims = {d1}, ty = el_ty) := ty1;
@@ -952,6 +1057,49 @@ algorithm
         ty := DAE.T_BOOL_DEFAULT;
       then
         (typedExp, ty, vr1);
+
+ ** // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
+    //   Result and arguments shall have type Real or Integer.
+    //   If either of the arguments is Real the result is Real otherwise Integer.
+    case (Absyn.CREF_IDENT(name = "rem"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
+        ty := Types.scalarSuperType(ty1, ty2);  // Integer & Integer -> Integer otherwise Real
+
+        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true); // Conv Integer to Real if needed
+        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true); // Conv Integer to Real if needed
+        vr := Types.constAnd(vr1, vr2);  // Variability of result
+
+        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1, dexp2}, ty);
+      then
+        (typedExp, ty, vr);
+??petfr
+
+
+
+
+ ** // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
+    //   Result and arguments shall have type Real or Integer.
+    //   If either of the arguments is Real the result is Real otherwise Integer
+
+ **   // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
+    //   Result and arguments shall have type Real or Integer.
+    //   If either of the arguments is Real the result is Real otherwise Integer
+
+ **   // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
+    //   Argument v needs to be an Integer or Real expression.
+    //   Result type is Integer or Real depending on the input v
+    case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = afargs))
+      equation
+        call_path = Absyn.crefToPath(functionName);
+        (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
+      then
+        DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
+
+
+
+
 
   // array(A,B,C,...) constructs an array from its arguments
   // All arguments must have the same sizes, i.e., size(A)=size(B)=size(C)=...
@@ -1166,7 +1314,7 @@ algorithm
     // adrpo: no support for $overload functions yet: div, mod, rem, abs, i.e. ModelicaBuiltin.mo:
     // function mod = $overload(OpenModelica.Internal.intMod,OpenModelica.Internal.realMod)
 
-    // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
+**    // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
     //   Result and arguments shall have type Real or Integer.
     //   If either of the arguments is Real the result is Real otherwise Integer.
     case (Absyn.CREF_IDENT(name = "rem"), Absyn.FUNCTIONARGS(args = afargs))
@@ -1176,15 +1324,15 @@ algorithm
       then
         DAE.CALL(call_path, pos_args, DAE.callAttrBuiltinOther);
 
-    // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
+ **   // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
     //   Result and arguments shall have type Real or Integer.
     //   If either of the arguments is Real the result is Real otherwise Integer
 
-    // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
+ **   // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
     //   Result and arguments shall have type Real or Integer.
     //   If either of the arguments is Real the result is Real otherwise Integer
 
-    // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
+ **   // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
     //   Argument v needs to be an Integer or Real expression.
     //   Result type is Integer or Real depending on the input v
     case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = afargs))

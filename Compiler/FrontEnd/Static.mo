@@ -6952,7 +6952,9 @@ algorithm
   end match;
 end elabBuiltinHandlerInternal;
 
-public function isBuiltinFunc "Returns true if the function name given as argument
+public function isBuiltinFunc "Returns three values:
+  the elaborated function isBuiltin, Boolean b, and a path.
+  The Boolean b is true if the function name given as argument
   is a builtin function, which either has a elabBuiltinHandler function
   or can be found in the builtin environment."
   input Absyn.Path inPath "the path of the found function";
