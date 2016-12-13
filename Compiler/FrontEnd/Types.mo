@@ -296,14 +296,14 @@ algorithm
 end externalObjectConstructorType;
 
 public function simpleType "author: PA
-  Succeeds for all the builtin types, Integer, String, Real, Boolean"
+  Succeeds for all the builtin types, Integer, String, Real, Boolean, Clock, enumeration"
   input DAE.Type inType;
 algorithm
   true := isSimpleType(inType);
 end simpleType;
 
 public function isSimpleType
-  "Returns true for all the builtin types, Integer, String, Real, Boolean"
+  "Returns true for all the builtin types, Integer, String, Real, Boolean, Clock, enumeration"
   input DAE.Type inType;
   output Boolean b;
 algorithm

@@ -795,6 +795,7 @@ algorithm
 end typeSpecialBuiltinFunctionCall;
 
 
+
 // adrpo:
 // - petfr: ??slow with a lot of linear search for all the builtin function names?, happens for all
 //  function calls in models
@@ -1058,15 +1059,20 @@ algorithm
       then
         (typedExp, ty, vr1);
 
- ** // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
+/**/ // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
     //   Result and arguments shall have type Real or Integer.
     //   If either of the arguments is Real the result is Real otherwise Integer.
     case (Absyn.CREF_IDENT(name = "rem"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
-        ty := Types.scalarSuperType(ty1, ty2);  // Integer & Integer -> Integer otherwise Real
+        try
+          true := isIntegerOrRealOrSubTypeOfEither(ty1, ty2);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer or Real arguments expected", info);
 
+        ty := Types.scalarSuperType(ty1, ty2);  // Integer & Integer -> Integer otherwise Real
         (dexp1, _) := Types.matchType(dexp1, ty1, ty, true); // Conv Integer to Real if needed
         (dexp2, _) := Types.matchType(dexp2, ty2, ty, true); // Conv Integer to Real if needed
         vr := Types.constAnd(vr1, vr2);  // Variability of result
@@ -1074,7 +1080,25 @@ algorithm
         typedExp := Expression.makePureBuiltinCall(fnName, {dexp1, dexp2}, ty);
       then
         (typedExp, ty, vr);
-??petfr
+??petfr:
+
+
+function errorFailBuiltinWrongArgTypes
+"@author: petfr  Generate an error message and fail if wrong argument types to builtin function"
+  input Absyn.ComponentRef functionName;
+  input Absyn.FunctionArgs functionArgs;
+  input String specialMsg;
+  input SourceInfo info;
+protected
+  String fn_str, args_str;
+algorithm
+  fn_str := ExpressionDump.printExpStr(functionName);
+  args_str := ExpressionDump.printExpStr(functionName);
+
+  Error.addSourceMessage(Error.ARG_TYPE_MISMATCH,
+    {specialMsg, " function: ", fn_str, "arguments: ", args_str}, info);
+  fail();
+end errorFailWrongBuiltinArgTypes;
 
 
 
