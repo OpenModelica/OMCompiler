@@ -313,7 +313,6 @@ algorithm
     case (DAE.T_INTEGER()) then true;
     case (DAE.T_STRING()) then true;
     case (DAE.T_BOOL()) then true;
-    // BTH
     case (DAE.T_CLOCK()) then true;
     case (DAE.T_ENUMERATION()) then true;
     case (DAE.T_SUBTYPE_BASIC(complexType = t)) then isSimpleType(t);
@@ -321,8 +320,25 @@ algorithm
   end match;
 end isSimpleType;
 
+public function isSimpleTypeRealOrIntegerOrBooleanOrEnum
+  "@author petfr: Returns true for the builtin types Integer, Real, Boolean, enumeration"
+  input DAE.Type inType;
+  output Boolean b;
+algorithm
+  b := match (inType)
+    local DAE.Type t;
+    case (DAE.T_REAL()) then true;
+    case (DAE.T_INTEGER()) then true;
+    case (DAE.T_BOOL()) then true;
+    case (DAE.T_ENUMERATION()) then true;
+    case (DAE.T_SUBTYPE_BASIC(complexType = t)) then isSimpleType(t);
+    else false;
+  end match;
+end isSimpleTypeRealOrIntegerOrBooleanOrEnum;
+
+
 public function isSimpleNumericType
-  "Returns true for simple numeric builtin types, Integer and Real"
+  "Returns true for simple numeric builtin types, Integer and Real and subtypes of those"
   input DAE.Type inType;
   output Boolean b;
 algorithm
@@ -335,7 +351,7 @@ algorithm
   end match;
 end isSimpleNumericType;
 
-public function isNumericType "This function checks if the element type is Numeric type or array of Numeric type."
+public function isNumericType "Returns true if Numeric type or array of Numeric type."
   input DAE.Type inType;
   output Boolean outBool;
 algorithm
@@ -707,6 +723,21 @@ algorithm
   end match;
 end isIntegerOrRealOrBooleanOrSubTypeOfEither;
 
+public function isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes "
+@author petfr: Returns true if Real, Integer, Boolean, or Enum, or arrays or subtypes of those."
+  input DAE.Type inType;
+  output Boolean outBool;
+algorithm
+  outBool := match (inType)
+    local Type ty;
+
+    case (DAE.T_ARRAY(ty = ty)) then isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty);
+    case (DAE.T_SUBTYPE_BASIC(complexType = ty)) then isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty);
+    else isSimpleTypeRealOrIntegerOrBooleanOrEnum(inType);
+
+  end match;
+end isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes;
+
 public function isClock
   input DAE.Type tp;
   output Boolean res;
@@ -727,7 +758,7 @@ algorithm
   end match;
 end isScalarClock;
 
-public function isInteger "Returns true if type is Integer"
+public function isInteger "Returns true if type is Integer or array of Integer"
   input DAE.Type tp;
   output Boolean res;
 algorithm
@@ -844,7 +875,7 @@ algorithm
   end match;
 end isString;
 
-public function isEnumeration "Return true if Type is the builtin String type."
+public function isEnumeration "Return true if Type is the builtin enumeration type."
   input DAE.Type inType;
   output Boolean outBoolean;
 algorithm
@@ -2047,7 +2078,8 @@ algorithm
   end match;
 end unliftArrayOrList;
 
-public function arrayElementType "This function turns an array into the element type of the array."
+public function arrayElementType "This function turns an array type
+ into the element type of the array; otherwise just returns the inType"
   input DAE.Type inType;
   output DAE.Type outType;
 algorithm
