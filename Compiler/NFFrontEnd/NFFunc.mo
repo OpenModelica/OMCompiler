@@ -922,7 +922,10 @@ algorithm
       then
         (typedExp, ty, vr);
 
-    // min(arr)  min and max into separate cases, to avoid every function matching into this case
+    // min(arr)  min and max into separate cases, to avoid every function matching into those cases
+
+    // min(arr) Returns the least element of array expression arr as a scalar
+    // Element type: Scalar enumeration, Boolean, Integer or Real
     case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
@@ -938,7 +941,8 @@ algorithm
       then
         (typedExp, ty, vr);
 
-   // max(arr)
+   // max(arr) Returns the greatest element of array expression arr
+   // Element type: Scalar enumeration, Boolean, Integer or Real
     case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
@@ -957,6 +961,7 @@ algorithm
 
     // min(x,y) where x & y are scalars.
     // Made min and max into separate cases, to avoid many functions diving into this
+    // If vectorized, x and y are arrays
     case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
@@ -972,13 +977,14 @@ algorithm
         (typedExp, ty, vr);
 
     // max(x,y) where x & y are scalars: Integer, Real, Boolean or Enumeration or subtypes of those
+    // If vectorized, x and y are arrays
     case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnum(ty1);
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnum(ty2);
+          true := Types.isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1); // allows vectorization
+          true := Types.isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2); // allows vectorization
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer, Real, Boolean or Enumeration arguments expected", info);
@@ -987,7 +993,7 @@ algorithm
         (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
         (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
         vr := Types.constAnd(vr1, vr2);
-        false := Types.isString(ty);
+        // ??possible vectorized output type is still missing
         typedExp := Expression.makePureBuiltinCall("max", {dexp1, dexp2}, ty);
       then
         (typedExp, ty, vr);
@@ -1005,33 +1011,44 @@ algorithm
       then
         (typedExp, ty, vr);
 
-     // product(A) returns scalar product of all the elements of array expression A   petfr OK?
-     // This means that the type is a scalar type, not an array type
+     // product(A) returns scalar product of all the elements of array expression A
+     // This means that the result type is a scalar type, not an array type
+     // Element types can be Integer or Real
  /**/   case (Absyn.CREF_IDENT(name = "product"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        // Here, we need to extract the element type of array type dexp1
-        ty := Types.arrayElementType(ty1);
+        try
+          true := Types.isArray(ty1);
+          // Here, we extract the element type of array type
+          ty := Types.arrayElementType(ty1);
+          true := isSimpleNumericType(ty);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer or Real array argument expected", info);
+        end try;
         typedExp :=  Expression.makePureBuiltinCall("product", {dexp1}, ty);
         vr := vr1;
       then
         (typedExp, ty, vr);
 
-       // pre(y) returns left limit y(tpre) of variable y(t) at a time instant t   petfr OK?
+       // pre(y) returns left limit y(tpre) of variable y(t) at a time instant t
        // pre() operator can be applied if the following three conditions are fulfilled simultaneously:
        // (a) variable y is either a subtype of a simple type or is a record component,
+       // What is Simple type? MLS 3.7.3.1 talks about Real, Integer, Boolean or enum
        // (b) y is a discrete-time expression
        // (c) the operator is not applied in a function class  ?? where is this checked?
+       // y is an array if vectorized
 /**/ case (Absyn.CREF_IDENT(name = "pre"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         typedExp :=  Expression.makePureBuiltinCall("pre", {dexp1}, ty1);
-        if
-          not Types.isSimpleType(ty1);
-        then
+        try
+          true := Types.isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1); //?? Does not yet allow record
+            // ?? If record added, should probably be records of Real, Int, Bool, Enum components
+        else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
-            "Simple type Integer, Real, Boolean, enum, etc. argument expected", info);
-        end if;
+            "Integer, Real, Boolean, or enumeration argument expected", info);
+        end try;
         // ?? should also check discrete variability if not in a when-clause, and not appl in a function
       then
         (typedExp, ty1, vr1);
@@ -1046,6 +1063,7 @@ algorithm
         (typedExp, ty1, vr1);
 
 /**/   // sum(A) Returns the scalar sum of all the elements of array expression
+       // The type of sum is the same as the element type, must be scalar Integer or Real
     case (Absyn.CREF_IDENT(name = "sum"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
@@ -1067,6 +1085,7 @@ algorithm
 
       // edge(b) is expanded into (b and not pre(b)) for Boolean variable b
       // The same restrictions as for pre() apply, e.g. not to be used inside functions.
+      // if vectorized, b can be a Boolean array
       // ?? should also check for discrete variability if not in a when-clause
  /**/  case (Absyn.CREF_IDENT(name = "edge"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
@@ -1084,33 +1103,36 @@ algorithm
 
       // change(v) is expanded into  (v<>pre(v)).
       // The same restrictions as for the pre() operator apply.
+      // If vectorized, v is an array
  /**/  case (Absyn.CREF_IDENT(name = "change"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         typedExp :=  Expression.makePureBuiltinCall("change", {dexp1}, ty1);
         ty := DAE.T_BOOL_DEFAULT;
-        try    // ?? use try (catches faults) or  use if then else - more efficient
-          true := Types.isSimpleType(ty1);
+        try
+          true := Types.isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1); //?? Does not yet allow record
+            // ?? If record added, should probably be records of Real, Int, Bool, Enum components
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
-            "Simple type Integer, Real, Boolean, enum, etc. argument expected", info);
+            "Integer, Real, Boolean, or enumeration argument expected", info);
         end try;
+
         // ?? should also check discrete variability if not in a when-clause, and not used in a function
       then
         (typedExp, ty, vr1);
 
 /**/ // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
-    //   Result and arguments shall have type Real or Integer.
-    //   If either of the arguments is Real the result is Real otherwise Integer.
-    //   ?? handle vectorization?  Call isSimpleNumericType  or isNumericType (incl arrays)
-    //   ?? Checking vectorization also implies checking that both arguments have the same dimensions
+     //  Result and arguments shall have type Real or Integer.
+     //  If either of the arguments is Real the result is Real otherwise Integer.
+     //  If vectorized, x and y are arrays
+     //  ?? Checking vectorization also implies checking that both arguments have the same dimensions
     case (Absyn.CREF_IDENT(name = "rem"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
-          true := Types.isSimpleNumericType(ty1);
-          true := Types.isSimpleNumericType(ty2);
+          true := Types.isNumericType(ty1);
+          true := Types.isNumericType(ty2);
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer or Real arguments expected", info);
@@ -1125,16 +1147,17 @@ algorithm
         (typedExp, ty, vr);
 
 /**/ // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
-    //   Result and arguments shall have type Real or Integer. (or subtypes of those)
-    //   If either of the arguments is Real the result is Real otherwise Integer
-    //   ?? handle vectorization?  Call isSimpleNumericType  or isNumericType (incl arrays)
-    //   ?? Checking vectorization also implies checking that both arguments have the same dimensions    case (Absyn.CREF_IDENT(name = "div"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+     //   Result and arguments shall have type Real or Integer. (or subtypes of those)
+     //   If either of the arguments is Real the result is Real otherwise Integer
+     //  If vectorized, x and y are arrays
+     //  ?? Checking vectorization also implies checking that both arguments have the same dimensions
+    case (Absyn.CREF_IDENT(name = "div"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
-          true := Types.isSimpleNumericType(ty1);
-          true := Types.isSimpleNumericType(ty2);
+          true := Types.isNumericType(ty1);
+          true := Types.isNumericType(ty2);
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer or Real arguments expected", info);
@@ -1150,16 +1173,17 @@ algorithm
 
 
  /**/ // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
-    //   Result and arguments shall have type Real or Integer. (or subtypes of those)
-    //   If either of the arguments is Real the result is Real otherwise Integer
-    //   ?? handle vectorization?  Call isSimpleNumericType  or isNumericType (incl arrays)
-    //   ?? Checking vectorization also implies checking that both arguments have the same dimensions    case (Absyn.CREF_IDENT(name = "mod"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+     //  Result and arguments shall have type Real or Integer. (or subtypes of those)
+     //  If either of the arguments is Real the result is Real otherwise Integer
+     //  If vectorized, x and y are arrays
+     //  ?? Checking vectorization also implies checking that both arguments have the same dimensions
+    case (Absyn.CREF_IDENT(name = "mod"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
-          true := Types.isSimpleNumericType(ty1);
-          true := Types.isSimpleNumericType(ty2);
+          true := Types.isNumericType(ty1);
+          true := Types.isNumericType(ty2);
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer or Real arguments expected", info);
@@ -1175,14 +1199,14 @@ algorithm
 
 
 /**/ // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
-    //   Argument v needs to be an Integer or Real expression. (or subtypes of those)
-    //   Result type is Integer or Real depending on the input v
-    //   ?? handle vectorization?  Call isSimpleNumericType  or isNumericType (incl arrays)
-    //   ?? Checking vectorization also implies checking that both arguments have the same dimensions    case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = {aexp1}))
+     //  Argument v needs to be an Integer or Real expression. (or subtypes of those)
+     //  Result type is Integer or Real depending on the input v
+     //  If vectorized, v is an array
+    case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         try
-          true := Types.isSimpleNumericType(ty1);
+          true := Types.isNumericType(ty1);
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer or Real argument expected", info);

@@ -321,7 +321,8 @@ algorithm
 end isSimpleType;
 
 public function isSimpleTypeRealOrIntegerOrBooleanOrEnum
-  "@author petfr: Returns true for the builtin types Integer, Real, Boolean, enumeration"
+  "@author petfr: Returns true for the builtin types Integer, Real, Boolean, enumeration.
+  See also isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes also including arrays of these types"
   input DAE.Type inType;
   output Boolean b;
 algorithm
