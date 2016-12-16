@@ -613,122 +613,7 @@ algorithm
 end isBuiltinFunctionName;
 
 
-/*
-from Static.elabBuiltinHandler:
 
-algorithm
-  outHandler := match (inIdent)
-    case "delay" then elabBuiltinDelay;
-    case "smooth" then elabBuiltinSmooth;
-    case "size" then elabBuiltinSize;
-    case "ndims" then elabBuiltinNDims;
-    case "zeros" then elabBuiltinZeros;
-    case "ones" then elabBuiltinOnes;
-    case "fill" then elabBuiltinFill;
-    case "max" then elabBuiltinMax;
-    case "min" then elabBuiltinMin;
-    case "transpose" then elabBuiltinTranspose;
-    case "symmetric" then elabBuiltinSymmetric;
-    case "array" then elabBuiltinArray;
-    case "sum" then elabBuiltinSum;
-    case "product" then elabBuiltinProduct;
-    case "pre" then elabBuiltinPre;
-    case "firstTick" then elabBuiltinFirstTick;
-    case "interval" then elabBuiltinInterval;
-    case "boolean" then elabBuiltinBoolean;
-    case "diagonal" then elabBuiltinDiagonal;
-    case "noEvent" then elabBuiltinNoevent;
-    case "edge" then elabBuiltinEdge;
-    case "der" then elabBuiltinDer;
-    case "change" then elabBuiltinChange;
-    case "cat" then elabBuiltinCat;
-    case "identity" then elabBuiltinIdentity;
-    case "vector" then elabBuiltinVector;
-    case "matrix" then elabBuiltinMatrix;
-    case "scalar" then elabBuiltinScalar;
-    case "String" then elabBuiltinString;
-    case "rooted" then elabBuiltinRooted;
-    case "Integer" then elabBuiltinIntegerEnum;
-    case "EnumToInteger" then elabBuiltinIntegerEnum;
-    case "inStream" then elabBuiltinInStream;
-    case "actualStream" then elabBuiltinActualStream;
-    case "getInstanceName" then elabBuiltinGetInstanceName;
-    case "classDirectory" then elabBuiltinClassDirectory;
-    case "sample" then elabBuiltinSample;
-    case "cardinality" then elabBuiltinCardinality;
-    case "homotopy" then elabBuiltinHomotopy;
-    case "DynamicSelect" then elabBuiltinDynamicSelect;
-    case "Clock"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinClock;
-    case "previous"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinPrevious;
-    case "hold"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinHold;
-    case "subSample"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinSubSample;
-    case "superSample"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinSuperSample;
-    case "shiftSample"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinShiftSample;
-    case "backSample"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinBackSample;
-    case "noClock"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinNoClock;
-    case "transition"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinTransition;
-    case "initialState"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinInitialState;
-    case "activeState"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinActiveState;
-    case "ticksInState"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinTicksInState;
-    case "timeInState"
-      equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
-      then elabBuiltinTimeInState;
-    case "sourceInfo"
-      equation
-        true = Config.acceptMetaModelicaGrammar();
-      then elabBuiltinSourceInfo;
-    case "SOME"
-      equation
-        true = Config.acceptMetaModelicaGrammar();
-      then elabBuiltinSome;
-    case "NONE"
-      equation
-        true = Config.acceptMetaModelicaGrammar();
-      then elabBuiltinNone;
-    case "isPresent"
-      equation
-        true = Config.acceptMetaModelicaGrammar();
-      then elabBuiltinIsPresent;
-  end match;
-
-  */
 
 
 // adrpo:
@@ -859,6 +744,7 @@ algorithm
       DAE.Type el_ty, ty1, ty2;
 
     // size(arr, dim)
+    // Returns the size of dimension dim of array expression arr where dim shall be > 0 and <= ndims(arr)
     case (Absyn.CREF_IDENT(name = "size"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
@@ -866,54 +752,130 @@ algorithm
 
         // TODO FIXME: calculate the correct type and the correct variability, see Static.elabBuiltinSize in Static.mo
         ty := DAE.T_INTEGER_DEFAULT;
-        // the variability does not actually depend on the variability of "arr" but on the variability of the dimensions of "arr"
+        // the size variability does not actually depend on the variability of "arr" but on the variability
+        // of the dimensions of "arr"
         vr := Types.constAnd(vr1, vr2);
       then
         (DAE.SIZE(dexp1, SOME(dexp2)), ty, vr);
 
+
     // size(arr)
+    // Returns a vector of length ndims(arr) containing the dimension sizes of arr.
     case (Absyn.CREF_IDENT(name = "size"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         // TODO FIXME: calculate the correct type and the correct variability, see Static.elabBuiltinSize in Static.mo
         ty := DAE.T_INTEGER_DEFAULT;
-        // the variability does not actually depend on the variability of "arr" but on the variability of the dimensions of "arr"
+        // the variability of size does not actually depend on the variability of "arr" but on the
+        // variability of the dimensions of "arr"
         vr := vr1;
       then
         (DAE.SIZE(dexp1, NONE()), ty, vr);
 
-    // smooth(p, expr) returns expr and states that expr is p times continuously differentiable
+
+    // smooth(p, expr)
+    // smooth(p,expr) - If p>=0 smooth(p, expr) returns expr and states that expr is p times
+    // continuously differentiable, i.e.: expr is continuous in all real variables appearing in
+    // the expression and all partial derivatives with respect to all appearing real variables
+    // exist and are continuous up to order p.
+    // The only allowed types for expr in smooth are: real expressions, arrays of
+    // allowed expressions, and records containing only components of allowed expressions."
     case (Absyn.CREF_IDENT(name = "smooth"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         call_path := Absyn.crefToPath(functionName);
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp1, scope, component, info);
 
+        if not Types.isParameterOrConstant(vr1) or not Types.isInteger(ty1) then
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "first argument must be a constant or parameter expression of type Integer", info);
+        end if;
+        if not (Types.isReal(ty2) or Types.isRecordWithOnlyReals(ty2)) then
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "second argument must be a Real, array of Reals or record only containing Reals", info);
+        end if;
+
         // TODO FIXME: calculate the correct type and the correct variability, see Static.mo
-        ty := DAE.T_REAL_DEFAULT;
-        vr := vr1;
+        ty := Types.simplifyType(ty2);  //  from static ??OK?, why need simplifyType?
+        vr := vr2;
       then
         (DAE.CALL(call_path, {dexp1,dexp2}, DAE.callAttrBuiltinOther), ty, vr);
 
+  /* ?? Generally TODO Need to add checks for # arguments for all operators later  -- remove this comment
+    e.g. from Static:  if listLength(inPosArgs) <> 2 or not listEmpty(inNamedArgs) then
+       msg_str := ", expected smooth(p, expr)";
+       printBuiltinFnArgError("smooth", msg_str, inPosArgs, inNamedArgs, inPrefix, inInfo);
+     end if;
+  */
+
+
     // Connections.rooted(A.R) returns true, if A.R is closer to the root of the spanning tree than B.R;
-    // otherwise false is returned.  NOTE: rooted(A.R);  is deprecated
+    // otherwise false is returned.  NOTE: rooted(A.R);  is deprecated (but still used?)
+    // R is an overdetermined type or record instance in connector instance A
+
+ // ?? from Static, where? to check "Connections.rooted" instead of just "rooted"
+ //     case Absyn.CREF_QUAL(name = "Connections", componentRef = Absyn.CREF_IDENT(name = "rooted"))
+ //     then elabBuiltinRooted(inCache, inEnv, inPosArgs, inNamedArgs, inImplicit, inPrefix, inInfo);
+//    case Absyn.CREF_FULLYQUALIFIED(cr)
+//      then elabCallBuiltin(inCache, inEnv, cr, inPosArgs, inNamedArgs, inImplicit, inPrefix, inInfo);
+//  checkBuiltinCallArgs(inPosArgs, inNamedArgs, 1, "Connections.isRoot", inInfo);
+// ...
+//  outExp := DAE.CALL(Absyn.QUALIFIED("Connections", Absyn.IDENT("isRoot")),
+
     case (Absyn.CREF_IDENT(name = "rooted"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         call_path := Absyn.crefToPath(functionName);
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
 
-        // TODO FIXME: calculate the correct type and the correct variability, see Static.mo
+        // TODO FIXME: calculate the correct type and the correct variability, see Static.mo -- fixed
         ty := DAE.T_BOOL_DEFAULT;
-        vr := vr1;
+        vr := DAE.C_VAR();     // ?? this OK variability? yslrm from Static - remove this comment
+        _ := match dexp1
+          case DAE.ARRAY(array = {})  // ??OK ? Added this check for size zero since checked in Static
+            equation
+              Error.addSourceMessage(Error.OVERCONSTRAINED_OPERATOR_SIZE_ZERO_RETURN_FALSE,
+                { Dump.printComponentRefStr(functionName) }, info);
+              fail();
+            then ();
+          else ();
+        end match;
+
       then
         (DAE.CALL(call_path, {dexp1}, DAE.callAttrBuiltinOther), ty, vr);
+
+
+ // ?? from Static:  checking # arguments
+ //  checkBuiltinCallArgs(inPosArgs, inNamedArgs, 1, "Connections.isRoot", inInfo);
+ /*
+protected function checkBuiltinCallArgs
+  input list<Absyn.Exp> inPosArgs;
+  input list<Absyn.NamedArg> inNamedArgs;
+  input Integer inExpectedArgs;
+  input String inFnName;
+  input Absyn.Info inInfo;
+protected
+  String args_str, msg_str;
+  list<String> pos_args, named_args;
+algorithm
+  if listLength(inPosArgs) <> inExpectedArgs or not listEmpty(inNamedArgs) then
+    Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {inFnName}, inInfo);
+  end if;
+end checkBuiltinCallArgs;
+*/
+
 
     case (Absyn.CREF_IDENT(name = "transpose"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        try
+          true := Types.isArray(ty1);
+          DAE.T_ARRAY(DAE.T_ARRAY(el_ty, {d1}, src1), {d2}, src2) := ty1;
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Two-dimensional array expected", info);
+        end try;
 
         // transpose the type.
-        DAE.T_ARRAY(DAE.T_ARRAY(el_ty, {d1}, src1), {d2}, src2) := ty1;
         ty := DAE.T_ARRAY(DAE.T_ARRAY(el_ty, {d2}, src1), {d1}, src2);
 
         // create the typed transpose expression
@@ -922,19 +884,24 @@ algorithm
       then
         (typedExp, ty, vr);
 
-    // min(arr)  min and max into separate cases, to avoid every function matching into those cases
+    // min(arr)  made min and max into separate cases, to avoid every function matching into those cases
 
     // min(arr) Returns the least element of array expression arr as a scalar
     // Element type: Scalar enumeration, Boolean, Integer or Real
     case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-
-        true := Types.isArray(ty1);
-        dexp1 := Expression.matrixToArray(dexp1);
-        el_ty := Types.arrayElementType(ty1);
-        false := Types.isString(el_ty);
-
+        try
+          true := Types.isArray(ty1);
+          el_ty := Types.arrayElementType(ty1);
+          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(el_ty);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer, Real, Boolean or Enumeration array argument expected", info);
+        end try;
+        dexp1 := Expression.matrixToArray(dexp1);  // ??who convert from DAE.Matrix to DAE.Array?
+                                         // ?? Why DAE.Array here and DAE.T_ARRAY in transpose?
+                                         // DAE.T_ARRAY - arrays of unknown size, e.g. Real[:]
         ty := el_ty;
         vr := vr1;
         typedExp := Expression.makePureBuiltinCall("min", {dexp1}, ty);
@@ -945,13 +912,18 @@ algorithm
    // Element type: Scalar enumeration, Boolean, Integer or Real
     case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-
-        true := Types.isArray(ty1);
-        dexp1 := Expression.matrixToArray(dexp1);
-        el_ty := Types.arrayElementType(ty1);
-        false := Types.isString(el_ty);
-
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info); // ??petfr working
+        try
+          true := Types.isArray(ty1);
+          el_ty := Types.arrayElementType(ty1);
+          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(el_ty);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer, Real, Boolean or Enumeration array argument expected", info);
+        end try;
+        dexp1 := Expression.matrixToArray(dexp1);  // ?? why is this call needed, a matrix is an array.
+                                                   // Lowering? Changes from DAE.Matrix to DAE.Array
+                                                   // DAE.ARRAY - Array constructor, e.g. {1,3,4}
         ty := el_ty;
         vr := vr1;
         typedExp := Expression.makePureBuiltinCall("max", {dexp1}, ty);
@@ -960,31 +932,15 @@ algorithm
 
 
     // min(x,y) where x & y are scalars.
-    // Made min and max into separate cases, to avoid many functions diving into this
-    // If vectorized, x and y are arrays
+    // Made min and max into separate cases, to avoid most functions partially matching this
+    // If vectorized, x and y are arrays. Now assumes always scalar according to MLS
     case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
-
-        ty := Types.scalarSuperType(ty1, ty2);
-        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
-        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
-        vr := Types.constAnd(vr1, vr2);
-        false := Types.isString(ty);
-        typedExp := Expression.makePureBuiltinCall("min", {dexp1, dexp2}, ty);
-      then
-        (typedExp, ty, vr);
-
-    // max(x,y) where x & y are scalars: Integer, Real, Boolean or Enumeration or subtypes of those
-    // If vectorized, x and y are arrays
-    case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
-      algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
-          true := Types.isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1); // allows vectorization
-          true := Types.isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2); // allows vectorization
+          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1);
+          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2);
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer, Real, Boolean or Enumeration arguments expected", info);
@@ -993,7 +949,27 @@ algorithm
         (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
         (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
         vr := Types.constAnd(vr1, vr2);
-        // ??possible vectorized output type is still missing
+        typedExp := Expression.makePureBuiltinCall("min", {dexp1, dexp2}, ty);
+      then
+        (typedExp, ty, vr);
+
+    // max(x,y) where x & y are scalars: Integer, Real, Boolean or Enumeration or subtypes of those
+    // If vectorized, x and y are arrays. Now assumes always scalar according to MLS
+    case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+      algorithm
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
+        try
+          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1);
+          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2);
+        else
+          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+            "Integer, Real, Boolean or Enumeration arguments expected", info);
+        end try;
+        ty := Types.scalarSuperType(ty1, ty2);
+        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
+        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
+        vr := Types.constAnd(vr1, vr2);
         typedExp := Expression.makePureBuiltinCall("max", {dexp1, dexp2}, ty);
       then
         (typedExp, ty, vr);
@@ -1021,7 +997,7 @@ algorithm
           true := Types.isArray(ty1);
           // Here, we extract the element type of array type
           ty := Types.arrayElementType(ty1);
-          true := isSimpleNumericType(ty);
+          true := Types.isSimpleNumericType(ty);
         else
           errorFailBuiltinWrongArgTypes(functionName, functionArgs,
             "Integer or Real array argument expected", info);

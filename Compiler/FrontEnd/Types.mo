@@ -320,7 +320,7 @@ algorithm
   end match;
 end isSimpleType;
 
-public function isSimpleTypeRealOrIntegerOrBooleanOrEnum
+public function isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes
   "@author petfr: Returns true for the builtin types Integer, Real, Boolean, enumeration.
   See also isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes also including arrays of these types"
   input DAE.Type inType;
@@ -335,7 +335,7 @@ algorithm
     case (DAE.T_SUBTYPE_BASIC(complexType = t)) then isSimpleType(t);
     else false;
   end match;
-end isSimpleTypeRealOrIntegerOrBooleanOrEnum;
+end isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes;
 
 
 public function isSimpleNumericType
@@ -734,7 +734,7 @@ algorithm
 
     case (DAE.T_ARRAY(ty = ty)) then isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty);
     case (DAE.T_SUBTYPE_BASIC(complexType = ty)) then isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty);
-    else isSimpleTypeRealOrIntegerOrBooleanOrEnum(inType);
+    else isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(inType);
 
   end match;
 end isTypeRealOrIntegerOrBooleanOrEnumOrSubtypes;
