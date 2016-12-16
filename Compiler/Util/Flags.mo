@@ -364,7 +364,7 @@ constant DebugFlag INFO_XML_OPERATIONS = DEBUG_FLAG(96, "infoXmlOperations", fal
   Util.gettext("Enables output of the operations in the _info.xml file when translating models."));
 constant DebugFlag HPCOM_DUMP = DEBUG_FLAG(97, "hpcomDump", false,
   Util.gettext("Dumps additional information on the parallel execution with hpcom."));
-constant DebugFlag RESOLVE_LOOPS = DEBUG_FLAG(98, "resolveLoops", false,
+constant DebugFlag RESOLVE_LOOPS = DEBUG_FLAG(98, "resolveLoops", true,
   Util.gettext("Activates the resolveLoops module.\nDeprecated flag: Use --preOptModules+=resolveLoops instead."));
 constant DebugFlag DISABLE_WINDOWS_PATH_CHECK_WARNING = DEBUG_FLAG(99, "disableWindowsPathCheckWarning", false,
   Util.gettext("Disables warnings on Windows if OPENMODELICAHOME/MinGW is missing."));
