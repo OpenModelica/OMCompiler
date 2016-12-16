@@ -7460,7 +7460,6 @@ algorithm
     // handle special flags, which enable modules
 
     enabledModules := deprecatedDebugFlag(Flags.SORT_EQNS_AND_VARS, enabledModules, "sortEqnsVars", "preOptModules+");
-    enabledModules := deprecatedDebugFlag(Flags.RESOLVE_LOOPS, enabledModules, "resolveLoops", "preOptModules+");
     enabledModules := deprecatedDebugFlag(Flags.ADD_DER_ALIASES, enabledModules, "introduceDerAlias", "preOptModules+");
     if Config.acceptOptimicaGrammar() or Flags.getConfigBool(Flags.GENERATE_DYN_OPTIMIZATION_PROBLEM) then
       enabledModules := "inputDerivativesForDynOpt"::enabledModules;
@@ -7470,6 +7469,7 @@ algorithm
     // handle special flags, which disable modules
     disabledModules := deprecatedDebugFlag(Flags.NO_PARTITIONING, disabledModules, "clockPartitioning", "preOptModules-");
     disabledModules := deprecatedDebugFlag(Flags.DISABLE_COMSUBEXP, disabledModules, "comSubExp", "preOptModules-");
+    disabledModules := deprecatedDebugFlag(Flags.RESOLVE_LOOPS, enabledModules, "resolveLoops", "preOptModules+");
     if Flags.getConfigString(Flags.REMOVE_SIMPLE_EQUATIONS) == "causal" or
        Flags.getConfigString(Flags.REMOVE_SIMPLE_EQUATIONS) == "none" then
       disabledModules := "removeSimpleEquations"::disabledModules;
