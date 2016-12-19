@@ -559,7 +559,7 @@ algorithm
     case "sum" then true;
     case "product" then true;
     case "pre" then true;
-    case "firstTick" then true;  // ??petfr   firstTick not present in MLS 3.3 rev1
+    case "firstTick" then true;  // ?petfr   firstTick not present in MLS 3.3 rev1
     case "interval" then true;
     case "boolean" then true;
     case "diagonal" then true;
@@ -575,11 +575,11 @@ algorithm
     case "String" then true;
     case "rooted" then true;
     case "Integer" then true;
-    case "EnumToInteger" then true;   // ??petfr  EnumToInteger not present in MLS 3.3 rev1
+    case "EnumToInteger" then true;   // ?petfr  EnumToInteger not present in MLS 3.3 rev1
     case "inStream" then true;
     case "actualStream" then true;
     case "getInstanceName" then true;
-    case "classDirectory" then true;   // ??petfr classDirectory not present in MLS 3.3 rev1
+    case "classDirectory" then true;   // ?petfr classDirectory not present in MLS 3.3 rev1
     case "sample" then true;
     case "cardinality" then true;
     case "homotopy" then true;
@@ -680,7 +680,9 @@ end typeSpecialBuiltinFunctionCall;
 
 
 
+
 // adrpo:
+//
 // - petfr: ??slow with a lot of linear search for all the builtin function names, happens for all
 //  function calls in models
 // - petfr: According to Martin, if we do a match only on the string value, it will do a perfect
@@ -697,7 +699,7 @@ end typeSpecialBuiltinFunctionCall;
 
 // - petfr: ?? how to handle vectorization?  Does vectorization apply for the builtin operators
 //   even when they are mentioned as having scalar arguments?
-//   petfr:  probably yes, e.g. der(arr)
+//   petfr:  probably yes, e.g. der(arr), pre(arr)
 //  Functions with one scalar return value can be applied to arrays element-wise,
 //   -- if vectorization applies, should not check just for scalar types, also for arrays of scalars?
 //
@@ -740,35 +742,85 @@ algorithm
       list<ComponentNode> inputs, outputs;
       Absyn.ForIterators iters;
       DAE.Dimension d1, d2;
+      DAE.Dimensions dimsOfArr;
+      Integer dim_int, dim_count;
       DAE.TypeSource src1, src2;
       DAE.Type el_ty, ty1, ty2;
 
-    // size(arr, dim)
-    // Returns the size of dimension dim of array expression arr where dim shall be > 0 and <= ndims(arr)
+    // size(arr, i) returns the size of dimension i of array expression arr
+    // where i shall be > 0 and <= ndims(arr)
+    // Here only type and variability of size()
     case (Absyn.CREF_IDENT(name = "size"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
       algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp1, scope, component, info);
+        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info); // arr
+        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info); // dim index i
 
-        // TODO FIXME: calculate the correct type and the correct variability, see Static.elabBuiltinSize in Static.mo
-        ty := DAE.T_INTEGER_DEFAULT;
+        DAE.T_ARRAY(dims = dimsOfArr) := ty1;
+        dim_count := listLength(dimsOfArr);
+
+        if dim_count == 0 then
+          // zero dimensions, size of a scalar is not allowed.
+          errorFailBuiltinSpecError(functionName, functionArgs, Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, "", info);
+        end if;
+
         // the size variability does not actually depend on the variability of "arr" but on the variability
-        // of the dimensions of "arr"
-        vr := Types.constAnd(vr1, vr2);
+        // of the particular dimension of "arr"
+        try
+          dim_int := Expression.expInt(dexp2);
+          // size(A, i) for an array A with known dimensions and constant i.
+          if (dim_int <= 0 or dim_int > dim_count) then
+            // dim index out of bounds
+            errorFailBuiltinSpecError(functionName, functionArgs,
+              Error.INVALID_SIZE_INDEX, intString(dim_int), info);
+          end if;
+          d1 := listGet(dimsOfArr, dim_int);
+          _ := Expression.dimensionSizeConstantExp(d1);  // Check if dimension is constant
+          vr := DAE.C_CONST();
+        else
+          // size(A, i) for an array A with unknown dimensions or non-constant i.
+          vr := DAE.C_PARAM();
+        end try;
+
+        // TODO FIXME: calculate the correct type and the correct variability, see Static.elabBuiltinSize in Static.mo  ??petfr fixed. check!
+        ty := DAE.T_INTEGER_DEFAULT;
+
       then
         (DAE.SIZE(dexp1, SOME(dexp2)), ty, vr);
 
 
     // size(arr)
-    // Returns a vector of length ndims(arr) containing the dimension sizes of arr.
+    // Operator returns a vector of length ndims(arr) containing the dimension sizes of arr.
+    // Here only type and variability of size()
     case (Absyn.CREF_IDENT(name = "size"), Absyn.FUNCTIONARGS(args = {aexp1}))
       algorithm
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        // TODO FIXME: calculate the correct type and the correct variability, see Static.elabBuiltinSize in Static.mo
+        // TODO FIXME: calculate the correct type and the correct variability,  ??petfr fixed, check!
+        // see Static.elabBuiltinSize in Static.mo
         ty := DAE.T_INTEGER_DEFAULT;
+
+        DAE.T_ARRAY(dims = dimsOfArr) := ty1;
+
+        _ := match dimsOfArr
+          // zero dimensions, size of a scalar is not allowed.
+          case {}  equation
+            errorFailBuiltinSpecError(functionName, functionArgs,
+              Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, "", info);
+            then ();
+          else
+            ();
+        end match;
+
         // the variability of size does not actually depend on the variability of "arr" but on the
         // variability of the dimensions of "arr"
-        vr := vr1;
+        try
+          _ := List.map(dimsOfArr, Expression.dimensionSizeExp); // fails if one dim size is unknown
+          // size(A) for an array A with known dimension sizes.  Variability is constant
+          vr := DAE.C_CONST();
+        else
+          // size(A) for an array A with at least one unknown dimension.  variability is param
+          vr := DAE.C_PARAM();
+        end try;
+
       then
         (DAE.SIZE(dexp1, NONE()), ty, vr);
 
@@ -829,7 +881,7 @@ algorithm
 
         // TODO FIXME: calculate the correct type and the correct variability, see Static.mo -- fixed
         ty := DAE.T_BOOL_DEFAULT;
-        vr := DAE.C_VAR();     // ?? this OK variability? yslrm from Static - remove this comment
+        vr := DAE.C_VAR();     // ?? this OK variability?  from Static - remove this comment
         _ := match dexp1
           case DAE.ARRAY(array = {})  // ??OK ? Added this check for size zero since checked in Static
             equation
@@ -1453,17 +1505,28 @@ function errorFailBuiltinWrongArgTypes
   input Absyn.FunctionArgs functionArgs;
   input String specialMsg;
   input SourceInfo info;
+algorithm
+  errorFailBuiltinSpecError(functionName, functionArgs, Error.ARG_TYPE_MISMATCH, specialMsg, info);
+end errorFailBuiltinWrongArgTypes;
+
+
+function errorFailBuiltinSpecError
+"@author: petfr  Generate an error message and fail if specified error for builtin function call"
+  input Absyn.ComponentRef functionName;
+  input Absyn.FunctionArgs functionArgs;
+  input Error.Message errmsg;
+  input String specialMsg;
+  input SourceInfo info;
 protected
   String fn_str, args_str;
 algorithm
   fn_str := Dump.printComponentRefStr(functionName);
   args_str := Dump.printFunctionArgsStr(functionArgs);
 
-  Error.addSourceMessage(Error.ARG_TYPE_MISMATCH,
-    {specialMsg, " function: ", fn_str, "arguments: ", args_str}, info);
+  Error.addSourceMessage(errmsg,
+    {" function: ", fn_str, "arguments: ", args_str, " ", specialMsg}, info);
   fail();
-end errorFailBuiltinWrongArgTypes;
-
+end errorFailBuiltinSpecError;
 
 
 
