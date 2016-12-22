@@ -129,6 +129,13 @@ algorithm
     fail();
   end try;
 
+ // ??petfr - moved builtin check here, before FTyping.typeClass which otherwise fails.
+ // is builtin function defined in ModelicaBuiltin.mo
+  if isBuiltinFunctionName(functionName) then
+    (typedExp, ty, variability) := typeBuiltinFunctionCall(functionName, functionArgs, prefix, classNode, classType, cls, scope, component, info);
+    return;
+  end if;
+
   classNode := Inst.instantiate(classNode, Modifier.NOMOD(), component);
   fn_name :=  InstNode.name(classNode);
   cls := InstNode.definition(classNode);
@@ -151,12 +158,6 @@ algorithm
   (classNode, classType) := NFTyping.typeClass(classNode, fakeComponent);
 
   // see if the class is a builtin function (including definitions in the ModelicaBuiltin.mo), record or normal function
-
-  // is builtin function defined in ModelicaBuiltin.mo
-  if isBuiltinFunctionName(functionName) then
-    (typedExp, ty, variability) := typeBuiltinFunctionCall(functionName, functionArgs, prefix, classNode, classType, cls, scope, component, info);
-    return;
-  end if;
 
   // is record
   if SCode.isRecord(cls) then
@@ -484,7 +485,7 @@ end isSpecialBuiltinFunctionName;
 protected function isBuiltinFunctionName
 "@author: adrpo  petfr
  check if the name is a builtin function or operator
- TODO FIXME, add all of them"
+ TODO FIXME, add all of them - Now DONE"
   input Absyn.ComponentRef functionName;
   output Boolean isBuiltinFname;
 algorithm
@@ -501,15 +502,18 @@ algorithm
     case (Absyn.CREF_IDENT(name, {}))
       equation
 
-//   /*
-   // Replaced the linear search listMember below by a match on
+   // Replaced the linear search listMember below by a match further below on
    // name vs constrant strings
    // which enables OMC to compile match to a perfect hash with direct jump
    // instead of linear search
 
        // See more complete list below from Static.elabbuiltinhandler.
-        b = listMember(name,
+ /*      b = listMember(name,
           {
+            "div",
+            "rem",
+            "mod",
+            "abs",
             "der",
             "noEvent",
             "smooth",
@@ -536,14 +540,19 @@ algorithm
             "rem",
             "actualStream",
             "inStream"});
+
       then
         b;
-//     */
+    */
 
-/*
+
    // The more complete list of names below is from Static.elabbuiltinhandler
 
-    b = match (name)
+   b = match (name)
+    case "div" then true;
+    case "rem" then true;
+    case "mod" then true;
+    case "abs" then true;
     case "delay" then true;
     case "smooth" then true;
     case "size" then true;
@@ -602,14 +611,15 @@ algorithm
     case "NONE"  then Config.acceptMetaModelicaGrammar();
     case "isPresent" then Config.acceptMetaModelicaGrammar();
     else false;
-    end match;
+   end match;
 
    then
        b;
-*/
 
     case (_) then false;
+
   end matchcontinue;
+
 end isBuiltinFunctionName;
 
 
@@ -729,7 +739,9 @@ protected
    String fnName;
    DAE.Const vr, vr1, vr2;
 algorithm
-  (typedExp, ty, variability) := matchcontinue (functionName, functionArgs)
+  Absyn.CREF_IDENT(name = fnName) := functionName;
+
+  (typedExp, ty, variability) := match (fnName)
     local
       Absyn.ComponentRef acref;
       Absyn.Exp aexp1, aexp2;
@@ -747,82 +759,91 @@ algorithm
       DAE.TypeSource src1, src2;
       DAE.Type el_ty, ty1, ty2;
 
-    // size(arr, i) returns the size of dimension i of array expression arr
-    // where i shall be > 0 and <= ndims(arr)
-    // Here only type and variability of size()
-    case (Absyn.CREF_IDENT(name = "size"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
-      algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info); // arr
-        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info); // dim index i
-
-        DAE.T_ARRAY(dims = dimsOfArr) := ty1;
-        dim_count := listLength(dimsOfArr);
-
-        if dim_count == 0 then
-          // zero dimensions, size of a scalar is not allowed.
-          errorFailBuiltinSpecError(functionName, functionArgs, Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, "", info);
-        end if;
-
-        // the size variability does not actually depend on the variability of "arr" but on the variability
-        // of the particular dimension of "arr"
-        try
-          dim_int := Expression.expInt(dexp2);
-          // size(A, i) for an array A with known dimensions and constant i.
-          if (dim_int <= 0 or dim_int > dim_count) then
-            // dim index out of bounds
-            errorFailBuiltinSpecError(functionName, functionArgs,
-              Error.INVALID_SIZE_INDEX, intString(dim_int), info);
-          end if;
-          d1 := listGet(dimsOfArr, dim_int);
-          _ := Expression.dimensionSizeConstantExp(d1);  // Check if dimension is constant
-          vr := DAE.C_CONST();
-        else
-          // size(A, i) for an array A with unknown dimensions or non-constant i.
-          vr := DAE.C_PARAM();
-        end try;
-
-        // TODO FIXME: calculate the correct type and the correct variability, see Static.elabBuiltinSize in Static.mo  ??petfr fixed. check!
-        ty := DAE.T_INTEGER_DEFAULT;
-
-      then
-        (DAE.SIZE(dexp1, SOME(dexp2)), ty, vr);
 
 
-    // size(arr)
-    // Operator returns a vector of length ndims(arr) containing the dimension sizes of arr.
-    // Here only type and variability of size()
-    case (Absyn.CREF_IDENT(name = "size"), Absyn.FUNCTIONARGS(args = {aexp1}))
-      algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        // TODO FIXME: calculate the correct type and the correct variability,  ??petfr fixed, check!
-        // see Static.elabBuiltinSize in Static.mo
-        ty := DAE.T_INTEGER_DEFAULT;
+    // size(arr) or size(arr, i)
+    case "size"
+     algorithm
+       _ := match functionArgs
+      // size(arr)
+      // Operator returns a vector of length ndims(arr) containing the dimension sizes of arr.
+      // Here only compute type and variability of size()
+      case Absyn.FUNCTIONARGS(args = {aexp1})
+        algorithm
+          (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+          ty := DAE.T_INTEGER_DEFAULT;
+          DAE.T_ARRAY(dims = dimsOfArr) := ty1;
 
-        DAE.T_ARRAY(dims = dimsOfArr) := ty1;
+          _ := match dimsOfArr
+            // zero dimensions, size of a scalar is not allowed.
+            case {}  equation
+              errorFailBuiltinSpecError(functionName, functionArgs,
+                Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, "", info);
+              then ();
+            else
+              ();
+          end match;
 
-        _ := match dimsOfArr
-          // zero dimensions, size of a scalar is not allowed.
-          case {}  equation
-            errorFailBuiltinSpecError(functionName, functionArgs,
-              Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, "", info);
-            then ();
+          // the variability of size does not actually depend on the variability of "arr" but on the
+          // variability of the dimensions of "arr"
+          try
+            _ := List.map(dimsOfArr, Expression.dimensionSizeExp); // fails if one dim size is unknown
+            // size(A) for an array A with known dimension sizes.  Variability is constant
+            vr := DAE.C_CONST();
           else
-            ();
-        end match;
+            // size(A) for an array A with at least one unknown dimension.  variability is param
+            vr := DAE.C_PARAM();
+          end try;
+          typedExp := DAE.SIZE(dexp1, NONE());
+        then ();
 
-        // the variability of size does not actually depend on the variability of "arr" but on the
-        // variability of the dimensions of "arr"
-        try
-          _ := List.map(dimsOfArr, Expression.dimensionSizeExp); // fails if one dim size is unknown
-          // size(A) for an array A with known dimension sizes.  Variability is constant
-          vr := DAE.C_CONST();
-        else
-          // size(A) for an array A with at least one unknown dimension.  variability is param
-          vr := DAE.C_PARAM();
-        end try;
+      // size(arr, i) returns the size of dimension i of array expression arr
+      // where i shall be > 0 and <= ndims(arr)
+      // Here only type and variability of size()
+      case Absyn.FUNCTIONARGS(args = {aexp1, aexp2})
+        algorithm
+          (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info); // arr
+          (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info); // dim index i
+
+          DAE.T_ARRAY(dims = dimsOfArr) := ty1;
+          dim_count := listLength(dimsOfArr);
+
+          if dim_count == 0 then
+            // zero dimensions, size of a scalar is not allowed.
+            errorFailBuiltinSpecError(functionName, functionArgs, Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, "", info);
+          end if;
+
+          // the size variability does not actually depend on the variability of "arr" but on the variability
+          // of the particular dimension of "arr"
+          try
+            dim_int := Expression.expInt(dexp2);
+            // size(A, i) for an array A with known dimensions and constant i.
+            if (dim_int <= 0 or dim_int > dim_count) then
+              // dim index out of bounds
+              errorFailBuiltinSpecError(functionName, functionArgs,
+                Error.INVALID_SIZE_INDEX, intString(dim_int), info);
+            end if;
+            d1 := listGet(dimsOfArr, dim_int);
+            _ := Expression.dimensionSizeConstantExp(d1);  // Check if dimension is constant
+            vr := DAE.C_CONST();
+          else
+            // size(A, i) for an array A with unknown dimensions or non-constant i.
+            vr := DAE.C_PARAM();
+          end try;
+
+          ty := DAE.T_INTEGER_DEFAULT;
+          typedExp := DAE.SIZE(dexp1, SOME(dexp2));
+        then ();
+
+      // wrong # of arguments to size( )
+      case _   equation
+         Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        then ();
+
+      end match;
 
       then
-        (DAE.SIZE(dexp1, NONE()), ty, vr);
+        (typedExp, ty, vr);
 
 
     // smooth(p, expr)
@@ -832,8 +853,13 @@ algorithm
     // exist and are continuous up to order p.
     // The only allowed types for expr in smooth are: real expressions, arrays of
     // allowed expressions, and records containing only components of allowed expressions."
-    case (Absyn.CREF_IDENT(name = "smooth"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+    case "smooth"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1, aexp2}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
         call_path := Absyn.crefToPath(functionName);
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp1, scope, component, info);
@@ -847,18 +873,11 @@ algorithm
             "second argument must be a Real, array of Reals or record only containing Reals", info);
         end if;
 
-        // TODO FIXME: calculate the correct type and the correct variability, see Static.mo
-        ty := Types.simplifyType(ty2);  //  from static ??OK?, why need simplifyType?
+        // TODO FIXME: calculate the correct type and the correct variability, see Static.mo. petfr: DONE
+        ty := Types.simplifyType(ty2);  //  from static OK?, why need simplifyType?
         vr := vr2;
       then
         (DAE.CALL(call_path, {dexp1,dexp2}, DAE.callAttrBuiltinOther), ty, vr);
-
-  /* ?? Generally TODO Need to add checks for # arguments for all operators later  -- remove this comment
-    e.g. from Static:  if listLength(inPosArgs) <> 2 or not listEmpty(inNamedArgs) then
-       msg_str := ", expected smooth(p, expr)";
-       printBuiltinFnArgError("smooth", msg_str, inPosArgs, inNamedArgs, inPrefix, inInfo);
-     end if;
-  */
 
 
     // Connections.rooted(A.R) returns true, if A.R is closer to the root of the spanning tree than B.R;
@@ -874,8 +893,13 @@ algorithm
 // ...
 //  outExp := DAE.CALL(Absyn.QUALIFIED("Connections", Absyn.IDENT("isRoot")),
 
-    case (Absyn.CREF_IDENT(name = "rooted"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "rooted"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
         call_path := Absyn.crefToPath(functionName);
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
 
@@ -883,7 +907,7 @@ algorithm
         ty := DAE.T_BOOL_DEFAULT;
         vr := DAE.C_VAR();     // ?? this OK variability?  from Static - remove this comment
         _ := match dexp1
-          case DAE.ARRAY(array = {})  // ??OK ? Added this check for size zero since checked in Static
+          case DAE.ARRAY(array = {})  // Added this check for size zero since checked in Static
             equation
               Error.addSourceMessage(Error.OVERCONSTRAINED_OPERATOR_SIZE_ZERO_RETURN_FALSE,
                 { Dump.printComponentRefStr(functionName) }, info);
@@ -896,28 +920,14 @@ algorithm
         (DAE.CALL(call_path, {dexp1}, DAE.callAttrBuiltinOther), ty, vr);
 
 
- // ?? from Static:  checking # arguments
- //  checkBuiltinCallArgs(inPosArgs, inNamedArgs, 1, "Connections.isRoot", inInfo);
- /*
-protected function checkBuiltinCallArgs
-  input list<Absyn.Exp> inPosArgs;
-  input list<Absyn.NamedArg> inNamedArgs;
-  input Integer inExpectedArgs;
-  input String inFnName;
-  input Absyn.Info inInfo;
-protected
-  String args_str, msg_str;
-  list<String> pos_args, named_args;
-algorithm
-  if listLength(inPosArgs) <> inExpectedArgs or not listEmpty(inNamedArgs) then
-    Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {inFnName}, inInfo);
-  end if;
-end checkBuiltinCallArgs;
-*/
-
-
-    case (Absyn.CREF_IDENT(name = "transpose"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "transpose"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         try
           true := Types.isArray(ty1);
@@ -936,100 +946,121 @@ end checkBuiltinCallArgs;
       then
         (typedExp, ty, vr);
 
-    // min(arr)  made min and max into separate cases, to avoid every function matching into those cases
-
-    // min(arr) Returns the least element of array expression arr as a scalar
-    // Element type: Scalar enumeration, Boolean, Integer or Real
-    case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    // min(arr) or min (x,y)
+     case "min"
       algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        try
-          true := Types.isArray(ty1);
-          el_ty := Types.arrayElementType(ty1);
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(el_ty);
-        else
-          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
-            "Integer, Real, Boolean or Enumeration array argument expected", info);
-        end try;
-        dexp1 := Expression.matrixToArray(dexp1);  // ??who convert from DAE.Matrix to DAE.Array?
+        Absyn.FUNCTIONARGS(args = afargs) := functionArgs;
+
+        // min(arr) Returns the least element of array expression arr as a scalar
+        // Element type: Scalar enumeration, Boolean, Integer or Real
+        if listLength(afargs) == 1 then
+          {aexp1} := afargs;
+          (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+          try
+            true := Types.isArray(ty1);
+            el_ty := Types.arrayElementType(ty1);
+            true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(el_ty);
+          else
+            errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+              "Integer, Real, Boolean or Enumeration array argument expected", info);
+          end try;
+          dexp1 := Expression.matrixToArray(dexp1);  // ??why convert from DAE.Matrix to DAE.Array?
                                          // ?? Why DAE.Array here and DAE.T_ARRAY in transpose?
                                          // DAE.T_ARRAY - arrays of unknown size, e.g. Real[:]
-        ty := el_ty;
-        vr := vr1;
-        typedExp := Expression.makePureBuiltinCall("min", {dexp1}, ty);
-      then
-        (typedExp, ty, vr);
+          ty := el_ty;
+          vr := vr1;
+          typedExp := Expression.makePureBuiltinCall("min", {dexp1}, ty);
 
-   // max(arr) Returns the greatest element of array expression arr
-   // Element type: Scalar enumeration, Boolean, Integer or Real
-    case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1}))
-      algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info); // ??petfr working
-        try
-          true := Types.isArray(ty1);
-          el_ty := Types.arrayElementType(ty1);
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(el_ty);
+        // min(x,y) where x & y are scalars.
+        // If vectorized, x and y are arrays. Now assumes always scalar according to MLS
+        elseif listLength(afargs) == 2 then
+          {aexp1, aexp2} := afargs;
+
+          (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+          (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
+          try
+            true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1);
+            true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2);
+          else
+            errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+              "Integer, Real, Boolean or Enumeration arguments expected", info);
+          end try;
+          ty := Types.scalarSuperType(ty1, ty2);
+          (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
+          (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
+          vr := Types.constAnd(vr1, vr2);
+          typedExp := Expression.makePureBuiltinCall("min", {dexp1, dexp2}, ty);
+
         else
-          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
-            "Integer, Real, Boolean or Enumeration array argument expected", info);
-        end try;
-        dexp1 := Expression.matrixToArray(dexp1);  // ?? why is this call needed, a matrix is an array.
-                                                   // Lowering? Changes from DAE.Matrix to DAE.Array
-                                                   // DAE.ARRAY - Array constructor, e.g. {1,3,4}
-        ty := el_ty;
-        vr := vr1;
-        typedExp := Expression.makePureBuiltinCall("max", {dexp1}, ty);
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end if;
+
       then
         (typedExp, ty, vr);
 
 
-    // min(x,y) where x & y are scalars.
-    // Made min and max into separate cases, to avoid most functions partially matching this
-    // If vectorized, x and y are arrays. Now assumes always scalar according to MLS
-    case (Absyn.CREF_IDENT(name = "min"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+    // max(arr) or max(x,y)
+     case "max"
       algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
-        try
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1);
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2);
+        Absyn.FUNCTIONARGS(args = afargs) := functionArgs;
+
+        // max(arr) Returns the largest element of array expression arr as a scalar
+        // Element type: Scalar enumeration, Boolean, Integer or Real
+        if listLength(afargs) == 1 then
+          {aexp1} := afargs;
+          (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+          try
+            true := Types.isArray(ty1);
+            el_ty := Types.arrayElementType(ty1);
+            true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(el_ty);
+          else
+            errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+              "Integer, Real, Boolean or Enumeration array argument expected", info);
+          end try;
+          dexp1 := Expression.matrixToArray(dexp1);  // ??why convert from DAE.Matrix to DAE.Array?
+                                         // ?? Why DAE.Array here and DAE.T_ARRAY in transpose?
+                                         // DAE.T_ARRAY - arrays of unknown size, e.g. Real[:]
+          ty := el_ty;
+          vr := vr1;
+          typedExp := Expression.makePureBuiltinCall("max", {dexp1}, ty);
+
+        // max(x,y) where x & y are scalars.
+        // If vectorized, x and y are arrays. Now assumes always scalars according to MLS
+        elseif listLength(afargs) == 2 then
+          {aexp1, aexp2} := afargs;
+
+          (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
+          (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
+          try
+            true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1);
+            true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2);
+          else
+            errorFailBuiltinWrongArgTypes(functionName, functionArgs,
+              "Integer, Real, Boolean or Enumeration arguments expected", info);
+          end try;
+          ty := Types.scalarSuperType(ty1, ty2);
+          (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
+          (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
+          vr := Types.constAnd(vr1, vr2);
+          typedExp := Expression.makePureBuiltinCall("max", {dexp1, dexp2}, ty);
+
         else
-          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
-            "Integer, Real, Boolean or Enumeration arguments expected", info);
-        end try;
-        ty := Types.scalarSuperType(ty1, ty2);
-        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
-        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
-        vr := Types.constAnd(vr1, vr2);
-        typedExp := Expression.makePureBuiltinCall("min", {dexp1, dexp2}, ty);
+            Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end if;
+
       then
         (typedExp, ty, vr);
 
-    // max(x,y) where x & y are scalars: Integer, Real, Boolean or Enumeration or subtypes of those
-    // If vectorized, x and y are arrays. Now assumes always scalar according to MLS
-    case (Absyn.CREF_IDENT(name = "max"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
-      algorithm
-        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
-        (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
-        try
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty1);
-          true := Types.isSimpleTypeRealOrIntegerOrBooleanOrEnumOrSubtypes(ty2);
-        else
-          errorFailBuiltinWrongArgTypes(functionName, functionArgs,
-            "Integer, Real, Boolean or Enumeration arguments expected", info);
-        end try;
-        ty := Types.scalarSuperType(ty1, ty2);
-        (dexp1, _) := Types.matchType(dexp1, ty1, ty, true);
-        (dexp2, _) := Types.matchType(dexp2, ty2, ty, true);
-        vr := Types.constAnd(vr1, vr2);
-        typedExp := Expression.makePureBuiltinCall("max", {dexp1, dexp2}, ty);
-      then
-        (typedExp, ty, vr);
 
      // diagonal(v)  Returns a square matrix with the elements of vector v on the diagonal
      // and all other elements zero
-    case (Absyn.CREF_IDENT(name = "diagonal"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "diagonal"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         DAE.T_ARRAY(dims = {d1}, ty = el_ty) := ty1;
 
@@ -1042,8 +1073,14 @@ end checkBuiltinCallArgs;
      // product(A) returns scalar product of all the elements of array expression A
      // This means that the result type is a scalar type, not an array type
      // Element types can be Integer or Real
- /**/   case (Absyn.CREF_IDENT(name = "product"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "product"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         try
           true := Types.isArray(ty1);
@@ -1066,8 +1103,14 @@ end checkBuiltinCallArgs;
        // (b) y is a discrete-time expression
        // (c) the operator is not applied in a function class  ?? where is this checked?
        // y is an array if vectorized
-/**/ case (Absyn.CREF_IDENT(name = "pre"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "pre"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         typedExp :=  Expression.makePureBuiltinCall("pre", {dexp1}, ty1);
         try
@@ -1081,24 +1124,39 @@ end checkBuiltinCallArgs;
       then
         (typedExp, ty1, vr1);
 
+
       // noEvent(expr)  Real elementary relations within expr are taken literally,
       // i.e., no state or time event is triggered
-/**/   case (Absyn.CREF_IDENT(name = "noEvent"), Absyn.FUNCTIONARGS(args = {aexp1}))
+/**/   case "noEvent"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         typedExp :=  Expression.makePureBuiltinCall("noEvent", {dexp1}, ty1);
       then
         (typedExp, ty1, vr1);
 
-/**/   // sum(A) Returns the scalar sum of all the elements of array expression
-       // The type of sum is the same as the element type, must be scalar Integer or Real
-    case (Absyn.CREF_IDENT(name = "sum"), Absyn.FUNCTIONARGS(args = {aexp1}))
+
+    // sum(A) Returns the scalar sum of all the elements of array expression
+    // The type of sum is the same as the element type, must be scalar Integer or Real
+    case  "sum"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
        (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         ty := Types.arrayElementType(ty1);
         typedExp :=  Expression.makePureBuiltinCall("sum", {dexp1}, ty);
+        vr := vr1;
       then
-       (typedExp, ty, vr1);
+       (typedExp, ty, vr);
 
   /* assert is not a function, should not be here */
   // inst_assert, inst.assert should not be here
@@ -1107,7 +1165,7 @@ end checkBuiltinCallArgs;
   //   assert(condition, message, assertionLevel);
   //   assert(condition, message, level = assertionLevel);
   //  First argument is Boolean, second is a string, third is an Integer.  COuld be declared?
-  //  ?? an assert statement has no type, or we just ignore it?  Is there a void type?  AnyType?
+
 
 
 
@@ -1115,8 +1173,14 @@ end checkBuiltinCallArgs;
       // The same restrictions as for pre() apply, e.g. not to be used inside functions.
       // if vectorized, b can be a Boolean array
       // ?? should also check for discrete variability if not in a when-clause
- /**/  case (Absyn.CREF_IDENT(name = "edge"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "edge"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         typedExp :=  Expression.makePureBuiltinCall("edge", {dexp1}, ty1);
         ty := DAE.T_BOOL_DEFAULT;
@@ -1129,11 +1193,18 @@ end checkBuiltinCallArgs;
       then
         (typedExp, ty, vr1);
 
+
       // change(v) is expanded into  (v<>pre(v)).
       // The same restrictions as for the pre() operator apply.
       // If vectorized, v is an array
- /**/  case (Absyn.CREF_IDENT(name = "change"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "change"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         typedExp :=  Expression.makePureBuiltinCall("change", {dexp1}, ty1);
         ty := DAE.T_BOOL_DEFAULT;
@@ -1149,13 +1220,20 @@ end checkBuiltinCallArgs;
       then
         (typedExp, ty, vr1);
 
-/**/ // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
+
+     // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
      //  Result and arguments shall have type Real or Integer.
      //  If either of the arguments is Real the result is Real otherwise Integer.
      //  If vectorized, x and y are arrays
      //  ?? Checking vectorization also implies checking that both arguments have the same dimensions
-    case (Absyn.CREF_IDENT(name = "rem"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+    case "rem"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1, aexp2}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
@@ -1174,13 +1252,20 @@ end checkBuiltinCallArgs;
       then
         (typedExp, ty, vr);
 
-/**/ // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
+
+     // div(x,y)  Returns the algebraic quotient x/y with any fractional part discarded
      //   Result and arguments shall have type Real or Integer. (or subtypes of those)
      //   If either of the arguments is Real the result is Real otherwise Integer
-     //  If vectorized, x and y are arrays
+     //  If vectorized, x and y are arrays.  ?? right now not vectorized
      //  ?? Checking vectorization also implies checking that both arguments have the same dimensions
-    case (Absyn.CREF_IDENT(name = "div"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+    case "div"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1, aexp2}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
@@ -1200,13 +1285,19 @@ end checkBuiltinCallArgs;
         (typedExp, ty, vr);
 
 
- /**/ // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
+     // mod(x,y)  Returns the integer modulus of x/y, i.e. mod(x,y)=x-floor(x/y)*y
      //  Result and arguments shall have type Real or Integer. (or subtypes of those)
      //  If either of the arguments is Real the result is Real otherwise Integer
-     //  If vectorized, x and y are arrays
+     //  If vectorized, x and y are arrays.  ?? Right now not vectorized.
      //  ?? Checking vectorization also implies checking that both arguments have the same dimensions
-    case (Absyn.CREF_IDENT(name = "mod"), Absyn.FUNCTIONARGS(args = {aexp1, aexp2}))
+    case "mod"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1, aexp2}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         (dexp2, ty2, vr2) := NFTyping.typeExp(aexp2, scope, component, info);
         try
@@ -1226,12 +1317,18 @@ end checkBuiltinCallArgs;
         (typedExp, ty, vr);
 
 
-/**/ // abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
+     //  abs(v)  Is expanded into  noEvent(if v >= 0 then v else –v)
      //  Argument v needs to be an Integer or Real expression. (or subtypes of those)
      //  Result type is Integer or Real depending on the input v
      //  If vectorized, v is an array
-    case (Absyn.CREF_IDENT(name = "abs"), Absyn.FUNCTIONARGS(args = {aexp1}))
+    case "abs"
       algorithm
+        try
+          Absyn.FUNCTIONARGS(args = {aexp1}) := functionArgs;
+        else
+          Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {fnName}, info);
+        end try;
+
         (dexp1, ty1, vr1) := NFTyping.typeExp(aexp1, scope, component, info);
         try
           true := Types.isNumericType(ty1);
@@ -1243,7 +1340,8 @@ end checkBuiltinCallArgs;
       then
         (typedExp, ty1, vr1);
 
- //??petfr:
+
+ //??petfr:  not yet done
 
   // array(A,B,C,...) constructs an array from its arguments
   // All arguments must have the same sizes, i.e., size(A)=size(B)=size(C)=...
@@ -1253,10 +1351,10 @@ end checkBuiltinCallArgs;
   // array(alpha, 2, 3.0) or {alpha, 2, 3.0} is a 3-vector of type Real.
   // Angle[3] a = {1.0, alpha, 4};   // type of a is Real[3]
 
-  // petfr  ?? CHECK elabBuiltinArray in static.mo
+  // petfr:  CHECK elabBuiltinArray in static.mo
 
  /**/  //  case (Absyn.CREF_IDENT(name = "array"), Absyn.FUNCTIONARGS(args = afargs))
- // OLD:  ??OBS: this code is not updated yet
+ // OLD CODE:
 /*      equation
         call_path = Absyn.crefToPath(functionName);
         (pos_args, globals) = NFTyping.typeExps(afargs, inEnv, inPrefix, inInfo, globals);
@@ -1301,7 +1399,7 @@ end checkBuiltinCallArgs;
   //   assert(condition, message); // Uses level=AssertionLevel.error
   //   assert(condition, message, assertionLevel);
   //   assert(condition, message, level = assertionLevel);
-  //  ?? an assert statement has no type, or we just ignore it?
+  //  an assert statement has no type, or we just ignore it?
  **   case (Absyn.CREF_IDENT(name = "assert"), Absyn.FUNCTIONARGS(args = afargs))
       equation
         call_path = Absyn.crefToPath(functionName);
@@ -1456,6 +1554,7 @@ end checkBuiltinCallArgs;
 
     /*
     // adrpo: no support for $overload functions yet: div, mod, rem, abs, i.e. ModelicaBuiltin.mo:
+    // petfr: instead:  div, mod, rem, abs are handled explicitly above. $overload removed from ModelicaBuiltin
     // function mod = $overload(OpenModelica.Internal.intMod,OpenModelica.Internal.realMod)
 
 **    // rem(x,y)  Returns the integer remainder of x/y, such that div(x,y)*y + rem(x, y) = x.
@@ -1489,13 +1588,14 @@ end checkBuiltinCallArgs;
     */
 
     // hopefully all the other ones have a complete entry in ModelicaBuiltin.mo
-    case (_, _)
+    else
       algorithm
         (typedExp, ty, vr) := typeNormalFunction(functionName, functionArgs, prefix, classNode, classType, cls, scope, component, info);
       then
         (typedExp, ty, vr);
 
- end matchcontinue;
+ end match;
+
 end typeBuiltinFunctionCall;
 
 
