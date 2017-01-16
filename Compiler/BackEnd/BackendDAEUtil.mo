@@ -7349,7 +7349,6 @@ protected function allPreOptimizationModules
     (StateMachineFeatures.stateMachineElab, "stateMachineElab"),
     (BackendDAEOptimize.simplifyIfEquations, "simplifyIfEquations"),
     (BackendDAEOptimize.expandDerOperator, "expandDerOperator"),
-    (BackendDAEOptimize.removeEqualFunctionCalls, "removeEqualFunctionCalls"),
     (BackendDAEOptimize.removeLocalKnownVars, "removeLocalKnownVars"),
     (CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
     (SynchronousFeatures.clockPartitioning, "clockPartitioning"),
