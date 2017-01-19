@@ -67,6 +67,8 @@ private:
   int* _Ap;
   double* _Ax;
   int _nonzeros;
+#else
+	double *_fNominal;// klu scales the matrix entries already
 #endif
 
 };
