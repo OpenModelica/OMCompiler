@@ -889,6 +889,235 @@ algorithm
   end matchcontinue;
 end protectedParametersFinder;
 
+
+// =============================================================================
+// remove equal function calls equations stuff
+//
+// =============================================================================
+public function removeEqualFunctionCalls "author: Frenkel TUD 2011-04
+  This function detects equal function calls of the form a=f(b) and c=f(b) in
+  BackendDAE.BackendDAE to get speed up."
+  input BackendDAE.BackendDAE dae;
+  output BackendDAE.BackendDAE odae;
+algorithm
+  if Flags.getConfigBool(Flags.CSE_CALL) or Flags.getConfigBool(Flags.CSE_EACHCALL) then
+    // skip this module if cse module is activated
+    odae := dae;
+  else
+    odae := BackendDAEUtil.mapEqSystem(dae,removeEqualFunctionCallsWork);
+  end if;
+end removeEqualFunctionCalls;
+
+protected function removeEqualFunctionCallsWork "author: Frenkel TUD 2011-04
+  This function detects equal function calls of the form a=f(b) and c=f(b) in
+  BackendDAE.BackendDAE to get speed up."
+  input BackendDAE.EqSystem isyst;
+  input BackendDAE.Shared ishared;
+  output BackendDAE.EqSystem osyst;
+  output BackendDAE.Shared oshared;
+algorithm
+  (osyst,oshared) := match isyst
+    local
+      BackendDAE.IncidenceMatrix m;
+      BackendDAE.IncidenceMatrixT mT;
+      BackendDAE.Variables vars;
+      BackendDAE.EquationArray eqns;
+      list<Integer> changed;
+      Boolean b;
+      BackendDAE.EqSystem syst;
+      DAE.FunctionTree funcs;
+
+    case syst as BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns)
+      algorithm
+        funcs := BackendDAEUtil.getFunctions(ishared);
+        (syst, m, mT) := BackendDAEUtil.getIncidenceMatrixfromOption(syst, BackendDAE.NORMAL(), SOME(funcs));
+        // check equations
+        (m, (mT,_,_,changed)) := traverseIncidenceMatrix(m, removeEqualFunctionCallFinder, (mT,vars,eqns,{}));
+        // update arrayeqns and algorithms, collect info for wrappers
+        syst.m := SOME(m); syst.mT := SOME(mT); syst.matching := BackendDAE.NO_MATCHING();
+        syst := BackendDAEUtil.updateIncidenceMatrix(syst, BackendDAE.NORMAL(), NONE(), changed);
+      then (syst, ishared);
+  end match;
+end removeEqualFunctionCallsWork;
+
+protected function removeEqualFunctionCallFinder "author: Frenkel TUD 2010-12"
+ input tuple<BackendDAE.IncidenceMatrixElement,Integer,BackendDAE.IncidenceMatrix, tuple<BackendDAE.IncidenceMatrixT,BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>>> inTpl;
+ output tuple<list<Integer>,BackendDAE.IncidenceMatrix, tuple<BackendDAE.IncidenceMatrixT,BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>>> outTpl;
+algorithm
+  outTpl:=
+  matchcontinue (inTpl)
+    local
+      BackendDAE.IncidenceMatrixElement elem;
+      Integer pos;
+      BackendDAE.IncidenceMatrix m,mT;
+      list<Integer> changed;
+      BackendDAE.Variables vars;
+      BackendDAE.EquationArray eqns,eqns1;
+      DAE.Exp exp,e1,e2,ecr;
+      AvlSetInt.Tree expvars;
+      list<Integer> controleqns,expvars1;
+      list<list<Integer>> expvarseqns;
+
+    case ((elem,pos,m,(mT,vars,eqns,changed)))
+      equation
+        // check number of vars in eqns
+        _::_ = elem;
+        BackendDAE.EQUATION(exp=e1,scalar=e2) = BackendEquation.equationNth1(eqns,pos);
+        // BackendDump.debugStrExpStrExpStr(("Test ",e1," = ",e2,"\n"));
+        (ecr,exp) = functionCallEqn(e1,e2,vars);
+        // TODO: Handle this with alias-equations instead?; at least they don't replace back to the original expression...
+        // failure(DAE.CREF(componentRef=_) = exp);
+        // failure(DAE.UNARY(operator=DAE.UMINUS(ty=_),exp=DAE.CREF(componentRef=_)) = exp);
+        // BackendDump.debugStrExpStrExpStr(("Found ",ecr," = ",exp,"\n"));
+        expvars = BackendDAEUtil.incidenceRowExp(exp,vars,AvlSetInt.EMPTY(),NONE(),BackendDAE.NORMAL());
+        // print("expvars "); BackendDump.debuglst((expvars,intString," ","\n"));
+        (expvars1::expvarseqns) = List.map2(AvlSetInt.listKeys(expvars),varEqns,pos,mT);
+        // print("expvars1 "); BackendDump.debuglst((expvars1,intString," ","\n"));;
+        controleqns = getControlEqns(expvars1,expvarseqns);
+        // print("controleqns "); BackendDump.debuglst((controleqns,intString," ","\n"));
+        (eqns1,changed) = removeEqualFunctionCall(controleqns,ecr,exp,eqns,changed);
+        //print("changed1 "); BackendDump.debuglst((changed1,intString," ","\n"));
+        //print("changed2 "); BackendDump.debuglst((changed2,intString," ","\n"));
+        // print("Next\n");
+      then (({},m,(mT,vars,eqns1,changed)));
+    case ((_,_,m,(mT,vars,eqns,changed)))
+      then (({},m,(mT,vars,eqns,changed)));
+  end matchcontinue;
+end removeEqualFunctionCallFinder;
+
+protected function functionCallEqn
+"author Frenkel TUD 2011-04"
+  input DAE.Exp ie1;
+  input DAE.Exp ie2;
+  input BackendDAE.Variables inVars;
+  output DAE.Exp outECr;
+  output DAE.Exp outExp;
+algorithm
+  (outECr,outExp) := match (ie1,ie2,inVars)
+      local
+        DAE.ComponentRef cr;
+        DAE.Exp e1,e2;
+        DAE.Operator op;
+
+      case (DAE.CREF(),DAE.UNARY(operator=DAE.UMINUS(),exp=DAE.CREF()),_)
+        then fail();
+      case (DAE.CREF(),DAE.CREF(),_)
+        then fail();
+      case (DAE.UNARY(operator=DAE.UMINUS(),exp=DAE.CREF()),DAE.CREF(),_)
+        then fail();
+      // a = -f(...);
+      case (e1 as DAE.CREF(componentRef = cr),DAE.UNARY(operator=op as DAE.UMINUS(),exp=e2),_)
+        equation
+          ((_::_),(_::_)) = BackendVariable.getVar(cr,inVars);
+        then (DAE.UNARY(op,e1),e2);
+      // a = f(...);
+      case (e1 as DAE.CREF(componentRef = cr),e2,_)
+        equation
+          ((_::_),(_::_)) = BackendVariable.getVar(cr,inVars);
+        then (e1,e2);
+      // a = -f(...);
+      case (DAE.UNARY(operator=op as DAE.UMINUS(),exp=e1),e2 as DAE.CREF(componentRef = cr),_)
+        equation
+          ((_::_),(_::_)) = BackendVariable.getVar(cr,inVars);
+        then (DAE.UNARY(op,e2),e1);
+      // f(...)=a;
+      case (e1,e2 as DAE.CREF(componentRef = cr),_)
+        equation
+          ((_::_),(_::_)) = BackendVariable.getVar(cr,inVars);
+        then (e2,e1);
+  end match;
+end functionCallEqn;
+
+protected function varEqns
+"author Frenkel TUD 2011-04"
+  input Integer v;
+  input Integer pos;
+  input BackendDAE.IncidenceMatrixT mT;
+  output list<Integer> outVarEqns;
+protected
+  list<Integer> vareqns,vareqns1;
+algorithm
+  vareqns := mT[intAbs(v)];
+  vareqns1 := List.map(vareqns, intAbs);
+  outVarEqns := List.removeOnTrue(intAbs(pos),intEq,vareqns1);
+end varEqns;
+
+protected function getControlEqns
+"author Frenkel TUD 2011-04"
+  input list<Integer> inVarsEqn;
+  input list<list<Integer>> inVarsEqns;
+  output list<Integer> outEqns;
+algorithm
+  outEqns := match(inVarsEqn,inVarsEqns)
+    local
+      list<Integer> a,b,c,d;
+      list<list<Integer>> rest;
+    case (a,{}) then a;
+    case (a,b::rest)
+      equation
+       c = List.intersectionOnTrue(a,b,intEq);
+       d = getControlEqns(c,rest);
+      then d;
+  end match;
+end getControlEqns;
+
+protected function removeEqualFunctionCall
+"author: Frenkel TUD 2011-04"
+  input list<Integer> inEqsLst;
+  input DAE.Exp inExp;
+  input DAE.Exp inECr;
+  input BackendDAE.EquationArray inEqns;
+  input list<Integer> ichanged;
+  output BackendDAE.EquationArray outEqns;
+  output list<Integer> outEqsLst;
+algorithm
+  (outEqns,outEqsLst):=
+  matchcontinue (inEqsLst,inExp,inECr,inEqns,ichanged)
+    local
+      BackendDAE.EquationArray eqns;
+      BackendDAE.Equation eqn,eqn1;
+      Integer pos,i;
+      list<Integer> rest,changed;
+    case ({},_,_,_,_) then (inEqns,ichanged);
+    case (pos::rest,_,_,_,_)
+      equation
+        eqn = BackendEquation.equationNth1(inEqns,pos);
+        //BackendDump.printEquationList({eqn});
+        //BackendDump.debugStrExpStrExpStr(("Repalce ",inExp," with ",inECr,"\n"));
+        (eqn1,(_,_,i)) = BackendDAETransform.traverseBackendDAEExpsEqnWithSymbolicOperation(eqn, replaceExp, (inECr,inExp,0));
+        //BackendDump.printEquationList({eqn1});
+        //print("i="); print(intString(i)); print("\n");
+        true = intGt(i,0);
+        eqns =  BackendEquation.setAtIndex(inEqns,pos,eqn1);
+        changed = List.consOnTrue(not listMember(pos,ichanged),pos,ichanged);
+        (eqns,changed) = removeEqualFunctionCall(rest,inExp,inECr,eqns,changed);
+      then (eqns,changed);
+    case (_::rest,_,_,_,_)
+      equation
+        (eqns,changed) = removeEqualFunctionCall(rest,inExp,inECr,inEqns,ichanged);
+      then (eqns,changed);
+  end matchcontinue;
+end removeEqualFunctionCall;
+
+protected function replaceExp
+  input DAE.Exp inExp;
+  input tuple<list<DAE.SymbolicOperation>, tuple<DAE.Exp, DAE.Exp, Integer>> inTpl;
+  output DAE.Exp e1;
+  output tuple<list<DAE.SymbolicOperation>, tuple<DAE.Exp, DAE.Exp, Integer>> outTpl;
+protected
+  DAE.Exp e, se, te;
+  Integer i, j;
+  list<DAE.SymbolicOperation> ops;
+algorithm
+  e := inExp;
+  (ops, (se, te, i)) := inTpl;
+  // BackendDump.debugStrExpStrExpStr(("Repalce ", se, " with ", te, "\n"));
+  ((e1, j)) := Expression.replaceExp(e, se, te);
+  ops := if j>0 then DAE.SUBSTITUTION({e1}, e)::ops else ops;
+  // BackendDump.debugStrExpStrExpStr(("Old ", e, " new ", e1, "\n"));
+  outTpl := (ops, (se, te, i+j));
+end replaceExp;
+
 // =============================================================================
 // remove unused parameter
 //
