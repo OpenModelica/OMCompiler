@@ -143,13 +143,11 @@ algorithm
        SCode.COMMENT(NONE(), NONE()),
        NONE(),
        info), scope);
-
   fakeComponent := Inst.instComponent(fakeComponent, scope, InstNode.parent(classNode));
 
   // we need something better than this as this will type the function twice
   fakeComponent := Typing.typeComponent(fakeComponent);
   (classNode, classType) := Typing.typeClass(classNode);
-
   // see if the class is a builtin function (including definitions in the ModelicaBuiltin.mo), record or normal function
 
   // is builtin function defined in ModelicaBuiltin.mo
@@ -166,7 +164,6 @@ algorithm
 
   // is normal function call
   (typedExp, ty, variability) := typeNormalFunction(functionName, functionArgs, prefix, classNode, classType, cls, scope, info);
-
 end typeFunctionCall;
 
 function getFunctionInputs
@@ -523,7 +520,11 @@ algorithm
             "cat",
             "rem",
             "actualStream",
-            "inStream"});
+            "inStream",
+            "previous",
+            "hold",
+            "subSample",
+            "superSample"});
       then
         b;
 
@@ -750,6 +751,51 @@ algorithm
         typedExp := Expression.makePureBuiltinCall("pre", {dexp1}, ty);
       then
         (typedExp, ty, vr);
+
+    case (Absyn.CREF_IDENT(name = "previous"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      guard intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33)
+      algorithm
+        // TODO? Check that aexp1 is a Component Expression (MLS 3.3, Section 16.2.3) or parameter expression
+        (dexp1, ty, vr) := Typing.typeExp(aexp1, scope, info);
+        // create the typed call
+        typedExp := Expression.makePureBuiltinCall("previous", {dexp1}, ty);
+      then
+        (typedExp, ty, vr);
+
+    case (Absyn.CREF_IDENT(name = "hold"), Absyn.FUNCTIONARGS(args = {aexp1}))
+      guard intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33)
+      algorithm
+        // TODO? Check that aexp1 is a Component Expression (MLS 3.3, Section 16.2.3) or parameter expression
+        (dexp1, ty, vr) := Typing.typeExp(aexp1, scope, info);
+        // create the typed call
+        typedExp := Expression.makePureBuiltinCall("hold", {dexp1}, ty);
+      then
+        (typedExp, ty, vr);
+
+    // subSample(u)/superSample(u), subSample(u, factor)/superSample(u, factor)
+    case (Absyn.CREF_IDENT(name = fnName), Absyn.FUNCTIONARGS(args = afargs))
+      guard intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33) and
+        listMember(fnName, {"subSample", "superSample"}) and
+          (listLength(afargs) == 1 or listLength(afargs) == 2)
+      algorithm
+        if listLength(afargs) == 1 then
+          aexp1 := listHead(afargs);
+          // Create default argument factor=0
+          dexp2 := Expression.INTEGER(0);
+        else
+          {aexp1, aexp2} := afargs;
+          (dexp2, ty2, vr2) := Typing.typeExp(aexp2, scope, info);
+          Type.INTEGER() := ty2;
+          // TODO FIXME  check if vr2 is a parameter expressions
+          // TODO FIXME (evaluate) and check if factor >= 0
+        end if;
+        (dexp1, ty, vr) := Typing.typeExp(aexp1, scope, info);
+
+        // create the typed call
+        typedExp := Expression.makePureBuiltinCall(fnName, {dexp1, dexp2}, ty);
+      then
+        (typedExp, ty, vr);
+
 
     /* adrpo: adapt these to the new structures, see above
     case (Absyn.CREF_IDENT(name = "product"), Absyn.FUNCTIONARGS(args = afargs))
