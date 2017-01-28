@@ -182,8 +182,6 @@ testlogwindows:
 
 omdev_extra_dlls: install-openturns
 	echo Copying needed .dlls to the $(OMBUILDDIR)/bin directory
-	(cp -puf $(OMDEVMSYS)/lib/omniORB-4.2.0-msvc-10/bin/x86_win32/omniORB420_vc10_rt.dll $(builddir_bin)/)
-	(cp -puf $(OMDEVMSYS)/lib/omniORB-4.2.0-msvc-10/bin/x86_win32/omnithread40_vc10_rt.dll $(builddir_bin)/)
 ifeq (MINGW32,$(findstring MINGW32,$(shell uname)))
 	(cp -puf $(OMDEVMSYS)/tools/msys/mingw32/bin/libgomp-1.dll $(builddir_bin)/)
 	(cp -puf $(OMDEVMSYS)/tools/msys/mingw32/bin/libwinpthread-1.dll $(builddir_bin)/)
