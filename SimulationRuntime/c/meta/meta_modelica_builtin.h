@@ -132,11 +132,17 @@ extern modelica_metatype listArray(modelica_metatype);
 extern modelica_metatype arrayCopy(modelica_metatype);
 #define arrayGet(X,Y) nobox_arrayGet(threadData,X,Y)
 
+#include <execinfo.h>
+
 static inline modelica_metatype nobox_arrayGet(threadData_t *threadData,modelica_metatype arr,modelica_integer ix)
 {
   int nelts = MMC_HDRSLOTS(MMC_GETHDR(arr));
-  if (ix < 1 || ix > nelts)
+  if (ix < 1 || ix > nelts) {
+    void *buffer[32];
+    backtrace(buffer, 32);
+    backtrace_symbols_fd(buffer, 32, 2);
     MMC_THROW_INTERNAL();
+  }
   return MMC_STRUCTDATA(arr)[ix-1];
 }
 
