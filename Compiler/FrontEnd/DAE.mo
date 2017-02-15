@@ -1345,16 +1345,16 @@ uniontype Exp "Expressions
     Exp exp;
   end LUNARY;
 
-  record RELATION "Relation, e.g. a <= 0
-    Index contains normal an Integer for every ZeroCrossing
-    but if Relation is in algorithm with for loop the iterator and the range
-    of static iterator is needed for codegen"
+  record RELATION "Relation, e.g. a <= 0"
     Exp exp1;
     Operator operator;
     Exp exp2;
-    Integer index;
-    Option<tuple<Exp,Integer,Integer>> optionExpisASUB;
   end RELATION;
+
+  record ZEROCROSSING "Backend expression for zero crossing"
+    Exp exp;
+    Integer index;
+  end ZEROCROSSING;
 
   record IFEXP "If expressions"
     Exp expCond;

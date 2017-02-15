@@ -4323,6 +4323,7 @@ end getTempDeclMatchOutputName;
   case e as LBINARY(__)         then daeExpLbinary(e, context, &preExp, &varDecls, &auxFunction)
   case e as LUNARY(__)          then daeExpLunary(e, context, &preExp, &varDecls, &auxFunction)
   case e as RELATION(__)        then daeExpRelation(e, context, &preExp, &varDecls, &auxFunction)
+  case e as ZEROCROSSING(__)    then daeExpZeroCrossing(e, context, &preExp, &varDecls, &auxFunction)
   case e as IFEXP(__)           then daeExpIf(e, context, &preExp, &varDecls, &auxFunction)
   case e as CALL(__)            then daeExpCall(e, context, &preExp, &varDecls, &auxFunction)
   case e as RECORD(__)          then daeExpRecord(e, context, &preExp, &varDecls, &auxFunction)
@@ -5132,15 +5133,6 @@ template daeExpRelation(Exp exp, Context context, Text &preExp,
 ::=
 match exp
 case rel as RELATION(__) then
-  let &varDecls2 = buffer ""
-  let &preExp2 = buffer ""
-  let simRel = daeExpRelationSim(rel, context, &preExp2, &varDecls2, &auxFunction)
-  if simRel then
-    /* Don't add the allocated temp-var unless it is used */
-    let &varDecls += varDecls2
-    let &preExp += preExp2
-    simRel
-  else
     let e1 = daeExp(rel.exp1, context, &preExp, &varDecls, &auxFunction)
     let e2 = daeExp(rel.exp2, context, &preExp, &varDecls, &auxFunction)
     match rel.operator
@@ -5185,175 +5177,21 @@ case rel as RELATION(__) then
     else error(sourceInfo(), 'daeExpRelation <%ExpressionDumpTpl.dumpExp(exp,"\"")%>')
 end daeExpRelation;
 
-
-
-template daeExpRelationSim(Exp exp, Context context, Text &preExp,
+template daeExpZeroCrossing(Exp exp, Context context, Text &preExp,
                            Text &varDecls, Text &auxFunction)
  "Helper to daeExpRelation."
 ::=
 match exp
-case rel as RELATION(__) then
+case zc as ZEROCROSSING(__) then
   match context
   case SIMULATION_CONTEXT(__) then
-    match rel.optionExpisASUB
-    case NONE() then
-      let e1 = daeExp(rel.exp1, context, &preExp, &varDecls, &auxFunction)
-      let e2 = daeExp(rel.exp2, context, &preExp, &varDecls, &auxFunction)
-      let res = tempDecl("modelica_boolean", &varDecls)
-      if intEq(rel.index,-1) then
-        match rel.operator
-        case LESS(__) then
-          let &preExp += '<%res%> = Less(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case LESSEQ(__) then
-          let &preExp += '<%res%> = LessEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATER(__) then
-          let &preExp += '<%res%> = Greater(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let &preExp += '<%res%> = GreaterEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        end match
-      else
-        let isReal = if isRealType(typeof(rel.exp1)) then (if isRealType(typeof(rel.exp2)) then 'true' else '') else ''
-        let hysteresisfunction = if isReal then 'RELATIONHYSTERESIS' else 'RELATION'
-        match rel.operator
-        case LESS(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%>, Less);<%\n%>'
-          res
-        case LESSEQ(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%>, LessEq);<%\n%>'
-          res
-        case GREATER(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%>, Greater);<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%>, GreaterEq);<%\n%>'
-          res
-        end match
-    case SOME((exp,i,j)) then
-      let e1 = daeExp(rel.exp1, context, &preExp, &varDecls, &auxFunction)
-      let e2 = daeExp(rel.exp2, context, &preExp, &varDecls, &auxFunction)
-      let iterator = daeExp(exp, context, &preExp, &varDecls, &auxFunction)
-      let res = tempDecl("modelica_boolean", &varDecls)
-      if intEq(rel.index,-1) then
-        match rel.operator
-        case LESS(__) then
-          let &preExp += '<%res%> = Less(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case LESSEQ(__) then
-          let &preExp += '<%res%> = LessEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATER(__) then
-          let &preExp += '<%res%> = Greater(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let &preExp += '<%res%> = GreaterEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        end match
-      else
-        let isReal = if isRealType(typeof(rel.exp1)) then (if isRealType(typeof(rel.exp2)) then 'true' else '') else ''
-        let hysteresisfunction = if isReal then 'RELATIONHYSTERESIS' else 'RELATION'
-        match rel.operator
-        case LESS(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%> + (<%iterator%> - <%i%>)/<%j%>, Less);<%\n%>'
-          res
-        case LESSEQ(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%> + (<%iterator%> - <%i%>)/<%j%>, LessEq);<%\n%>'
-          res
-        case GREATER(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%> + (<%iterator%> - <%i%>)/<%j%>, Greater);<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let &preExp += '<%hysteresisfunction%>(<%res%>, <%e1%>, <%e2%>, <%rel.index%> + (<%iterator%> - <%i%>)/<%j%>, GreaterEq);<%\n%>'
-          res
-        end match
-    end match
-  case ZEROCROSSINGS_CONTEXT(__) then
-    match rel.optionExpisASUB
-    case NONE() then
-      let e1 = daeExp(rel.exp1, context, &preExp, &varDecls, &auxFunction)
-      let e2 = daeExp(rel.exp2, context, &preExp, &varDecls, &auxFunction)
-      let res = tempDecl("modelica_boolean", &varDecls)
-      if intEq(rel.index,-1) then
-        match rel.operator
-        case LESS(__) then
-          let &preExp += '<%res%> = Less(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case LESSEQ(__) then
-          let &preExp += '<%res%> = LessEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATER(__) then
-          let &preExp += '<%res%> = Greater(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let &preExp += '<%res%> = GreaterEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        end match
-      else
-        let isReal = if isRealType(typeof(rel.exp1)) then (if isRealType(typeof(rel.exp2)) then 'true' else '') else ''
-        match rel.operator
-        case LESS(__) then
-          let hysteresisfunction = if isReal then 'LessZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Less(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        case LESSEQ(__) then
-          let hysteresisfunction = if isReal then 'LessEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'LessEq(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        case GREATER(__) then
-          let hysteresisfunction = if isReal then 'GreaterZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Greater(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let hysteresisfunction = if isReal then 'GreaterEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'GreaterEq(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        end match
-    case SOME((exp,i,j)) then
-      let e1 = daeExp(rel.exp1, context, &preExp, &varDecls, &auxFunction)
-      let e2 = daeExp(rel.exp2, context, &preExp, &varDecls, &auxFunction)
-      let res = tempDecl("modelica_boolean", &varDecls)
-      if intEq(rel.index,-1) then
-        match rel.operator
-        case LESS(__) then
-          let &preExp += '<%res%> = Less(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case LESSEQ(__) then
-          let &preExp += '<%res%> = LessEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATER(__) then
-          let &preExp += '<%res%> = Greater(<%e1%>,<%e2%>);<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let &preExp += '<%res%> = GreaterEq(<%e1%>,<%e2%>);<%\n%>'
-          res
-        end match
-      else
-        let isReal = if isRealType(typeof(rel.exp1)) then (if isRealType(typeof(rel.exp2)) then 'true' else '') else ''
-        match rel.operator
-        case LESS(__) then
-          let hysteresisfunction = if isReal then 'LessZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Less(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        case LESSEQ(__) then
-          let hysteresisfunction = if isReal then 'LessEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'LessEq(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        case GREATER(__) then
-          let hysteresisfunction = if isReal then 'GreaterZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Greater(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        case GREATEREQ(__) then
-          let hysteresisfunction = if isReal then 'GreaterEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'GreaterEq(<%e1%>,<%e2%>)'
-          let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
-          res
-        end match
-    end match
+    let e1 = daeExp(zc.exp, context, &preExp, &varDecls, &auxFunction)
+    let res = tempDecl("modelica_boolean", &varDecls)
+    let &preExp += 'RELATIONHYSTERESIS(<%res%>, <%e1%>, <%zc.index%>);<%\n%>'
+    res
   end match
 end match
-end daeExpRelationSim;
+end daeExpZeroCrossing;
 
 template daeExpIf(Exp exp, Context context, Text &preExp,
                   Text &varDecls, Text &auxFunction)

@@ -1598,9 +1598,11 @@ package DAE
       Exp exp1;
       Operator operator;
       Exp exp2;
-      Integer index;
-      Option<tuple<DAE.Exp,Integer,Integer>> optionExpisASUB;
     end RELATION;
+    record ZEROCROSSING "Backend expression for zero crossing"
+      Exp exp;
+      Integer index;
+    end ZEROCROSSING;
     record IFEXP
       Exp expCond;
       Exp expThen;

@@ -3611,6 +3611,7 @@ template daeExp(Exp exp, Context context, Text &preExp /*BUFP*/, Text &varDecls 
   case e as LBINARY(__)         then daeExpLbinary(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/)
   case e as LUNARY(__)          then daeExpLunary(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/)
   case e as RELATION(__)        then daeExpRelation(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/)
+  case e as ZEROCROSSING(__)    then daeExpZeroCrossingSim(e, index, context, &preExp /*BUFC*/, &varDecls /*BUFD*/)
   case e as IFEXP(__)           then daeExpIf(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/)
   case e as CALL(__)            then daeExpCall(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/)
   case e as ARRAY(__)           then daeExpArray(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/)
@@ -3968,23 +3969,22 @@ case rel as RELATION(__) then
     else "daeExpRelation:ERR"
 end daeExpRelation;
 
-
-template daeExpRelationSim(Exp exp, Context context, Text &preExp /*BUFP*/,
+template daeExpZeroCrossingSim(Exp exp, Integer index, Context context, Text &preExp /*BUFP*/,
                            Text &varDecls /*BUFP*/)
  "Helper to daeExpRelation."
 ::=
 match exp
-case rel as RELATION(__) then
+case zc as ZEROCROSSING(__) then
   match context
   case SIMULATION_CONTEXT(genDiscrete=false) then
-     match rel.optionExpisASUB
-     case NONE() then
-        let e1 = daeExp(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let e2 = daeExp(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let res = tempDecl("modelica_boolean", &varDecls /*BUFC*/)
-        match rel.operator
+    match zc.exp
+       case rel as RELATION(__)
+         let e1 = daeExp(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
+         let e2 = daeExp(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
+         let res = tempDecl("modelica_boolean", &varDecls /*BUFC*/)
+       match rel.operator
         case LESS(__) then
-          let &preExp += 'ADEVS_RELATIONTOZC(<%res%>, <%e1%>, <%e2%>, <%rel.index%>,<);<%\n%>'
+          let &preExp += 'ADEVS_RELATIONTOZC(<%res%>, <%e1%>, <%e2%>, <%.index%>,<);<%\n%>'
           res
         case LESSEQ(__) then
           let &preExp += 'ADEVS_RELATIONTOZC(<%res%>, <%e1%>, <%e2%>, <%rel.index%>,<=);<%\n%>'
