@@ -200,7 +200,7 @@ case SIMCODE(__) then
   #endif
 
   void setStartValues(ModelInstance *comp);
-  void setDefaultStartValues(ModelInstance *comp);
+  void setDefaultStartValues(ModelInstance *comp, threadData_t* threadData);
   <%if isFMIVersion20(FMUVersion) then
   <<
   void eventUpdate(ModelInstance* comp, fmi2EventInfo* eventInfo);
@@ -370,7 +370,7 @@ match modelInfo
 case MODELINFO(varInfo=VARINFO(numStateVars=numStateVars, numAlgVars= numAlgVars),vars=SIMVARS(__)) then
   <<
   // Set values for all variables that define a start value
-  void setDefaultStartValues(ModelInstance *comp) {
+  void setDefaultStartValues(ModelInstance *comp, threadData_t* threadData) {
 
   <%vars.stateVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
   <%vars.derivativeVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
@@ -495,7 +495,13 @@ template initVal(Exp initialValue)
   case SCONST(__) then '"<%Util.escapeModelicaStringToXmlString(string)%>"'
   case BCONST(__) then if bool then "1" else "0"
   case ENUM_LITERAL(__) then '<%index%>'
-  else "*ERROR* initial value of unknown type"
+  case _  then
+      let &preExp = buffer ""
+      let &varDecls = buffer ""
+      let &auxFunction = buffer ""
+      let val = daeExp(initialValue, contextSimulationDiscrete, &preExp, &varDecls, &auxFunction)
+      '<%val%>'
+  else "/* *ERROR* initial value of unknown type */"
 end initVal;
 
 template eventUpdateFunction(SimCode simCode)

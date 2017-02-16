@@ -513,7 +513,7 @@ match modelInfo
 case MODELINFO(varInfo=VARINFO(numStateVars=numStateVars, numAlgVars= numAlgVars),vars=SIMVARS(__)) then
   <<
   // Set values for all variables that define a start value
-  static void setDefaultStartValues(model_data *comp)
+  static void setDefaultStartValues(model_data *comp, threadData_t* threadData)
   {
       comp->Time = 0.0;
       <%vars.stateVars |> var => initValsDefault(var,"real") ;separator="\n"%>

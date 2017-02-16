@@ -484,6 +484,7 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
 
     threadData = (threadData_t *)functions->allocateMemory(1, sizeof(threadData_t));
     memset(threadData, 0, sizeof(threadData_t));
+    threadData->fmuResourceLocation = comp->fmuResourceLocation;
     /*
     pthread_key_create(&fmu2_thread_data_key,NULL);
     pthread_setspecific(fmu2_thread_data_key, threadData);
@@ -518,7 +519,7 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   useStream[LOG_ASSERT] = 1;
   initializeDataStruc(comp->fmuData, comp->threadData);
   /* setup model data with default start data */
-  setDefaultStartValues(comp);
+  setDefaultStartValues(comp, comp->threadData);
   setAllVarsToStart(comp->fmuData);
   setAllParamsToStart(comp->fmuData);
   comp->fmuData->callback->read_input_fmu(comp->fmuData->modelData, comp->fmuData->simulationInfo);
@@ -562,9 +563,13 @@ void fmi2FreeInstance(fmi2Component c) {
     return;
   FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2FreeInstance")
 
-  /* free simuation data */
+  /* free simulation data */
   comp->functions->freeMemory(comp->fmuData->modelData);
   comp->functions->freeMemory(comp->fmuData->simulationInfo);
+
+  /* free fmuLoadResource */
+  comp->functions->freeMemory(comp->fmuResourceLocation);
+  comp->functions->freeMemory(comp->fmuData->modelData->fmuResourceLocation);
 
   /* free fmuData */
   comp->functions->freeMemory(comp->threadData);
@@ -707,7 +712,7 @@ fmi2Status fmi2Reset(fmi2Component c) {
     initializeDataStruc(comp->fmuData, comp->threadData);
   }
   /* reset the values to start */
-  setDefaultStartValues(comp);
+  setDefaultStartValues(comp, comp->threadData);
   setAllVarsToStart(comp->fmuData);
   setAllParamsToStart(comp->fmuData);
 

@@ -300,7 +300,7 @@ algorithm
   end match;
 end translateFunctions;
 
-protected function removeThreadDataRecord
+public function removeThreadDataRecord
 "remove OpenModelica.threadData.ThreadData
  as is already defined in openmodelica.h"
   input list<RecordDeclaration> inRecs;
@@ -336,7 +336,7 @@ algorithm
   end match;
 end removeThreadDataRecord;
 
-protected function removeThreadDataFunction
+public function removeThreadDataFunction
 "remove OpenModelica.threadData.ThreadData
  as is already defined in openmodelica.h"
   input list<Function> inFuncs;

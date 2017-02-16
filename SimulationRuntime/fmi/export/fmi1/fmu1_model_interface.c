@@ -187,7 +187,7 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
   useStream[LOG_ASSERT] = 1;
   initializeDataStruc(comp->fmuData, comp->threadData);
   /* setup model data with default start data */
-  setDefaultStartValues(comp);
+  setDefaultStartValues(comp, comp->threadData);
   setAllVarsToStart(comp->fmuData);
   setAllParamsToStart(comp->fmuData);
   comp->fmuData->callback->read_input_fmu(comp->fmuData->modelData, comp->fmuData->simulationInfo);

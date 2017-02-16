@@ -431,8 +431,15 @@ protected
   list<tuple<SimCodeFunction.RecordDeclaration,list<SimCodeFunction.RecordDeclaration>>> g;
 algorithm
   (extraRecordDecls, outRecordTypes) := elaborateRecordDeclarationsForMetarecords(literals, {}, {});
-  (functions, outRecordTypes, extraRecordDecls, outIncludes, includeDirs, libs,libpaths) := elaborateFunctions2(program, daeElements, {}, outRecordTypes, extraRecordDecls, includes, {}, {},{});
+  (functions, outRecordTypes, extraRecordDecls, outIncludes, includeDirs, libs, libpaths) := elaborateFunctions2(program, daeElements, {}, outRecordTypes, extraRecordDecls, includes, {}, {},{});
   extraRecordDecls := List.unique(extraRecordDecls);
+
+  // remove OpenModelica.threadData.ThreadData
+  if Flags.isSet(Flags.BUILDING_FMU) then
+    functions := SimCodeFunction.removeThreadDataFunction(functions, {});
+    extraRecordDecls := SimCodeFunction.removeThreadDataRecord(extraRecordDecls, {});
+  end if;
+
   (extraRecordDecls, _) := elaborateRecordDeclarationsFromTypes(metarecordTypes, extraRecordDecls, outRecordTypes);
   extraRecordDecls := List.sort(extraRecordDecls, orderRecordDecls);
   ht := HashTableStringToPath.emptyHashTableSized(BaseHashTable.lowBucketSize);

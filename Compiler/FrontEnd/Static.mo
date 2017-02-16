@@ -6404,6 +6404,7 @@ algorithm
     local
       HandlerFunc handler;
       Absyn.ComponentRef cr;
+      String id;
 
     case Absyn.CREF_IDENT(subscripts = {})
       algorithm
@@ -6472,7 +6473,7 @@ algorithm
 
     case (cache,env,fn,args,nargs,impl,st,pre,_)
       equation
-        (cache,e,prop) = elabCallBuiltin(cache,env, fn, args, nargs, impl,pre,info) "Built in functions (e.g. \"pre\", \"der\"), have only possitional arguments" ;
+        (cache,e,prop) = elabCallBuiltin(cache,env, fn, args, nargs, impl, pre,info) "Built in functions (e.g. \"pre\", \"der\"), have only possitional arguments" ;
       then
         (cache,e,prop,st);
 
@@ -7211,7 +7212,7 @@ public function elabCallArgs3
   output FCore.Cache outCache;
   output Option<tuple<DAE.Exp,DAE.Properties>> expProps;
 protected
-  DAE.Exp callExp,call_exp;
+  DAE.Exp callExp,call_exp, cexp;
   list<DAE.Exp> args_1,args_2;
   list<DAE.Const> constlist;
   DAE.Const const;
@@ -7232,6 +7233,9 @@ protected
   Boolean didInline;
   Boolean b,onlyOneFunction,isFunctionPointer;
   IsExternalObject isExternalObject;
+  Absyn.Path ffname;
+  list<DAE.Exp> ffargs;
+  DAE.CallAttributes ffattr;
 algorithm
   onlyOneFunction := listLength(typelist) == 1;
   (cache,b) := isExternalObjectFunction(inCache,inEnv,fn);
@@ -7291,8 +7295,15 @@ algorithm
   (call_exp,_) := ExpressionSimplify.condsimplify(didInline,call_exp);
   didInline := didInline and (not Config.acceptMetaModelicaGrammar() /* Some weird errors when inlining. Becomes boxed even if it shouldn't... */);
   prop_1 := if didInline then Types.setPropType(prop_1, restype) else prop_1;
-  (cache, call_exp, prop_1) := Ceval.cevalIfConstant(cache, inEnv, call_exp, prop_1, impl, info);
-  expProps := if Util.isSuccess(status) then SOME((call_exp,prop_1)) else NONE();
+  (cache, cexp, prop_1) := Ceval.cevalIfConstant(cache, inEnv, call_exp, prop_1, impl, info);
+  if Flags.isSet(Flags.BUILDING_FMU) and Absyn.pathString(fn_1) == ".Modelica.Utilities.Files.loadResource" then
+    // when building FMUs ignore the result and return fmuLoadResource
+    // note that we NEED to evaluate uriToFilename first so that all the resources
+    // are added via FCore.addResource to the internal global resources
+    DAE.CALL(ffname,ffargs,ffattr) := call_exp;
+    cexp := DAE.CALL(Absyn.IDENT("fmuLoadResource"), ffargs, ffattr);
+  end if;
+  expProps := if Util.isSuccess(status) then SOME((cexp,prop_1)) else NONE();
   outCache := cache;
 end elabCallArgs3;
 
@@ -12608,6 +12619,41 @@ algorithm
     Error.addSourceMessageAndFail(Error.WRONG_NO_OF_ARGS, {inFnName}, inInfo);
   end if;
 end checkBuiltinCallArgs;
+
+protected function elabUriToFilename
+"@autor: adrpo
+ This function is used ONLY when building FMUs
+ elaborates uriToFilename to a function called fmuLoadResource
+ that contains a mapping from Modelica based URIs to FMU base URIs
+ which is automatically added to the function tree in
+ SimCodeMain.translateModelFMU"
+  input FCore.Cache inCache;
+  input FCore.Graph inEnv;
+  input list<Absyn.Exp> inPosArgs;
+  input list<Absyn.NamedArg> inNamedArgs;
+  input Boolean inImplicit;
+  input Prefix.Prefix inPrefix;
+  input SourceInfo inInfo;
+  output FCore.Cache outCache = inCache;
+  output DAE.Exp outExp;
+  output DAE.Properties outProperties;
+protected
+  String msg_str;
+  Absyn.Exp uri;
+  DAE.Exp duri, e;
+  DAE.Type ty;
+  Absyn.Path fn;
+  Boolean buildingFMU;
+algorithm
+  if listLength(inPosArgs) <> 1 or not listEmpty(inNamedArgs) then
+    msg_str := ", expected loadResource(uri)";
+    printBuiltinFnArgError("loadResource", msg_str, inPosArgs, inNamedArgs, inPrefix, inInfo);
+  end if;
+  {uri} := inPosArgs;
+  (outCache, duri, outProperties as DAE.PROP(ty, _), _) :=
+    elabExpInExpression(outCache, inEnv, uri, inImplicit, NONE(), true, inPrefix, inInfo);
+  outExp := Expression.makeImpureBuiltinCall("fmuLoadResource", {duri}, DAE.T_STRING_DEFAULT);
+end elabUriToFilename;
 
 annotation(__OpenModelica_Interface="frontend");
 end Static;

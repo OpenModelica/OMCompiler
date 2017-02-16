@@ -29,6 +29,17 @@
  *
  */
 
+function omcInternalGetFMUResourceLocation
+  output String fmuResourceLocation;
+  external "C" fmuResourceLocation = __omcInternalGetFMUResourceLocation__(OpenModelica.threadData())
+  annotation(Include="
+const char* __omcInternalGetFMUResourceLocation__(threadData_t *threadData)
+{
+  return threadData->fmuResourceLocation;
+}
+");
+end omcInternalGetFMUResourceLocation;
+
 type StateSelect = enumeration(
   never "Do not use as state at all.",
   avoid "Use as state, if it cannot be avoided (but only if variable appears differentiated and no other potential state with attribute default, prefer, or always can be selected).",
@@ -2535,6 +2546,7 @@ The only required argument is the className, while all others have some default 
   input String version = "2.0" "FMU version, 1.0 or 2.0.";
   input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation), me_cs (both model exchange and co-simulation)";
   input String fileNamePrefix = "<default>" "fileNamePrefix. <default> = \"className\"";
+  input Boolean includeResources = false "include Modelica based resources via loadResource or not";
   output String generatedFileName "Returns the full path of the generated FMU.";
 external "builtin";
 annotation(preferredView="text");
@@ -2550,6 +2562,7 @@ The only required argument is the className, while all others have some default 
   input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation), me_cs (both model exchange and co-simulation)";
   input String fileNamePrefix = "<default>" "fileNamePrefix. <default> = \"className\"";
   input String platforms[:] = {"dynamic"} "The list of platforms to generate code for. \"dynamic\"=current platform, dynamically link the runtime. \"static\"=current platform, statically link everything. Else, use a host triple, e.g. \"x86_64-linux-gnu\" or \"x86_64-w64-mingw32\"";
+  input Boolean includeResources = false "include Modelica based resources via loadResource or not";
   output String generatedFileName "Returns the full path of the generated FMU.";
 external "builtin";
 annotation(preferredView="text");

@@ -94,10 +94,14 @@ import Graph;
 import HashSet;
 import HpcOmSimCode;
 import Inline;
+import InstFunction;
 import List;
 import Matching;
 import MetaModelica.Dangerous;
+import Parser;
 import PriorityQueue;
+import SCodeDump;
+import SCodeUtil;
 import SimCodeDump;
 import SimCodeFunctionUtil;
 import SimCodeFunctionUtil.varName;
@@ -13138,10 +13142,62 @@ algorithm
     Util.createDirectoryTree(d + relative);
     // copy the file or directory
     System.systemCall("cp -rf \"" + a + "\" \"" + d + relative + "\"", "");
-    System.appendFile(d + "resourceMapping.txt", a + "\n");
+    System.appendFile(d + "resourceMapping.txt", o + "\n");
     System.appendFile(d + "resourceMapping.txt", relative + System.pathDelimiter() + file + "\n");
   end for;
 end handleExternalResources;
+
+public function addFMULoadResourceFunction
+"@author: adrpo
+ add fmuLoadResource function to the available functions"
+  input FCore.Cache inCache;
+  input FCore.Graph inGraph;
+  output FCore.Cache outCache = inCache;
+  output FCore.Graph outGraph = inGraph;
+protected
+  Absyn.Program p;
+  SCode.Element f;
+  String fmuLoadResourceFunction;
+  FCore.Resources resources;
+  FCore.Resource r;
+  String o, a, ln, ld, d, path, relative, file, sarray = "";
+  list<String> lst = {};
+  Integer len;
+algorithm
+  resources := FCore.getResources();
+  if listEmpty(resources) then
+    return;
+  end if;
+  len := listLength(resources);
+  for r in resources loop
+    (o, a, ln, ld) := FCore.unpackResource(r);
+    (path, relative, file) := FCore.splitAbsoluteResource(o, a, ln, ld);
+    lst := "{\"" + o + "\", \"" + relative + System.pathDelimiter() + file + "\"}" :: lst;
+  end for;
+  lst := listReverse(lst);
+  sarray := "\n  {" + stringDelimitList(lst, ",  \n") + "\n  };\n";
+
+  fmuLoadResourceFunction := "
+function fmuLoadResource
+  input String inResource;
+  output String absoluteResource = \"\";
+protected
+  String fmuResourceMapping[" + intString(len) + ", 2] = " +  sarray + "
+  String fmuResourceLocation = omcInternalGetFMUResourceLocation();
+algorithm
+  for i in 1:" + intString(len) + " loop
+    if fmuResourceMapping[i,1] == inResource then
+      absoluteResource := fmuResourceLocation + \"/\" + fmuResourceMapping[i,2];
+      break;
+    end if;
+  end for;
+end fmuLoadResource;
+";
+  p := Parser.parsestring(fmuLoadResourceFunction);
+  {f} := SCodeUtil.translateAbsyn2SCode(p);
+  // print("Func:\n" + SCodeDump.unparseElementStr(f) + "\n");
+  (outCache, outGraph, _) := InstFunction.implicitFunctionInstantiation(inCache, inGraph, InnerOuter.emptyInstHierarchy, DAE.NOMOD(), Prefix.NOPRE(), f, {});
+end addFMULoadResourceFunction;
 
 annotation(__OpenModelica_Interface="backend");
 end SimCodeUtil;

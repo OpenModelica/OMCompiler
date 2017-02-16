@@ -158,6 +158,9 @@ algorithm
         (cache,vallst,stOpt) = Ceval.cevalList(cache,env, expl, impl, stOpt, msg, numIter);
 
         (cache,newval,stOpt)= cevalCallFunction(cache, env, e, vallst, impl, stOpt, msg, numIter+1);
+        if Flags.isSet(Flags.BUILDING_FMU) then
+          fail();
+        end if;
       then
         (cache,newval,stOpt);
 

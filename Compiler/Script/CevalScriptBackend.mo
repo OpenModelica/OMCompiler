@@ -734,7 +734,7 @@ algorithm
       BackendDAE.Shared shared;
       GlobalScript.SimulationOptions defaulSimOpt;
       SimCode.SimulationSettings simSettings;
-      Boolean dumpExtractionSteps, requireExactVersion;
+      Boolean dumpExtractionSteps, requireExactVersion, includeResources;
       list<tuple<Absyn.Path,list<String>>> uses;
       Config.LanguageStandard oldLanguageStd;
       SCode.Element cl;
@@ -1187,14 +1187,14 @@ algorithm
       then
         (cache,ret_val,st_1);*/
 
-    case (cache,env,"translateModelFMU", {Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(str1),Values.STRING(str2),Values.STRING(filenameprefix)},st,_)
+    case (cache,env,"translateModelFMU", {Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(str1),Values.STRING(str2),Values.STRING(filenameprefix),Values.BOOL(includeResources)},st,_)
       algorithm
-        (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true);
+        (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true, includeResources = includeResources);
       then (cache,ret_val,st_1);
 
-    case (cache,env,"buildModelFMU", {Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(str1),Values.STRING(str2),Values.STRING(filenameprefix),Values.ARRAY(valueLst=cvars)},st,_)
+    case (cache,env,"buildModelFMU", {Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(str1),Values.STRING(str2),Values.STRING(filenameprefix),Values.ARRAY(valueLst=cvars),Values.BOOL(includeResources)},st,_)
       algorithm
-        (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true, list(ValuesUtil.extractValueString(vv) for vv in cvars));
+        (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true, list(ValuesUtil.extractValueString(vv) for vv in cvars), includeResources);
       then (cache,ret_val,st_1);
 
     case (cache,env,"translateModelXML",{Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(filenameprefix)},st,_)
@@ -3022,6 +3022,7 @@ protected function buildModelFMU " author: Frenkel TUD
   input String inFileNamePrefix;
   input Boolean addDummy "if true, add a dummy state";
   input list<String> platforms = {"dynamic"};
+  input Boolean includeResources "include Modelica based resources via loadResource or not";
   output FCore.Cache cache;
   output Values.Value outValue;
   output GlobalScript.SymbolTable st;
@@ -3032,9 +3033,14 @@ protected
   GlobalScript.SimulationOptions defaulSimOpt;
   SimCode.SimulationSettings simSettings;
   list<String> libs;
-  Boolean isWindows;
+  Boolean isWindows, buildingFMU;
   String FMUType = inFMUType;
 algorithm
+  // set the flag that we are building an FMU only if includeResources is true
+  if includeResources then
+    buildingFMU := Flags.set(Flags.BUILDING_FMU, true);
+  end if;
+try
   st := inInteractiveSymbolTable;
   cache := inCache;
   if not FMI.checkFMIVersion(FMUVersion) then
@@ -3059,7 +3065,7 @@ algorithm
   defaulSimOpt := buildSimulationOptionsFromModelExperimentAnnotation(st, className, filenameprefix, SOME(defaultSimulationOptions));
   simSettings := convertSimulationOptionsToSimCode(defaulSimOpt);
   try
-    (cache, outValue, st,_, libs,_, _) := SimCodeMain.translateModelFMU(cache, inEnv, className, st, FMUVersion, FMUType, filenameprefix, addDummy, simSettings);
+    (cache, outValue, st,_, libs,_, _) := SimCodeMain.translateModelFMU(cache, inEnv, className, st, FMUVersion, FMUType, filenameprefix, addDummy, simSettings, includeResources);
   else
     outValue := Values.STRING("");
     return;
@@ -3154,6 +3160,13 @@ algorithm
   end for;
 
   System.removeDirectory(fmutmp);
+else
+  // diable the flag that we are building an FMU only if includeResources is true
+  if includeResources then
+    Flags.set(Flags.BUILDING_FMU, buildingFMU);
+  end if;
+  fail();
+end try;
 end buildModelFMU;
 
 

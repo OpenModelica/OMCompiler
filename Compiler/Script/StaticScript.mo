@@ -269,7 +269,7 @@ public function elabCallInteractive "This function elaborates the functions defi
       Boolean impl;
       GlobalScript.SymbolTable st;
       Ident cname_str,str;
-      DAE.Exp filenameprefix,exp_1,crefExp,outputFile,dumpExtractionSteps,fmuversion,fmuType;
+      DAE.Exp filenameprefix,exp_1,crefExp,outputFile,dumpExtractionSteps,fmuversion,fmuType,includeResources;
       DAE.Type recordtype;
       list<Absyn.NamedArg> args;
       list<DAE.Exp> excludeList;
@@ -335,6 +335,8 @@ public function elabCallInteractive "This function elaborates the functions defi
                                                      DAE.T_STRING_DEFAULT, args, DAE.SCONST("me"),pre,info);
         (cache, filenameprefix) = Static.getOptionalNamedArg(cache,env, SOME(st), impl, "fileNamePrefix",
                                                      DAE.T_STRING_DEFAULT, args, DAE.SCONST(cname_str),pre,info);
+        (cache, includeResources) = Static.getOptionalNamedArg(cache,env, SOME(st), impl, "includeResources",
+                                                     DAE.T_BOOL_DEFAULT, args, DAE.BCONST(false),pre,info);
         recordtype =
           DAE.T_COMPLEX(ClassInf.RECORD(Absyn.IDENT("SimulationObject")),
           {DAE.TYPES_VAR("flatClass",DAE.dummyAttrVar,DAE.T_STRING_DEFAULT,DAE.UNBOUND(),NONE()),
@@ -342,7 +344,8 @@ public function elabCallInteractive "This function elaborates the functions defi
            NONE());
       then
         (cache,Expression.makePureBuiltinCall("translateModelFMU",
-          {DAE.CODE(Absyn.C_TYPENAME(className),DAE.T_UNKNOWN_DEFAULT),fmuversion,fmuType,filenameprefix},DAE.T_STRING_DEFAULT),DAE.PROP(recordtype,DAE.C_VAR()),SOME(st));
+          {DAE.CODE(Absyn.C_TYPENAME(className),DAE.T_UNKNOWN_DEFAULT),
+          fmuversion,fmuType,filenameprefix,includeResources},DAE.T_STRING_DEFAULT),DAE.PROP(recordtype,DAE.C_VAR()),SOME(st));
 
     case (cache,env,Absyn.CREF_IDENT(name = "translateModelXML"),{Absyn.CREF(componentRef = cr)},args,impl,SOME(st),pre,_)
       equation

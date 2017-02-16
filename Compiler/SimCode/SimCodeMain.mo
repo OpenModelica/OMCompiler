@@ -132,6 +132,7 @@ protected function generateModelCodeFMU "
   input String FMUType;
   input String filenamePrefix;
   input SimCode.SimulationSettings simSettings;
+  input Boolean includeResources;
   output list<String> libs;
   output String fileDir;
   output Real timeSimCode;
@@ -158,7 +159,7 @@ algorithm
   ExecStat.execStat("SimCode");
 
   System.realtimeTick(ClockIndexes.RT_CLOCK_TEMPLATES);
-  callTargetTemplatesFMU(simCode, Config.simCodeTarget(), FMUVersion, FMUType);
+  callTargetTemplatesFMU(simCode, Config.simCodeTarget(), FMUVersion, FMUType, includeResources);
   timeTemplates := System.realtimeTock(ClockIndexes.RT_CLOCK_TEMPLATES);
 end generateModelCodeFMU;
 
@@ -222,6 +223,7 @@ public function translateModelFMU
   input String inFileNamePrefix;
   input Boolean addDummy "if true, add a dummy state";
   input SimCode.SimulationSettings inSimSettings;
+  input Boolean includeResources;
   output FCore.Cache outCache;
   output Values.Value outValue;
   output GlobalScript.SymbolTable outInteractiveSymbolTable;
@@ -274,6 +276,11 @@ algorithm
           flagValue = Flags.enableDebug(Flags.DIS_SYMJAC_FMI20);
         end if;
 
+        // handle resources
+        if includeResources then
+          (cache, graph) = SimCodeUtil.addFMULoadResourceFunction(cache, graph);
+        end if;
+
         _ = FCore.getFunctionTree(cache);
         dae = DAEUtil.transformationsBeforeBackend(cache,graph,dae);
         description = DAEUtil.daeDescription(dae);
@@ -282,7 +289,7 @@ algorithm
         timeBackend = System.realtimeTock(ClockIndexes.RT_CLOCK_BACKEND);
 
         (libs,file_dir,timeSimCode,timeTemplates) =
-          generateModelCodeFMU(dlow_1, initDAE, useHomotopy, initDAE_lambda0, removedInitialEquationLst, primaryParameters, allPrimaryParameters, p, className, FMUVersion, FMUType, filenameprefix, inSimSettings);
+          generateModelCodeFMU(dlow_1, initDAE, useHomotopy, initDAE_lambda0, removedInitialEquationLst, primaryParameters, allPrimaryParameters, p, className, FMUVersion, FMUType, filenameprefix, inSimSettings, includeResources);
 
         //reset config flag
         Flags.setConfigBool(Flags.GENERATE_SYMBOLIC_LINEARIZATION, symbolicJacActivated);
@@ -303,6 +310,7 @@ algorithm
         end if;
       then
         (cache, Values.STRING(resstr), st, dlow_1, libs, file_dir, resultValues);
+
     else
       equation
         resstr = Absyn.pathStringNoQual(className);
@@ -804,6 +812,7 @@ protected function callTargetTemplatesFMU
   input String target;
   input String FMUVersion;
   input String FMUType;
+  input Boolean includeResources;
 algorithm
   setGlobalRoot(Global.optionSimCode, SOME(simCode));
   _ := match (simCode,target)
@@ -811,6 +820,7 @@ algorithm
       String str;
       String fmutmp;
       Boolean b;
+
     case (SimCode.SIMCODE(),"C")
       algorithm
         fmutmp := simCode.fileNamePrefix + ".fmutmp";
@@ -831,9 +841,13 @@ algorithm
         SimCodeUtil.resetFunctionIndex();
         Tpl.tplNoret3(CodegenFMU.translateModel, simCode, FMUVersion, FMUType);
         Tpl.closeFile(Tpl.tplCallWithFailError4(CodegenFMU.fmuMakefile,Config.simulationCodeTarget(),simCode,FMUVersion,SimCodeUtil.getFunctionIndex(),txt=Tpl.redirectToFile(Tpl.emptyTxt, simCode.fileNamePrefix+".fmutmp/sources/Makefile.in")));
+
         // handle resources
-        SimCodeUtil.handleExternalResources(fmutmp);
+        if includeResources then
+          SimCodeUtil.handleExternalResources(fmutmp);
+        end if;
       then ();
+
     case (_,"Cpp")
       equation
         if(Flags.isSet(Flags.HPCOM)) then
@@ -842,6 +856,7 @@ algorithm
           Tpl.tplNoret3(CodegenFMUCpp.translateModel, simCode, FMUVersion, FMUType);
         end if;
       then ();
+
     else
       equation
         str = "Unknown FMU template target: " + target;

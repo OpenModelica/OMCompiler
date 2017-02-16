@@ -133,6 +133,7 @@ typedef struct threadData_s {
 #endif
   void *plotClassPointer;
   PlotCallback plotCB;
+  char* fmuResourceLocation;
   void *stackBottom; /* Actually offset 64 kB from bottom, just to never reach the bottom */
 } threadData_t;
 
