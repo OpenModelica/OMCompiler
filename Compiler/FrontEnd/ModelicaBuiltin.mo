@@ -2514,7 +2514,7 @@ function simulate "simulates a modelica model by generating c code, build it and
   simulate(A);
 "
   input TypeName className "the class that should simulated";
-  input Real startTime = "<default>" "the start time of the simulation. <default> = 0.0";
+  input Real startTime = 0.0 "the start time of the simulation. <default> = 0.0";
   input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
   input Real numberOfIntervals = 500 "number of intervals in the result file. <default> = 500";
   input Real tolerance = 1e-6 "tolerance used by the integration method. <default> = 1e-6";
@@ -2538,7 +2538,7 @@ function buildModel "builds a modelica model by generating c code and build it.
   simulate(A);
 "
   input TypeName className "the class that should be built";
-  input Real startTime = "<default>" "the start time of the simulation. <default> = 0.0";
+  input Real startTime = 0.0 "the start time of the simulation. <default> = 0.0";
   input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
   input Real numberOfIntervals = 500 "number of intervals in the result file. <default> = 500";
   input Real tolerance = 1e-6 "tolerance used by the integration method. <default> = 1e-6";
@@ -2598,7 +2598,7 @@ end copyClass;
 
 function linearize "creates a model with symbolic linearization matrixes"
   input TypeName className "the class that should simulated";
-  input Real startTime = "<default>" "the start time of the simulation. <default> = 0.0";
+  input Real startTime = 0.0 "the start time of the simulation. <default> = 0.0";
   input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
   input Real numberOfIntervals = 500 "number of intervals in the result file. <default> = 500";
   input Real stepSize = 0.002 "step size that is used for the result file. <default> = 0.002";
@@ -2635,7 +2635,7 @@ function optimize "optimize a modelica/optimica model by generating c code, buil
  Example command:
   simulate(A);"
   input TypeName className "the class that should simulated";
-  input Real startTime = "<default>" "the start time of the simulation. <default> = 0.0";
+  input Real startTime = 0.0 "the start time of the simulation. <default> = 0.0";
   input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
   input Real numberOfIntervals = 500 "number of intervals in the result file. <default> = 500";
   input Real stepSize = 0.002 "step size that is used for the result file. <default> = 0.002";
