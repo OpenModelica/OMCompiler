@@ -12,7 +12,7 @@ static int KINLapackCompletePivotingSolve(KINMem kin_mem, N_Vector x, N_Vector b
 #else
 static int KINLapackCompletePivotingSolve(KINMem kin_mem, N_Vector x, N_Vector b, realtype *res_norm);
 #endif
-static void KINLapackCompletePivotingFree(KINMem kin_mem);
+static int KINLapackCompletePivotingFree(KINMem kin_mem);
 static int calcJacobian(KINMem kin_mem);
 
 struct linSysData

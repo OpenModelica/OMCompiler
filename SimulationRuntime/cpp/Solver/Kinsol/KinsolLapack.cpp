@@ -85,7 +85,7 @@ static int KINLapackCompletePivotingSetup(KINMem kin_mem)
  *  \return Return_Description
  *  \details Details
  */
-static void KINLapackCompletePivotingFree(KINMem kin_mem)
+int KINLapackCompletePivotingFree(KINMem kin_mem)
 {
 	linSysData* data = (linSysData*)kin_mem->kin_lmem;
 
@@ -94,6 +94,7 @@ static void KINLapackCompletePivotingFree(KINMem kin_mem)
 	delete [] data->ihelpArray;
 	delete [] data->jhelpArray;
 	delete data;
+	return 0;
 }
 /**\brief Brief callback function to solve linear system
  *  \param [in] kin_mem Parameter_Description
