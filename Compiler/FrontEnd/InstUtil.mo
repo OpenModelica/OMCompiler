@@ -8535,9 +8535,6 @@ public function discretizePDE
   output List<SCode.Equation> outDiscretizedEQs;
   protected List<SCode.Equation> newDiscretizedEQs;
 algorithm
-    newDiscretizedEQs := {inEQ};
-    //TODO: fix:
-
     newDiscretizedEQs := match inEQ
       local
         Absyn.Exp lhs_exp, rhs_exp;
@@ -8549,9 +8546,6 @@ algorithm
         Absyn.Ident name;
         list<Absyn.Subscript> subscripts;
 
-      //Normal equation withhout domain specified, no field variables present:
-      case SCode.EQUATION(SCode.EQ_EQUALS())
-      then {inEQ};
       //PDE with domain specified, allow for field variables:
       case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = domainCr as Absyn.CREF_IDENT(), comment = comment, info = info))
@@ -8591,6 +8585,14 @@ algorithm
           (rhs_exp, _) = Absyn.traverseExp(rhs_exp, extrapFieldTraverseFun, N);
         then
           {newEQFun(N, lhs_exp, rhs_exp, domainCr1, N, true, fieldLst, comment, info)};
+      //Unhandled pde
+      case SCode.EQUATION(SCode.EQ_PDE())
+        equation
+          print("Unhandled type of EQ_PDE in discretizePDE\n");
+          fail();
+      then {};
+      //Other than EQ_PDE:
+      else {inEQ};
     end match;
 
   outDiscretizedEQs := listAppend(inDiscretizedEQs, newDiscretizedEQs);
