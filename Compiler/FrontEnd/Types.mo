@@ -2682,7 +2682,7 @@ algorithm
 
     case DAE.TYPES_VAR(name = n,ty = typ,attributes = DAE.ATTR(connectorType = ct))
       equation
-        s = connectorTypeStr(ct);
+        s = DAEUtil.connectorTypeStr(ct);
         t = unparseType(typ);
         res = stringAppendList({"  ", s, t," ", n, ";\n"});
       then
