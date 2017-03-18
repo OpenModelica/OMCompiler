@@ -7318,11 +7318,9 @@ algorithm
 
   // update HashSet
   arrayUpdate(hs, 1, BaseHashSet.add(simVar.name, arrayGet(hs,1)));
-  if (not isalias) and (BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar)) then
+  if BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar) or BackendVariable.isDummyStateVar(dlowVar) then
     derivSimvar := derVarFromStateVar(simVar);
     arrayUpdate(hs, 1, BaseHashSet.add(derivSimvar.name, arrayGet(hs,1)));
-  else
-    derivSimvar := simVar; // Just in case
   end if;
 
   // If it is an input variable, we give it an index
@@ -7355,6 +7353,9 @@ algorithm
   if isalias then
     if Types.isReal(dlowVar.varType) then
       addSimVar(simVar, SimVarsIndex.alias, simVars);
+      if BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar) or BackendVariable.isDummyStateVar(dlowVar) then
+        addSimVar(derivSimvar, SimVarsIndex.derivative, simVars);
+      end if;
     elseif Types.isInteger(dlowVar.varType) or  Types.isEnumeration(dlowVar.varType) then
       addSimVar(simVar, SimVarsIndex.intAlias, simVars);
     elseif Types.isBoolean(dlowVar.varType) then
@@ -7363,7 +7364,7 @@ algorithm
       addSimVar(simVar, SimVarsIndex.stringAlias, simVars);
     end if;
   // check for states
-  elseif BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar) then
+  elseif BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar) or BackendVariable.isDummyStateVar(dlowVar) then
     addSimVar(simVar, SimVarsIndex.state, simVars);
     addSimVar(derivSimvar, SimVarsIndex.derivative, simVars);
   // check for algebraic varibales
