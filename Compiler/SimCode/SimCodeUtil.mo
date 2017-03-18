@@ -7315,14 +7315,12 @@ algorithm
   simVar := dlowvarToSimvar(dlowVar, SOME(inAliasVars), inVars);
   isalias := isAliasVar(simVar);
 
-
   // update HashSet
   arrayUpdate(hs, 1, BaseHashSet.add(simVar.name, arrayGet(hs,1)));
-  if (not isalias) and (BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar)) then
+  if BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar) or BackendVariable.isDummyStateVar(dlowVar) then
     derivSimvar := derVarFromStateVar(simVar);
-    arrayUpdate(hs, 1, BaseHashSet.add(derivSimvar.name, arrayGet(hs,1)));
-  else
-    derivSimvar := simVar; // Just in case
+    addSimVar(derivSimvar, SimVarsIndex.derivative, simVars);
+    arrayUpdate(hs, 1, BaseHashSet.add(derivSimvar.name, arrayGet(hs, 1)));
   end if;
 
   // If it is an input variable, we give it an index
@@ -7365,7 +7363,6 @@ algorithm
   // check for states
   elseif BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar) then
     addSimVar(simVar, SimVarsIndex.state, simVars);
-    addSimVar(derivSimvar, SimVarsIndex.derivative, simVars);
   // check for algebraic varibales
   elseif isAlg or isParam or isConst then
     // Real vars
