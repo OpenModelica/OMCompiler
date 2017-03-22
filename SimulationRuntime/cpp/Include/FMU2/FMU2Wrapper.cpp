@@ -211,6 +211,7 @@ fmi2Status FMU2Wrapper::exitInitializationMode()
     updateModel();
   _model->saveAll();
   _model->setInitial(false);
+  _model->initTimeEventData();
   return fmi2OK;
 }
 
@@ -264,6 +265,7 @@ fmi2Status FMU2Wrapper::getDerivatives(fmi2Real derivatives[], size_t nx)
 {
   if (_need_update)
     updateModel();
+  _model->computeTimeEventConditions(_model->getTime());
   _model->getRHS(derivatives);
   return fmi2OK;
 }
@@ -444,13 +446,17 @@ fmi2Status FMU2Wrapper::newDiscreteStates(fmi2EventInfo *eventInfo)
     events[i] = f[i] >= 0;
   // Handle Zero Crossings if nessesary
   bool state_vars_reinitialized = _model->handleSystemEvents(events);
+  //time events
+  eventInfo->nextEventTime = _model->computeNextTimeEvents(_model->getTime());
+  if ((eventInfo->nextEventTime != 0.0) and (eventInfo->nextEventTime != std::numeric_limits<double>::max()))
+    eventInfo->nextEventTimeDefined = fmi2True;
+  else
+    eventInfo->nextEventTimeDefined = fmi2False;
   // everything is done
   eventInfo->newDiscreteStatesNeeded = fmi2False;
   eventInfo->terminateSimulation = fmi2False;
   eventInfo->nominalsOfContinuousStatesChanged = state_vars_reinitialized;
   eventInfo->valuesOfContinuousStatesChanged = state_vars_reinitialized;
-  eventInfo->nextEventTimeDefined = fmi2False;
-  //eventInfo->nextEventTime = _time;
   return fmi2OK;
 }
 
