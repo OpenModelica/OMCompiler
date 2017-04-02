@@ -1943,8 +1943,8 @@ protected
   DAE.Exp con, e;
 algorithm
  con := Expression.makePureBuiltinCall("initial", {}, tp);
- e := Expression.traverseExpBottomUp(iExp2, makeIntialGuess2, (iExp3, "pre", tp, true));
- oExp := Expression.traverseExpBottomUp(iExp2, makeIntialGuess2, (iExp3, "pre", tp, false));
+ e := Expression.traverseExpBottomUp(iExp2, makeIntialGuess2, (iExp3, "$_old", tp, true));
+ oExp := Expression.traverseExpBottomUp(iExp2, makeIntialGuess2, (iExp3, "$_old", tp, false));
  oExp := DAE.IFEXP(con, e, oExp);
 end makeIntialGuess;
 

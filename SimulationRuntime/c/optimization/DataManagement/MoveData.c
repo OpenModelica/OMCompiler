@@ -635,7 +635,10 @@ void res2file(OptData *optData, SOLVER_INFO* solverInfo, double *vopt){
   fprintf(pFile, "%s", "\n");
   /******************/
   memcpy(sData->realVars, v0, nReal*sizeof(modelica_real));
-  memcpy(data->localData[0]->integerVars, optData->i0, nInteger*sizeof(modelica_integer));
+  memcpy(sData->realVars, v0, nReal*sizeof(modelica_real));
+  memcpy(data->localData[0]->realVars, v0, nReal*sizeof(modelica_real));
+  memcpy(data->localData[1]->realVars, v0, nReal*sizeof(modelica_real));
+  memcpy(data->localData[2]->realVars, v0, nReal*sizeof(modelica_real));
   memcpy(data->localData[0]->booleanVars, optData->b0, nBoolean*sizeof(modelica_boolean));
   memcpy(data->simulationInfo->integerVarsPre, optData->i0Pre, nInteger*sizeof(modelica_integer));
   memcpy(data->simulationInfo->booleanVarsPre, optData->b0Pre, nBoolean*sizeof(modelica_boolean));
@@ -653,6 +656,7 @@ void res2file(OptData *optData, SOLVER_INFO* solverInfo, double *vopt){
   updateDiscreteSystem(data, threadData);
 
   sim_result.emit(&sim_result, data, threadData);
+
   /******************/
 
   for(ii = 0; ii < nsi; ++ii){
