@@ -2086,6 +2086,30 @@ algorithm
   outCref := makeCrefQual(DAE.startNamePrefix, DAE.T_UNKNOWN_DEFAULT, {}, inCref);
 end crefPrefixStart;
 
+public function crefPrefixMin
+  "Appends $MIN to a cref, so a => $MIN.a"
+  input DAE.ComponentRef inCref;
+  output DAE.ComponentRef outCref;
+algorithm
+  outCref := makeCrefQual(DAE.minNamePrefix, DAE.T_UNKNOWN_DEFAULT, {}, inCref);
+end crefPrefixMin;
+
+public function crefPrefixMax
+  "Appends $MAX to a cref, so a => $MAX.a"
+  input DAE.ComponentRef inCref;
+  output DAE.ComponentRef outCref;
+algorithm
+  outCref := makeCrefQual(DAE.maxNamePrefix, DAE.T_UNKNOWN_DEFAULT, {}, inCref);
+end crefPrefixMax;
+
+public function crefPrefixNominal
+  "Appends $NOMINAL to a cref, so a => $NOMINAL.a"
+  input DAE.ComponentRef inCref;
+  output DAE.ComponentRef outCref;
+algorithm
+  outCref := makeCrefQual(DAE.nominalNamePrefix, DAE.T_UNKNOWN_DEFAULT, {}, inCref);
+end crefPrefixNominal;
+
 public function crefPrefixString
   "Prefixes a cref with a string identifier, e.g.:
     crefPrefixString(a, b.c) => a.b.c"

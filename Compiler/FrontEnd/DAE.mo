@@ -64,6 +64,9 @@ public constant String derivativeNamePrefix = "$DER";
 public constant String preNamePrefix = "$PRE";
 public constant String previousNamePrefix = "$CLKPRE";
 public constant String startNamePrefix = "$START";
+public constant String minNamePrefix = "$MIN";
+public constant String maxNamePrefix = "$MAX";
+public constant String nominalNamePrefix = "$NOMINAL";
 
 
 public uniontype VarKind

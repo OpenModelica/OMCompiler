@@ -2823,9 +2823,36 @@ protected
   list<BackendDAE.Var> varList;
   list<Integer> intList;
 algorithm
+  // variable itself
   (outVarList, outIntList) := getVar(inCref, inVariables);
+
+  // start attribute
   try
     (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixStart(inCref), inVariables);
+    outVarList := listAppend(varList, outVarList);
+    outIntList := listAppend(intList, outIntList);
+  else
+  end try;
+
+  // min attribute
+  try
+    (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixMin(inCref), inVariables);
+    outVarList := listAppend(varList, outVarList);
+    outIntList := listAppend(intList, outIntList);
+  else
+  end try;
+
+  // max attribute
+  try
+    (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixMax(inCref), inVariables);
+    outVarList := listAppend(varList, outVarList);
+    outIntList := listAppend(intList, outIntList);
+  else
+  end try;
+
+  // nominal attribute
+  try
+    (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixNominal(inCref), inVariables);
     outVarList := listAppend(varList, outVarList);
     outIntList := listAppend(intList, outIntList);
   else
