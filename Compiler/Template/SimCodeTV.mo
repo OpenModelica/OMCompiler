@@ -3434,6 +3434,10 @@ package Patternm
     input list<DAE.Pattern> inPatterns;
     output list<tuple<DAE.Pattern,Integer>> outPatterns;
   end sortPatternsByComplexity;
+  function patternAlwaysMatches
+    input DAE.Pattern pattern;
+    output Boolean b;
+  end patternAlwaysMatches;
 end Patternm;
 
 package Error
