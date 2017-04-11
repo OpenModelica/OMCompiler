@@ -105,7 +105,6 @@ import ResolveLoops;
 import SCode;
 import Sorting;
 import StackOverflow;
-import StateMachineFeatures;
 import SymbolicImplicitSolver;
 import SymbolicJacobian;
 import SynchronousFeatures;
@@ -7454,7 +7453,6 @@ protected function allPreOptimizationModules
     (BackendInline.normalInlineFunction, "normalInlineFunction"),
     (EvaluateParameter.evaluateParameters, "evaluateParameters"),
     (RemoveSimpleEquations.removeVerySimpleEquations, "removeVerySimpleEquations"),
-    (StateMachineFeatures.stateMachineElab, "stateMachineElab"),
     (BackendDAEOptimize.simplifyIfEquations, "simplifyIfEquations"),
     (BackendDAEOptimize.expandDerOperator, "expandDerOperator"),
     (BackendDAEOptimize.removeEqualFunctionCalls, "removeEqualFunctionCalls"),
