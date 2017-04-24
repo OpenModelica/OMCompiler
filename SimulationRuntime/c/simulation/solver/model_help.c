@@ -1256,43 +1256,12 @@ modelica_boolean LessZC(double a, double b, modelica_boolean direction)
   return direction ? (a - b <= eps) : (a - b <= -eps);
 }
 
-modelica_boolean LessEqZC(double a, double b, modelica_boolean direction)
-{
-  return !GreaterZC(a, b, !direction);
-}
-
 /* TODO: fix this */
 modelica_boolean GreaterZC(double a, double b, modelica_boolean direction)
 {
   double eps = tolZC * fmax(fabs(a), fabs(b)) + tolZC;
   return direction ? (a - b >= -eps ) : (a - b >= eps);
 }
-
-modelica_boolean GreaterEqZC(double a, double b, modelica_boolean direction)
-{
-  return !LessZC(a, b, !direction);
-}
-
-modelica_boolean Less(double a, double b)
-{
-  return a < b;
-}
-
-modelica_boolean LessEq(double a, double b)
-{
-  return a <= b;
-}
-
-modelica_boolean Greater(double a, double b)
-{
-  return a > b;
-}
-
-modelica_boolean GreaterEq(double a, double b)
-{
-  return a >= b;
-}
-
 
 /*! \fn _event_integer
  *
