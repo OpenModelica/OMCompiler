@@ -183,7 +183,7 @@ static void fmtInit(DATA* data, MEASURE_TIME* mt)
   }
 }
 
-static void fmtEmitStep(DATA* data, threadData_t *threadData, MEASURE_TIME* mt, int didEventStep)
+static void fmtEmitStep(DATA* data, threadData_t *threadData, MEASURE_TIME* mt, int dumpAnyway)
 {
   if(mt->fmtReal)
   {
@@ -218,7 +218,7 @@ static void fmtEmitStep(DATA* data, threadData_t *threadData, MEASURE_TIME* mt, 
   }
 
   /* prevent emit if noEventEmit flag is used, if it's an event */
-  if ((omc_flag[FLAG_NOEVENTEMIT] && didEventStep == 0) || !omc_flag[FLAG_NOEVENTEMIT]) {
+  if (!omc_flag[FLAG_NOEVENTEMIT] || (omc_flag[FLAG_NOEVENTEMIT] && dumpAnyway)) {
     sim_result.emit(&sim_result, data, threadData);
   }
 #if !defined(OMC_MINIMAL_RUNTIME)
@@ -237,8 +237,6 @@ static void fmtEmitStep(DATA* data, threadData_t *threadData, MEASURE_TIME* mt, 
       data->real_time_sync.maxLate = res;
     }
   }
-
-  printAllVarsDebug(data, 0, LOG_DEBUG);  /* ??? */
 #endif
 }
 
@@ -330,7 +328,6 @@ int prefixedName_performSimulation(DATA* data, threadData_t *threadData, SOLVER_
   MEASURE_TIME fmt;
   fmtInit(data, &fmt);
 
-  printAllVarsDebug(data, 0, LOG_DEBUG); /* ??? */
   if (!omc_flag[FLAG_DAE_MODE])
   {
     printSparseStructure(&(data->simulationInfo->analyticJacobians[data->callback->INDEX_JAC_A].sparsePattern),
@@ -436,16 +433,16 @@ int prefixedName_performSimulation(DATA* data, threadData_t *threadData, SOLVER_
         checkForSampleEvent(data, solverInfo);
 
         /* if regular output point and last time events are almost equals
-        * skip that step and go further */
+         * skip that step and go further */
         if (solverInfo->currentStepSize < 1e-15 && syncEventStep){
           __currStepNo++;
           continue;
         }
 
-      /*
-      * integration step determine all states by a integration method
-      * update continuous system
-      */
+        /*
+         * integration step determine all states by a integration method
+         * update continuous system
+         */
         infoStreamPrint(LOG_SOLVER, 1, "call solver from %g to %g (stepSize: %.15g)", solverInfo->currentTime, solverInfo->currentTime + solverInfo->currentStepSize, solverInfo->currentStepSize);
         retValIntegrator = simulationStep(data, threadData, solverInfo);
         infoStreamPrint(LOG_SOLVER, 0, "finished solver step %g", solverInfo->currentTime);
@@ -455,15 +452,15 @@ int prefixedName_performSimulation(DATA* data, threadData_t *threadData, SOLVER_
         syncStep = simulationUpdate(data, threadData, solverInfo);
         retry = 0; /* reset retry */
 
-        fmtEmitStep(data, threadData, &fmt, solverInfo->didEventStep);
+        fmtEmitStep(data, threadData, &fmt, fabs(solverInfo->lastdesiredStep - solverInfo->currentTime) < 1e-12);
         saveIntegratorStats(solverInfo);
         checkSimulationTerminated(data, solverInfo);
 
         /* terminate for some cases:
-        * - integrator fails
-        * - non-linear system failed to solve
-        * - assert was called
-        */
+         * - integrator fails
+         * - non-linear system failed to solve
+         * - assert was called
+         */
         if (retValIntegrator) {
           retValue = -1 + retValIntegrator;
           infoStreamPrint(LOG_STDOUT, 0, "model terminate | Integrator failed. | Simulation terminated at time %g", solverInfo->currentTime);
