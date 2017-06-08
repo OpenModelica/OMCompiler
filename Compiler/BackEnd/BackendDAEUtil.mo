@@ -7141,7 +7141,7 @@ algorithm
   //execStat("transformDAE -> state selection " + methodstr);
 end stateDeselectionDAE;
 
-protected function mapSortEqnsDAE "Run Tarjan's Algorithm."
+public function mapSortEqnsDAE "Run Tarjan's Algorithm."
   input list<BackendDAE.EqSystem> inSystem;
   input BackendDAE.Shared inShared;
   output list<BackendDAE.EqSystem> outSystem;
@@ -7553,7 +7553,7 @@ protected function allInitOptimizationModules
     (BackendDAEOptimize.inlineHomotopy, "inlineHomotopy"),
     (BackendDAEOptimize.inlineFunctionInLoops, "forceInlineFunctionInLoops"), // before simplifyComplexFunction
     (BackendDAEOptimize.simplifyComplexFunction, "simplifyComplexFunction"),
-	(CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
+  (CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
     (DynamicOptimization.reduceDynamicOptimization, "reduceDynamicOptimization"), // before tearing
     (Tearing.tearingSystem, "tearingSystem"),
     (BackendDAEOptimize.simplifyLoops, "simplifyLoops"),
@@ -9057,6 +9057,7 @@ algorithm
     end match;
   end for;
 end getNoDerivativeInputPosition;
+
 
 annotation(__OpenModelica_Interface="backend");
 end BackendDAEUtil;
