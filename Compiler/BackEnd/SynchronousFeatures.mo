@@ -893,7 +893,6 @@ protected function removeEdge"removes edges in incidence matrices betwenn equati
 protected
   list<Integer> row;
 algorithm
-  print("remove edge betwenn eq "+intString(eq)+" and var "+intString(var)+"\n");
   row := arrayGet(m,eq);
   row := List.deleteMember(row,var);
   arrayUpdate(m,eq,row);
@@ -946,6 +945,10 @@ algorithm
       algorithm
       then (eqIdx::clockEqsIn, subClockInterfaceEqIdxsIn, subClockInterfaceEqsIn);
 
+ case(BackendDAE.EQUATION(scalar=DAE.CLKCONST(clk=DAE.INTEGER_CLOCK(_))))
+      algorithm
+      then (eqIdx::clockEqsIn, subClockInterfaceEqIdxsIn,subClockInterfaceEqsIn);
+
    case(BackendDAE.EQUATION(scalar=DAE.CLKCONST(clk=DAE.REAL_CLOCK(_))))
       algorithm
       then (eqIdx::clockEqsIn, subClockInterfaceEqIdxsIn,subClockInterfaceEqsIn);
@@ -970,12 +973,28 @@ algorithm
         removeEdge(eqIdx,varIdx,m,mT);
       then (clockEqsIn, eqIdx::subClockInterfaceEqIdxsIn, eq::subClockInterfaceEqsIn);
 
+    //shiftSample with 3 arguments
+    case(BackendDAE.EQUATION(scalar=DAE.CALL(path=Absyn.IDENT("shiftSample"), expLst={DAE.CREF(componentRef=cref1),_,_})))
+      algorithm
+        (_,{varIdx}) := BackendVariable.getVar(cref1,vars);
+        removeEdge(eqIdx,varIdx,m,mT);
+      then (clockEqsIn, eqIdx::subClockInterfaceEqIdxsIn, eq::subClockInterfaceEqsIn);
+
+    //shiftSample with 2 arguments
     case(BackendDAE.EQUATION(scalar=DAE.CALL(path=Absyn.IDENT("shiftSample"), expLst={DAE.CREF(componentRef=cref1),_})))
       algorithm
         (_,{varIdx}) := BackendVariable.getVar(cref1,vars);
         removeEdge(eqIdx,varIdx,m,mT);
       then (clockEqsIn, eqIdx::subClockInterfaceEqIdxsIn, eq::subClockInterfaceEqsIn);
 
+    //Backsample with 3 arguments
+    case(BackendDAE.EQUATION(scalar=DAE.CALL(path=Absyn.IDENT("backSample"), expLst={DAE.CREF(componentRef=cref1),_,_})))
+      algorithm
+        (_,{varIdx}) := BackendVariable.getVar(cref1,vars);
+        removeEdge(eqIdx,varIdx,m,mT);
+      then (clockEqsIn, eqIdx::subClockInterfaceEqIdxsIn, eq::subClockInterfaceEqsIn);
+
+    //Backsample with 2 arguments
     case(BackendDAE.EQUATION(scalar=DAE.CALL(path=Absyn.IDENT("backSample"), expLst={DAE.CREF(componentRef=cref1),_})))
       algorithm
         (_,{varIdx}) := BackendVariable.getVar(cref1,vars);
@@ -1025,7 +1044,7 @@ protected
 algorithm
   funcs := BackendDAEUtil.getFunctions(inShared);
   BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs) := inEqSystem;
-  (sys, m, mT) := BackendDAEUtil.getIncidenceMatrix(inEqSystem, BackendDAE.ABSOLUTE(), SOME(funcs));
+  (sys, m, mT) := BackendDAEUtil.getIncidenceMatrix(inEqSystem, BackendDAE.SUBCLOCK_IDX(), SOME(funcs));
 
   //find baseclocks and sub partition interfaces, remove edges in incidence matrices for sub partition interfaces
   (realClockEqIdxs, subClockInterfaceEqIdxs, subClockInterfaceEqs) := findBaseClockInterfaces(eqs,vars,m,mT);
@@ -1854,6 +1873,7 @@ algorithm
       then
         createSubClockVarFactor( inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr,
                                  inPartitions, inVars, mT, inNewEqs, inNewVars );
+       /*
     case (Absyn.IDENT("shiftSample"), 3)
       equation
         (var, eq) = createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
@@ -1864,6 +1884,7 @@ algorithm
         (var, eq) = createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
       then
         (substGetPartition(listGet(inExpLst, 1)), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
+        */
     case (Absyn.IDENT("noClock"), 1)
       then
         (substGetPartition(listGet(inExpLst, 1)), inNewEqs, inNewVars, inClkCnt);
