@@ -1042,7 +1042,8 @@ algorithm
       BackendDAE.Variables vars;
       list<BackendDAE.Equation> newEqs;
       list<BackendDAE.Var> newVars;
-    case(BackendDAE.EQUATION(exp=e1, scalar=DAE.CALL(path=Absyn.IDENT("sample"), expLst={e2 as DAE.CREF(_), e3 as DAE.CLKCONST(_)}), source=source, attr=attr),(vars, suffixIdx, newEqs, newVars))
+    case(BackendDAE.EQUATION(exp=e1, scalar=DAE.CALL(path=Absyn.IDENT("sample"), expLst={e2 as DAE.CREF(_), e3 as DAE.CLKCONST(_)}), source=source,
+       attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx, newEqs, newVars))
       algorithm
         cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(suffixIdx), DAE.T_CLOCK_DEFAULT, {});
         eqNew := BackendDAE.EQUATION(Expression.crefToExp(cr), e3, source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
