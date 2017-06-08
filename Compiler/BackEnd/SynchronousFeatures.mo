@@ -1006,6 +1006,53 @@ algorithm
   end match;
 end findBaseClockInterfaces1;
 
+protected function replaceSampledClocks
+"Clock contructors inside samples are added as an additional equation in order to separate clocks and dynamic equations."
+  input BackendDAE.EquationArray eqsIn;
+  input BackendDAE.Variables varsIn;
+  input Integer suffixIdx;
+  output BackendDAE.EquationArray eqsOut;
+  output BackendDAE.Variables varsOut;
+protected
+  BackendDAE.EquationArray eqs;
+  list<BackendDAE.Equation> newEqs;
+  list<BackendDAE.Var> newVars;
+algorithm
+  //MAYBE WE HAVE TO CHECK FOR THE HIGHEST WHENCLK_IDX THAT EXISTS ALREADY IN THE SYSTEM AND START FROM THAT ONE
+  (eqs,(_, _,newEqs, newVars)) := BackendEquation.traverseEquationArray_WithUpdate(eqsIn, replaceSampledClocks1, (varsIn,suffixIdx,{},{}));
+  eqsOut := BackendEquation.addList(newEqs, eqs);
+  varsOut := BackendVariable.addVars(newVars, varsIn);
+end replaceSampledClocks;
+
+protected function replaceSampledClocks1
+  input BackendDAE.Equation eq;
+  input tuple<BackendDAE.Variables, Integer, list<BackendDAE.Equation>, list<BackendDAE.Var>> tplIn;
+  output BackendDAE.Equation eqOut;
+  output tuple<BackendDAE.Variables, Integer,  list<BackendDAE.Equation>, list<BackendDAE.Var>> tplOut;
+algorithm
+  (eqOut, tplOut) := match(eq,tplIn)
+    local
+      Integer suffixIdx;
+      DAE.ComponentRef cr;
+      DAE.Exp e1,e2,e3;
+      DAE.ElementSource source;
+      BackendDAE.Equation eqNew, addEq;
+      BackendDAE.EquationAttributes attr;
+      BackendDAE.Var addVar;
+      BackendDAE.Variables vars;
+      list<BackendDAE.Equation> newEqs;
+      list<BackendDAE.Var> newVars;
+    case(BackendDAE.EQUATION(exp=e1, scalar=DAE.CALL(path=Absyn.IDENT("sample"), expLst={e2 as DAE.CREF(_), e3 as DAE.CLKCONST(_)}), source=source, attr=attr),(vars, suffixIdx, newEqs, newVars))
+      algorithm
+        cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(suffixIdx), DAE.T_CLOCK_DEFAULT, {});
+        eqNew := BackendDAE.EQUATION(Expression.crefToExp(cr), e3, source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
+        addEq := BackendDAE.EQUATION(e1, substGetPartition(e2), source, BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.CLOCKED_EQUATION(suffixIdx)));
+        addVar := BackendVariable.makeVar(cr);
+      then (eqNew,(vars, suffixIdx+1, addEq::newEqs, addVar::newVars));
+    else
+      then (eq,tplIn);
+  end match;
+end replaceSampledClocks1;
 
 protected function subClockPartitioning
 "Do sub-partitioning for base partition and get base clock
@@ -1044,13 +1091,16 @@ protected
 algorithm
   funcs := BackendDAEUtil.getFunctions(inShared);
   BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs) := inEqSystem;
-  (sys, m, mT) := BackendDAEUtil.getIncidenceMatrix(inEqSystem, BackendDAE.SUBCLOCK_IDX(), SOME(funcs));
+
+  //separate clock-constructors from dynamic equations, e.g. x = sample(time, Clock(0.1))  -> x=time[clocked(whenclk1)]; whenclk1=Clock(0.1);
+  (eqs,vars) := replaceSampledClocks(eqs,vars,off);
 
   //find baseclocks and sub partition interfaces, remove edges in incidence matrices for sub partition interfaces
+  (sys, m, mT) := BackendDAEUtil.getIncidenceMatrix(inEqSystem, BackendDAE.SUBCLOCK_IDX(), SOME(funcs));
   (realClockEqIdxs, subClockInterfaceEqIdxs, subClockInterfaceEqs) := findBaseClockInterfaces(eqs,vars,m,mT);
     //print("all realClockEqIdxs "+stringDelimitList(List.map(realClockEqIdxs,intString),", ")+"\n");
     //print("all subClockInterfaceEqIdxs "+stringDelimitList(List.map(subClockInterfaceEqIdxs,intString),", ")+"\n");
-    //BackendDump.dumpBipartiteGraphEqSystem(sys, inShared, "Synchronous");
+    //BackendDump.dumpBipartiteGraphEqSystem(sys, inShared, "Synchronous"+intString(off));
 
   //old implementation, used for partitioning
   (clockEqs, clockedEqsMask) := splitClockEqs(eqs); //masks false  if clock equation
