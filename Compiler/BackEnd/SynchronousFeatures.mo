@@ -1918,24 +1918,21 @@ algorithm
         (substGetPartition(listGet(inExpLst, 1)), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
     case (Absyn.IDENT("subSample"), 2)
       then
-        createSubClockVarFactor( inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr,
-                                 inPartitions, inVars, mT, inNewEqs, inNewVars );
+        (substGetPartition(listGet(inExpLst, 1)), inNewEqs, inNewVars, inClkCnt + 1);
+
     case (Absyn.IDENT("superSample"), 2)
       then
-        createSubClockVarFactor( inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr,
-                                 inPartitions, inVars, mT, inNewEqs, inNewVars );
-       /*
+        (substGetPartition(listGet(inExpLst, 1)), inNewEqs, inNewVars, inClkCnt + 1);
+
+
     case (Absyn.IDENT("shiftSample"), 3)
-      equation
-        (var, eq) = createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
       then
-        (substGetPartition(listGet(inExpLst, 1)), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
+        (substGetPartition(listGet(inExpLst, 1)), inNewEqs, inNewVars, inClkCnt + 1);
+
     case (Absyn.IDENT("backSample"), 3)
-      equation
-        (var, eq) = createSubClockVar(inPartitionIdx, inClkCnt, inPath, inExpLst, inAttr, inPartitions, inVars, mT);
       then
-        (substGetPartition(listGet(inExpLst, 1)), eq::inNewEqs, var::inNewVars, inClkCnt + 1);
-        */
+        (substGetPartition(listGet(inExpLst, 1)), inNewEqs, inNewVars, inClkCnt + 1);
+
     case (Absyn.IDENT("noClock"), 1)
       then
         (substGetPartition(listGet(inExpLst, 1)), inNewEqs, inNewVars, inClkCnt);
