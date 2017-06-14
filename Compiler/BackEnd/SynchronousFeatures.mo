@@ -1250,18 +1250,24 @@ protected function replaceSampledClocks1
 algorithm
   (eqOut, tplOut) := match(eqIn,tplIn)
     local
-      Integer suffixIdx;
+      Integer suffixIdx,suffixIdx0;
       BackendDAE.Equation eqNew;
+      BackendDAE.EquationAttributes attr;
       BackendDAE.Variables vars;
       DAE.Exp e1,e2;
       DAE.ElementSource source;
       list<BackendDAE.Equation> newEqs;
       list<BackendDAE.Var> newVars;
-    case(BackendDAE.EQUATION(e1, e2, source, attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx, newEqs, newVars))
+    case(BackendDAE.EQUATION(e1, e2, source, attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx0, newEqs, newVars))
       algorithm
-        (e1,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e1, replaceSampledClocks2, (newEqs, newVars, suffixIdx));
+        (e1,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e1, replaceSampledClocks2, (newEqs, newVars, suffixIdx0));
         (e2,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e2, replaceSampledClocks2, (newEqs, newVars, suffixIdx));
-      then (BackendDAE.EQUATION(e1,e2,source,BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC),(vars, suffixIdx, newEqs, newVars));
+        if intEq(suffixIdx-suffixIdx0, 1) then
+          attr := BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.CLOCKED_EQUATION(suffixIdx0));
+        else
+          attr := BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC;
+        end if;
+      then (BackendDAE.EQUATION(e1,e2,source,attr),(vars, suffixIdx, newEqs, newVars));
     else
       algorithm
       then (eqIn,tplIn);
