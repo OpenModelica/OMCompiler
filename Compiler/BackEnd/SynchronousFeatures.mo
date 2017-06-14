@@ -1251,39 +1251,50 @@ algorithm
   (eqOut, tplOut) := match(eqIn,tplIn)
     local
       Integer suffixIdx;
-      DAE.ComponentRef cr;
-      DAE.Exp e1,e2,e3, condExp, thenExp, elseExp;
-      DAE.ElementSource source;
-      BackendDAE.Equation eqNew, addEq;
-      BackendDAE.Var addVar;
+      BackendDAE.Equation eqNew;
       BackendDAE.Variables vars;
-      list<DAE.Exp> cond;
+      DAE.Exp e1,e2;
+      DAE.ElementSource source;
       list<BackendDAE.Equation> newEqs;
       list<BackendDAE.Var> newVars;
-    case(BackendDAE.EQUATION(exp=e1, scalar=DAE.CALL(path=Absyn.IDENT("sample"), expLst={e2 as DAE.CREF(_), e3 as DAE.CLKCONST(_)}), source=source,
-       attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx, newEqs, newVars))
+    case(BackendDAE.EQUATION(e1, e2, source, attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx, newEqs, newVars))
       algorithm
-        cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(suffixIdx), DAE.T_CLOCK_DEFAULT, {});
-        eqNew := BackendDAE.EQUATION(Expression.crefToExp(cr), e3, source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
-        addEq := BackendDAE.EQUATION(e1, substGetPartition(e2), source, BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.CLOCKED_EQUATION(suffixIdx)));
-        addVar := BackendVariable.makeVar(cr);
-        addVar.varType := DAE.T_CLOCK_DEFAULT;
-      then (eqNew,(vars, suffixIdx+1, addEq::newEqs, addVar::newVars));
-
-    case(BackendDAE.EQUATION(exp=e1, scalar=DAE.IFEXP(condExp, thenExp as DAE.CALL(path=Absyn.IDENT("sample"), expLst={e2 as DAE.CREF(_), e3 as DAE.CLKCONST(_)}), elseExp), source=source,
-       attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx, newEqs, newVars))
-      algorithm
-        cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(suffixIdx), DAE.T_CLOCK_DEFAULT, {});
-        eqNew := BackendDAE.EQUATION(Expression.crefToExp(cr), e3, source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
-        addEq := BackendDAE.EQUATION(e1, DAE.IFEXP(condExp, substGetPartition(e2),elseExp), source, BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.CLOCKED_EQUATION(suffixIdx)));
-        addVar := BackendVariable.makeVar(cr);
-        addVar.varType := DAE.T_CLOCK_DEFAULT;
-      then (eqNew,(vars, suffixIdx+1, addEq::newEqs, addVar::newVars));
-
+        (e1,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e1, replaceSampledClocks2, (newEqs, newVars, suffixIdx));
+        (e2,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e2, replaceSampledClocks2, (newEqs, newVars, suffixIdx));
+      then (BackendDAE.EQUATION(e1,e2,source,BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC),(vars, suffixIdx, newEqs, newVars));
     else
+      algorithm
       then (eqIn,tplIn);
   end match;
 end replaceSampledClocks1;
+
+protected function replaceSampledClocks2
+  input DAE.Exp inExp;
+  input tuple<list<BackendDAE.Equation>, list<BackendDAE.Var>, Integer> tplIn;//<addEq, addVar, suffixIdx>
+  output DAE.Exp outExp;
+  output Boolean cont;
+  output tuple<list<BackendDAE.Equation>, list<BackendDAE.Var>, Integer> tplOut;//<addEq, addVar, suffixIdx>
+algorithm
+  (outExp,cont, tplOut) := match(inExp,tplIn)
+    local
+      Integer suffixIdx;
+      DAE.ComponentRef cr;
+      DAE.Exp varExp, clk, exp;
+      BackendDAE.Equation addEq;
+      BackendDAE.Var addVar;
+      list<BackendDAE.Equation> newEqs;
+      list<BackendDAE.Var> newVars;
+  case(DAE.CALL(path=Absyn.IDENT("sample"), expLst={varExp as DAE.CREF(_), clk as DAE.CLKCONST(_)}),(newEqs,newVars,suffixIdx))
+    algorithm
+      cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(suffixIdx), DAE.T_CLOCK_DEFAULT, {});
+      addVar := BackendVariable.makeVar(cr);
+      addVar.varType := DAE.T_CLOCK_DEFAULT;
+      addEq := BackendDAE.EQUATION(Expression.crefToExp(cr), clk, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
+  then(substGetPartition(varExp), false, (addEq::newEqs, addVar::newVars, suffixIdx+1));
+  else
+    then  (inExp, true, tplIn);
+  end match;
+end replaceSampledClocks2;
 
 protected function subClockPartitioning
 "Do sub-partitioning for base partition and get base clock
@@ -1325,7 +1336,7 @@ algorithm
   funcs := BackendDAEUtil.getFunctions(inShared);
   BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqs, removedEqs = remEqs) := inEqSystem;
 
-  //separate clock-constructors from dynamic equations, e.g. x = sample(time, Clock(0.1))  -> x=time[clocked(whenclk1)]; whenclk1=Clock(0.1);
+  //separate clock-constructors from dynamic equations, e.g. x = sample(time, Clock(0.1))  -> x=time [clocked(whenclk1)]; whenclk1=Clock(0.1);
   (eqs,vars) := replaceSampledClocks(eqs,vars);
   sys := BackendDAEUtil.setEqSystVars(inEqSystem, vars);
   sys := BackendDAEUtil.setEqSystEqs(sys, eqs);
@@ -1387,7 +1398,8 @@ algorithm
   /*for i in 1:arrayLength(subclocks) loop
       print("partition "+intString(i)+" has subClock "+BackendDump.subClockString(arrayGet(subclocks,i))+"\n");
     end for;
-    */
+  */
+
   //dont consider the clock-contructor calls as equations for the system
   for eqIdx in 1:arrayLength(clockedEqsMask) loop
     if not arrayGet(clockedEqsMask,eqIdx) then arrayUpdate(eqPartMap,eqIdx,0); end if;
