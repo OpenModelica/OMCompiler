@@ -44,6 +44,7 @@ import DAE;
 protected
 
 import Array;
+import AvlSetInt;
 import BackendDAEEXT;
 import BackendDAEOptimize;
 import BackendDAEUtil;
@@ -60,6 +61,7 @@ import ExpressionDump;
 import ExpressionSimplify;
 import ExpressionSolve;
 import Flags;
+import GC;
 import Global;
 import List;
 import Matching;
@@ -2836,6 +2838,7 @@ protected
   Integer edges,maxpoints,tVar;
   list<Integer> potentialTVars,bestPotentialTVars,assEq,assEq_multi,assEq_single,causEq,points,counts1,counts2;
   constant Boolean debug = false;
+  AvlSetInt.Tree tree;
 algorithm
   // Cellier heuristic [MC3]
   if debug then execStat("Tearing.ModifiedCellierHeuristic_3 - 1"); end if;
@@ -2848,11 +2851,14 @@ algorithm
   if debug then execStat("Tearing.ModifiedCellierHeuristic_3 - 2"); end if;
 
   // 2. Determine the variables in causEq
-  potentialTVars := {};
+  //potentialTVars := {};
+  tree := AvlSetInt.new();
   for e in causEq loop
-    potentialTVars := List.append_reverse(arrayGet(mIn, e), potentialTVars);
+    //potentialTVars := List.append_reverse(arrayGet(mIn, e), potentialTVars);
+    tree := AvlSetInt.addList(tree, arrayGet(mIn, e));
   end for;
-  potentialTVars := List.unique(listReverse(potentialTVars));
+  potentialTVars := AvlSetInt.listKeys(tree);
+  //potentialTVars := List.unique(listReverse(potentialTVars));
 
   if Flags.isSet(Flags.TEARING_DUMPVERBOSE) then
     print("2nd: "+ stringDelimitList(List.map(potentialTVars,intString),",")+"\n(Variables in the equations from (1st))\n\n");
@@ -3642,15 +3648,18 @@ auhtor: Waurich TUD 2012-11"
   output List<Integer> outList = {};
 protected
   Integer num,actual,len;
-  List<Integer> lst = selList;
+  list<Integer> lst = selList;
+  array<Integer> arr;
 algorithm
-  len := listLength(inList);
+  arr := listArray(inList);
+  len := arrayLength(arr);
   for num in selList loop
     if num > 0 and num <= len then
-      actual := listGet(inList,num);
+      actual := arrayGet(arr,num);
       outList := actual::outList;
     end if;
   end for;
+  GC.free(arr);
 end selectFromList;
 
 
