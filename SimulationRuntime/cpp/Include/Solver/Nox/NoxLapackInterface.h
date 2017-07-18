@@ -1,4 +1,8 @@
-//somehow this is not good...
+/** @addtogroup solverNox
+ *  @{
+ *
+ */
+
 #include <LOCA.H>
 #include <LOCA_LAPACK.H>
 
@@ -7,7 +11,7 @@ class NoxLapackInterface : public LOCA::LAPACK::Interface {
   public:
 
     //! Constructor
-    NoxLapackInterface(INonLinearAlgLoop *algLoop, int numberofhomotopytries);
+    NoxLapackInterface(INonLinearAlgLoop *algLoop);
 
     //! Destructor
     ~NoxLapackInterface();
@@ -17,6 +21,9 @@ class NoxLapackInterface : public LOCA::LAPACK::Interface {
     bool computeF(NOX::LAPACK::Vector& f, const NOX::LAPACK::Vector &x);
 
     bool computeJacobian(NOX::LAPACK::Matrix<double>& J, const NOX::LAPACK::Vector & x);
+
+    void setNumberOfHomotopyTries(const int & number);
+    int getMaxNumberOfHomotopyTries();
 
 	//! Sets parameters
 	void setParams(const LOCA::ParameterVector& p);
@@ -29,14 +36,12 @@ class NoxLapackInterface : public LOCA::LAPACK::Interface {
 	bool computeSimplifiedF(NOX::LAPACK::Vector& f, const NOX::LAPACK::Vector &x);
 	bool computeActualF(NOX::LAPACK::Vector& f, const NOX::LAPACK::Vector &x);
 	NOX::LAPACK::Vector applyMatrixtoVector(const NOX::LAPACK::Matrix<double> &A, const NOX::LAPACK::Vector &x);
-	void checkdimensionof(const NOX::LAPACK::Vector &x);
 
-    //! Initial guess
-    Teuchos::RCP<NOX::LAPACK::Vector> _initialGuess;
+  //! Initial guess
+  Teuchos::RCP<NOX::LAPACK::Vector> _initialGuess;
 	INonLinearAlgLoop *_algLoop;///< Algebraic loop to be solved, required to obtain value of f
-	double *_yScale, *_fScale;
+	double *_yScale, *_fScale, *_hugeabsolutevalues, *_xtemp, *_rhs;
 	int _dimSys;
-	bool _generateoutput;
 	bool _useDomainScaling;
 	bool _useFunctionValueScaling;
 	double _lambda;//homotopy parameter
@@ -44,4 +49,9 @@ class NoxLapackInterface : public LOCA::LAPACK::Interface {
 	int _numberofhomotopytries;
 	bool _evaluatedJacobianAtInitialGuess;
 	Teuchos::RCP<NOX::LAPACK::Matrix<double>> _J;//F'(x_0)
+  bool _UseAccurateJacobian;
+  LogCategory _lc;
 };
+
+
+/** @} */ // end of solverNox
