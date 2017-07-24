@@ -352,7 +352,8 @@ algorithm
     simpVars := BackendVariable.getVarAt(vars, varIdx)::simpVars;
   end if;
   end for;
-  varMapArr := listArray(varMap);
+  varMapArr := listArray(listReverse(varMap));
+  simpVars := listReverse(simpVars);
 end getSimpleEquationVariables;
 
 public function resolveLoops_findLoops "author:Waurich TUD 2014-02
