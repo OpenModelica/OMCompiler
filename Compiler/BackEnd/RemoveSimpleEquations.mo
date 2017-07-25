@@ -537,7 +537,7 @@ algorithm
     simpleContainer := List.listArrayReverse(simpleContainerIn);
     // collect and handle sets
     (vars, eqnslst, shared, repl) := handleSets(arrayLength(simpleContainer), 1, simpleContainer, iMT, iUnreplaceable, iVars, iEqnslst, ishared, iRepl);
-      //BackendVarTransform.dumpReplacements(repl);
+    //BackendVarTransform.dumpReplacements(repl);
 
     // perform replacements and try again
     (eqnslst, b1) := BackendVarTransform.replaceEquations(eqnslst, repl, SOME(BackendVarTransform.skipPreChangeEdgeOperator));
@@ -1149,13 +1149,23 @@ protected
   list<Integer> ds;
   list<list<DAE.Subscript>> subslst;
   list<DAE.Exp> elst1, elst2;
+  Boolean hasInlineAfterIndexReduction, expandLhs, expandRhs;
 algorithm
   dims := Expression.arrayDimension(ty);
   ds := Expression.dimensionsSizes(dims);
   subslst := List.map(ds, Expression.dimensionSizeSubscripts);
   subslst := Expression.rangesToSubscripts(subslst);
-  elst1 := List.map1r(subslst, Expression.applyExpSubscripts, lhs);
-  elst2 := List.map1r(subslst, Expression.applyExpSubscripts, rhs);
+  (,hasInlineAfterIndexReduction) := Expression.traverseExpTopDown(lhs, Expression.findCallIsInlineAfterIndexReduction, false);
+  (,hasInlineAfterIndexReduction) := Expression.traverseExpTopDown(rhs, Expression.findCallIsInlineAfterIndexReduction, hasInlineAfterIndexReduction);
+  (elst1,expandLhs) := List.mapFold(subslst, function Expression.applyExpSubscriptsFoldCheckSimplify(exp=lhs), false);
+  (elst2,expandRhs) := List.mapFold(subslst, function Expression.applyExpSubscriptsFoldCheckSimplify(exp=rhs), false);
+  if not hasInlineAfterIndexReduction then
+    // If inlining after index reduction or i, we need to expand equations to pass sorting+matching
+    // Note: We *should* be looking for the derivative annotation here, but it's not available directly
+    //       and better would be if sorting+matching could expand/split equations when necessary
+    true := expandLhs and expandRhs "Do not expand equation if it doesn't help with anything... Like x=f(...); => x[1]=f()[1], ..., x[n]=f()[n]";
+  else
+  end if;
   outTpl := List.threadFold2(elst1, elst2, simpleEquationAcausal, eqnAttributes, true, inTpl);
 end simpleArrayEquationAcausal;
 
