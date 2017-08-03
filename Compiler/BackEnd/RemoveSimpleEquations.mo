@@ -1900,12 +1900,12 @@ algorithm
       then
         ((vars, shared, eqns, TIMEINDEPENTVAR(cr, i, exp, eqnAttributes, -1)::seqns, index+1, mT, true));
 
-    case (_, _, _, _, _, (vars, shared as BackendDAE.SHARED(functionTree=functions), eqns, seqns, index, mT, _))
+    case (_, _, _, _, _, (vars, shared as BackendDAE.SHARED(functionTree=functions, globalKnownVars=globalKnownVars), eqns, seqns, index, mT, _))
       guard
         not Expression.isImpure(exp) // lochel: this is at least needed for impure functions
       equation
         //exp2 = Ceval.cevalSimpleWithFunctionTreeReturnExp(exp, functions);
-        exp2 = EvaluateFunctions.evaluateConstantFunctionCallExp(exp, functions, false);
+        exp2 = EvaluateFunctions.evaluateConstantFunctionCallExp(exp, functions, globalKnownVars, false);
         if not Expression.isConst(exp2) then
           exp2 = exp;
         end if;
