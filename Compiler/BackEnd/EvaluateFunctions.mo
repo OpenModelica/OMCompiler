@@ -336,7 +336,7 @@ algorithm
   globalKnownVars := BackendDAEUtil.getGlobalKnownVarsFromShared(sharedIn);
   funcTree := BackendDAEUtil.getFunctions(sharedIn);
   varLst := BackendVariable.varList(globalKnownVars);
-  varLst := List.map1(varLst,evaluateParameter,funcTree);
+  varLst := List.map2(varLst,evaluateParameter,funcTree,globalKnownVars);
   globalKnownVars := BackendVariable.listVar(varLst);
   sharedOut := BackendDAEUtil.setSharedGlobalKnownVars(sharedIn,globalKnownVars);
 end evaluateShared;
@@ -344,6 +344,7 @@ end evaluateShared;
 protected function evaluateParameter "evaluates a parameter"
   input BackendDAE.Var varIn;
   input DAE.FunctionTree funcTree;
+  input BackendDAE.Variables globalKnownVars;
   output BackendDAE.Var varOut;
 algorithm
   varOut := matchcontinue(varIn,funcTree)
@@ -355,7 +356,7 @@ algorithm
         bindExp = BackendVariable.varBindExp(varIn);
         true = Expression.isCall(bindExp);
         ExpressionDump.dumpExp(bindExp);
-        ((bindExp,_,_,_,_,_,_)) = evaluateConstantFunction(bindExp,bindExp,funcTree,1,{});
+        ((bindExp,_,_,_,_,_,_)) = evaluateConstantFunction(bindExp,bindExp,funcTree,globalKnownVars,1,{});
         ExpressionDump.dumpExp(bindExp);
       then
         varIn;
@@ -413,9 +414,9 @@ algorithm
         b2 = Expression.containFunctioncall(exp2);
         true = b1 or b2;
         funcs = BackendDAEUtil.getFunctions(shared);
-        ((rhsExp,lhsExp,addEqs1,funcs,idx,changed1,callSign)) = if b1 then evaluateConstantFunction(exp1,exp2,funcs,idx,callSign) else (exp2,exp1,{},funcs,idx,changed,callSign);
+        ((rhsExp,lhsExp,addEqs1,funcs,idx,changed1,callSign)) = if b1 then evaluateConstantFunction(exp1,exp2,funcs,shared.globalKnownVars,idx,callSign) else (exp2,exp1,{},funcs,idx,changed,callSign);
         changed = changed1 or changed;
-        ((rhsExp,lhsExp,addEqs2,funcs,idx,changed1,callSign)) = if b2 then evaluateConstantFunction(exp2,exp1,funcs,idx,callSign) else (rhsExp,lhsExp,{},funcs,idx,changed,callSign);
+        ((rhsExp,lhsExp,addEqs2,funcs,idx,changed1,callSign)) = if b2 then evaluateConstantFunction(exp2,exp1,funcs,shared.globalKnownVars,idx,callSign) else (rhsExp,lhsExp,{},funcs,idx,changed,callSign);
         changed = changed1 or changed;
         addEqs = listAppend(addEqs1,addEqs);
         addEqs = listAppend(addEqs2,addEqs);
@@ -437,9 +438,9 @@ algorithm
         b2 = Expression.containFunctioncall(exp2);
         true = b1 or b2;
         funcs = BackendDAEUtil.getFunctions(shared);
-        ((rhsExp,lhsExp,addEqs1,funcs,idx,changed1,callSign)) = if b1 then evaluateConstantFunction(exp1,exp2,funcs,idx,callSign) else (exp2,exp1,{},funcs,idx,changed,callSign);
+        ((rhsExp,lhsExp,addEqs1,funcs,idx,changed1,callSign)) = if b1 then evaluateConstantFunction(exp1,exp2,funcs,shared.globalKnownVars,idx,callSign) else (exp2,exp1,{},funcs,idx,changed,callSign);
         changed = changed or changed1;
-        ((rhsExp,lhsExp,addEqs2,funcs,idx,changed1,callSign)) = if b2 then evaluateConstantFunction(exp2,exp1,funcs,idx,callSign) else (rhsExp,lhsExp,{},funcs,idx,changed,callSign);
+        ((rhsExp,lhsExp,addEqs2,funcs,idx,changed1,callSign)) = if b2 then evaluateConstantFunction(exp2,exp1,funcs,shared.globalKnownVars,idx,callSign) else (rhsExp,lhsExp,{},funcs,idx,changed,callSign);
         changed = changed or changed1;
         addEqs = listAppend(addEqs1,addEqs);
         addEqs = listAppend(addEqs2,addEqs);
@@ -460,6 +461,7 @@ public function evaluateConstantFunctionCallExp"checks if the expression is a ca
 the output is either a constant expression or the input exp. no partial evaluation is performed in here."
   input DAE.Exp expIn;
   input DAE.FunctionTree funcsIn;
+  input BackendDAE.Variables globalKnownVarsIn;
   input Boolean evalConstArgsOnly;
   output DAE.Exp expOut;
 algorithm
@@ -494,10 +496,11 @@ algorithm
         elements = DAEUtil.getFunctionElements(func);
 
         // get the input exps from the call
-        exps = List.map2(exps0, evaluateConstantFunctionCallExp, funcsIn, evalConstArgsOnly);
+        exps = List.map3(exps0, evaluateConstantFunctionCallExp, funcsIn, globalKnownVarsIn, evalConstArgsOnly);
         scalarExp = List.map1(exps, expandComplexEpressions, funcsIn);
         allInputExps = List.flatten(scalarExp);
           //print("allInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
+        (allInputExps,_) = Expression.traverseExpList(allInputExps, BackendDAEUtil.replaceVarWithValue, globalKnownVarsIn);
 
         if listEmpty(elements) then  // its a record
         //-----------------------its a record-----------------------
@@ -546,7 +549,7 @@ algorithm
         _ = List.fold(algs,hasReinitFold,false);
 
         // go through all algorithms and replace the variables with constants if possible, extend the ht after each algorithm, consider bindings of protected vars as well
-        (algs,_,repl,_) = List.mapFold3(algs,evaluateFunctions_updateAlgElements,funcsIn,repl,1);
+        (algs,_,_,repl,_) = List.mapFold4(algs,evaluateFunctions_updateAlgElements,funcsIn,globalKnownVarsIn,repl,1);
         //print("\nall algs after"+intString(listLength(algs))+"\n"+DAEDump.dumpElementsStr(algs)+"\n");
         //BackendVarTransform.dumpReplacements(repl);
 
@@ -591,7 +594,7 @@ algorithm
   case(DAE.ASUB(DAE.CALL(path=path, expLst=exps, attr=attr1),sub),_)
     equation
       //this ASUB stuff occurs in the flattened DAE, check this special case because of removeSimpleEquations
-     exp = evaluateConstantFunctionCallExp(DAE.CALL(path=path, expLst=exps, attr=attr1), funcsIn, evalConstArgsOnly);
+     exp = evaluateConstantFunctionCallExp(DAE.CALL(path=path, expLst=exps, attr=attr1), funcsIn, globalKnownVarsIn, evalConstArgsOnly);
      (exp,_) = ExpressionSimplify.simplify(DAE.ASUB(exp,sub));
      if not Expression.isConst(exp) then exp = expIn; end if;
     then exp;
@@ -669,6 +672,7 @@ author: Waurich TUD 2014-04"
   input DAE.Exp rhsExpIn;
   input DAE.Exp lhsExpIn;
   input DAE.FunctionTree funcsIn;
+  input BackendDAE.Variables globalKnownVarsIn;
   input Integer eqIdx;
   input list<CallSignature> callSignLstIn;
   output tuple<DAE.Exp, DAE.Exp, list<BackendDAE.Equation>, DAE.FunctionTree,Integer,Boolean, list<CallSignature>> outTpl;  //rhs,lhs,addEqs,funcTre,idx,haschanged
@@ -746,10 +750,11 @@ algorithm
         false = listEmpty(algs); // its a built in function
 
         // get the input exps from the call
-        exps = List.map2(expsIn, evaluateConstantFunctionCallExp, funcsIn, false);
+        exps = List.map3(expsIn, evaluateConstantFunctionCallExp, funcsIn, globalKnownVarsIn, false);
         scalarExp = List.map1(exps,expandComplexEpressions,funcsIn);//these exps are evaluated as well
         allInputExps = List.flatten(scalarExp);
           //print("allInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
+        (allInputExps,_) = Expression.traverseExpList(allInputExps, BackendDAEUtil.replaceVarWithValue, globalKnownVarsIn);
 
         // get all input crefs (from function body) (scalar and one dimensioanl)
         allInputs = List.filterOnTrue(elements,DAEUtil.isInputVar);
@@ -789,7 +794,7 @@ algorithm
         hasReinit = List.fold(algs,hasReinitFold,false);
         abort = hasReturn or hasTerminate or hasReinit;
         // go through all algorithms and replace the variables with constants if possible, extend the ht after each algorithm
-        (algs,funcs,repl,idx) = List.mapFold3(algs,evaluateFunctions_updateAlgElements,funcsIn,repl,eqIdx);
+        (algs,funcs,_,repl,idx) = List.mapFold4(algs,evaluateFunctions_updateAlgElements,funcsIn,globalKnownVarsIn,repl,eqIdx);
           //print("\nall algs after"+intString(listLength(algs))+"\n"+DAEDump.dumpElementsStr(algs)+"\n");
           //BackendVarTransform.dumpReplacements(repl);
 
@@ -919,7 +924,7 @@ algorithm
       if not continueEval then fail(); end if;
 
       //this ASUB stuff occurs in the flattened DAE, check this special case because of removeSimpleEquations
-      exp = evaluateConstantFunctionCallExp(exp,funcsIn, false);
+      exp = evaluateConstantFunctionCallExp(exp,funcsIn, globalKnownVarsIn, false);
       (exp,_) = ExpressionSimplify.simplify(DAE.ASUB(exp,sub));
 
       changed = true;
@@ -1859,6 +1864,7 @@ protected function evaluateFunctions_updateAlgElements "gets the statements from
 author:Waurich TUD 2014-03"
   input output DAE.Element element;
   input output DAE.FunctionTree funcTree;
+  input output BackendDAE.Variables globalKnownVars;
   input output BackendVarTransform.VariableReplacements repl;
   input output Integer idx;
 algorithm
@@ -1874,7 +1880,7 @@ algorithm
   case(DAE.ALGORITHM(alg,source))
     equation
       stmts = DAEUtil.getStatement(element);
-      (stmts,funcTree,repl,idx) = evaluateFunctions_updateStatement(stmts,funcTree,repl,idx,{});
+      (stmts,funcTree,repl,idx) = evaluateFunctions_updateStatement(stmts,funcTree,repl,idx,{},globalKnownVars);
       alg = DAE.ALGORITHM_STMTS(stmts);
     then DAE.ALGORITHM(alg,source);
 
@@ -1921,6 +1927,7 @@ author:Waurich TUD 2014-03"
   input output BackendVarTransform.VariableReplacements repl;
   input output Integer idx;
   input list<DAE.Statement> lstIn;
+  input BackendDAE.Variables globalKnownVars;
 protected
   list<list<DAE.Statement>> stmtsList;
 algorithm
@@ -1951,7 +1958,7 @@ algorithm
           (exp2,_) = BackendVarTransform.replaceExp(exp2,repl,NONE());
           (exp2,_) = ExpressionSimplify.simplify(exp2);
 
-          (exp2,(exp1,funcTree,idx,addStmts)) = Expression.traverseExpTopDown(exp2,evaluateConstantFunctionWrapper,(exp1,funcTree,idx,{}));
+          (exp2,(exp1,funcTree,_,idx,addStmts)) = Expression.traverseExpTopDown(exp2,evaluateConstantFunctionWrapper,(exp1,funcTree,globalKnownVars,idx,{}));
 
           (exp2,_) = ExpressionSimplify.simplify(exp2);
           (exp2,_) = Expression.traverseExpBottomUp(exp2,unboxExp,false);// for metamodelica/meta/omc
@@ -2006,7 +2013,7 @@ algorithm
           cref = Expression.expCref(exp1);
           scalars = getRecordScalars(cref);
           (exp2,_) = BackendVarTransform.replaceExp(exp2,repl,NONE());
-          (exp2,(exp1,funcTree,idx,addStmts)) = Expression.traverseExpTopDown(exp2,evaluateConstantFunctionWrapper,(exp1,funcTree,idx,{}));
+          (exp2,(exp1,funcTree,_,idx,addStmts)) = Expression.traverseExpTopDown(exp2,evaluateConstantFunctionWrapper,(exp1,funcTree,globalKnownVars,idx,{}));
           (exp2,_) = ExpressionSimplify.simplify(exp2);
           expLst = Expression.getComplexContents(exp2);
 
@@ -2068,14 +2075,14 @@ algorithm
           outputs = List.map(lhsExps,Expression.expCref);
 
           //check if the conditions can be evaluated, get evaluated stmts
-          (isEval,stmts1,repl) = evaluateIfStatement(stmt,FUNCINFO(repl,funcTree,idx));
+          (isEval,stmts1,repl) = evaluateIfStatement(stmt,FUNCINFO(repl,funcTree,idx),globalKnownVars);
 
           // if its not definite which case, try to predict a constant output, maybe its partially constant, then remove function outputs replacements
           if Flags.isSet(Flags.EVAL_FUNC_DUMP) and not isEval then
             print("-->try to predict the outputs \n");
           end if;
           if not isEval then
-            ((stmtsNew,addStmts),FUNCINFO(repl,funcTree,idx)) = predictIfOutput(stmt,FUNCINFO(repl,funcTree,idx));
+            ((stmtsNew,addStmts),FUNCINFO(repl,funcTree,idx)) = predictIfOutput(stmt, FUNCINFO(repl,funcTree,idx), globalKnownVars);
           else
             stmtsNew = stmts1;
             addStmts = {};
@@ -2092,7 +2099,7 @@ algorithm
 
           stmts1 = if predicted then stmtsNew else stmts1;
 
-          (addStmts,funcTree,repl,idx) = evaluateFunctions_updateStatement(addStmts,funcTree,repl,idx,{});
+          (addStmts,funcTree,repl,idx) = evaluateFunctions_updateStatement(addStmts,funcTree,repl,idx,{},globalKnownVars);
 
           if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
             print("evaluated IF-statements to:\n"+stringDelimitList(List.map(listAppend(stmts1,addStmts),DAEDump.ppStatementStr),"\n")+"\n\n");
@@ -2107,7 +2114,7 @@ algorithm
           (exp1,_) = BackendVarTransform.replaceExp(exp0,repl,NONE());
 
           exp2 = DAE.TUPLE(expLst);
-          ((exp1,exp2,addEqs,funcTree,idx,_,_)) = evaluateConstantFunction(exp1,exp2,funcTree,idx,{});
+          ((exp1,exp2,addEqs,funcTree,idx,_,_)) = evaluateConstantFunction(exp1,exp2,funcTree,globalKnownVars,idx,{});
           isCon = Expression.isConst(exp1);
           exp1 = if isCon then exp1 else exp0;
           if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
@@ -2149,7 +2156,7 @@ algorithm
           end if;
 
           // lets see if we can evaluate it
-          (stmts1,funcTree,repl,idx) = evaluateForStatement(stmt, funcTree,repl,idx);
+          (stmts1,funcTree,repl,idx) = evaluateForStatement(stmt, funcTree,globalKnownVars,repl,idx);
 
           if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
             print("evaluated for-statements to:\n"+stringDelimitList(List.map(stmts1,DAEDump.ppStatementStr),"\n")+"\n");
@@ -2174,10 +2181,10 @@ algorithm
       case(DAE.STMT_ASSERT(cond=cond,msg=msg,level=lvl))
         equation
           (cond,_) = BackendVarTransform.replaceExp(cond,repl,NONE());
-          (cond) = evaluateConstantFunctionCallExp(cond,funcTree, false);
+          (cond) = evaluateConstantFunctionCallExp(cond, funcTree, globalKnownVars, false);
           (cond,_) = ExpressionSimplify.simplify(cond);
           (msg,_) = BackendVarTransform.replaceExp(msg,repl,NONE());
-          (msg) = evaluateConstantFunctionCallExp(msg,funcTree, false);
+          (msg) = evaluateConstantFunctionCallExp(msg, funcTree, globalKnownVars, false);
           (msg,_) = ExpressionSimplify.simplify(msg);
           if Expression.expEqual(cond,DAE.BCONST(false)) and Expression.sconstEnumNameString(lvl)=="AssertionLevel.error" then
             if Flags.isSet(Flags.EVAL_FUNC_DUMP) then print("ERROR: "+ExpressionDump.printExpStr(msg)+"\n"); end if;
@@ -2230,6 +2237,7 @@ end evaluateFunctions_updateStatement;
 protected function evaluateForStatement"evaluates a for statement. neste for loops wont work"
   input DAE.Statement stmtIn;
   input DAE.FunctionTree funcTreeIn;
+  input BackendDAE.Variables globalKnownVarsIn;
   input BackendVarTransform.VariableReplacements replIn;
   input Integer idxIn;
   output list<DAE.Statement> stmtsOut;
@@ -2254,7 +2262,7 @@ algorithm
     repl := replIn;
     for i in List.intRange2(start,stop) loop
       repl := BackendVarTransform.addReplacement(repl, ComponentReference.makeCrefIdent(iter,DAE.T_INTEGER_DEFAULT,{}),DAE.ICONST(i),NONE());
-      (stmts,_,repl,_) := evaluateFunctions_updateStatement(stmtsIn,funcTreeIn,repl,i,{});
+      (stmts,_,repl,_) := evaluateFunctions_updateStatement(stmtsIn,funcTreeIn,repl,i,{},globalKnownVarsIn);
 
       // check if any variable has been evaluated. If not, skip the loop (this is necessary for testsuite/modelica/linear_systems/problem1.mos)
       lhsExps := List.fold1(stmts,getStatementLHSScalar,funcTreeIn,{});
@@ -2311,6 +2319,7 @@ protected function evaluateIfStatement "check if the cases are constant and if s
 author: Waurich TUD 2014-04"
   input DAE.Statement stmtIn;
   input FuncInfo info;
+  input BackendDAE.Variables globalKnownVarsIn;
   output Boolean isEval;
   output list<DAE.Statement> stmtsOut;
   output BackendVarTransform.VariableReplacements replOut;
@@ -2330,8 +2339,9 @@ algorithm
         if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
           print("-->try to check if its the if case\n");
         end if;
+
         (exp1,_) = BackendVarTransform.replaceExp(expIf,replIn,NONE());
-        (exp1,(_,_,_,_)) = Expression.traverseExpTopDown(exp1,evaluateConstantFunctionWrapper,(exp1,funcTree,idx,{}));
+        (exp1,(_,_,_,_,_)) = Expression.traverseExpTopDown(exp1,evaluateConstantFunctionWrapper,(exp1,funcTree,globalKnownVarsIn,idx,{}));
         (exp1,_) = BackendVarTransform.replaceExp(exp1,replIn,NONE());
         (exp1,_) = ExpressionSimplify.simplify(exp1);
         isCon = Expression.isConst(exp1);
@@ -2342,7 +2352,7 @@ algorithm
           print("-->is the if const? "+boolString(isCon)+" and is it the if case ? "+boolString(isIf)+"\n");
         end if;
         if isIf and isCon then
-           (stmts1,funcTree,repl,idx) = evaluateFunctions_updateStatement(stmtsIf,funcTree,replIn,idx,{});  // without listIn
+           (stmts1,funcTree,repl,idx) = evaluateFunctions_updateStatement(stmtsIf,funcTree,replIn,idx,{},globalKnownVarsIn);  // without listIn
         else
           stmts1 = {stmtIn};
           repl = replIn;
@@ -2353,7 +2363,7 @@ algorithm
           print("-->try to check if its another case\n");
         end if;
         if isCon and not isIf then
-          (stmtsElse,isElse) = evaluateElse(else_,info);
+          (stmtsElse,isElse) = evaluateElse(else_, info, globalKnownVarsIn);
         else
           stmtsElse = {stmtIn};
           isElse = false;
@@ -2362,7 +2372,7 @@ algorithm
           print("-->is it an other case? "+boolString(isElse)+"\n");
         end if;
         if isCon and isElse then
-          (stmts1,funcTree,repl,idx) = evaluateFunctions_updateStatement(stmtsElse,funcTree,replIn,idx,{});
+          (stmts1,funcTree,repl,idx) = evaluateFunctions_updateStatement(stmtsElse,funcTree,replIn,idx,{},globalKnownVarsIn);
         else
         end if;
         eval = isCon and (isIf or isElse);
@@ -2382,6 +2392,7 @@ protected function evaluateElse "checks if its one of the elseif cases.
 author: Waurich TUD 2014-04"
   input DAE.Else elseIn;
   input FuncInfo info;
+  input BackendDAE.Variables globalKnownVarsIn;
   output list<DAE.Statement> stmtsOut;
   output Boolean isElse;
 algorithm
@@ -2400,13 +2411,13 @@ algorithm
         if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
           print("-->try to check if its the elseif case\n");
         end if;
-        (exp1,(_,_,_,_)) = Expression.traverseExpTopDown(expIf,evaluateConstantFunctionWrapper,(expIf,funcTree,idx,{}));
+        (exp1,(_,_,_,_,_)) = Expression.traverseExpTopDown(expIf,evaluateConstantFunctionWrapper,(expIf,funcTree,globalKnownVarsIn,idx,{}));
         (exp1,_) = BackendVarTransform.replaceExp(exp1,replIn,NONE());
         (exp1,_) = ExpressionSimplify.simplify(exp1);
         isCon = Expression.isConst(exp1);
         isElseIf = if isCon then Expression.toBool(exp1) else false;
         if isCon and not isElseIf then
-          (stmts,isElseIf) = evaluateElse(else_,info);
+          (stmts,isElseIf) = evaluateElse(else_, info, globalKnownVarsIn);
         end if;
       then
         (stmts,isElseIf);
@@ -2659,25 +2670,26 @@ end getDAEelseStatemntLsts;
 
 protected function evaluateConstantFunctionWrapper
   input DAE.Exp inExp;
-  input tuple<DAE.Exp, DAE.FunctionTree,Integer,list<DAE.Statement>> inTpl;
+  input tuple<DAE.Exp, DAE.FunctionTree,BackendDAE.Variables,Integer,list<DAE.Statement>> inTpl;
   output DAE.Exp outExp;
   output Boolean cont;
-  output tuple<DAE.Exp,DAE.FunctionTree,Integer,list<DAE.Statement>> outTpl;
+  output tuple<DAE.Exp,DAE.FunctionTree,BackendDAE.Variables,Integer,list<DAE.Statement>> outTpl;
 algorithm
   (outExp,cont,outTpl) := matchcontinue(inExp,inTpl)
     local
       Integer idx;
       DAE.Exp rhs, lhs;
       DAE.FunctionTree funcs;
+      BackendDAE.Variables globalKnownVars;
       list<BackendDAE.Equation> addEqs;
       list<DAE.Statement> stmts,stmtsIn;
-      tuple<DAE.Exp, DAE.FunctionTree,Integer,list<DAE.Statement>> tpl;
-  case (DAE.CALL(),(lhs,funcs,idx,stmtsIn))
+      tuple<DAE.Exp, DAE.FunctionTree,BackendDAE.Variables,Integer,list<DAE.Statement>> tpl;
+  case (DAE.CALL(),(lhs,funcs,globalKnownVars,idx,stmtsIn))
     equation
-      ((rhs,lhs,addEqs,funcs,idx,_,_)) = evaluateConstantFunction(inExp,lhs,funcs,idx,{});
+      ((rhs,lhs,addEqs,funcs,idx,_,_)) = evaluateConstantFunction(inExp,lhs,funcs,globalKnownVars,idx,{});
       stmts = List.map(addEqs,equationToStmt);
       stmts = listAppend(stmts,stmtsIn);
-    then (rhs,true,(lhs,funcs,idx,stmts));
+    then (rhs,true,(lhs,funcs,globalKnownVars,idx,stmts));
 
   case (DAE.UNBOX(exp=rhs),_)
     equation
@@ -3010,9 +3022,11 @@ protected function evaluateFunctions_updateStatementEmptyRepl "replace and updat
 author:Waurich TUD 2014-03"
   input list<DAE.Statement> algsIn;
   input DAE.FunctionTree inFuncTree;
+  input BackendDAE.Variables globalKnownVarsIn;
   input Integer inIndex;
   output tuple<list<DAE.Statement>,BackendVarTransform.VariableReplacements> mapTplOut;
   output DAE.FunctionTree outFuncTree;
+  output BackendDAE.Variables globalKnownVarsOut=globalKnownVarsIn;
   output Integer outIndex;
 protected
   BackendVarTransform.VariableReplacements repl;
@@ -3020,7 +3034,7 @@ protected
 algorithm
   repl := BackendVarTransform.emptyReplacements();
   //print("start new evaluation with empty replacement\n"+stringDelimitList(List.map(algsIn,DAEDump.ppStatementStr),"\n")+"\n");
-  (algsOut, outFuncTree, repl, outIndex) := evaluateFunctions_updateStatement(algsIn, inFuncTree, repl, inIndex, {});
+  (algsOut, outFuncTree, repl, outIndex) := evaluateFunctions_updateStatement(algsIn, inFuncTree, repl, inIndex, {}, globalKnownVarsIn);
   //print("the new evaluated stmts wit empty repl \n"+stringDelimitList(List.map(algsOut,DAEDump.ppStatementStr),"\n")+"\n");
   mapTplOut := (algsOut, repl);
 end evaluateFunctions_updateStatementEmptyRepl;
@@ -3029,6 +3043,7 @@ protected function predictIfOutput "evaluate outputs for all if/elseif/else and 
 author: Waurich TUD 2014-04"
   input DAE.Statement stmtIn;
   input FuncInfo infoIn;
+  input BackendDAE.Variables globalKnownVarsIn;
   output tuple<list<DAE.Statement>,list<DAE.Statement>> stmtsOut;
   output FuncInfo infoOut;
 algorithm
@@ -3063,7 +3078,7 @@ algorithm
          repl = getOnlyConstantReplacements(replIn);
          (stmtsLst,_) = List.map4_2(stmtsLst,BackendVarTransform.replaceStatementLstRHS,repl,NONE(),{},false);
          //print("al stmts replaced: \n"+stringDelimitList(List.map(List.flatten(stmtsLst),DAEDump.ppStatementStr),"\n")+"\n");
-         (tplLst, funcTree, idx) = List.mapFold2(stmtsLst, evaluateFunctions_updateStatementEmptyRepl, funcTree, idx);
+         (tplLst, funcTree, _, idx) = List.mapFold3(stmtsLst, evaluateFunctions_updateStatementEmptyRepl, funcTree, globalKnownVarsIn, idx);
          stmtsLst = List.map(tplLst,Util.tuple21);
          //print("all evaled stmts1: \n"+stringDelimitList(List.map(List.flatten(stmtsLst),DAEDump.ppStatementStr),"---------\n")+"\n");
          replLst = List.map(stmtsLst,collectReplacements);

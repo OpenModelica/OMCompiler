@@ -2937,6 +2937,7 @@ end dumpStatistics;
 public function simplifyReplacements"applies ExpressionSimplify.simplify on all replacement expressions"
   input VariableReplacements replIn;
   input DAE.FunctionTree functions;
+  input BackendDAE.Variables globalKnownVars;
   output VariableReplacements replOut;
 protected
   list<DAE.ComponentRef> crefs;
@@ -2944,7 +2945,7 @@ protected
 algorithm
   (crefs,exps) := getAllReplacements(replIn);
   (exps,_) := List.map_2(exps,ExpressionSimplify.simplify);
-  exps := List.map2(exps, EvaluateFunctions.evaluateConstantFunctionCallExp, functions, false);
+  exps := List.map3(exps, EvaluateFunctions.evaluateConstantFunctionCallExp, functions, globalKnownVars, false);
   replOut := addReplacements(replIn,crefs,exps,NONE());
 end simplifyReplacements;
 
