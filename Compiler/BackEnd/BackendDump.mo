@@ -313,17 +313,24 @@ end printSubPartitions;
 public function subClockString
   input BackendDAE.SubClock subClock;
   output String subClockString;
-protected
-  String factorStr, shiftStr, solverStr;
 algorithm
-  factorStr := "factor(" + MMath.rationalString(subClock.factor) + ")";
-  shiftStr := "shift(" + MMath.rationalString(subClock.shift) + ")";
-  solverStr := "solver(" + optionString(subClock.solver) + ")";
-  if stringLength(solverStr) > 8 then
-    subClockString := factorStr + " " + shiftStr + " " + solverStr;
-  else
-    subClockString := factorStr + " " + shiftStr + " ";
-  end if;
+  subClockString := match(subClock)
+    local
+      String factorStr, shiftStr, solverStr;
+    case(BackendDAE.INFERED_SUBCLOCK())
+      then "INFERED_SUBCLOCK";
+    case(BackendDAE.SUBCLOCK(_))
+      algorithm
+        factorStr := "factor(" + MMath.rationalString(subClock.factor) + ")";
+        shiftStr := "shift(" + MMath.rationalString(subClock.shift) + ")";
+        solverStr := "solver(" + optionString(subClock.solver) + ")";
+        if stringLength(solverStr) > 8 then
+          subClockString := factorStr + " " + shiftStr + " " + solverStr;
+        else
+          subClockString := factorStr + " " + shiftStr + " ";
+        end if;
+      then subClockString;
+  end match;
 end subClockString;
 
 public function optionString
@@ -4063,6 +4070,7 @@ algorithm
   nodeLabel := GraphML.NODELABEL_INTERNAL(nodeString,NONE(),GraphML.FONTPLAIN());
   (tmpGraph,(_,_)) := GraphML.addNode("Node"+intString(nodeIdx),
                                               GraphML.COLOR_ORANGE,
+                                              GraphML.BORDERWIDTH_STANDARD,
                                               {nodeLabel},
                                               GraphML.RECTANGLE(),
                                               SOME(nodeDesc),
@@ -4121,7 +4129,7 @@ algorithm
   varNodeId := getVarNodeIdx(indx);
   idxString := intString(indx);
   nodeLabel := GraphML.NODELABEL_INTERNAL(idxString,NONE(),GraphML.FONTPLAIN());
-  (graphInfo,_) := GraphML.addNode(varNodeId, GraphML.COLOR_ORANGE2, {nodeLabel},GraphML.ELLIPSE(),SOME(varString),{(nameAttrIdx,varString),(typeAttIdx,typeStr),(idxAttrIdx,daeIdxStr)},graphIdx,graphInfo);
+  (graphInfo,_) := GraphML.addNode(varNodeId, GraphML.COLOR_ORANGE2,GraphML.BORDERWIDTH_STANDARD, {nodeLabel},GraphML.ELLIPSE(),SOME(varString),{(nameAttrIdx,varString),(typeAttIdx,typeStr),(idxAttrIdx,daeIdxStr)},graphIdx,graphInfo);
   graphInfoOut := (graphInfo,graphIdx);
 end addVarNodeToGraph;
 
@@ -4154,7 +4162,7 @@ algorithm
   eqNodeId := getEqNodeIdx(indx);
   idxString := intString(indx);
   nodeLabel := GraphML.NODELABEL_INTERNAL(idxString,NONE(),GraphML.FONTPLAIN());
-  (graphInfo,_) := GraphML.addNode(eqNodeId,GraphML.COLOR_GREEN2,{nodeLabel},GraphML.RECTANGLE(),SOME(eqString),{(nameAttrIdx,eqString),(typeAttrIdx,typeStr),(idxAttrIdx,daeIdxStr)},graphIdx,graphInfo);
+  (graphInfo,_) := GraphML.addNode(eqNodeId,GraphML.COLOR_GREEN2,GraphML.BORDERWIDTH_STANDARD,{nodeLabel},GraphML.RECTANGLE(),SOME(eqString),{(nameAttrIdx,eqString),(typeAttrIdx,typeStr),(idxAttrIdx,daeIdxStr)},graphIdx,graphInfo);
   graphInfoOut := (graphInfo,graphIdx);
 end addEqNodeToGraph;
 
@@ -4205,6 +4213,165 @@ algorithm
   eqString := "eqNode"+intString(intAbs(idx));
 end getEqNodeIdx;
 
+public function dumpBackendDAEBipartiteGraph
+  input BackendDAE.BackendDAE dae;
+  input String filename;
+protected
+  Integer graphIdx, sysIdx, varIdx, eqIdx, order;
+  Integer nameAttIdx,varAttIdx,eqAttIdx,sysAttIdx,tearAttIdx,compAttIdx,orderAttIdx;
+  String tearInfo, nodeColor;
+  GraphML.GraphInfo graphInfo;
+  GraphML.ShapeType shapeType;
+  GraphML.LineType lineType;
+  Real lineWidth, borderWidth;
+  BackendDAE.EqSystems systs;
+  BackendDAE.Shared shared;
+  list<BackendDAE.Equation> eqLst;
+  list<BackendDAE.Var> varLst;
+  list<Integer> eqIdxs, varIdxs, adjVars;
+  BackendDAE.Variables vars;
+  BackendDAE.EquationArray eqs;
+  BackendDAE.StrongComponents comps;
+  BackendDAE.IncidenceMatrix m,mT;
+  array<Integer> ass2;
+algorithm
+  //create graph
+  graphInfo := GraphML.createGraphInfo();
+  (graphInfo, (_,graphIdx)) := GraphML.addGraph("TaskGraph", true, graphInfo);
+  (graphInfo,(_,nameAttIdx)) := GraphML.addAttribute("", "Name", GraphML.TYPE_STRING(), GraphML.TARGET_NODE(), graphInfo);
+  (graphInfo,(_,varAttIdx)) := GraphML.addAttribute("", "VarIdx", GraphML.TYPE_STRING(), GraphML.TARGET_NODE(), graphInfo);
+  (graphInfo,(_,eqAttIdx)) := GraphML.addAttribute("", "EqIdx", GraphML.TYPE_STRING(), GraphML.TARGET_NODE(), graphInfo);
+  (graphInfo,(_,sysAttIdx)) := GraphML.addAttribute("", "SysIdx", GraphML.TYPE_STRING(), GraphML.TARGET_NODE(), graphInfo);
+  (graphInfo,(_,tearAttIdx)) := GraphML.addAttribute("", "Tearing", GraphML.TYPE_STRING(), GraphML.TARGET_NODE(), graphInfo);
+  (graphInfo,(_,compAttIdx)) := GraphML.addAttribute("", "SCC", GraphML.TYPE_STRING(), GraphML.TARGET_NODE(), graphInfo);
+  (graphInfo,(_,orderAttIdx)) := GraphML.addAttribute("", "executionOrder", GraphML.TYPE_STRING(), GraphML.TARGET_NODE(), graphInfo);
+
+  //traverse dae
+  BackendDAE.DAE(systs, shared) := dae;
+  sysIdx := 1;
+  for sys in systs loop
+    BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqs, matching = BackendDAE.MATCHING(comps=comps,ass2=ass2)) := sys;
+    //dump the edges
+    (m, mT) := BackendDAEUtil.incidenceMatrix(sys, BackendDAE.NORMAL(), SOME(BackendDAEUtil.getFunctions(shared)));
+
+    //traverse comps
+    order := 1;
+    for comp in comps loop
+      (varLst, varIdxs, eqLst, eqIdxs) := BackendDAEUtil.getStrongComponentsVarsAndEquations({comp},vars,eqs);
+
+      //dump variable nodes
+      for varIdx in varIdxs loop
+        nodeColor := if isAlgLoop(comp) then GraphML.COLOR_RED2 else GraphML.COLOR_GREEN2;
+        borderWidth :=  if BackendVariable.isStateVar(BackendVariable.getVarAt(vars,varIdx)) then GraphML.BORDERWIDTH_BOLD else GraphML.BORDERWIDTH_STANDARD;
+        if isTearingVar(varIdx,comp) then
+          shapeType := GraphML.ELLIPSE();
+          tearInfo := "TearingVar";
+          nodeColor := GraphML.COLOR_RED;
+        else
+          shapeType := GraphML.ELLIPSE();
+          tearInfo := "AlgebraicVar";
+        end if;
+        (graphInfo,(_,_)) := GraphML.addNode("V_"+intString(sysIdx)+"_"+intString(varIdx), nodeColor, borderWidth,
+                                      {GraphML.NODELABEL_INTERNAL(intString(varIdx), NONE(), GraphML.FONTPLAIN())},
+                                      shapeType, SOME(BackendDump.varString(BackendVariable.getVarAt(vars,varIdx))),
+                                      {((nameAttIdx,"V_"+intString(sysIdx)+"_"+intString(varIdx))), ((varAttIdx, intString(varIdx))), ((eqAttIdx, "-")), ((compAttIdx, BackendDump.printComponent(comp))), ((sysAttIdx, intString(sysIdx))), ((tearAttIdx,tearInfo)), ((orderAttIdx,intString(order)))},
+                                      graphIdx,graphInfo);
+      end for;
+
+      //dump equation nodes
+      for eqIdx in eqIdxs loop
+        nodeColor := if isAlgLoop(comp) then GraphML.COLOR_RED2 else GraphML.COLOR_GREEN2;
+        if isResidualEq(eqIdx,comp) then
+          shapeType := GraphML.RECTANGLE();
+          tearInfo := "ResidualEq";
+          nodeColor := GraphML.COLOR_RED;
+        else
+          shapeType := GraphML.RECTANGLE();
+          tearInfo := "AlgebraicEq";
+        end if;
+        (graphInfo,(_,_)) := GraphML.addNode("E_"+intString(sysIdx)+"_"+intString(eqIdx), nodeColor, GraphML.BORDERWIDTH_STANDARD,
+                                      {GraphML.NODELABEL_INTERNAL(intString(eqIdx), NONE(), GraphML.FONTPLAIN())},
+                                      shapeType, SOME(BackendDump.equationString(BackendEquation.get(eqs,eqIdx))),
+                                      {((nameAttIdx,"E_"+intString(sysIdx)+"_"+intString(eqIdx))), ((varAttIdx, "-")), ((compAttIdx, BackendDump.printComponent(comp))), ((eqAttIdx, intString(eqIdx))), ((sysAttIdx, intString(sysIdx))), ((tearAttIdx,tearInfo)),((orderAttIdx,intString(order)))},
+                                      graphIdx,graphInfo);
+      end for;
+      order := order+1;
+    end for;//end comps
+
+    //dump edges
+    for eqIdx in 1:arrayLength(m) loop
+      for varIdx in arrayGet(m, eqIdx) loop
+        if intLe(varIdx, 0) then
+          lineType := GraphML.DASHED();
+        else
+          lineType := GraphML.LINE();
+        end if;
+        varIdx := intAbs(varIdx);
+        lineWidth := if intEq(varIdx,ass2[eqIdx]) then GraphML.LINEWIDTH_BOLD else GraphML.LINEWIDTH_STANDARD;
+        (graphInfo,(_,_)) := GraphML.addEdge("Edge_"+intString(sysIdx)+"_" + intString(eqIdx)+"_" + intString(varIdx),
+                                     "V_"+intString(sysIdx)+"_"+intString(varIdx), "E_"+intString(sysIdx)+"_"+intString(eqIdx),
+                                      GraphML.COLOR_BLACK,
+                                      lineType,
+                                      lineWidth,
+                                      false,
+                                      {},
+                                      (GraphML.ARROWNONE(),GraphML.ARROWNONE()),
+                                      {},
+                                      graphInfo);
+      end for;
+    end for;//end edges
+    sysIdx := sysIdx+1;
+  end for;//end sys
+
+  //dump
+  GraphML.dumpGraph(graphInfo, filename+".graphml");
+end dumpBackendDAEBipartiteGraph;
+
+protected function isTearingVar
+  input Integer varIdx;
+  input BackendDAE.StrongComponent comp;
+  output Boolean isTear;
+algorithm
+  isTear := match(comp)
+  local
+    list<Integer> tVars;
+  case(BackendDAE.TORNSYSTEM(strictTearingSet=BackendDAE.TEARINGSET(tearingvars=tVars)))
+    algorithm
+    then List.exist1(tVars,intEq,varIdx);
+  else
+    then false;
+  end match;
+end isTearingVar;
+
+protected function isAlgLoop
+  input BackendDAE.StrongComponent comp;
+  output Boolean isLoop;
+algorithm
+  isLoop := match(comp)
+    case(BackendDAE.EQUATIONSYSTEM(_))
+      then true;
+    case(BackendDAE.TORNSYSTEM(_))
+      then true;
+    else
+      then false;
+  end match;
+end isAlgLoop;
+
+protected function isResidualEq
+  input Integer eqIdx;
+  input BackendDAE.StrongComponent comp;
+  output Boolean isRes;
+algorithm
+  isRes := match(comp)
+  local
+    list<Integer> resEqs;
+  case(BackendDAE.TORNSYSTEM(strictTearingSet=BackendDAE.TEARINGSET(residualequations=resEqs)))
+    then List.exist1(resEqs,intEq,eqIdx);
+  else
+    then false;
+  end match;
+end isResidualEq;
+
 public function SSSHandlerArgString"
 author:Waurich"
   input  Option<BackendDAE.StructurallySingularSystemHandlerArg> arg;
@@ -4233,7 +4400,7 @@ protected
   Integer i;
   String s1;
 algorithm
-  for i in List.intRange(arrayLength(constraints)) loop
+  for i in 1:arrayLength(constraints) loop
     s1 := stringDelimitList(List.map(arrayGet(constraints,i),BackendDump.equationString),"\n")+"\n------------------\n";
     if listEmpty(arrayGet(constraints,i)) then
       s1 := "empty Constraints\n";

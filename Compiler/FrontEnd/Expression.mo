@@ -359,7 +359,7 @@ protected function unelabDimensionToFillExp
   input DAE.Dimension inDim;
   output Absyn.Exp outExp;
 algorithm
-  outExp := matchcontinue (inDim)
+  outExp := match (inDim)
     local
       Integer i;
       DAE.Exp e;
@@ -370,7 +370,7 @@ algorithm
 
     else Absyn.INTEGER(1); /* Probably bad, but only used with zero-length arrays */
 
-  end matchcontinue;
+  end match;
 end unelabDimensionToFillExp;
 
 protected function unelabReductionIterator
@@ -944,18 +944,40 @@ alternative names: subsriptExp (but already taken), subscriptToAsub"
 protected
   DAE.Exp s;
 algorithm
+  exp := applyExpSubscriptsFoldCheckSimplify(exp, inSubs);
+end applyExpSubscripts;
+
+
+public function applyExpSubscriptsFoldCheckSimplify "
+author: PA
+Takes an arbitrary expression and applies subscripts to it. This is done by creating asub
+expressions given the original expression and then simplify them.
+Note: The subscripts must be INDEX
+
+alternative names: subsriptExp (but already taken), subscriptToAsub
+
+This version of the function also returns a boolean stating if simplify
+improved anything (can be used as a heuristic if you want to apply
+the subscript when scalarizing)"
+  input output DAE.Exp exp;
+  input list<DAE.Subscript> inSubs;
+  input output Boolean checkSimplify = false;
+protected
+  Boolean b;
+  DAE.Exp s;
+algorithm
   for sub in inSubs loop
     // Apply one subscript at a time, so simplify works fine on it.
     //s := subscriptIndexExp(sub);
     try
       s := getSubscriptExp(sub);
-      (exp,_) := ExpressionSimplify.simplify(makeASUB(exp,{s}));
+      (exp,b) := ExpressionSimplify.simplify(makeASUB(exp,{s}));
+      checkSimplify := b or checkSimplify;
     else
       // skipped DAE.WHOLEDIM
     end try;
   end for;
-end applyExpSubscripts;
-
+end applyExpSubscriptsFoldCheckSimplify;
 
 public function subscriptExp
 "@mahge
@@ -1430,7 +1452,7 @@ public function arrayAppend
   input DAE.Exp rest;
   output DAE.Exp array;
 algorithm
-  array := matchcontinue(head, rest)
+  array := match(head, rest)
     local
       DAE.Type ty;
       Boolean scalar;
@@ -1454,7 +1476,7 @@ algorithm
         Debug.traceln("- Expression.arrayAppend failed.");
       then
         fail();
-  end matchcontinue;
+  end match;
 end arrayAppend;
 
 
@@ -2472,8 +2494,36 @@ algorithm
   end if;
 end getAllCrefs2;
 
+public function getAllCrefsExpanded "author: ptaeuber
+  This function extracts all crefs from the input expression (except 'time') and expands arrays and records."
+  input DAE.Exp inExp;
+  output list<DAE.ComponentRef> outCrefs;
+algorithm
+  (_, outCrefs) := traverseExpBottomUp(inExp, getAllCrefsExpanded2, {});
+end getAllCrefsExpanded;
+
+protected function getAllCrefsExpanded2
+   input DAE.Exp inExp;
+   input list<DAE.ComponentRef> inCrefList;
+   output DAE.Exp outExp = inExp;
+   output list<DAE.ComponentRef> outCrefList = inCrefList;
+protected
+  DAE.ComponentRef cr;
+  list<DAE.ComponentRef> crlst;
+algorithm
+  if isCref(inExp) then
+    DAE.CREF(componentRef=cr) := inExp;
+    crlst := ComponentReference.expandCref(cr, true);
+    for c in crlst loop
+      if not ComponentReference.crefEqual(c, DAE.crefTime) and not listMember(c, inCrefList) then
+        outCrefList := c::outCrefList;
+      end if;
+    end for;
+  end if;
+end getAllCrefsExpanded2;
+
 public function allTerms
-"simliar to terms, but also perform expansion of
+"similar to terms, but also performs expansion of
  multiplications to reveal more terms, like for instance:
  allTerms((a+b)*(b+c)) => {a*b,a*c,b*b,b*c}"
   input DAE.Exp inExp;
@@ -3297,13 +3347,13 @@ end makeSign;
 
 
 public function makeNestedIf "creates a nested if expression given a list of conditions and
-guared expressions and a default value (the else branch)"
+guarded expressions and a default value (the else branch)"
   input list<DAE.Exp> inConds "conditions";
   input list<DAE.Exp> inTbExps " guarded expressions, for each condition";
   input DAE.Exp fExp "default value, else branch";
   output DAE.Exp ifExp;
 algorithm
-  ifExp := matchcontinue(inConds,inTbExps,fExp)
+  ifExp := match(inConds,inTbExps,fExp)
     local DAE.Exp c,tbExp; list<DAE.Exp> conds, tbExps;
     case({c},{tbExp},_)
     then DAE.IFEXP(c,tbExp,fExp);
@@ -3311,7 +3361,7 @@ algorithm
       equation
         ifExp = makeNestedIf(conds,tbExps,fExp);
       then DAE.IFEXP(c,tbExp,ifExp);
-  end matchcontinue;
+  end match;
 end makeNestedIf;
 
 public function makeCrefExp
@@ -4728,7 +4778,7 @@ public function arrayFill
   input DAE.Exp inExp;
   output DAE.Exp oExp;
 algorithm
-  oExp := matchcontinue(dims,inExp)
+  oExp := match(dims,inExp)
 
     case({},_) then inExp;
 
@@ -4738,7 +4788,7 @@ algorithm
       then
         oExp;
 
-  end matchcontinue;
+  end match;
 end arrayFill;
 
 protected function arrayFill2
@@ -9741,7 +9791,7 @@ public function dimensionsKnownAndNonZero
   input list<DAE.Dimension> dims;
   output Boolean allKnown;
 algorithm
-  allKnown := Util.boolAndList(List.map(dims, dimensionKnownAndNonZero));
+  allKnown := List.mapBoolAnd(dims, dimensionKnownAndNonZero);
 end dimensionsKnownAndNonZero;
 
 public function dimensionUnknownOrExp
@@ -10619,17 +10669,17 @@ end isNotWild;
 
 public function dimensionsToExps "Takes a list of dimensions and select the expressions dimensions, returning a list of expressions"
   input list<DAE.Dimension> dims;
-  input list<DAE.Exp> acc;
-  output list<DAE.Exp> exps;
+  output list<DAE.Exp> exps = {};
 algorithm
-  exps := match (dims,acc)
-    local
-      list<DAE.Dimension> rest;
-      DAE.Exp exp;
-    case ({},_) then listReverse(acc);
-    case (DAE.DIM_EXP(exp)::rest,_) then dimensionsToExps(rest,exp::acc);
-    case (_::rest,_) then dimensionsToExps(rest,acc);
-  end match;
+  for d in dims loop
+    exps := match (d)
+      local
+        DAE.Exp exp;
+      case DAE.DIM_EXP(exp) then exp::exps;
+      else exps;
+    end match;
+  end for;
+  exps := listReverse(exps);
 end dimensionsToExps;
 
 public function splitRecord
@@ -11434,14 +11484,12 @@ public function dimensionsList
   input DAE.Dimensions inDims;
   output list<Integer> outValues;
 protected
-  list<Boolean> boolHelperList;
   list<Integer> dims;
 algorithm
   outValues := matchcontinue(inDims)
     case (_)
       equation
-        boolHelperList = List.map(inDims, checkDimensionSizes);
-        true = List.reduce(boolHelperList,boolAnd);
+        true = List.mapBoolAnd(inDims, checkDimensionSizes);
         dims = List.map(inDims, dimensionSizeAll);
       then dims;
     else {};
@@ -11454,14 +11502,12 @@ public function expDimensionsList
   input list<DAE.Exp> inDims;
   output list<Integer> outValues;
 protected
-  list<Boolean> boolHelperList;
   list<Integer> dims;
 algorithm
   outValues := matchcontinue(inDims)
     case (_)
       equation
-        boolHelperList = List.map(inDims, checkExpDimensionSizes);
-        true = List.reduce(boolHelperList,boolAnd);
+        true = List.mapBoolAnd(inDims, checkExpDimensionSizes);
         dims = List.map(inDims, expInt);
         then dims;
     else {};
@@ -11485,13 +11531,11 @@ algorithm
     case(head::_)
       equation
         //print("isCrefListWithEqualIdents: \n" + stringDelimitList(List.map1(iExpressions, ExpressionDump.dumpExpStr, 1), ""));
-        boolHelperList = List.map(iExpressions, isCref);
-        true = List.reduce(boolHelperList,boolAnd);
+        true = List.mapBoolAnd(iExpressions, isCref);
         //print("isCrefListWithEqualIdents: all crefs!\n");
         crefs = List.map(iExpressions, expCref);
         headCref = expCref(head);
-        boolHelperList = List.map1(crefs, ComponentReference.crefEqualWithoutLastSubs, headCref);
-        tmpCrefWithEqualIdents = List.reduce(boolHelperList,boolAnd);
+        tmpCrefWithEqualIdents = List.map1BoolAnd(crefs, ComponentReference.crefEqualWithoutLastSubs, headCref);
         //print("isCrefListWithEqualIdents: returns " + boolString(tmpCrefWithEqualIdents) + "\n\n");
       then tmpCrefWithEqualIdents;
     case({})
@@ -11918,6 +11962,18 @@ algorithm
 end makeVectorCall;
 
 
+public function expandCrefs
+  input output DAE.Exp exp;
+  input output Integer dummy=0 "For traversal";
+algorithm
+  exp := match exp
+    local
+      DAE.Type ty;
+    case DAE.CREF(ty=DAE.T_ARRAY(ty=ty)) then makeArray(list(makeCrefExp(cr, ty) for cr in ComponentReference.expandCref(exp.componentRef, true)), exp.ty, not Types.isArray(ty));
+    else exp;
+  end match;
+end expandCrefs;
+
 public function expandExpression
  " mahge:
    Expands a given expression to a list of expression. this means flattening any records in the
@@ -12084,11 +12140,8 @@ algorithm
     case(DAE.WHOLEDIM()::rest,_,_)
       equation
         // found a wholedim, replace with value, insert in lst
-        lsts = List.map(value,listReverse);
-        lsts = List.map1(lsts,listAppend,lstIn);
-        rest = listReverse(rest);
-        lsts = List.map1(lsts,List.appendr,rest);
-        lsts = List.map(lsts,listReverse);
+        lsts = List.map1(value,listAppend,lstIn);
+        lsts = List.map1(lsts,List.append_reverser,rest);
       then
         lsts;
     case(DAE.INDEX()::rest,_,_)
@@ -12097,9 +12150,7 @@ algorithm
         lsts = insertSubScripts(rest,value,sub::lstIn);
       then
         lsts;
-    else
-      then
-        value;
+    else value;
   end matchcontinue;
 end insertSubScripts;
 
@@ -13059,6 +13110,20 @@ algorithm
     else false;
   end match;
 end isInvariantExpNoTraverse;
+
+public function findCallIsInlineAfterIndexReduction
+  input output DAE.Exp e;
+  output Boolean cont;
+  input output Boolean res;
+algorithm
+  if not res then
+    res := match e
+      case DAE.CALL(attr=DAE.CALL_ATTR(inlineType=DAE.AFTER_INDEX_RED_INLINE())) then true;
+      else false;
+    end match;
+  end if;
+  cont := not res;
+end findCallIsInlineAfterIndexReduction;
 
 annotation(__OpenModelica_Interface="frontend");
 end Expression;

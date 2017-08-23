@@ -136,8 +136,8 @@ public function makeTupleAssignmentNoTypeCheck
 protected
   Boolean b1,b2;
 algorithm
-  b1 := List.applyAndFold(lhs, boolAnd, Expression.isWild, true);
-  b2 := List.applyAndFold(List.restOrEmpty(lhs), boolAnd, Expression.isWild, true);
+  b1 := List.mapBoolAnd(lhs, Expression.isWild);
+  b2 := List.mapBoolAnd(List.restOrEmpty(lhs), Expression.isWild);
   outStatement := makeTupleAssignmentNoTypeCheck2(b1,b2,ty,lhs,rhs,source);
 end makeTupleAssignmentNoTypeCheck;
 
@@ -385,7 +385,7 @@ algorithm
       // variables is fine
       case DAE.PROP(constFlag = DAE.C_VAR()) then ();
       // constant
-      case DAE.PROP(ty, DAE.C_CONST())
+      case DAE.PROP(_, DAE.C_CONST())
         equation
           l = stringAppendList({"(", stringDelimitList(List.map(lhs, ExpressionDump.printExpStr), ", "), ")"});
           r = ExpressionDump.printExpStr(rhs);
@@ -406,7 +406,7 @@ algorithm
         then
           ();
       // tuples? TODO! FIXME! can we get tuple here? maybe only for MetaModelica
-      case DAE.PROP_TUPLE(ty, _) then ();
+      case DAE.PROP_TUPLE(_, _) then ();
     end matchcontinue;
     i := i + 1;
   end for;

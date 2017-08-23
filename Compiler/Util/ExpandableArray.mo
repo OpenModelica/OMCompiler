@@ -231,7 +231,7 @@ algorithm
   elseif capacity == 1 then
     listT := {Util.getOption(data[1])};
   else
-    listT := list(Util.getOption(data[i]) for i guard isSome(data[i]) in 1:capacity);
+    listT :=  list(Util.getOption(data[i]) for i guard isSome(data[i]) in 1:capacity);
   end if;
 end toList;
 

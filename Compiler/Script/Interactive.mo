@@ -7045,7 +7045,7 @@ algorithm
       equation
         (res_1,changed1) = renameClassInParts(res, old_comp, new_comp, env);
         (elements_1,changed2) = renameClassInElements(elements, old_comp, new_comp, env);
-        changed = Util.boolOrList({changed1,changed2});
+        changed = boolOr(changed1,changed2);
       then
         ((Absyn.PUBLIC(elements_1) :: res_1),changed);
 
@@ -7053,7 +7053,7 @@ algorithm
       equation
         (res_1,changed1) = renameClassInParts(res, old_comp, new_comp, env);
         (elements_1,changed2) = renameClassInElements(elements, old_comp, new_comp, env);
-        changed = Util.boolOrList({changed1,changed2});
+        changed = boolOr(changed1,changed2);
       then
         ((Absyn.PROTECTED(elements_1) :: res_1),changed);
 
@@ -7097,7 +7097,7 @@ algorithm
         element_1 = Absyn.ELEMENTITEM(
           Absyn.ELEMENT(finalPrefix,redeclare_,inner_outer,elementspec_1,info,
           constrainClass));
-        changed = Util.boolOrList({changed1,changed2});
+        changed = boolOr(changed1,changed2);
       then
         ((element_1 :: res_1),changed);
     case ((element :: res),old_comp,new_comp,env)
@@ -9352,6 +9352,7 @@ algorithm
       equation
         ErrorExt.setCheckpoint("getInheritedClassesHelper");
         lst = getBaseClasses(cdef, env);
+        failure({} = lst);
         ErrorExt.rollBack("getInheritedClassesHelper");
       then
         lst;
@@ -14766,7 +14767,7 @@ algorithm
   end matchcontinue;
 end addToProtected;
 
-protected function addToEquation
+public function addToEquation
 " This function takes a Class definition and adds an
    EquationItem to the first equation list in the class.
    If no public list is available in the class one is created."
@@ -15385,7 +15386,7 @@ algorithm
   end match;
 end replaceProtectedList;
 
-protected function replaceEquationList "
+public function replaceEquationList "
    This function replaces the `EquationItem\' list in the `ClassPart\' list,
    and returns the updated list.
 "
@@ -15586,7 +15587,7 @@ algorithm
   end match;
 end getProtectedList;
 
-protected function getEquationList "This function takes a ClassPart List and returns the first EquationItem
+public function getEquationList "This function takes a ClassPart List and returns the first EquationItem
   list of the class."
   input list<Absyn.ClassPart> inAbsynClassPartLst;
   output list<Absyn.EquationItem> outAbsynEquationItemLst;
@@ -16199,7 +16200,7 @@ algorithm
   end match;
 end commentToAbsyn;
 
-protected function annotationListToAbsyn
+public function annotationListToAbsyn
 "This function takes a list of NamedArg and returns an Absyn.Annotation.
   for instance {annotation = Placement( ...) } is converted to ANNOTATION(Placement(...))"
   input list<Absyn.NamedArg> inAbsynNamedArgLst;

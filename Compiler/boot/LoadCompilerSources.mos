@@ -111,6 +111,7 @@ if true then /* Suppress output */
     "../NFFrontEnd/NFImport.mo",
     "../NFFrontEnd/NFInst.mo",
     "../NFFrontEnd/NFClass.mo",
+    "../NFFrontEnd/NFClassTree.mo",
     "../NFFrontEnd/NFInstNode.mo",
     "../NFFrontEnd/NFInstUtil.mo",
     "../NFFrontEnd/NFLookup.mo",
@@ -120,6 +121,7 @@ if true then /* Suppress output */
     "../NFFrontEnd/NFRangeIterator.mo",
     "../NFFrontEnd/NFRecord.mo",
     "../NFFrontEnd/NFSimplifyExp.mo",
+    "../NFFrontEnd/NFSections.mo",
     "../NFFrontEnd/NFStatement.mo",
     "../NFFrontEnd/NFSubscript.mo",
     "../NFFrontEnd/NFType.mo",
@@ -226,7 +228,8 @@ if true then /* Suppress output */
     "../Util/Socket.mo",
     "../Util/System.mo",
     "../Util/Util.mo",
-    "../Util/VarTransform.mo"
+    "../Util/VarTransform.mo",
+    "../Util/ZeroMQ.mo"
   };
   backendfiles := if OpenModelica.Scripting.getEnvironmentVar("OPENMODELICA_BACKEND_STUBS")<>"" then
   {

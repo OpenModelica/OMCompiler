@@ -109,6 +109,7 @@ uniontype SimCode
     list<list<SimEqSystem>> algebraicEquations;
     list<ClockedPartition> clockedPartitions;
     list<SimEqSystem> initialEquations;
+    list<SimEqSystem> initialEquations_lambda0;
     list<SimEqSystem> removedInitialEquations;
     list<SimEqSystem> startValueEquations;
     list<SimEqSystem> nominalValueEquations;
@@ -375,6 +376,7 @@ uniontype LinearSystem
   record LINEARSYSTEM
     Integer index;
     Boolean partOfMixed;
+    Boolean tornSystem;
     list<SimCodeVar.SimVar> vars;
     list<DAE.Exp> beqs;
     list<tuple<Integer, Integer, SimEqSystem>> simJac;
@@ -383,6 +385,7 @@ uniontype LinearSystem
     Option<JacobianMatrix> jacobianMatrix;
     list<DAE.ElementSource> sources;
     Integer indexLinearSystem;
+    Integer nUnknowns "Number of variables that are solved in this system. Needed because 'crefs' only contains the iteration variables.";
   end LINEARSYSTEM;
 end LinearSystem;
 
@@ -393,9 +396,11 @@ uniontype NonlinearSystem
     list<SimEqSystem> eqs;
     list<DAE.ComponentRef> crefs;
     Integer indexNonLinearSystem;
+    Integer nUnknowns "Number of variables that are solved in this system. Needed because 'crefs' only contains the iteration variables.";
     Option<JacobianMatrix> jacobianMatrix;
     Boolean homotopySupport;
     Boolean mixedSystem;
+    Boolean tornSystem;
   end NONLINEARSYSTEM;
 end NonlinearSystem;
 

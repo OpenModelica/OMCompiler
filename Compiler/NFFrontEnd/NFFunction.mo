@@ -54,6 +54,7 @@ import Util;
 import ComponentRef = NFComponentRef;
 import NFInstNode.CachedData;
 import Lookup = NFLookup;
+import ClassTree = NFClassTree.ClassTree;
 
 import MatchKind = NFTypeCheck.MatchKind;
 
@@ -254,15 +255,6 @@ uniontype Function
         Absyn.ComponentRef cr;
         InstNode sub_fnNode;
 
-      case SCode.CLASS(classDef = cdef as SCode.PARTS())
-        algorithm
-          fnNode := InstNode.setNodeType(NFInstNode.InstNodeType.ROOT_CLASS(), fnNode);
-          fnNode := Inst.instantiate(fnNode);
-          Inst.instExpressions(fnNode);
-          fn := Function.new(fnPath, fnNode);
-          fnNode := InstNode.cacheAddFunc(fn, fnNode);
-        then fnNode;
-
       case SCode.CLASS(classDef = cdef as SCode.OVERLOAD())
         algorithm
           for p in cdef.pathLst loop
@@ -273,6 +265,16 @@ uniontype Function
             end for;
           end for;
         then fnNode;
+
+      case SCode.CLASS()
+        algorithm
+          fnNode := InstNode.setNodeType(NFInstNode.InstNodeType.ROOT_CLASS(), fnNode);
+          fnNode := Inst.instantiate(fnNode);
+          Inst.instExpressions(fnNode);
+          fn := Function.new(fnPath, fnNode);
+          fnNode := InstNode.cacheAddFunc(fn, fnNode);
+        then fnNode;
+
     end match;
   end instFunc2;
 
@@ -721,20 +723,17 @@ protected
     cls := InstNode.getClass(node);
 
     () := match cls
-      case Class.INSTANCED_CLASS(components = comps)
+      case Class.INSTANCED_CLASS(elements = ClassTree.FLAT_TREE(components = comps))
         algorithm
           for i in arrayLength(comps):-1:1 loop
             n := comps[i];
-            if InstNode.isComponent(n) then
-              // Sort the components based on their direction.
-              () := match paramDirection(n)
-                case DAE.VarDirection.INPUT() algorithm inputs := n :: inputs; then ();
-                case DAE.VarDirection.OUTPUT() algorithm outputs := n :: outputs; then ();
-                case DAE.VarDirection.BIDIR() algorithm locals := n :: locals; then ();
-              end match;
-            else
-              (inputs, outputs, locals) := collectParams(n, inputs, outputs, locals);
-            end if;
+
+            // Sort the components based on their direction.
+            () := match paramDirection(n)
+              case DAE.VarDirection.INPUT() algorithm inputs := n :: inputs; then ();
+              case DAE.VarDirection.OUTPUT() algorithm outputs := n :: outputs; then ();
+              case DAE.VarDirection.BIDIR() algorithm locals := n :: locals; then ();
+            end match;
           end for;
         then
           ();

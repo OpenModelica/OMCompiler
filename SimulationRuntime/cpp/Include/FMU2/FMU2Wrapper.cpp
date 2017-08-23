@@ -114,11 +114,12 @@ FMU2Wrapper::FMU2Wrapper(fmi2String instanceName, fmi2String GUID,
   _GUID = GUID;
 
   // setup logger
-  _logCategories = loggingOn? 0xFFFF: 0x0000;
-  LogSettings logSettings = _global_settings.getLogSettings();
-  logSettings.setAll(loggingOn? LL_DEBUG: LL_ERROR);
-  FMU2Logger::initialize(this, logSettings, loggingOn);
-  _logger = Logger::getInstance();
+  _logger = NULL;
+  _logCategories = 0x0000;
+  if (loggingOn) {
+    // only instantiate logger if requested as it is not thread save
+    setDebugLogging(loggingOn, 0, NULL);
+  }
 
   // setup model
   _model = createSystemFMU(&_global_settings);
@@ -144,7 +145,15 @@ fmi2Status FMU2Wrapper::setDebugLogging(fmi2Boolean loggingOn,
                                         const fmi2String categories[])
 {
   fmi2Status ret = fmi2OK;
-  _logger->setEnabled(loggingOn);
+
+  if (_logger == NULL) {
+    LogSettings logSettings = _global_settings.getLogSettings();
+    FMU2Logger::initialize(this, logSettings, loggingOn);
+    _logger = Logger::getInstance();
+  }
+  else {
+    _logger->setEnabled(loggingOn);
+  }
   if (nCategories == 0) {
     _logCategories = loggingOn? 0xFFFF: 0x0000;
     _logger->setAll(loggingOn? LL_DEBUG: LL_ERROR);
@@ -323,7 +332,7 @@ fmi2Status FMU2Wrapper::setString(const fmi2ValueReference vr[], size_t nvr,
 
 fmi2Status FMU2Wrapper::setClock(const fmi2Integer clockIndex[],
                                  size_t nClockIndex, const fmi2Boolean tick[],
-                                 const fmi2Boolean subactive[])
+                                 const fmi2Boolean *subactive)
 {
   for (int i = 0; i < nClockIndex; i++) {
     _clockTick[clockIndex[i] - 1] = tick[i];
@@ -449,7 +458,7 @@ fmi2Status FMU2Wrapper::newDiscreteStates(fmi2EventInfo *eventInfo)
   bool state_vars_reinitialized = _model->handleSystemEvents(events);
   //time events
   eventInfo->nextEventTime = _model->computeNextTimeEvents(_model->getTime());
-  if ((eventInfo->nextEventTime != 0.0) and (eventInfo->nextEventTime != std::numeric_limits<double>::max()))
+  if ((eventInfo->nextEventTime != 0.0) && (eventInfo->nextEventTime != std::numeric_limits<double>::max()))
     eventInfo->nextEventTimeDefined = fmi2True;
   else
     eventInfo->nextEventTimeDefined = fmi2False;

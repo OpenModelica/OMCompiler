@@ -174,7 +174,6 @@ template fmumodel_identifierFile(SimCode simCode, String guid, String FMUVersion
 match simCode
 case SIMCODE(__) then
   <<
-
   // define class name and unique id
   #define MODEL_IDENTIFIER <%modelNamePrefix(simCode)%>
   #define MODEL_GUID "{<%guid%>}"
@@ -233,28 +232,33 @@ case SIMCODE(__) then
 
   // implementation of the Model Exchange functions
   <%if isFMIVersion20(FMUVersion) then
-  '  extern void <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>(DATA *data);
-  #define fmu2_model_interface_setupDataStruc <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>
-  #include "fmu2_model_interface.c"'
+    <<
+    extern void <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>(DATA *data);
+    #define fmu2_model_interface_setupDataStruc <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>
+    #include "fmu2_model_interface.c"
+    >>
   else
-  '  extern void <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>(DATA *data);
-  #define fmu1_model_interface_setupDataStruc <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>
-  #include "fmu1_model_interface.c"'%>
+    <<
+    extern void <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>(DATA *data);
+    #define fmu1_model_interface_setupDataStruc <%symbolName(modelNamePrefix(simCode),"setupDataStruc")%>
+    #include "fmu1_model_interface.c"
+    >>
+  %>
 
   <%setDefaultStartValues(modelInfo)%>
   <%setStartValues(modelInfo)%>
   <%if isFMIVersion20(FMUVersion) then
   <<
-    <%eventUpdateFunction2(simCode)%>
-    <%getRealFunction2(modelInfo)%>
-    <%setRealFunction2(modelInfo)%>
-    <%getIntegerFunction2(modelInfo)%>
-    <%setIntegerFunction2(modelInfo)%>
-    <%getBooleanFunction2(modelInfo)%>
-    <%setBooleanFunction2(modelInfo)%>
-    <%getStringFunction2(modelInfo)%>
-    <%setStringFunction2(modelInfo)%>
-    <%setExternalFunction2(modelInfo)%>
+  <%eventUpdateFunction2(simCode)%>
+  <%getRealFunction2(modelInfo)%>
+  <%setRealFunction2(modelInfo)%>
+  <%getIntegerFunction2(modelInfo)%>
+  <%setIntegerFunction2(modelInfo)%>
+  <%getBooleanFunction2(modelInfo)%>
+  <%setBooleanFunction2(modelInfo)%>
+  <%getStringFunction2(modelInfo)%>
+  <%setStringFunction2(modelInfo)%>
+  <%setExternalFunction2(modelInfo)%>
   >>
   else
   <<
@@ -371,18 +375,17 @@ case MODELINFO(varInfo=VARINFO(numStateVars=numStateVars, numAlgVars= numAlgVars
   <<
   // Set values for all variables that define a start value
   void setDefaultStartValues(ModelInstance *comp) {
-
-  <%vars.stateVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
-  <%vars.derivativeVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
-  <%vars.algVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
-  <%vars.discreteAlgVars |> var => initValsDefault(var, "realVars") ;separator="\n"%>
-  <%vars.intAlgVars |> var => initValsDefault(var,"integerVars") ;separator="\n"%>
-  <%vars.boolAlgVars |> var => initValsDefault(var,"booleanVars") ;separator="\n"%>
-  <%vars.stringAlgVars |> var => initValsDefault(var,"stringVars") ;separator="\n"%>
-  <%vars.paramVars |> var => initParamsDefault(var,"realParameter") ;separator="\n"%>
-  <%vars.intParamVars |> var => initParamsDefault(var,"integerParameter") ;separator="\n"%>
-  <%vars.boolParamVars |> var => initParamsDefault(var,"booleanParameter") ;separator="\n"%>
-  <%vars.stringParamVars |> var => initParamsDefault(var,"stringParameter") ;separator="\n"%>
+    <%vars.stateVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
+    <%vars.derivativeVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
+    <%vars.algVars |> var => initValsDefault(var,"realVars") ;separator="\n"%>
+    <%vars.discreteAlgVars |> var => initValsDefault(var, "realVars") ;separator="\n"%>
+    <%vars.intAlgVars |> var => initValsDefault(var,"integerVars") ;separator="\n"%>
+    <%vars.boolAlgVars |> var => initValsDefault(var,"booleanVars") ;separator="\n"%>
+    <%vars.stringAlgVars |> var => initValsDefault(var,"stringVars") ;separator="\n"%>
+    <%vars.paramVars |> var => initParamsDefault(var,"realParameter") ;separator="\n"%>
+    <%vars.intParamVars |> var => initParamsDefault(var,"integerParameter") ;separator="\n"%>
+    <%vars.boolParamVars |> var => initParamsDefault(var,"booleanParameter") ;separator="\n"%>
+    <%vars.stringParamVars |> var => initParamsDefault(var,"stringParameter") ;separator="\n"%>
   }
   >>
 end setDefaultStartValues;
@@ -395,19 +398,19 @@ case MODELINFO(varInfo=VARINFO(numStateVars=numStateVars, numAlgVars= numAlgVars
   <<
   // Set values for all variables that define a start value
   void setStartValues(ModelInstance *comp) {
-
-  <%vars.stateVars |> var => initVals(var,"realVars") ;separator="\n"%>
-  <%vars.derivativeVars |> var => initVals(var,"realVars") ;separator="\n"%>
-  <%vars.algVars |> var => initVals(var,"realVars") ;separator="\n"%>
-  <%vars.discreteAlgVars |> var => initVals(var, "realVars") ;separator="\n"%>
-  <%vars.intAlgVars |> var => initVals(var,"integerVars") ;separator="\n"%>
-  <%vars.boolAlgVars |> var => initVals(var,"booleanVars") ;separator="\n"%>
-  <%vars.stringAlgVars |> var => initVals(var,"stringVars") ;separator="\n"%>
-  <%vars.paramVars |> var => initParams(var,"realParameter") ;separator="\n"%>
-  <%vars.intParamVars |> var => initParams(var,"integerParameter") ;separator="\n"%>
-  <%vars.boolParamVars |> var => initParams(var,"booleanParameter") ;separator="\n"%>
-  <%vars.stringParamVars |> var => initParams(var,"stringParameter") ;separator="\n"%>
+    <%vars.stateVars |> var => initVals(var,"realVars") ;separator="\n"%>
+    <%vars.derivativeVars |> var => initVals(var,"realVars") ;separator="\n"%>
+    <%vars.algVars |> var => initVals(var,"realVars") ;separator="\n"%>
+    <%vars.discreteAlgVars |> var => initVals(var, "realVars") ;separator="\n"%>
+    <%vars.intAlgVars |> var => initVals(var,"integerVars") ;separator="\n"%>
+    <%vars.boolAlgVars |> var => initVals(var,"booleanVars") ;separator="\n"%>
+    <%vars.stringAlgVars |> var => initVals(var,"stringVars") ;separator="\n"%>
+    <%vars.paramVars |> var => initParams(var,"realParameter") ;separator="\n"%>
+    <%vars.intParamVars |> var => initParams(var,"integerParameter") ;separator="\n"%>
+    <%vars.boolParamVars |> var => initParams(var,"booleanParameter") ;separator="\n"%>
+    <%vars.stringParamVars |> var => initParams(var,"stringParameter") ;separator="\n"%>
   }
+
   >>
 end setStartValues;
 
@@ -438,14 +441,12 @@ template initVals(SimVar var, String arrayName) ::=
   match var
     case SIMVAR(__) then
     if stringEq(crefStr(name),"$dummy") then
-    <<>>
+      ''
     else if stringEq(crefStr(name),"der($dummy)") then
-    <<>>
+      ''
     else
     let str = 'comp->fmuData->modelData-><%arrayName%>Data[<%index%>].attribute.start'
-    <<
-      <%str%> =  comp->fmuData->localData[0]-><%arrayName%>[<%index%>];
-    >>
+      '<%str%> =  comp->fmuData->localData[0]-><%arrayName%>[<%index%>];'
 end initVals;
 
 template initParams(SimVar var, String arrayName) ::=
@@ -519,14 +520,14 @@ case MODELINFO(vars=SIMVARS(__),varInfo=VARINFO(numStateVars=numStateVars, numAl
   <<
   fmiReal getReal(ModelInstance* comp, const fmiValueReference vr) {
     switch (vr) {
-        <%vars.stateVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.derivativeVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.algVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.discreteAlgVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.paramVars |> var => SwitchParameters(var, "realParameter") ;separator="\n"%>
-        <%vars.aliasVars |> var => SwitchAliasVars(var, "Real","-") ;separator="\n"%>
-        default:
-            return 0;
+      <%vars.stateVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.derivativeVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.algVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.discreteAlgVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.paramVars |> var => SwitchParameters(var, "realParameter") ;separator="\n"%>
+      <%vars.aliasVars |> var => SwitchAliasVars(var, "Real","-") ;separator="\n"%>
+      default:
+        return 0;
     }
   }
 
@@ -541,14 +542,14 @@ case MODELINFO(vars=SIMVARS(__),varInfo=VARINFO(numStateVars=numStateVars, numAl
   <<
   fmiStatus setReal(ModelInstance* comp, const fmiValueReference vr, const fmiReal value) {
     switch (vr) {
-        <%vars.stateVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.derivativeVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.algVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.discreteAlgVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.paramVars |> var => SwitchParametersSet(var, "realParameter") ;separator="\n"%>
-        <%vars.aliasVars |> var => SwitchAliasVarsSet(var, "Real", "-") ;separator="\n"%>
-        default:
-            return fmiError;
+      <%vars.stateVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.derivativeVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.algVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.discreteAlgVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.paramVars |> var => SwitchParametersSet(var, "realParameter") ;separator="\n"%>
+      <%vars.aliasVars |> var => SwitchAliasVarsSet(var, "Real", "-") ;separator="\n"%>
+      default:
+        return fmiError;
     }
     return fmiOK;
   }
@@ -564,11 +565,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmiInteger getInteger(ModelInstance* comp, const fmiValueReference vr) {
     switch (vr) {
-        <%vars.intAlgVars |> var => SwitchVars(var, "integerVars") ;separator="\n"%>
-        <%vars.intParamVars |> var => SwitchParameters(var, "integerParameter") ;separator="\n"%>
-        <%vars.intAliasVars |> var => SwitchAliasVars(var, "Integer", "-") ;separator="\n"%>
-        default:
-            return 0;
+      <%vars.intAlgVars |> var => SwitchVars(var, "integerVars") ;separator="\n"%>
+      <%vars.intParamVars |> var => SwitchParameters(var, "integerParameter") ;separator="\n"%>
+      <%vars.intAliasVars |> var => SwitchAliasVars(var, "Integer", "-") ;separator="\n"%>
+      default:
+        return 0;
     }
   }
   >>
@@ -582,11 +583,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmiStatus setInteger(ModelInstance* comp, const fmiValueReference vr, const fmiInteger value) {
     switch (vr) {
-        <%vars.intAlgVars |> var => SwitchVarsSet(var, "integerVars") ;separator="\n"%>
-        <%vars.intParamVars |> var => SwitchParametersSet(var, "integerParameter") ;separator="\n"%>
-        <%vars.intAliasVars |> var => SwitchAliasVarsSet(var, "Integer", "-") ;separator="\n"%>
-        default:
-            return fmiError;
+      <%vars.intAlgVars |> var => SwitchVarsSet(var, "integerVars") ;separator="\n"%>
+      <%vars.intParamVars |> var => SwitchParametersSet(var, "integerParameter") ;separator="\n"%>
+      <%vars.intAliasVars |> var => SwitchAliasVarsSet(var, "Integer", "-") ;separator="\n"%>
+      default:
+        return fmiError;
     }
     return fmiOK;
   }
@@ -601,11 +602,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmiBoolean getBoolean(ModelInstance* comp, const fmiValueReference vr) {
     switch (vr) {
-        <%vars.boolAlgVars |> var => SwitchVars(var, "booleanVars") ;separator="\n"%>
-        <%vars.boolParamVars |> var => SwitchParameters(var, "booleanParameter") ;separator="\n"%>
-        <%vars.boolAliasVars |> var => SwitchAliasVars(var, "Boolean", "!") ;separator="\n"%>
-        default:
-            return fmiFalse;
+      <%vars.boolAlgVars |> var => SwitchVars(var, "booleanVars") ;separator="\n"%>
+      <%vars.boolParamVars |> var => SwitchParameters(var, "booleanParameter") ;separator="\n"%>
+      <%vars.boolAliasVars |> var => SwitchAliasVars(var, "Boolean", "!") ;separator="\n"%>
+      default:
+        return fmiFalse;
     }
   }
 
@@ -620,11 +621,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmiStatus setBoolean(ModelInstance* comp, const fmiValueReference vr, const fmiBoolean value) {
     switch (vr) {
-        <%vars.boolAlgVars |> var => SwitchVarsSet(var, "booleanVars") ;separator="\n"%>
-        <%vars.boolParamVars |> var => SwitchParametersSet(var, "booleanParameter") ;separator="\n"%>
-        <%vars.boolAliasVars |> var => SwitchAliasVarsSet(var, "Boolean", "!") ;separator="\n"%>
-        default:
-            return fmiError;
+      <%vars.boolAlgVars |> var => SwitchVarsSet(var, "booleanVars") ;separator="\n"%>
+      <%vars.boolParamVars |> var => SwitchParametersSet(var, "booleanParameter") ;separator="\n"%>
+      <%vars.boolAliasVars |> var => SwitchAliasVarsSet(var, "Boolean", "!") ;separator="\n"%>
+      default:
+        return fmiError;
     }
     return fmiOK;
   }
@@ -640,11 +641,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmiString getString(ModelInstance* comp, const fmiValueReference vr) {
     switch (vr) {
-        <%vars.stringAlgVars |> var => SwitchVars(var, "stringVars") ;separator="\n"%>
-        <%vars.stringParamVars |> var => SwitchParameters(var, "stringParameter") ;separator="\n"%>
-        <%vars.stringAliasVars |> var => SwitchAliasVars(var, "String", "") ;separator="\n"%>
-        default:
-            return "";
+      <%vars.stringAlgVars |> var => SwitchVars(var, "stringVars") ;separator="\n"%>
+      <%vars.stringParamVars |> var => SwitchParameters(var, "stringParameter") ;separator="\n"%>
+      <%vars.stringAliasVars |> var => SwitchAliasVars(var, "String", "") ;separator="\n"%>
+      default:
+        return "";
     }
   }
 
@@ -659,11 +660,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmiStatus setString(ModelInstance* comp, const fmiValueReference vr, fmiString value) {
     switch (vr) {
-        <%vars.stringAlgVars |> var => SwitchVarsSet(var, "stringVars") ;separator="\n"%>
-        <%vars.stringParamVars |> var => SwitchParametersSet(var, "stringParameter") ;separator="\n"%>
-        <%vars.stringAliasVars |> var => SwitchAliasVarsSet(var, "String", "") ;separator="\n"%>
-        default:
-            return fmiError;
+      <%vars.stringAlgVars |> var => SwitchVarsSet(var, "stringVars") ;separator="\n"%>
+      <%vars.stringParamVars |> var => SwitchParametersSet(var, "stringParameter") ;separator="\n"%>
+      <%vars.stringAliasVars |> var => SwitchAliasVarsSet(var, "String", "") ;separator="\n"%>
+      default:
+        return fmiError;
     }
     return fmiOK;
   }
@@ -680,9 +681,9 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmiStatus setExternalFunction(ModelInstance* c, const fmiValueReference vr, const void* value){
     switch (vr) {
-        <%externalFuncs%>
-        default:
-            return fmiError;
+      <%externalFuncs%>
+      default:
+        return fmiError;
     }
     return fmiOK;
   }
@@ -711,14 +712,14 @@ case MODELINFO(vars=SIMVARS(__),varInfo=VARINFO(numStateVars=numStateVars, numAl
   <<
   fmi2Real getReal(ModelInstance* comp, const fmi2ValueReference vr) {
     switch (vr) {
-        <%vars.stateVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.derivativeVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.algVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.discreteAlgVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
-        <%vars.paramVars |> var => SwitchParameters(var, "realParameter") ;separator="\n"%>
-        <%vars.aliasVars |> var => SwitchAliasVars(var, "Real","-") ;separator="\n"%>
-        default:
-            return 0;
+      <%vars.stateVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.derivativeVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.algVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.discreteAlgVars |> var => SwitchVars(var, "realVars") ;separator="\n"%>
+      <%vars.paramVars |> var => SwitchParameters(var, "realParameter") ;separator="\n"%>
+      <%vars.aliasVars |> var => SwitchAliasVars(var, "Real","-") ;separator="\n"%>
+      default:
+        return 0;
     }
   }
 
@@ -733,14 +734,14 @@ case MODELINFO(vars=SIMVARS(__),varInfo=VARINFO(numStateVars=numStateVars, numAl
   <<
   fmi2Status setReal(ModelInstance* comp, const fmi2ValueReference vr, const fmi2Real value) {
     switch (vr) {
-        <%vars.stateVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.derivativeVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.algVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.discreteAlgVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
-        <%vars.paramVars |> var => SwitchParametersSet(var, "realParameter") ;separator="\n"%>
-        <%vars.aliasVars |> var => SwitchAliasVarsSet(var, "Real", "-") ;separator="\n"%>
-        default:
-            return fmi2Error;
+      <%vars.stateVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.derivativeVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.algVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.discreteAlgVars |> var => SwitchVarsSet(var, "realVars") ;separator="\n"%>
+      <%vars.paramVars |> var => SwitchParametersSet(var, "realParameter") ;separator="\n"%>
+      <%vars.aliasVars |> var => SwitchAliasVarsSet(var, "Real", "-") ;separator="\n"%>
+      default:
+        return fmi2Error;
     }
     return fmi2OK;
   }
@@ -756,11 +757,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmi2Integer getInteger(ModelInstance* comp, const fmi2ValueReference vr) {
     switch (vr) {
-        <%vars.intAlgVars |> var => SwitchVars(var, "integerVars") ;separator="\n"%>
-        <%vars.intParamVars |> var => SwitchParameters(var, "integerParameter") ;separator="\n"%>
-        <%vars.intAliasVars |> var => SwitchAliasVars(var, "Integer", "-") ;separator="\n"%>
-        default:
-            return 0;
+      <%vars.intAlgVars |> var => SwitchVars(var, "integerVars") ;separator="\n"%>
+      <%vars.intParamVars |> var => SwitchParameters(var, "integerParameter") ;separator="\n"%>
+      <%vars.intAliasVars |> var => SwitchAliasVars(var, "Integer", "-") ;separator="\n"%>
+      default:
+        return 0;
     }
   }
   >>
@@ -774,11 +775,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmi2Status setInteger(ModelInstance* comp, const fmi2ValueReference vr, const fmi2Integer value) {
     switch (vr) {
-        <%vars.intAlgVars |> var => SwitchVarsSet(var, "integerVars") ;separator="\n"%>
-        <%vars.intParamVars |> var => SwitchParametersSet(var, "integerParameter") ;separator="\n"%>
-        <%vars.intAliasVars |> var => SwitchAliasVarsSet(var, "Integer", "-") ;separator="\n"%>
-        default:
-            return fmi2Error;
+      <%vars.intAlgVars |> var => SwitchVarsSet(var, "integerVars") ;separator="\n"%>
+      <%vars.intParamVars |> var => SwitchParametersSet(var, "integerParameter") ;separator="\n"%>
+      <%vars.intAliasVars |> var => SwitchAliasVarsSet(var, "Integer", "-") ;separator="\n"%>
+      default:
+        return fmi2Error;
     }
     return fmi2OK;
   }
@@ -793,11 +794,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmi2Boolean getBoolean(ModelInstance* comp, const fmi2ValueReference vr) {
     switch (vr) {
-        <%vars.boolAlgVars |> var => SwitchVars(var, "booleanVars") ;separator="\n"%>
-        <%vars.boolParamVars |> var => SwitchParameters(var, "booleanParameter") ;separator="\n"%>
-        <%vars.boolAliasVars |> var => SwitchAliasVars(var, "Boolean", "!") ;separator="\n"%>
-        default:
-            return fmi2False;
+      <%vars.boolAlgVars |> var => SwitchVars(var, "booleanVars") ;separator="\n"%>
+      <%vars.boolParamVars |> var => SwitchParameters(var, "booleanParameter") ;separator="\n"%>
+      <%vars.boolAliasVars |> var => SwitchAliasVars(var, "Boolean", "!") ;separator="\n"%>
+      default:
+        return fmi2False;
     }
   }
 
@@ -812,11 +813,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmi2Status setBoolean(ModelInstance* comp, const fmi2ValueReference vr, const fmi2Boolean value) {
     switch (vr) {
-        <%vars.boolAlgVars |> var => SwitchVarsSet(var, "booleanVars") ;separator="\n"%>
-        <%vars.boolParamVars |> var => SwitchParametersSet(var, "booleanParameter") ;separator="\n"%>
-        <%vars.boolAliasVars |> var => SwitchAliasVarsSet(var, "Boolean", "!") ;separator="\n"%>
-        default:
-            return fmi2Error;
+      <%vars.boolAlgVars |> var => SwitchVarsSet(var, "booleanVars") ;separator="\n"%>
+      <%vars.boolParamVars |> var => SwitchParametersSet(var, "booleanParameter") ;separator="\n"%>
+      <%vars.boolAliasVars |> var => SwitchAliasVarsSet(var, "Boolean", "!") ;separator="\n"%>
+      default:
+        return fmi2Error;
     }
     return fmi2OK;
   }
@@ -832,11 +833,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmi2String getString(ModelInstance* comp, const fmi2ValueReference vr) {
     switch (vr) {
-        <%vars.stringAlgVars |> var => SwitchVars(var, "stringVars") ;separator="\n"%>
-        <%vars.stringParamVars |> var => SwitchParameters(var, "stringParameter") ;separator="\n"%>
-        <%vars.stringAliasVars |> var => SwitchAliasVars(var, "String", "") ;separator="\n"%>
-        default:
-            return "";
+      <%vars.stringAlgVars |> var => SwitchVars(var, "stringVars") ;separator="\n"%>
+      <%vars.stringParamVars |> var => SwitchParameters(var, "stringParameter") ;separator="\n"%>
+      <%vars.stringAliasVars |> var => SwitchAliasVars(var, "String", "") ;separator="\n"%>
+      default:
+        return "";
     }
   }
 
@@ -851,11 +852,11 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmi2Status setString(ModelInstance* comp, const fmi2ValueReference vr, fmi2String value) {
     switch (vr) {
-        <%vars.stringAlgVars |> var => SwitchVarsSet(var, "stringVars") ;separator="\n"%>
-        <%vars.stringParamVars |> var => SwitchParametersSet(var, "stringParameter") ;separator="\n"%>
-        <%vars.stringAliasVars |> var => SwitchAliasVarsSet(var, "String", "") ;separator="\n"%>
-        default:
-            return fmi2Error;
+      <%vars.stringAlgVars |> var => SwitchVarsSet(var, "stringVars") ;separator="\n"%>
+      <%vars.stringParamVars |> var => SwitchParametersSet(var, "stringParameter") ;separator="\n"%>
+      <%vars.stringAliasVars |> var => SwitchAliasVarsSet(var, "String", "") ;separator="\n"%>
+      default:
+        return fmi2Error;
     }
     return fmi2OK;
   }
@@ -872,9 +873,9 @@ case MODELINFO(vars=SIMVARS(__)) then
   <<
   fmi2Status setExternalFunction(ModelInstance* c, const fmi2ValueReference vr, const void* value){
     switch (vr) {
-        <%externalFuncs%>
-        default:
-            return fmi2Error;
+      <%externalFuncs%>
+      default:
+        return fmi2Error;
     }
     return fmi2OK;
   }
@@ -1831,18 +1832,22 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
   let stringDependentParametersVRs = dumpVariables(fmiModelVariablesList, "string", "parameter", true, 1, "2.0")
   let stringDependentParametersNames = dumpVariables(fmiModelVariablesList, "string", "parameter", true, 2, "2.0")
   /* Get input Real varibales and their value references */
+  let nRealInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "real", "input"))
   let realInputVariablesVRs = dumpVariables(fmiModelVariablesList, "real", "input", false, 1, "2.0")
   let realInputVariablesNames = dumpVariables(fmiModelVariablesList, "real", "input", false, 2, "2.0")
   let realInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "real", "input", false, 3, "2.0")
   /* Get input Integer varibales and their value references */
+  let nIntegerInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "integer", "input"))
   let integerInputVariablesVRs = dumpVariables(fmiModelVariablesList, "integer", "input", false, 1, "2.0")
   let integerInputVariablesNames = dumpVariables(fmiModelVariablesList, "integer", "input", false, 2, "2.0")
   let integerInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "integer", "input", false, 3, "2.0")
   /* Get input Boolean varibales and their value references */
+  let nBooleanInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "boolean", "input"))
   let booleanInputVariablesVRs = dumpVariables(fmiModelVariablesList, "boolean", "input", false, 1, "2.0")
   let booleanInputVariablesNames = dumpVariables(fmiModelVariablesList, "boolean", "input", false, 2, "2.0")
   let booleanInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "boolean", "input", false, 3, "2.0")
   /* Get input String varibales and their value references */
+  let nStringInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "string", "input"))
   let stringInputVariablesVRs = dumpVariables(fmiModelVariablesList, "string", "input", false, 1, "2.0")
   let stringStartVariablesNames = dumpVariables(fmiModelVariablesList, "string", "input", false, 2, "2.0")
   let stringInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "string", "input", false, 3, "2.0")
@@ -1880,9 +1885,13 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     parameter Real flowParamsStart(fixed=false);
     parameter Real flowInitInputs(fixed=false);
     Real flowStatesInputs;
+    <%if not stringEq(realInputVariablesVRs, "") then "Real realInputVariables["+nRealInputVariables+"];"%>
     <%if not stringEq(realInputVariablesVRs, "") then "Real "+realInputVariablesReturnNames+";"%>
+    <%if not stringEq(integerInputVariablesVRs, "") then "Integer integerInputVariables["+nIntegerInputVariables+"];"%>
     <%if not stringEq(integerInputVariablesVRs, "") then "Integer "+integerInputVariablesReturnNames+";"%>
+    <%if not stringEq(booleanInputVariablesVRs, "") then "Boolean booleanInputVariables["+nBooleanInputVariables+"];"%>
     <%if not stringEq(booleanInputVariablesVRs, "") then "Boolean "+booleanInputVariablesReturnNames+";"%>
+    <%if not stringEq(stringInputVariablesVRs, "") then "String stringInputVariables["+nStringInputVariables+"];"%>
     <%if not stringEq(stringInputVariablesVRs, "") then "String "+stringInputVariablesReturnNames+";"%>
     Boolean callEventUpdate;
     Boolean newStatesAvailable(fixed = true);
@@ -1909,12 +1918,18 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     <%if not stringEq(integerDependentParametersVRs, "") then "{"+integerDependentParametersNames+"} = fmi2Functions.fmi2GetInteger(fmi2me, {"+integerDependentParametersVRs+"}, flowInitialized);"%>
     <%if not stringEq(booleanDependentParametersVRs, "") then "{"+booleanDependentParametersNames+"} = fmi2Functions.fmi2GetBoolean(fmi2me, {"+booleanDependentParametersVRs+"}, flowInitialized);"%>
     <%if not stringEq(stringDependentParametersVRs, "") then "{"+stringDependentParametersNames+"} = fmi2Functions.fmi2GetString(fmi2me, {"+stringDependentParametersVRs+"}, flowInitialized);"%>
+  algorithm
+    flowTime := fmi2Functions.fmi2SetTime(fmi2me, time, flowInitialized);
+    /* algorithm section ensures that inputs to fmi (if any) are set directly after the new time is set */
+    <%if not stringEq(realInputVariablesVRs, "") then "realInputVariables := fmi2Functions.fmi2SetReal(fmi2me, {"+realInputVariablesVRs+"}, {"+realInputVariablesNames+"});"%>
+    <%if not stringEq(integerInputVariablesVRs, "") then "integerInputVariables := fmi2Functions.fmi2SetInteger(fmi2me, {"+integerInputVariablesVRs+"}, {"+integerInputVariablesNames+"});"%>
+    <%if not stringEq(booleanInputVariablesVRs, "") then "booleanInputVariables := fmi2Functions.fmi2SetBoolean(fmi2me, {"+booleanInputVariablesVRs+"}, {"+booleanInputVariablesNames+"});"%>
+    <%if not stringEq(stringInputVariablesVRs, "") then "stringInputVariables := fmi2Functions.fmi2SetString(fmi2me, {"+stringInputVariablesVRs+"}, {"+stringStartVariablesNames+"});"%>
   equation
-    flowTime = fmi2Functions.fmi2SetTime(fmi2me, time, flowInitialized);
-    <%if not stringEq(realInputVariablesVRs, "") then "{"+realInputVariablesReturnNames+"} = fmi2Functions.fmi2SetReal(fmi2me, {"+realInputVariablesVRs+"}, {"+realInputVariablesNames+"});"%>
-    <%if not stringEq(integerInputVariablesVRs, "") then "{"+integerInputVariablesReturnNames+"} = fmi2Functions.fmi2SetInteger(fmi2me, {"+integerInputVariablesVRs+"}, {"+integerInputVariablesNames+"});"%>
-    <%if not stringEq(booleanInputVariablesVRs, "") then "{"+booleanInputVariablesReturnNames+"} = fmi2Functions.fmi2SetBoolean(fmi2me, {"+booleanInputVariablesVRs+"}, {"+booleanInputVariablesNames+"});"%>
-    <%if not stringEq(stringInputVariablesVRs, "") then "{"+stringInputVariablesReturnNames+"} = fmi2Functions.fmi2SetString(fmi2me, {"+stringInputVariablesVRs+"}, {"+stringStartVariablesNames+"});"%>
+    <%if not stringEq(realInputVariablesVRs, "") then "{"+realInputVariablesReturnNames+"} = realInputVariables;"%>
+    <%if not stringEq(integerInputVariablesVRs, "") then "{"+integerInputVariablesReturnNames+"} = integerInputVariables;"%>
+    <%if not stringEq(booleanInputVariablesVRs, "") then "{"+booleanInputVariablesReturnNames+"} = booleanInputVariables;"%>
+    <%if not stringEq(stringInputVariablesVRs, "") then "{"+stringInputVariablesReturnNames+"} = stringInputVariables;"%>
     flowStatesInputs = fmi2Functions.fmi2SetContinuousStates(fmi2me, fmi_x, flowParamsStart + flowTime);
     der(fmi_x) = fmi2Functions.fmi2GetDerivatives(fmi2me, numberOfContinuousStates, flowStatesInputs);
     fmi_z  = fmi2Functions.fmi2GetEventIndicators(fmi2me, numberOfEventIndicators, flowStatesInputs);

@@ -329,8 +329,11 @@ protected function traverseIncidenceMatrix "author: Frenkel TUD 2010-12"
   output BackendDAE.IncidenceMatrix outM;
   output Type_a outTypeA;
   partial function FuncType
-    input tuple<BackendDAE.IncidenceMatrixElement,Integer,BackendDAE.IncidenceMatrix,Type_a> inTpl;
-    output tuple<list<Integer>,BackendDAE.IncidenceMatrix,Type_a> outTpl;
+    input BackendDAE.IncidenceMatrixElement elem;
+    input Integer pos;
+    input Type_a inTpl;
+    output list<Integer> outList;
+    output Type_a outTpl;
   end FuncType;
 algorithm
   (outM,outTypeA) := traverseIncidenceMatrix1(inM,func,1,arrayLength(inM),inTypeA);
@@ -346,8 +349,11 @@ protected function traverseIncidenceMatrix1 "author: Frenkel TUD 2010-12"
   output BackendDAE.IncidenceMatrix outM;
   output Type_a outTypeA;
   partial function FuncType
-    input tuple<BackendDAE.IncidenceMatrixElement,Integer,BackendDAE.IncidenceMatrix,Type_a> inTpl;
-    output tuple<list<Integer>,BackendDAE.IncidenceMatrix,Type_a> outTpl;
+    input BackendDAE.IncidenceMatrixElement elem;
+    input Integer pos;
+    input Type_a inTpl;
+    output list<Integer> outList;
+    output Type_a outTpl;
   end FuncType;
 algorithm
   (outM,outTypeA) := traverseIncidenceMatrix2(inM,func,pos,len,intGt(pos,len),inTypeA);
@@ -366,8 +372,11 @@ protected function traverseIncidenceMatrix2
   output BackendDAE.IncidenceMatrix outM;
   output Type_a outTypeA;
   partial function FuncType
-    input tuple<BackendDAE.IncidenceMatrixElement,Integer,BackendDAE.IncidenceMatrix,Type_a> inTpl;
-    output tuple<list<Integer>,BackendDAE.IncidenceMatrix,Type_a> outTpl;
+    input BackendDAE.IncidenceMatrixElement elem;
+    input Integer pos;
+    input Type_a inTpl;
+    output list<Integer> outList;
+    output Type_a outTpl;
   end FuncType;
 algorithm
   (outM,outTypeA) := match (inM,func,pos,len,stop,inTypeA)
@@ -381,9 +390,9 @@ algorithm
 
     case(_,_,_,_,false,_)
       equation
-        ((eqns,m,extArg)) = func((inM[pos],pos,inM,inTypeA));
+        (eqns,extArg) = func(inM[pos],pos,inTypeA);
         eqns1 = List.removeOnTrue(pos,intLt,eqns);
-        (m1,extArg1) = traverseIncidenceMatrixList(eqns1,m,func,arrayLength(m),pos,extArg);
+        (m1,extArg1) = traverseIncidenceMatrixList(eqns1,inM,func,arrayLength(inM),pos,extArg);
         (m2,extArg2) = traverseIncidenceMatrix2(m1,func,pos+1,len,intGt(pos+1,len),extArg1);
       then (m2,extArg2);
 
@@ -402,8 +411,11 @@ protected function traverseIncidenceMatrixList
   output BackendDAE.IncidenceMatrix outM;
   output Type_a outTypeA;
   partial function FuncType
-    input tuple<BackendDAE.IncidenceMatrixElement,Integer,BackendDAE.IncidenceMatrix,Type_a> inTpl;
-    output tuple<list<Integer>,BackendDAE.IncidenceMatrix,Type_a> outTpl;
+    input BackendDAE.IncidenceMatrixElement elem;
+    input Integer pos;
+    input Type_a inTpl;
+    output list<Integer> outList;
+    output Type_a outTpl;
   end FuncType;
 algorithm
   (outM,outTypeA) := matchcontinue(inLst,inM,func,len,maxpos,inTypeA)
@@ -420,10 +432,10 @@ algorithm
       true = intLt(pos,len+1);
       // do not more than necesary
       true = intLt(pos,maxpos);
-      ((eqns,m,extArg)) = func((inM[pos],pos,inM,inTypeA));
+      (eqns,extArg) = func(inM[pos],pos,inTypeA);
       eqns1 = List.removeOnTrue(maxpos,intLt,eqns);
       alleqns = List.unionOnTrueList({rest, eqns1},intEq);
-      (m1,extArg1) = traverseIncidenceMatrixList(alleqns,m,func,len,maxpos,extArg);
+      (m1,extArg1) = traverseIncidenceMatrixList(alleqns,inM,func,len,maxpos,extArg);
     then (m1,extArg1);
 
     case(pos::rest,_,_,_,_,_) equation
@@ -491,7 +503,7 @@ algorithm
       equation
         (_::_,_::_)= BackendVariable.getVar(cr, vars);
       then (e,false,(true,vars,globalKnownVars,b1,true));
-    case (e,(b,vars,globalKnownVars,b1,b2)) then (e,not b,(b,vars,globalKnownVars,b1,b2));
+    case (e,(b,vars,globalKnownVars,b1,b2)) then (e,not b,inTpl);
 
   end matchcontinue;
 end traversingTimeEqnsFinder;
@@ -521,20 +533,21 @@ end countSimpleEquations;
 
 protected function countSimpleEquationsFinder
 "author: Frenkel TUD 2011-05"
- input tuple<BackendDAE.IncidenceMatrixElement,Integer,BackendDAE.IncidenceMatrix, tuple<BackendDAE.BackendDAE,Integer>> inTpl;
- output tuple<list<Integer>,BackendDAE.IncidenceMatrix, tuple<BackendDAE.BackendDAE,Integer>> outTpl;
+ input BackendDAE.IncidenceMatrixElement elem;
+ input Integer pos;
+ input tuple<BackendDAE.BackendDAE,Integer> inTpl;
+ output list<Integer> outList;
+ output tuple<BackendDAE.BackendDAE,Integer> outTpl;
 algorithm
-  outTpl:=
-  matchcontinue (inTpl)
+  (outList,outTpl) :=
+  matchcontinue (elem,pos,inTpl)
     local
-      BackendDAE.IncidenceMatrixElement elem;
-      Integer pos,l,i,n,n_1;
-      BackendDAE.IncidenceMatrix m;
+      Integer l,i,n,n_1;
       BackendDAE.BackendDAE dae;
       BackendDAE.EqSystem syst;
       BackendDAE.Shared shared;
 
-    case ((elem,pos,m,(dae as BackendDAE.DAE({syst},shared),n)))
+    case (_,_,(dae as BackendDAE.DAE({syst},shared),n))
       equation
         // check number of vars in eqns
         l = listLength(elem);
@@ -542,9 +555,8 @@ algorithm
         true = intGt(l,0);
         countsimpleEquation(elem,l,pos,syst,shared);
         n_1 = n+1;
-      then (({},m,(dae,n_1)));
-    case ((_,_,m,(dae,n)))
-      then (({},m,(dae,n)));
+      then ({},(dae,n_1));
+    else ({},inTpl);
   end matchcontinue;
 end countSimpleEquationsFinder;
 
@@ -941,15 +953,16 @@ algorithm
 end removeEqualFunctionCallsWork;
 
 protected function removeEqualFunctionCallFinder "author: Frenkel TUD 2010-12"
- input tuple<BackendDAE.IncidenceMatrixElement,Integer,BackendDAE.IncidenceMatrix, tuple<BackendDAE.IncidenceMatrixT,BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>>> inTpl;
- output tuple<list<Integer>,BackendDAE.IncidenceMatrix, tuple<BackendDAE.IncidenceMatrixT,BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>>> outTpl;
+  input BackendDAE.IncidenceMatrixElement elem;
+  input Integer pos;
+  input tuple<BackendDAE.IncidenceMatrixT,BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>> inTpl;
+  output list<Integer> outList;
+  output tuple<BackendDAE.IncidenceMatrixT,BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>> outTpl;
 algorithm
-  outTpl:=
-  matchcontinue (inTpl)
+  (outList,outTpl):=
+  matchcontinue (elem,pos,inTpl)
     local
-      BackendDAE.IncidenceMatrixElement elem;
-      Integer pos;
-      BackendDAE.IncidenceMatrix m,mT;
+      BackendDAE.IncidenceMatrix mT;
       list<Integer> changed;
       BackendDAE.Variables vars;
       BackendDAE.EquationArray eqns,eqns1;
@@ -958,7 +971,7 @@ algorithm
       list<Integer> controleqns,expvars1;
       list<list<Integer>> expvarseqns;
 
-    case ((elem,pos,m,(mT,vars,eqns,changed)))
+    case (_,_,(mT,vars,eqns,changed))
       equation
         // check number of vars in eqns
         _::_ = elem;
@@ -979,9 +992,9 @@ algorithm
         //print("changed1 "); BackendDump.debuglst((changed1,intString," ","\n"));
         //print("changed2 "); BackendDump.debuglst((changed2,intString," ","\n"));
         // print("Next\n");
-      then (({},m,(mT,vars,eqns1,changed)));
-    case ((_,_,m,(mT,vars,eqns,changed)))
-      then (({},m,(mT,vars,eqns,changed)));
+      then ({},(mT,vars,eqns1,changed));
+    case (_,_,_)
+      then ({},inTpl);
   end matchcontinue;
 end removeEqualFunctionCallFinder;
 
@@ -1358,8 +1371,12 @@ end checkUnusedVariablesExp;
 public function removeUnusedFunctions "author: Frenkel TUD 2012-03
   This function remove unused functions from DAE.FunctionTree to get speed up
   for compilation of target code."
-  input BackendDAE.BackendDAE inDAE;
-  output BackendDAE.BackendDAE outDAE;
+  input BackendDAE.EqSystems inEqs;
+  input BackendDAE.Shared inShared;
+  input list<BackendDAE.Equation> inEquationLst;
+  input DAE.FunctionTree inFunctionTree;
+  input DAE.FunctionTree inusedFunctions;
+  output DAE.FunctionTree outFunctionTree;
 protected
   partial function FuncType
     input DAE.Exp inExp;
@@ -1369,27 +1386,31 @@ protected
   end FuncType;
 
   FuncType func;
-  BackendDAE.EqSystems eqs;
-  BackendDAE.Shared shared;
   DAE.FunctionTree funcs, usedfuncs;
 algorithm
-  BackendDAE.DAE(eqs, shared) := inDAE;
-  funcs := shared.functionTree;
-  usedfuncs := copyRecordConstructorAndExternalObjConstructorDestructor(funcs);
+  funcs := inFunctionTree;
+  usedfuncs := inusedFunctions;
   func := function checkUnusedFunctions(inFunctions = funcs);
-  usedfuncs := List.fold1(eqs, BackendDAEUtil.traverseBackendDAEExpsEqSystem, func, usedfuncs);
-  usedfuncs := List.fold1(eqs, BackendDAEUtil.traverseBackendDAEExpsEqSystemJacobians, func, usedfuncs);
-  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsVars(shared.globalKnownVars, func, usedfuncs);
-  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsVars(shared.externalObjects, func, usedfuncs);
-  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsVars(shared.aliasVars, func, usedfuncs);
-  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsEqns(shared.removedEqs, func, usedfuncs);
-  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsEqns(shared.initialEqs, func, usedfuncs);
-  usedfuncs := removeUnusedFunctionsSymJacs(shared.symjacs, funcs, usedfuncs);
-  shared.functionTree := usedfuncs;
-  outDAE := BackendDAE.DAE(eqs, shared);
+
+  // equation system
+  usedfuncs := List.fold1(inEqs, BackendDAEUtil.traverseBackendDAEExpsEqSystem, func, usedfuncs);
+  usedfuncs := List.fold1(inEqs, BackendDAEUtil.traverseBackendDAEExpsEqSystemJacobians, func, usedfuncs);
+
+  // equation list
+  usedfuncs := List.fold1(inEquationLst, BackendEquation.traverseExpsOfEquationList_WithoutChange, func, usedfuncs);
+
+  // shared object
+  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsVars(inShared.globalKnownVars, func, usedfuncs);
+  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsVars(inShared.externalObjects, func, usedfuncs);
+  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsVars(inShared.aliasVars, func, usedfuncs);
+  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsEqns(inShared.removedEqs, func, usedfuncs);
+  usedfuncs := BackendDAEUtil.traverseBackendDAEExpsEqns(inShared.initialEqs, func, usedfuncs);
+  usedfuncs := removeUnusedFunctionsSymJacs(inShared.symjacs, funcs, usedfuncs);
+
+  outFunctionTree := usedfuncs;
 end removeUnusedFunctions;
 
-protected function copyRecordConstructorAndExternalObjConstructorDestructor
+public function copyRecordConstructorAndExternalObjConstructorDestructor
   input DAE.FunctionTree inFunctions;
   output DAE.FunctionTree outFunctions;
 protected
@@ -1440,12 +1461,13 @@ algorithm
       local
         BackendDAE.BackendDAE bdae;
         DAE.FunctionTree usedfuncs;
+        BackendDAE.Shared shared;
 
       case (SOME((bdae, _, _, _, _)), _, _)
         equation
           bdae = BackendDAEUtil.setFunctionTree(bdae, inFunctions);
-          BackendDAE.DAE(shared = BackendDAE.SHARED(functionTree = usedfuncs)) =
-            removeUnusedFunctions(bdae);
+          shared = bdae.shared;
+          usedfuncs = removeUnusedFunctions(bdae.eqs, shared, {}, shared.functionTree, inUsedFunctions);
           outUsedFunctions = DAE.AvlTreePathFunction.join(outUsedFunctions, usedfuncs);
         then
           ();
@@ -1617,7 +1639,7 @@ algorithm
   (systs,oshared) := matchcontinue (isyst,ishared,numErrorMessages,throwNoError)
     local
       BackendDAE.IncidenceMatrix m, mT, rm, rmT;
-      array<Integer> ixs, rixs;
+      array<Integer> eqPartMap, varPartMap, rixs;
       array<Boolean> vars, rvars;
       Boolean b;
       Integer i;
@@ -1629,20 +1651,22 @@ algorithm
         funcs = BackendDAEUtil.getFunctions(ishared);
         (syst, m, mT) = BackendDAEUtil.getIncidenceMatrixfromOption(syst, BackendDAE.NORMAL(), SOME(funcs));
         (rm, rmT) = BackendDAEUtil.removedIncidenceMatrix(syst, BackendDAE.NORMAL(), SOME(funcs));
-        ixs = arrayCreate(arrayLength(m), 0);
+        eqPartMap = arrayCreate(arrayLength(m), 0);
+        varPartMap = arrayCreate(arrayLength(mT), 0);
         rixs = arrayCreate(arrayLength(rm), 0);
         vars = arrayCreate(arrayLength(mT), false);
         rvars = arrayCreate(arrayLength(rmT), false);
         // ixsT = arrayCreate(arrayLength(mT),0);
-        i = SynchronousFeatures.partitionIndependentBlocks0(m, mT, rm, rmT, ixs, rixs, vars, rvars);
+        i = SynchronousFeatures.partitionIndependentBlocks0(m, mT, rm, rmT, eqPartMap, varPartMap, rixs, vars, rvars);
         // i2 = SynchronousFeatures.partitionIndependentBlocks0(mT,m,ixsT);
         b = i > 1;
         // bcall2(b,BackendDump.dumpBackendDAE,BackendDAE.DAE({syst},shared), "partitionIndependentBlocksHelper");
         // printPartition(b,ixs);
-        systs = if b then SynchronousFeatures.partitionIndependentBlocksSplitBlocks(i, syst, ixs, rixs, mT, rmT, throwNoError) else {syst};
+        systs = if b then SynchronousFeatures.partitionIndependentBlocksSplitBlocks(i, syst, eqPartMap, rixs, mT, rmT, throwNoError, funcs) else {syst};
         // print("Number of partitioned systems: " + intString(listLength(systs)) + "\n");
         // List.map1_0(systs, BackendDump.dumpEqSystem, "System");
-        GC.free(ixs);
+        GC.free(eqPartMap);
+        GC.free(varPartMap);
         GC.free(rixs);
       then (systs,shared);
     else
@@ -5644,6 +5668,7 @@ protected
 
   array<list<Integer>> mapEqnIncRow;
   array<Integer> mapIncRowEqn;
+  Integer systemNumber=0, numberOfSystems;
 algorithm
   daeOut := daeIn;
 
@@ -5651,7 +5676,9 @@ algorithm
   BackendDAE.SHARED(functionTree = funcTree) := shared;
   systsNew := {};
   //traverse the simulation-DAE systems
+  numberOfSystems := listLength(systs);
   for syst in systs loop
+    systemNumber := systemNumber+1;
     BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs=eqs, matching=matching) := syst;
     BackendDAE.MATCHING(ass1=ass1, ass2=ass2, comps=comps) := matching;
 
@@ -5749,7 +5776,7 @@ algorithm
       syst := BackendDAETransform.strongComponentsScalar(syst,shared,mapEqnIncRow,mapIncRowEqn);
       syst.removedEqs := BackendEquation.emptyEqns();
     else
-      print("No output variables in this system\n");
+      Error.addCompilerNotification("No output variables in this system ("+String(systemNumber)+"/"+String(numberOfSystems)+")");
     end if;
 
     systsNew := syst::systsNew;

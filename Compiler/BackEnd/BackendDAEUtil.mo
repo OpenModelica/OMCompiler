@@ -156,8 +156,10 @@ algorithm
       Boolean samesize;
       BackendDAE.Variables vars;
       BackendDAE.EquationArray orderedEqs;
+      BackendDAE.EqSystem syst;
+      DAE.FunctionTree functionTree;
 
-    case (BackendDAE.DAE(eqs=BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=orderedEqs)::{})) equation
+    case BackendDAE.DAE(eqs=(syst as BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=orderedEqs))::{}, shared=BackendDAE.SHARED(functionTree=functionTree)) equation
       //true = Flags.isSet(Flags.CHECK_BACKEND_DAE);
       //Check for correct size
       nVars = BackendVariable.varsSize(vars);
@@ -271,7 +273,7 @@ algorithm
       equation
         allvars = BackendVariable.mergeVariables(syst.orderedVars, shared.globalKnownVars);
         ((_, expcrefs)) = traverseBackendDAEExpsVars(syst.orderedVars, checkBackendDAEExp, (allvars, {}));
-       ((_, expcrefs)) = traverseBackendDAEExpsEqns(shared.removedEqs, checkBackendDAEExp, (allvars, expcrefs));
+        ((_, expcrefs)) = traverseBackendDAEExpsEqns(shared.removedEqs, checkBackendDAEExp, (allvars, expcrefs));
         ((_, expcrefs)) = traverseBackendDAEExpsVars(shared.globalKnownVars, checkBackendDAEExp, (allvars, expcrefs));
         ((_, expcrefs)) = traverseBackendDAEExpsEqns(syst.orderedEqs, checkBackendDAEExp, (allvars, expcrefs));
         ((_, expcrefs)) = traverseBackendDAEExpsEqns(syst.removedEqs, checkBackendDAEExp, (allvars, expcrefs));
@@ -2760,6 +2762,11 @@ algorithm
         (_, outTpl) = Expression.traverseExpTopDown(e, traversingIncidenceRowExpFinderBaseClock, inTpl);
       then (inExp, false, outTpl);
 
+    case (DAE.CLKCONST(DAE.SOLVER_CLOCK(e)), _)
+      algorithm
+        (_, outTpl) := Expression.traverseExpTopDown(e, traversingIncidenceRowExpFinderBaseClock, inTpl);
+      then (inExp, true, outTpl);
+
     case (DAE.CLKCONST(DAE.BOOLEAN_CLOCK()), _)
       then (inExp, false, inTpl);
 
@@ -3784,7 +3791,7 @@ public function getAdjacencyMatrixEnhancedScalar
   output array<list<Integer>> outMapEqnIncRow;
   output array<Integer> outMapIncRowEqn;
 protected
-  list<list<tuple<Integer,list<Integer>>>> varsSolvedInWhenEqnsTupleList;
+  list<tuple<Integer,list<Integer>>> varsSolvedInWhenEqnsTupleList;
 algorithm
   (outIncidenceMatrix,outIncidenceMatrixT,outMapEqnIncRow,outMapIncRowEqn) :=
   matchcontinue (syst, shared)
@@ -3818,7 +3825,7 @@ algorithm
         fail();
   end matchcontinue;
 
-  makeWhenEqnVarsUnsolvable(outIncidenceMatrix,outIncidenceMatrixT,List.flatten(varsSolvedInWhenEqnsTupleList));
+  makeWhenEqnVarsUnsolvable(outIncidenceMatrix,outIncidenceMatrixT,varsSolvedInWhenEqnsTupleList);
 end getAdjacencyMatrixEnhancedScalar;
 
 
@@ -3890,7 +3897,7 @@ protected function adjacencyMatrixDispatchEnhancedScalar
   input Boolean trytosolve;
   output array<list<Integer>> omapEqnIncRow;
   output array<Integer> omapIncRowEqn;
-  output list<list<tuple<Integer,list<Integer>>>> varsSolvedInWhenEqnsTupleListOut = {};
+  output list<tuple<Integer,list<Integer>>> varsSolvedInWhenEqnsTupleListOut = {};
 protected
   list<BackendDAE.AdjacencyMatrixElementEnhanced> inIncidenceArray = {};
   list<list<Integer>> mapEqnIncRow = {};
@@ -3912,7 +3919,7 @@ algorithm
     // put it in the arrays
     inIncidenceArray := List.consN(size,row,inIncidenceArray);
     incidenceArrayT := fillincAdjacencyMatrixTEnhanced(row,rowindxs,incidenceArrayT);
-    varsSolvedInWhenEqnsTupleListOut := varsSolvedInWhenEqnsTuple :: varsSolvedInWhenEqnsTupleListOut;
+    varsSolvedInWhenEqnsTupleListOut := listAppend(varsSolvedInWhenEqnsTuple, varsSolvedInWhenEqnsTupleListOut);
     mapEqnIncRow := rowindxs::mapEqnIncRow;
   end for;
   outIncidenceArray := List.listArrayReverse(inIncidenceArray);
@@ -4036,9 +4043,9 @@ algorithm
       equation
         row = inIncidenceArrayT[v];
         newrow = List.map2(eqnsindxs,Util.make3Tuple,solva,cons);
-        newrow = listAppend(newrow,row);
+        row = listAppend(newrow,row);
         // put it in the array
-        mT = arrayUpdate(inIncidenceArrayT, v, newrow);
+        mT = arrayUpdate(inIncidenceArrayT, v, row);
       then
         fillincAdjacencyMatrixTEnhanced(rest, eqnsindxs, mT);
 
@@ -4049,8 +4056,8 @@ algorithm
         eqnsindxs1 = List.map(eqnsindxs,intNeg);
         newrow = List.map2(eqnsindxs1,Util.make3Tuple,solva,cons);
         // put it in the array
-        newrow = listAppend(newrow,row);
-        mT = arrayUpdate(inIncidenceArrayT, vabs, newrow);
+        row = listAppend(newrow,row);
+        mT = arrayUpdate(inIncidenceArrayT, vabs, row);
       then
         fillincAdjacencyMatrixTEnhanced(rest, eqnsindxs, mT);
 
@@ -4334,7 +4341,7 @@ protected function adjacencyRowAlgorithmInputs1
   input BackendDAE.AdjacencyMatrixElementEnhanced iRow;
   output BackendDAE.AdjacencyMatrixElementEnhanced outRow;
 algorithm
-  outRow := matchcontinue(vindx,mark,rowmark,iRow)
+  outRow := match(vindx,mark,rowmark,iRow)
     local
       Integer i;
       list<Integer> rest;
@@ -4348,12 +4355,9 @@ algorithm
       then
         adjacencyRowAlgorithmInputs1(rest,mark,rowmark,(i,BackendDAE.SOLVABILITY_UNSOLVABLE(),{})::iRow);
     case (i::rest,_,_,_)
-      guard
-        // already handled
-        intEq(intAbs(rowmark[i]),mark)
       then
         adjacencyRowAlgorithmInputs1(rest,mark,rowmark,iRow);
-  end matchcontinue;
+  end match;
 end adjacencyRowAlgorithmInputs1;
 
 protected function adjacencyRowWhenEnhanced
@@ -6820,10 +6824,11 @@ public function getSolvedSystem "Run the equation system pipeline."
   input Option<list<String>> strPostOptModules = NONE();
   output BackendDAE.BackendDAE outSimDAE;
   output BackendDAE.BackendDAE outInitDAE;
+  output Option<BackendDAE.BackendDAE> outInitDAE_lambda0_option;
   output Option<BackendDAE.InlineData > outInlineData;
   output list<BackendDAE.Equation> outRemovedInitialEquationLst;
 protected
-  BackendDAE.BackendDAE dae, simDAE;
+  BackendDAE.BackendDAE dae, simDAE, outInitDAE_lambda0;
   list<tuple<BackendDAEFunc.optimizationModule, String>> preOptModules;
   list<tuple<BackendDAEFunc.optimizationModule, String>> postOptModules;
   tuple<BackendDAEFunc.StructurallySingularSystemHandlerFunc, String, BackendDAEFunc.stateDeselectionFunc, String> daeHandler;
@@ -6831,6 +6836,7 @@ protected
   BackendDAE.InlineData inlineData;
   BackendDAE.Variables globalKnownVars;
   Integer numCheckpoints;
+  DAE.FunctionTree funcTree;
 algorithm
   numCheckpoints:=ErrorExt.getNumCheckpoints();
   try
@@ -6861,9 +6867,6 @@ algorithm
     BackendDump.dumpBackendDAE(dae, "synchronousFeatures");
   end if;
 
-  dae := BackendDAEOptimize.removeUnusedFunctions(dae);
-  execStat("remove unused functions");
-
   if Flags.isSet(Flags.GRAPHML) then
     BackendDump.dumpBipartiteGraphDAE(dae, fileNamePrefix);
   end if;
@@ -6878,7 +6881,7 @@ algorithm
   end if;
 
   // generate system for initialization
-  (outInitDAE, outRemovedInitialEquationLst, globalKnownVars) := Initialization.solveInitialSystem(dae);
+  (outInitDAE, outInitDAE_lambda0_option, outRemovedInitialEquationLst, globalKnownVars) := Initialization.solveInitialSystem(dae);
 
   // use function tree from initDAE further for simDAE
   simDAE := BackendDAEUtil.setFunctionTree(dae, BackendDAEUtil.getFunctions(outInitDAE.shared));
@@ -6893,10 +6896,22 @@ algorithm
   outInlineData := SymbolicImplicitSolver.symSolver(simDAE);
 
   // post-optimization phase
-  outSimDAE := postOptimizeDAE(simDAE, postOptModules, matchingAlgorithm, daeHandler);
+  simDAE := postOptimizeDAE(simDAE, postOptModules, matchingAlgorithm, daeHandler);
 
   // sort the globalKnownVars
-  outSimDAE := sortGlobalKnownVarsInDAE(outSimDAE);
+  simDAE := sortGlobalKnownVarsInDAE(simDAE);
+  execStat("sort global known variables");
+
+  // remove unused functions
+  funcTree := BackendDAEOptimize.copyRecordConstructorAndExternalObjConstructorDestructor(BackendDAEUtil.getFunctions(simDAE.shared));
+  funcTree := BackendDAEOptimize.removeUnusedFunctions(outInitDAE.eqs, outInitDAE.shared, outRemovedInitialEquationLst, BackendDAEUtil.getFunctions(simDAE.shared), funcTree);
+  if isSome(outInitDAE_lambda0_option) then
+    SOME(outInitDAE_lambda0) := outInitDAE_lambda0_option;
+    funcTree := BackendDAEOptimize.removeUnusedFunctions(outInitDAE_lambda0.eqs, simDAE.shared, {}, BackendDAEUtil.getFunctions(simDAE.shared), funcTree);
+  end if;
+  funcTree := BackendDAEOptimize.removeUnusedFunctions(simDAE.eqs, simDAE.shared, {}, BackendDAEUtil.getFunctions(simDAE.shared), funcTree);
+  outSimDAE := BackendDAEUtil.setFunctionTree(simDAE, funcTree);
+  execStat("remove unused functions");
 
   if Flags.isSet(Flags.DUMP_INDX_DAE) then
     BackendDump.dumpBackendDAE(outSimDAE, "dumpindxdae");
@@ -7281,7 +7296,7 @@ protected
 algorithm
   globalKnownVars := backendDAE.shared.globalKnownVars;
   parameterEqns := BackendEquation.emptyEqnsSized(BackendVariable.varsSize(globalKnownVars));
-  parameterEqns := BackendVariable.traverseBackendDAEVars(globalKnownVars, createParameterEquations, parameterEqns);
+  parameterEqns := BackendVariable.traverseBackendDAEVars(globalKnownVars, createGlobalKnownVarsEquations, parameterEqns);
 
   paramSystem := BackendDAEUtil.createEqSystem(globalKnownVars, parameterEqns);
   (m, _) := BackendDAEUtil.incidenceMatrix(paramSystem, BackendDAE.NORMAL(), NONE());
@@ -7298,7 +7313,7 @@ algorithm
   backendDAE := setDAEGlobalKnownVars(backendDAE, globalKnownVars_sorted);
 end sortGlobalKnownVarsInDAE;
 
-protected function createParameterEquations
+protected function createGlobalKnownVarsEquations
   input output BackendDAE.Var var;
   input output BackendDAE.EquationArray parameterEqns;
 protected
@@ -7313,7 +7328,7 @@ algorithm
   end try;
   eqn := BackendDAE.EQUATION(lhs, rhs, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_BINDING);
   parameterEqns := BackendEquation.add(eqn, parameterEqns);
-end createParameterEquations;
+end createGlobalKnownVarsEquations;
 
 
 /*************************************************
@@ -7490,7 +7505,9 @@ protected function allPreOptimizationModules
     (BackendDAEOptimize.residualForm, "residualForm"),
     (BackendDAEOptimize.simplifyAllExpressions, "simplifyAllExpressions"),
     (BackendDump.dumpDAE, "dumpDAE"),
-      (XMLDump.dumpDAEXML, "dumpDAEXML")
+    (XMLDump.dumpDAEXML, "dumpDAEXML"),
+    // This should indeed be at the end
+    (BackendDAETransform.collapseArrayExpressions, "collapseArrayExpressions")
   };
 end allPreOptimizationModules;
 
@@ -7536,7 +7553,9 @@ protected function allPostOptimizationModules
     // TODO: move the following modules to the correct position
     (BackendDump.dumpComponentsGraphStr, "dumpComponentsGraphStr"),
     (BackendDump.dumpDAE, "dumpDAE"),
-    (XMLDump.dumpDAEXML, "dumpDAEXML")
+    (XMLDump.dumpDAEXML, "dumpDAEXML"),
+    // This should indeed be at the end
+    (BackendDAETransform.collapseArrayExpressions, "collapseArrayExpressions")
   };
 end allPostOptimizationModules;
 
@@ -7547,7 +7566,7 @@ protected function allInitOptimizationModules
     (BackendDAEOptimize.inlineHomotopy, "inlineHomotopy"),
     (BackendDAEOptimize.inlineFunctionInLoops, "forceInlineFunctionInLoops"), // before simplifyComplexFunction
     (BackendDAEOptimize.simplifyComplexFunction, "simplifyComplexFunction"),
-	(CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
+  (CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
     (DynamicOptimization.reduceDynamicOptimization, "reduceDynamicOptimization"), // before tearing
     (Tearing.tearingSystem, "tearingSystem"),
     (BackendDAEOptimize.simplifyLoops, "simplifyLoops"),
@@ -7556,7 +7575,9 @@ protected function allInitOptimizationModules
     (ExpressionSolve.solveSimpleEquations, "solveSimpleEquations"),
     (BackendDAEOptimize.simplifyAllExpressions, "simplifyAllExpressions"),
     (SymbolicJacobian.inputDerivativesUsed, "inputDerivativesUsed"),
-    (DynamicOptimization.removeLoops, "extendDynamicOptimization")
+    (DynamicOptimization.removeLoops, "extendDynamicOptimization"),
+    // This should indeed be at the end
+    (BackendDAETransform.collapseArrayExpressions, "collapseArrayExpressions")
   };
 end allInitOptimizationModules;
 
@@ -7804,43 +7825,28 @@ protected
 algorithm
   if forceOrdering then
     for name in inStrOptModules loop
-      index := getModuleIndex(name, inOptModules);
+      for index in getModuleIndexes(name, inOptModules) loop
+        if index < maxIndex then
+          Error.addCompilerWarning("Specified ordering will be ignored. Use --" + Flags.configFlagName(Flags.DEFAULT_OPT_MODULES_ORDERING) + "=false to override module ordering.");
+          maxIndex := numModules;
+        else
+          maxIndex := intMax(maxIndex, index);
+        end if;
 
-      if index < maxIndex then
-        Error.addCompilerWarning("Specified ordering will be ignored. Use --" + Flags.configFlagName(Flags.DEFAULT_OPT_MODULES_ORDERING) + "=false to override module ordering.");
-        maxIndex := numModules;
-      else
-        maxIndex := intMax(maxIndex, index);
-      end if;
-
-      if index <> -1 then
         activeModules[index] := true;
-      else
-        Error.addCompilerError("'" + name + "' is not a valid optimization module. Please check the flags carefully.");
-        fail();
-      end if;
+      end for;
     end for;
 
     for name in inEnabledModules loop
-      index := getModuleIndex(name, inOptModules);
-
-      if index <> -1 then
+      for index in getModuleIndexes(name, inOptModules) loop
         activeModules[index] := true;
-      else
-        Error.addCompilerError("'" + name + "' is not a valid optimization module. Please check the flags carefully.");
-        fail();
-      end if;
+      end for;
     end for;
 
     for name in inDisabledModules loop
-      index := getModuleIndex(name, inOptModules);
-
-      if index <> -1 then
+      for index in getModuleIndexes(name, inOptModules) loop
         activeModules[index] := false;
-      else
-        Error.addCompilerError("'" + name + "' is not a valid optimization module. Please check the flags carefully.");
-        fail();
-      end if;
+      end for;
     end for;
 
     for i in 1:numModules loop
@@ -7856,22 +7862,26 @@ algorithm
   outOptModules := listReverse(outOptModules);
 end selectOptModules;
 
-protected function getModuleIndex
+protected function getModuleIndexes
   input String inModuleName;
   input list<tuple<BackendDAEFunc.optimizationModule, String>> inModuleList;
-  output Integer outIndex = 1;
+  output list<Integer> outIndexes = {};
 protected
   String name;
+  Integer index=1;
 algorithm
   for module in inModuleList loop
     (_, name) := module;
     if stringEqual(inModuleName, name) then
-      return;
+      outIndexes := index::outIndexes;
     end if;
-    outIndex := outIndex+1;
+    index := index+1;
   end for;
-  outIndex := -1;
-end getModuleIndex;
+  if listEmpty(outIndexes) then
+    Error.addCompilerError("'" + inModuleName + "' is not a valid optimization module. Please check the flags carefully.");
+    fail();
+  end if;
+end getModuleIndexes;
 
 protected function selectOptModules1
   input String strOptModule;
@@ -9051,6 +9061,179 @@ algorithm
     end match;
   end for;
 end getNoDerivativeInputPosition;
+
+public function checkIncidenceMatrixSolvability "Performs a limited matching algorithm to sometimes figure out which equations are superflours or which variables are never solved for."
+  input BackendDAE.EqSystem syst;
+  input DAE.FunctionTree functionTree;
+protected
+  Integer varSize, eqnSize, v, eq, count;
+  BackendDAE.IncidenceMatrix m, mT, mOrig, mTOrig;
+  list<Integer> vars, eqs, varsInOrig, eqsInOrig;
+  array<Integer> solvedVars;
+  array<list<tuple<DAE.ComponentRef,Integer>>> solvedEqs;
+  list<SourceInfo> infos;
+  list<tuple<DAE.ComponentRef,Integer>> names;
+  Integer errors = 0, numSolved = 0, eqSize, lenInfos, lenVars;
+  Boolean cont = true;
+  BackendDAE.Variables varsArray;
+  BackendDAE.Var var;
+  BackendDAE.EquationArray eqsArray;
+  BackendDAE.Equation _equation;
+  constant Boolean debug=false;
+  constant Boolean alwaysCheck=false;
+  SourceInfo info;
+algorithm
+  varsArray := syst.orderedVars;
+  eqsArray := syst.orderedEqs;
+  varSize := BackendVariable.varsSize(varsArray);
+  eqnSize := BackendEquation.equationArraySize(eqsArray);
+  if varSize <> eqnSize then
+    Error.addMessage(if varSize > eqnSize then Error.UNDERDET_EQN_SYSTEM else Error.OVERDET_EQN_SYSTEM, {String(eqnSize), String(varSize)});
+  elseif not alwaysCheck then
+    return;
+  end if;
+  (_, mOrig, mTOrig) := BackendDAEUtil.getIncidenceMatrixfromOption(syst, BackendDAE.ABSOLUTE(), SOME(functionTree));
+
+  m := arrayCopy(mOrig);
+  mT := arrayCopy(mTOrig);
+
+  solvedVars := arrayCreate(arrayLength(mT), 0);
+  solvedEqs := arrayCreate(arrayLength(m), {});
+
+  if debug then
+    print("Got adjacency matrix "+String(varSize)+" "+String(arrayLength(m))+" "+String(eqnSize)+" "+String(arrayLength(mT))+"...\n");
+  end if;
+  count := 0;
+  while cont and count < 1000 loop
+    cont := false;
+    count := count+1;
+    for i in 1:arrayLength(m) /* Not eqnSize; that is the size including arrays */ loop
+      if not listEmpty(arrayGet(solvedEqs, i)) then
+        continue;
+      end if;
+      _equation := BackendEquation.get(eqsArray, i);
+      info := BackendEquation.equationInfo(_equation);
+      eqSize := BackendEquation.equationSize(_equation);
+      vars := arrayGet(m, i);
+      lenVars := listLength(vars);
+      if eqSize == 0 then
+        arrayUpdate(solvedEqs, i, {(DAE.emptyCref,0)});
+        continue;
+      end if;
+      if lenVars <= eqSize then
+        if lenVars < eqSize then
+          variableDoesNotFitInEquation(i, vars, mOrig, eqsArray, varsArray, solvedVars);
+          errors := errors+1;
+          if lenVars == 0 then
+            arrayUpdate(solvedEqs, i, (DAE.emptyCref,0)::arrayGet(solvedEqs,i));
+          end if;
+        end if;
+        for v in vars loop
+          var := BackendVariable.getVarAt(varsArray, v);
+          arrayUpdate(solvedEqs, i, (var.varName,v)::arrayGet(solvedEqs,i));
+          arrayUpdate(solvedVars, v, i);
+          eqs := arrayGet(mT, v);
+          for eq in eqs loop
+            // Remove references to the variable in other equations since we can't solve it there
+            arrayUpdate(m, eq, List.setDifference(arrayGet(m, eq), vars));
+          end for;
+          numSolved := numSolved+1;
+        end for;
+        cont := true;
+      end if;
+    end for;
+
+    if debug then
+      print("Number of equations solved: " + String(numSolved-errors) + "\n");
+      print("Number of errors: " + String(errors) + "\n");
+    end if;
+
+    for i in 1:arrayLength(mT) /* = varSize */ loop
+      if 0 <> arrayGet(solvedVars, i) then
+        continue;
+      end if;
+      eqs := arrayGet(mT, i);
+      var := BackendVariable.getVarAt(varsArray, i);
+      info := var.source.info;
+      if listLength(eqs) == 0 then
+        Error.addSourceMessage(Error.VAR_NO_REMAINING_EQN, {
+          ComponentReference.printComponentRefStr(var.varName),
+          stringAppendList(list("\n  Equation " + String(eq) + ": " + BackendDump.equationString(BackendEquation.get(eqsArray, eq)) + ", which needs to solve for " + stringDelimitList(list(ComponentReference.printComponentRefStr(Util.tuple21(tpl)) for tpl in arrayGet(solvedEqs, eq)), ", ") for eq in arrayGet(mTOrig, i)))
+          }, info);
+        arrayUpdate(solvedVars, i, -1);
+      elseif listLength(eqs) == 1 then
+        {eq} := eqs;
+        eqSize := BackendEquation.equationSize(BackendEquation.get(eqsArray, eq));
+        names := arrayGet(solvedEqs, eq);
+        lenInfos := listLength(names);
+        arrayUpdate(solvedVars, i, eq);
+        arrayUpdate(solvedEqs, eq, (var.varName,i)::names);
+        if lenInfos >= eqSize then
+          variableDoesNotFitInEquation(eq, {i}, mOrig, eqsArray, varsArray, solvedVars);
+          errors := errors+1;
+        end if;
+        vars := arrayGet(m, eq);
+        if lenInfos+1 >= eqSize then // TODO: FIXME
+          for v in vars loop
+            // Remove references to the equation in other variables since we can't solve it there
+            arrayUpdate(mT, v, List.setDifference(arrayGet(mT, v), eqs));
+          end for;
+        end if;
+        numSolved := numSolved+1;
+        cont := true;
+      end if;
+    end for;
+
+    if debug then
+      print("Number of equations solved: " + String(numSolved-errors) + "\n");
+      print("Number of errors: " + String(errors) + "\n");
+    end if;
+  end while;
+  true := 0 == errors;
+  if alwaysCheck and varSize == eqnSize then
+    return;
+  end if;
+  fail();
+end checkIncidenceMatrixSolvability;
+
+protected function variableDoesNotFitInEquation
+  input Integer eq;
+  input list<Integer> vars;
+  input BackendDAE.IncidenceMatrix m;
+  input BackendDAE.EquationArray eqsArray;
+  input BackendDAE.Variables varsArray;
+  input array<Integer> solvedVars;
+protected
+  BackendDAE.Equation _equation;
+  list<Integer> varsInOrig, eqsInOrig;
+  String eqsString;
+  SourceInfo info;
+  Integer eqSize;
+algorithm
+  _equation := BackendEquation.get(eqsArray, eq);
+  info := BackendEquation.equationInfo(_equation);
+  eqSize := BackendEquation.equationSize(_equation);
+
+  varsInOrig := List.setDifference(arrayGet(m, eq), vars);
+  eqsInOrig := List.sortedUnique(List.sort(list(arrayGet(solvedVars,myVar) for myVar guard arrayGet(solvedVars,myVar)>0 in varsInOrig), intGt), intEq);
+  eqsString := stringAppendList(list("\n    Equation " + String(eqNum) + " (size: "+String(BackendEquation.equationSize(BackendEquation.get(eqsArray, eqNum)))+"): " + BackendDump.equationString(BackendEquation.get(eqsArray, eqNum)) for eqNum in eqsInOrig));
+  Error.addSourceMessage(Error.EQN_NO_SPACE_TO_SOLVE, {
+    String(eq),
+    String(eqSize),
+    BackendDump.equationString(_equation),
+    getVariableNamesForErrorMessage(varsArray, vars),
+    getVariableNamesForErrorMessage(varsArray, varsInOrig),
+    eqsString
+    }, info);
+end variableDoesNotFitInEquation;
+
+protected function getVariableNamesForErrorMessage
+  input BackendDAE.Variables varsArray;
+  input list<Integer> vars;
+  output String names;
+algorithm
+  names := stringDelimitList(list(ComponentReference.printComponentRefStr(BackendVariable.varCref(BackendVariable.getVarAt(varsArray, v))) for v in vars), ", ");
+end getVariableNamesForErrorMessage;
 
 annotation(__OpenModelica_Interface="backend");
 end BackendDAEUtil;

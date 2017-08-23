@@ -37,6 +37,7 @@ protected
 public
   import Dimension = NFDimension;
   import NFInstNode.InstNode;
+  import Subscript = NFSubscript;
 
   record INTEGER
   end INTEGER;
@@ -120,6 +121,21 @@ public
       else ARRAY(ty, dims);
     end match;
   end liftArrayLeftList;
+
+  function unliftArray
+    input output Type ty;
+  protected
+    Type el_ty;
+    list<Dimension> dims;
+  algorithm
+    ARRAY(el_ty, _ :: dims) := ty;
+
+    if listEmpty(dims) then
+      ty := el_ty;
+    else
+      ty := ARRAY(el_ty, dims);
+    end if;
+  end unliftArray;
 
   function isInteger
     input Type ty;
@@ -391,7 +407,9 @@ public
         then DAE.T_FUNCTION({} /*TODO:FIXME*/, toDAE(ty.resultType), ty.attributes, Absyn.IDENT("TODO:FIXME"));
       case Type.NORETCALL() then DAE.T_NORETCALL_DEFAULT;
       case Type.UNKNOWN() then DAE.T_UNKNOWN_DEFAULT;
-      case Type.COMPLEX() then DAE.T_COMPLEX_DEFAULT;
+      case Type.COMPLEX()
+        // TODO: Use proper ClassInf.State here.
+        then DAE.Type.T_COMPLEX(ClassInf.MODEL(Absyn.IDENT(InstNode.name(ty.cls))), {}, NONE());
       else
         algorithm
           assert(false, getInstanceName() + " got unknown type: " + anyString(ty));
@@ -399,6 +417,56 @@ public
           fail();
     end match;
   end toDAE;
+
+  function subscript
+    input output Type ty;
+    input list<Subscript> subs;
+  algorithm
+    for sub in subs loop
+      if Subscript.isIndex(sub) then
+        ty := unliftArray(ty);
+      end if;
+    end for;
+  end subscript;
+
+  function isEqual
+    input Type ty1;
+    input Type ty2;
+    output Boolean equal;
+  algorithm
+    if referenceEq(ty1, ty2) then
+      equal := true;
+      return;
+    end if;
+
+    if valueConstructor(ty1) <> valueConstructor(ty2) then
+      equal := false;
+      return;
+    end if;
+
+    equal := match (ty1, ty2)
+      local
+        list<String> names1, names2;
+
+      case (ENUMERATION(), ENUMERATION())
+        then List.isEqualOnTrue(ty1.literals, ty2.literals, stringEq);
+
+      case (ARRAY(), ARRAY())
+        then isEqual(ty1.elementType, ty2.elementType) and
+             List.isEqualOnTrue(ty1.dimensions, ty2.dimensions, Dimension.isEqualKnown);
+
+      case (TUPLE(names = SOME(names1)), TUPLE(names = SOME(names2)))
+        then List.isEqualOnTrue(names1, names2, stringEq) and
+             List.isEqualOnTrue(ty1.types, ty2.types, isEqual);
+
+      case (TUPLE(names = NONE()), TUPLE(names = NONE()))
+        then List.isEqualOnTrue(ty1.types, ty2.types, isEqual);
+
+      case (TUPLE(), TUPLE()) then false;
+
+      else true;
+    end match;
+  end isEqual;
 
   annotation(__OpenModelica_Interface="frontend");
 end NFType;

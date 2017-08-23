@@ -1246,7 +1246,7 @@ protected
   constant Boolean debug = false;
   list<Integer> nodesList;
   array<Integer> colored;
-  array<Option<list<Integer>>> forbiddenColor;
+  array<Integer> forbiddenColor;
   list<tuple<Integer, list<Integer>>> sparseGraph, sparseGraphT;
   array<tuple<Integer, list<Integer>>> arraysparseGraph;
   Integer maxColor;
@@ -1270,7 +1270,7 @@ algorithm
     end if;
 
     // color sparse bipartite graph
-    forbiddenColor := arrayCreate(sizeVars,NONE());
+    forbiddenColor := arrayCreate(sizeVars,0);
     colored := arrayCreate(sizeVars,0);
     arraysparseGraph := listArray(sparseGraph);
     if debug then execStat("generateSparsePattern -> coloring start "); end if;
@@ -1278,12 +1278,15 @@ algorithm
       Graph.partialDistance2colorInt(sparseGraphT, forbiddenColor, nodesList, arraysparseGraph, colored);
     end if;
     if debug then execStat("generateSparsePattern -> coloring end "); end if;
+    GC.free(forbiddenColor);
+    GC.free(arraysparseGraph);
     // get max color used
     maxColor := Array.fold(colored, intMax, 0);
 
     // map index of that array into colors
     coloredArray := arrayCreate(maxColor, {});
     mapIndexColors(colored, sizeVars, coloredArray);
+    GC.free(colored);
 
     if Flags.isSet(Flags.DUMP_SPARSE_VERBOSE) then
       print("Print Coloring Cols: \n");
@@ -1870,6 +1873,9 @@ algorithm
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> generated equations for Jacobian " + inName + " time: " + realString(clock()) + "\n");
         end if;
+
+        // Add the function tree to the jacobian backendDAE
+        backendDAE = BackendDAEUtil.setFunctionTree(backendDAE, funcs);
 
         backendDAE = optimizeJacobianMatrix(backendDAE,comref_differentiatedVars,comref_vars);
         if Flags.isSet(Flags.JAC_DUMP2) then
@@ -2600,7 +2606,7 @@ algorithm
     case DAE.T_ARRAY(ty=ty) then isRecordInvoled(ty);
     case DAE.T_FUNCTION(funcResultType=ty) then isRecordInvoled(ty);
     case DAE.T_TUPLE(types)
-    then Util.boolOrList(List.map(types, isRecordInvoled));
+    then List.mapBoolOr(types, isRecordInvoled);
     else false;
   end match;
 end isRecordInvoled;

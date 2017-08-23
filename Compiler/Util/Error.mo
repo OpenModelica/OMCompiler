@@ -164,8 +164,8 @@ public constant Message REM_ARG_ZERO = MESSAGE(17, TRANSLATION(), ERROR(),
   Util.gettext("Second argument in rem is zero in rem(%s,%s)."));
 public constant Message SCRIPT_READ_SIM_RES_ERROR = MESSAGE(18, SCRIPTING(), ERROR(),
   Util.gettext("Error reading simulation result."));
-public constant Message RECURSIVE_EXTENDS = MESSAGE(19, TRANSLATION(), ERROR(),
-  Util.gettext("Extending %s is not allowed, since it is an enclosing class."));
+public constant Message EXTENDS_LOOP = MESSAGE(19, TRANSLATION(), ERROR(),
+  Util.gettext("extends %s causes an instantiation loop."));
 public constant Message LOAD_MODEL_ERROR = MESSAGE(20, TRANSLATION(), ERROR(),
   Util.gettext("Class %s not found."));
 public constant Message WRITING_FILE_ERROR = MESSAGE(21, SCRIPTING(), ERROR(),
@@ -471,7 +471,7 @@ public constant Message CIRCULAR_COMPONENTS = MESSAGE(170, TRANSLATION(), ERROR(
 public constant Message FAILURE_TO_DEDUCE_DIMS_FROM_MOD = MESSAGE(171, TRANSLATION(), WARNING(),
   Util.gettext("Failed to deduce dimensions of %s due to unknown dimensions of modifier %s."));
 public constant Message REPLACEABLE_BASE_CLASS = MESSAGE(172, TRANSLATION(), ERROR(),
-  Util.gettext("Part %s of base class %s is replaceable."));
+  Util.gettext("Class %s in extends %s is replaceable."));
 public constant Message NON_REPLACEABLE_CLASS_EXTENDS = MESSAGE(173, TRANSLATION(), ERROR(),
   Util.gettext("Non-replaceable base class %s in class extends."));
 public constant Message ERROR_FROM_HERE = MESSAGE(174, TRANSLATION(), NOTIFICATION(),
@@ -725,6 +725,8 @@ ERROR(),
   Util.gettext("Range of type %s may not specify a step size."));
 public constant Message RANGE_INVALID_TYPE = MESSAGE(298, TRANSLATION(), ERROR(),
   Util.gettext("Range has invalid type %s."));
+public constant Message CLASS_EXTENDS_MISSING_REDECLARE = MESSAGE(299, TRANSLATION(), WARNING(),
+  Util.gettext("Missing redeclare prefix on class extends %s, treating like redeclare anyway."));
 public constant Message INITIALIZATION_NOT_FULLY_SPECIFIED = MESSAGE(496, TRANSLATION(), WARNING(),
   Util.gettext("The initial conditions are not fully specified. %s."));
 public constant Message INITIALIZATION_OVER_SPECIFIED = MESSAGE(497, TRANSLATION(), WARNING(),
@@ -879,6 +881,10 @@ public constant Message CLASS_EXTENDS_TARGET_NOT_FOUND = MESSAGE(579, TRANSLATIO
   Util.gettext("Base class targeted by class extends %s not found in the inherited classes."));
 public constant Message ASSIGN_PARAM_FIXED_ERROR = MESSAGE(580, TRANSLATION(), ERROR(),
   Util.gettext("Trying to assign to parameter component %s(fixed=true) in %s := %s"));
+public constant Message EQN_NO_SPACE_TO_SOLVE = MESSAGE(581, SYMBOLIC(), WARNING(),
+  Util.gettext("Equation %s (size: %s) %s is not big enough to solve for enough variables.\n  Remaining unsolved variables are: %s\n  Already solved: %s\n  Equations used to solve those variables:%s"));
+public constant Message VAR_NO_REMAINING_EQN = MESSAGE(582, SYMBOLIC(), WARNING(),
+  Util.gettext("Variable %s does not have any remaining equation to be solved in.\n  The original equations were:%s"));
 
 public constant Message MATCH_SHADOWING = MESSAGE(5001, TRANSLATION(), ERROR(),
   Util.gettext("Local variable '%s' shadows another variable."));

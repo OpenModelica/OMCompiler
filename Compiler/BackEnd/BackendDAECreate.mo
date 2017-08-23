@@ -115,6 +115,7 @@ protected
   list<BackendDAE.TimeEvent> timeEvents;
   String neqStr, nvarStr;
   Integer varSize, eqnSize, numCheckpoints;
+  BackendDAE.EqSystem syst;
 algorithm
   numCheckpoints:=ErrorExt.getNumCheckpoints();
   try
@@ -148,7 +149,8 @@ algorithm
   ieqnarr := BackendEquation.listEquation(ieqns);
   einfo := BackendDAE.EVENT_INFO(timeEvents, ZeroCrossings.new(), DoubleEndedList.fromList({}), ZeroCrossings.new(), 0);
   symjacs := {(NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {})};
-  outBackendDAE := BackendDAE.DAE(BackendDAEUtil.createEqSystem(vars_1, eqnarr, {}, BackendDAE.UNKNOWN_PARTITION(), reqnarr)::{},
+  syst := BackendDAEUtil.createEqSystem(vars_1, eqnarr, {}, BackendDAE.UNKNOWN_PARTITION(), reqnarr);
+  outBackendDAE := BackendDAE.DAE(syst::{},
                                   BackendDAE.SHARED(globalKnownVars,
                                                     localKnownVars,
                                                     extVars,
@@ -167,17 +169,11 @@ algorithm
                                                     BackendDAEUtil.emptyPartitionsInfo()
                                                     ));
   BackendDAEUtil.checkBackendDAEWithErrorMsg(outBackendDAE);
-  varSize := BackendVariable.varsSize(vars_1);
-  eqnSize := BackendEquation.equationArraySize(eqnarr);
-  neqStr := intString(eqnSize);
-  nvarStr := intString(varSize);
+  BackendDAEUtil.checkIncidenceMatrixSolvability(syst, functionTree);
 
-  if varSize <> eqnSize then
-    Error.addMessage(if varSize > eqnSize then Error.UNDERDET_EQN_SYSTEM else Error.OVERDET_EQN_SYSTEM, {neqStr, nvarStr});
-    fail();
+  if Flags.isSet(Flags.DUMP_BACKENDDAE_INFO) then
+    Error.addSourceMessage(Error.BACKENDDAEINFO_LOWER,{String(BackendEquation.equationArraySize(syst.orderedEqs)), String(BackendVariable.varsSize(syst.orderedVars))},Absyn.dummyInfo);
   end if;
-
-  Error.assertionOrAddSourceMessage(not Flags.isSet(Flags.DUMP_BACKENDDAE_INFO),Error.BACKENDDAEINFO_LOWER,{neqStr,nvarStr},Absyn.dummyInfo);
   execStat("Generate backend data structure");
   return;
   else
@@ -595,9 +591,9 @@ algorithm
       DAE.CallAttributes attr;
 
     // delay [already in ht]
-    case (DAE.CALL(Absyn.IDENT("delay"), es, attr), (ht, iDelay, iSample, timeEvents)) equation
+    case (DAE.CALL(Absyn.IDENT("delay"), es, attr), (ht, _, _, _)) equation
       i = BaseHashTable.get(inExp, ht);
-    then (DAE.CALL(Absyn.IDENT("delay"), DAE.ICONST(i)::es, attr), (ht, iDelay, iSample, timeEvents));
+    then (DAE.CALL(Absyn.IDENT("delay"), DAE.ICONST(i)::es, attr), inTuple);
 
     // delay [not yet in ht]
     case (DAE.CALL(Absyn.IDENT("delay"), es, attr), (ht, iDelay, iSample, timeEvents)) equation
@@ -605,10 +601,10 @@ algorithm
     then (DAE.CALL(Absyn.IDENT("delay"), DAE.ICONST(iDelay)::es, attr), (ht, iDelay+1, iSample, timeEvents));
 
     // sample [already in ht]
-    case (DAE.CALL(Absyn.IDENT("sample"), es as {_, interval}, attr), (ht, iDelay, iSample, timeEvents))
+    case (DAE.CALL(Absyn.IDENT("sample"), es as {_, interval}, attr), (ht, _, _, _))
     guard (not Types.isClockOrSubTypeClock(Expression.typeof(interval))) equation
       i = BaseHashTable.get(inExp, ht);
-    then (DAE.CALL(Absyn.IDENT("sample"), DAE.ICONST(i)::es, attr), (ht, iDelay, iSample, timeEvents));
+    then (DAE.CALL(Absyn.IDENT("sample"), DAE.ICONST(i)::es, attr), inTuple);
 
     // sample [not yet in ht]
     case (DAE.CALL(Absyn.IDENT("sample"), es as {start, interval}, attr), (ht, iDelay, iSample, timeEvents))
@@ -1013,14 +1009,14 @@ algorithm
         s1 = listHead(inNames);
         namee1 = Absyn.joinPaths(inPath, Absyn.IDENT(s1));
       then
-        DAEUtil.setMinMax(inVarAttr, SOME(DAE.ENUM_LITERAL(namee1, 1)), SOME(e));
+        DAEUtil.setMinMax(inVarAttr, SOME(DAE.ENUM_LITERAL(namee1, 1)), inMax);
     case (SOME(e), NONE(), _, _, _)
       equation
         i = listLength(inNames);
         sn = listGet(inNames, i);
         nameen = Absyn.joinPaths(inPath, Absyn.IDENT(sn));
       then
-        DAEUtil.setMinMax(inVarAttr, SOME(e), SOME(DAE.ENUM_LITERAL(nameen, i)));
+        DAEUtil.setMinMax(inVarAttr, inMin, SOME(DAE.ENUM_LITERAL(nameen, i)));
     else inVarAttr;
   end matchcontinue;
 end setMinMaxFromEnumeration1;

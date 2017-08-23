@@ -241,7 +241,7 @@ algorithm
     case (SCode.IMPORT(imp = imp as Absyn.UNQUAL_IMPORT()),
           FCore.IMPORT_TABLE(hidden, qual_imps, unqual_imps))
       equation
-        unqual_imps = List.unique(imp :: unqual_imps);
+        unqual_imps = List.unionElt(imp, unqual_imps);
       then
         FCore.IMPORT_TABLE(hidden, qual_imps, unqual_imps);
 
@@ -251,7 +251,7 @@ algorithm
       equation
         imp = translateQualifiedImportToNamed(imp);
         checkUniqueQualifiedImport(imp, qual_imps, info);
-        qual_imps = List.unique(imp :: qual_imps);
+        qual_imps = List.unionElt(imp, qual_imps);
       then
         FCore.IMPORT_TABLE(hidden, qual_imps, unqual_imps);
   end match;
@@ -349,15 +349,15 @@ end addChildRef;
 protected function printElementConflictError
   input Ref newRef;
   input Ref oldRef;
+  input RefTree.Key name;
   output Ref dummy;
 protected
   SourceInfo info1, info2;
-  String name;
 algorithm
   if Config.acceptMetaModelicaGrammar() then
     dummy := newRef;
   else
-    (name, info1) := SCode.elementNameInfo(FNode.getElementFromRef(newRef));
+    info1 := SCode.elementInfo(FNode.getElementFromRef(newRef));
     info2 := SCode.elementInfo(FNode.getElementFromRef(oldRef));
     Error.addMultiSourceMessage(Error.DOUBLE_DECLARATION_OF_ELEMENTS, {name}, {info2, info1});
     fail();

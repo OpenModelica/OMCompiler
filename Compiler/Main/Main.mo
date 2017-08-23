@@ -79,6 +79,7 @@ import StackOverflow;
 import System;
 import TplMain;
 import Util;
+import ZeroMQ;
 
 protected function serverLoop
 "This function is the main loop of the server listening
@@ -114,6 +115,40 @@ algorithm
       then serverLoop(b, shandle, newsymb);
   end match;
 end serverLoop;
+
+protected function serverLoopZMQ
+"This function is the main loop of the ZeroMQ server listening
+  to a port which recieves modelica expressions."
+  input Boolean cont;
+  input Option<Integer> inZMQSocket;
+  input GlobalScript.SymbolTable inInteractiveSymbolTable;
+  output GlobalScript.SymbolTable outInteractiveSymbolTable;
+algorithm
+  outInteractiveSymbolTable := match (cont,inZMQSocket,inInteractiveSymbolTable)
+    local
+      Boolean b;
+      String str,replystr;
+      GlobalScript.SymbolTable newsymb,ressymb,isymb;
+      Option<Integer> zmqSocket;
+    case (false,_,isymb) then isymb;
+    case (_,SOME(0),_) then fail();
+    case (_,zmqSocket,isymb)
+      equation
+        str = ZeroMQ.handleRequest(zmqSocket);
+        if Flags.isSet(Flags.INTERACTIVE_DUMP) then
+          Debug.trace("------- Recieved Data from client -----\n");
+          Debug.trace(str);
+          Debug.trace("------- End recieved Data-----\n");
+        end if;
+        (b,replystr,newsymb) = handleCommand(str, isymb) "Print.clearErrorBuf &" ;
+        replystr = if b then replystr else "quit requested, shutting server down\n";
+        ZeroMQ.sendReply(zmqSocket, replystr);
+        if not b then
+          ZeroMQ.close(zmqSocket);
+        end if;
+      then serverLoopZMQ(b, zmqSocket, newsymb);
+  end match;
+end serverLoopZMQ;
 
 protected function makeDebugResult
   input Flags.DebugFlag inFlag;
@@ -176,36 +211,25 @@ public function handleCommand
   input GlobalScript.SymbolTable inSymbolTable;
   output Boolean outContinue;
   output String outResult;
-  output GlobalScript.SymbolTable outSymbolTable;
+  output GlobalScript.SymbolTable outSymbolTable = inSymbolTable;
 protected
+  Option<GlobalScript.Statements> stmts;
+  Option<Absyn.Program> prog;
+  GlobalScript.SymbolTable st;
 algorithm
   Print.clearBuf();
 
-  (outContinue, outResult, outSymbolTable) :=
-  matchcontinue(inCommand, inSymbolTable)
-    local
-      Option<GlobalScript.Statements> stmts;
-      Option<Absyn.Program> prog;
-      GlobalScript.SymbolTable st;
-      String result;
+  if Util.strncmp("quit()", inCommand, 6) then
+    outContinue := false;
+    outResult := "Ok\n";
+  else
+    outContinue := true;
 
-    case (_, _)
-      equation
-        true = Util.strncmp("quit()", inCommand, 6);
-      then
-        (false, "Ok\n", inSymbolTable);
-
-    else
-      equation
-        (stmts, prog) = parseCommand(inCommand);
-        (result, st) = handleCommand2(stmts, prog, inCommand, inSymbolTable);
-        result = makeDebugResult(Flags.DUMP, result);
-        result = makeDebugResult(Flags.DUMP_GRAPHVIZ, result);
-      then
-        (true, result, st);
-
-  end matchcontinue;
-
+    (stmts, prog) := parseCommand(inCommand);
+    (outResult, outSymbolTable) := handleCommand2(stmts, prog, inCommand, outSymbolTable);
+    outResult := makeDebugResult(Flags.DUMP, outResult);
+    outResult := makeDebugResult(Flags.DUMP_GRAPHVIZ, outResult);
+  end if;
 end handleCommand;
 
 protected function handleCommand2
@@ -592,14 +616,15 @@ protected
   BackendDAE.ExtraInfo info;
   BackendDAE.BackendDAE dlow;
   BackendDAE.BackendDAE initDAE;
+  Option<BackendDAE.BackendDAE> initDAE_lambda0;
   Option<BackendDAE.InlineData> inlineData;
   list<BackendDAE.Equation> removedInitialEquationLst;
 algorithm
   if Config.simulationCg() then
     info := BackendDAE.EXTRA_INFO(DAEUtil.daeDescription(dae), Absyn.pathString(inClassName));
     dlow := BackendDAECreate.lower(dae, inCache, inEnv, info);
-    (dlow, initDAE, inlineData, removedInitialEquationLst) := BackendDAEUtil.getSolvedSystem(dlow, "");
-    simcodegen(dlow, initDAE, inlineData, removedInitialEquationLst, inClassName, ap);
+    (dlow, initDAE, initDAE_lambda0, inlineData, removedInitialEquationLst) := BackendDAEUtil.getSolvedSystem(dlow, "");
+    simcodegen(dlow, initDAE, initDAE_lambda0, inlineData, removedInitialEquationLst, inClassName, ap);
   end if;
 end optimizeDae;
 
@@ -607,6 +632,7 @@ protected function simcodegen "
   Genereates simulation code using the SimCode module"
   input BackendDAE.BackendDAE inBackendDAE;
   input BackendDAE.BackendDAE inInitDAE;
+  input Option<BackendDAE.BackendDAE> inInitDAE_lambda0;
   input Option<BackendDAE.InlineData> inInlineData;
   input list<BackendDAE.Equation> inRemovedInitialEquationLst;
   input Absyn.Path inClassName;
@@ -628,7 +654,7 @@ algorithm
       SimCodeMain.createSimulationSettings(0.0, 1.0, 500, 1e-6, "dassl", "", "mat", ".*", "");
 
     System.realtimeTock(ClockIndexes.RT_CLOCK_BACKEND); // Is this necessary?
-    SimCodeMain.generateModelCode(inBackendDAE, inInitDAE, inInlineData, inRemovedInitialEquationLst, inProgram, inClassName, cname, SOME(sim_settings), Absyn.FUNCTIONARGS({}, {}));
+    SimCodeMain.generateModelCode(inBackendDAE, inInitDAE, inInitDAE_lambda0, inInlineData, inRemovedInitialEquationLst, inProgram, inClassName, cname, SOME(sim_settings), Absyn.FUNCTIONARGS({}, {}));
 
     execStat("Codegen Done");
   end if;
@@ -638,7 +664,6 @@ protected function interactivemode
 "Initiate the interactive mode using socket communication."
   input GlobalScript.SymbolTable symbolTable;
 algorithm
-  print("Opening a socket on port " + intString(29500) + "\n");
   serverLoop(true, Socket.waitforconnect(29500), symbolTable);
 end interactivemode;
 
@@ -654,6 +679,13 @@ algorithm
     Print.printBuf("Exiting!\n");
   end try;
 end interactivemodeCorba;
+
+protected function interactivemodeZMQ
+"Initiate the interactive mode using ZMQ communication."
+  input GlobalScript.SymbolTable symbolTable;
+algorithm
+  serverLoopZMQ(true, ZeroMQ.initialize(), symbolTable);
+end interactivemodeZMQ;
 
 protected function serverLoopCorba
 "This function is the main loop of the server for a CORBA impl."
@@ -838,6 +870,8 @@ protected function main2
   "This is the main function that the MetaModelica Compiler (MMC) runtime system calls to
    start the translation."
   input list<String> args;
+protected
+  String interactiveMode;
 algorithm
   // Version requested using --version.
   if Config.versionRequest() then
@@ -846,7 +880,9 @@ algorithm
   end if;
 
   // Don't allow running omc as root due to security risks.
-  if System.userIsRoot() and (Flags.isSet(Flags.INTERACTIVE) or Flags.isSet(Flags.INTERACTIVE_CORBA)) then
+  interactiveMode := Flags.getConfigString(Flags.INTERACTIVE);
+  if System.userIsRoot() and (Flags.isSet(Flags.INTERACTIVE_TCP) or Flags.isSet(Flags.INTERACTIVE_CORBA)
+     or interactiveMode == "corba" or interactiveMode == "tcp" or interactiveMode == "zmq") then
     Error.addMessage(Error.ROOT_USER_INTERACTIVE, {});
     print(ErrorExt.printMessagesStr(false));
     fail();
@@ -862,10 +898,18 @@ algorithm
   try
     Settings.getInstallationDirectoryPath();
 
-    if Flags.isSet(Flags.INTERACTIVE) then
+    if Flags.isSet(Flags.INTERACTIVE_TCP) then
+      print("The flag -d=interactive is depreciated. Please use --interactive=tcp\n");
+      interactivemode(readSettings(args));
+    elseif interactiveMode == "tcp" then
       interactivemode(readSettings(args));
     elseif Flags.isSet(Flags.INTERACTIVE_CORBA) then
+      print("The flag -d=interactiveCorba is depreciated. Please use --interactive=corba\n");
       interactivemodeCorba(readSettings(args));
+    elseif interactiveMode == "corba" then
+      interactivemodeCorba(readSettings(args));
+    elseif interactiveMode == "zmq" then
+      interactivemodeZMQ(readSettings(args));
     else // No interactive flag given, try to flatten the file.
       readSettings(args);
       FGraphStream.start();
@@ -900,4 +944,3 @@ end main2;
 
 annotation(__OpenModelica_Interface="backend");
 end Main;
-

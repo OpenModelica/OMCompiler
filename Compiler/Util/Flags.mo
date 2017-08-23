@@ -57,6 +57,7 @@ encapsulated package Flags
 public import Util;
 
 protected import Corba;
+protected import ZeroMQ;
 protected import Error;
 protected import ErrorExt;
 protected import Global;
@@ -238,7 +239,7 @@ constant DebugFlag TRANSFORMS_BEFORE_DUMP = DEBUG_FLAG(33, "transformsbeforedump
   Util.gettext("Applies transformations required for code generation before dumping flat code."));
 constant DebugFlag DAE_DUMP_GRAPHV = DEBUG_FLAG(34, "daedumpgraphv", false,
   Util.gettext("Dumps the DAE in graphviz format."));
-constant DebugFlag INTERACTIVE = DEBUG_FLAG(35, "interactive", false,
+constant DebugFlag INTERACTIVE_TCP = DEBUG_FLAG(35, "interactive", false,
   Util.gettext("Starts omc as a server listening on the socket interface."));
 constant DebugFlag INTERACTIVE_CORBA = DEBUG_FLAG(36, "interactiveCorba", false,
   Util.gettext("Starts omc as a server listening on the Corba interface."));
@@ -555,7 +556,7 @@ constant list<DebugFlag> allDebugFlags = {
   EXEC_STAT,
   TRANSFORMS_BEFORE_DUMP,
   DAE_DUMP_GRAPHV,
-  INTERACTIVE,
+  INTERACTIVE_TCP,
   INTERACTIVE_CORBA,
   INTERACTIVE_DUMP,
   RELIDX,
@@ -763,6 +764,7 @@ constant ConfigFlag PRE_OPT_MODULES = CONFIG_FLAG(12, "preOptModules",
     }),
   SOME(STRING_DESC_OPTION({
     ("clockPartitioning", Util.gettext("Does the clock partitioning.")),
+    ("collapseArrayExpressions", collapseArrayExpressionsText),
     ("comSubExp", Util.gettext("replaces common sub expressions")),
     ("dumpDAE", Util.gettext("dumps the DAE representation of the current transformation state")),
     ("dumpDAEXML", Util.gettext("dumps the DAE as xml representation of the current transformation state")),
@@ -853,7 +855,8 @@ constant ConfigFlag POST_OPT_MODULES = CONFIG_FLAG(16, "postOptModules",
     "removeConstants",
     "simplifyTimeIndepFuncCalls",
     "simplifyAllExpressions",
-    "findZeroCrossings"
+    "findZeroCrossings",
+    "collapseArrayExpressions"
     }),
   SOME(STRING_DESC_OPTION({
     ("addScaledVars_states", Util.notrans("added var_norm = var/nominal, where var is state")),
@@ -861,6 +864,7 @@ constant ConfigFlag POST_OPT_MODULES = CONFIG_FLAG(16, "postOptModules",
     ("addTimeAsState", Util.gettext("Experimental feature: this replaces each occurrence of variable time with a new introduced state $time with equation der($time) = 1.0")),
     ("calculateStateSetsJacobians", Util.gettext("Generates analytical jacobian for dynamic state selection sets.")),
     ("calculateStrongComponentJacobians", Util.gettext("Generates analytical jacobian for torn linear and non-linear strong components. By default non-linear components with user-defined function calls are skipped. See also debug flags: NLSanalyticJacobian and forceNLSanalyticJacobian")),
+    ("collapseArrayExpressions", collapseArrayExpressionsText),
     ("constantLinearSystem", Util.gettext("Evaluates constant linear systems (a*x+b*y=c; d*x+e*y=f; a,b,c,d,e,f are constants) at compile-time.")),
     ("countOperations", Util.gettext("Count the mathematical operations of the system.")),
     ("cseBinary", Util.gettext("Common Sub-expression Elimination")),
@@ -927,7 +931,7 @@ constant ConfigFlag SILENT = CONFIG_FLAG(22, "silent",
 
 constant ConfigFlag CORBA_SESSION = CONFIG_FLAG(23, "corbaSessionName",
   SOME("c"), EXTERNAL(), STRING_FLAG(""), NONE(),
-  Util.gettext("Sets the name of the corba session if -d=interactiveCorba is used."));
+  Util.gettext("Sets the name of the corba session if -d=interactiveCorba or --interactive=corba is used."));
 
 constant ConfigFlag NUM_PROC = CONFIG_FLAG(24, "numProcs",
   SOME("n"), EXTERNAL(), INT_FLAG(0), NONE(),
@@ -1200,16 +1204,20 @@ constant ConfigFlag PARTLINTORN = CONFIG_FLAG(76, "partlintorn",
   NONE(), EXTERNAL(), INT_FLAG(0), NONE(),
   Util.gettext("Sets the limit for partitionin of linear torn systems."));
 
+constant Util.TranslatableContent collapseArrayExpressionsText = Util.gettext("Simplifies {x[1],x[2],x[3]} → x for arrays of whole variable references (simplifies code generation).");
+
 constant ConfigFlag INIT_OPT_MODULES = CONFIG_FLAG(77, "initOptModules",
   NONE(), EXTERNAL(), STRING_LIST_FLAG({
     "simplifyComplexFunction",
     "tearingSystem",
     "calculateStrongComponentJacobians",
     "solveSimpleEquations",
-    "simplifyAllExpressions"
+    "simplifyAllExpressions",
+    "collapseArrayExpressions"
     }),
   SOME(STRING_DESC_OPTION({
     ("calculateStrongComponentJacobians", Util.gettext("Generates analytical jacobian for torn linear and non-linear strong components. By default non-linear components with user-defined function calls are skipped. See also debug flags: NLSanalyticJacobian and forceNLSanalyticJacobian")),
+    ("collapseArrayExpressions", collapseArrayExpressionsText),
     ("constantLinearSystem", Util.gettext("Evaluates constant linear systems (a*x+b*y=c; d*x+e*y=f; a,b,c,d,e,f are constants) at compile-time.")),
     ("extendDynamicOptimization", Util.gettext("Move loops to constraints.")),
     ("inlineHomotopy", Util.gettext("Experimental: Inlines the homotopy expression to allow symbolic simplifications.")),
@@ -1222,7 +1230,7 @@ constant ConfigFlag INIT_OPT_MODULES = CONFIG_FLAG(77, "initOptModules",
     ("simplifyLoops", Util.notrans("Simplifies algebraic loops. This modules requires +simplifyLoops.")),
     ("solveSimpleEquations", Util.notrans("Solves simple equations")),
     ("tearingSystem", Util.notrans("For method selection use flag tearingMethod.")),
-	("wrapFunctionCalls", Util.gettext("This module introduces variables for each function call and substitutes all these calls with the newly introduced variables."))
+    ("wrapFunctionCalls", Util.gettext("This module introduces variables for each function call and substitutes all these calls with the newly introduced variables."))
     })),
   Util.gettext("Sets the initialization optimization modules to use in the back end. See --help=optmodules for more info."));
 
@@ -1321,7 +1329,7 @@ constant ConfigFlag DYNAMIC_TEARING_FOR_INITIALIZATION = CONFIG_FLAG(104, "dynam
   NONE(), EXTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Enable Dynamic Tearing also for the initialization system."));
 constant ConfigFlag PREFER_TVARS_WITH_START_VALUE = CONFIG_FLAG(105, "preferTVarsWithStartValue",
-  NONE(), EXTERNAL(), BOOL_FLAG(true), NONE(),
+  NONE(), EXTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Prefer tearing variables with start value for initialization."));
 constant ConfigFlag EQUATIONS_PER_FILE = CONFIG_FLAG(106, "equationsPerFile",
   NONE(), EXTERNAL(), INT_FLAG(2000), NONE(),
@@ -1352,6 +1360,25 @@ constant ConfigFlag TEARING_STRICTNESS = CONFIG_FLAG(113, "tearingStrictness",
     ("veryStrict", Util.gettext("Very strict tearing rules that do not allow to divide by any parameter. Use this if you aim at overriding parameters after compilation with values equal to or close to zero."))
     })),
   Util.gettext("Sets the strictness of the tearing method regarding the solvability restrictions."));
+constant ConfigFlag INTERACTIVE = CONFIG_FLAG(114, "interactive",
+  NONE(), EXTERNAL(), STRING_FLAG("none"),SOME(
+    STRING_DESC_OPTION({
+    ("none", Util.gettext("do nothing")),
+    ("corba", Util.gettext("Starts omc as a server listening on the socket interface.")),
+    ("tcp", Util.gettext("Starts omc as a server listening on the Corba interface.")),
+    ("zmq", Util.gettext("Starts omc as a ZeroMQ server listening on the socket interface."))
+    })),
+  Util.gettext("Sets the interactive mode for omc."));
+constant ConfigFlag ZEROMQ_FILE_SUFFIX = CONFIG_FLAG(115, "zeroMQFileSuffix",
+  SOME("z"), EXTERNAL(), STRING_FLAG(""), NONE(),
+  Util.gettext("Sets the file suffix for zeroMQ port file if --interactive=zmq is used."));
+constant ConfigFlag HOMOTOPY_APPROACH = CONFIG_FLAG(116, "homotopyApproach",
+  NONE(), EXTERNAL(), STRING_FLAG("global"),
+  SOME(STRING_DESC_OPTION({
+    ("local", Util.gettext("Local homotopy approach. The homotopy parameter only effects the local strongly connected component.")),
+    ("global", Util.gettext("Default, global homotopy approach. The homotopy parameter effects the entire initialization system."))
+    })),
+    Util.gettext("Sets the homotopy approach."));
 
 protected
 // This is a list of all configuration flags. A flag can not be used unless it's
@@ -1470,7 +1497,10 @@ constant list<ConfigFlag> allConfigFlags = {
   CONDENSE_ARRAYS,
   WFC_ADVANCED,
   GRAPHICS_EXP_MODE,
-  TEARING_STRICTNESS
+  TEARING_STRICTNESS,
+  INTERACTIVE,
+  ZEROMQ_FILE_SUFFIX,
+  HOMOTOPY_APPROACH
 };
 
 public function new
@@ -2189,7 +2219,7 @@ algorithm
   _ := matchcontinue(inFlag, inValue)
     local
       Boolean value;
-      String corba_name, corba_objid_path;
+      String corba_name, corba_objid_path, zeroMQFileSuffix;
 
     // +showErrorMessages needs to be sent to the C runtime.
     case (_, _)
@@ -2215,6 +2245,15 @@ algorithm
         true = configFlagsIsEqualIndex(inFlag, CORBA_SESSION);
         STRING_FLAG(data = corba_name) = inValue;
         Corba.setSessionName(corba_name);
+      then
+        ();
+
+    // The zeroMQ file suffix needs to be sent to the C runtime.
+    case (_, _)
+      equation
+        true = configFlagsIsEqualIndex(inFlag, ZEROMQ_FILE_SUFFIX);
+        STRING_FLAG(data = zeroMQFileSuffix) = inValue;
+        ZeroMQ.setFileSuffix(zeroMQFileSuffix);
       then
         ();
 

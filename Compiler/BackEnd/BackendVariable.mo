@@ -1389,6 +1389,24 @@ algorithm
   end match;
 end hasVarEvaluateAnnotation;
 
+public function hasVarEvaluateAnnotationFalse
+  "Returns true if var has Evaluate=false annotation
+   author: ptaeuber"
+  input BackendDAE.Var inVar;
+  output Boolean isFalse;
+protected
+  SCode.Annotation ann;
+  Absyn.Exp val;
+algorithm
+  try
+    BackendDAE.VAR(comment=SOME(SCode.COMMENT(annotation_ = SOME(ann)))) := inVar;
+    (val,_) := SCode.getNamedAnnotation(ann, "Evaluate");
+    isFalse := stringEqual(Dump.printExpStr(val), "false");
+  else
+    isFalse := false;
+  end try;
+end hasVarEvaluateAnnotationFalse;
+
 public function hasAnnotation"checks if the variable has an annotation"
   input BackendDAE.Var inVar;
   output Boolean hasAnnot;
@@ -2030,7 +2048,12 @@ protected
   array<Option<BackendDAE.Var>> varOptArr;
 algorithm
   BackendDAE.VARIABLE_ARRAY(varOptArr=varOptArr) := inArray;
-  outVars := list(Util.getOption(varOptArr[i]) for i guard isSome(varOptArr[i]) in 1:arrayLength(varOptArr));
+  outVars := {};
+  for i in arrayLength(varOptArr):-1:1 loop
+    if isSome(varOptArr[i]) then
+      outVars := Util.getOption(varOptArr[i])::outVars;
+    end if;
+  end for;
 end vararrayList;
 
 /* =======================================================

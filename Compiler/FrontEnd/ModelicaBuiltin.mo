@@ -2889,6 +2889,18 @@ external "builtin";
 annotation(preferredView="text");
 end compareSimulationResults;
 
+public function deltaSimulationResults "calculates the sum of absolute errors."
+  input String filename;
+  input String reffilename;
+  input String method "method to compute then error. choose 1norm, 2norm, maxerr";
+  input String[:] vars = fill("",0);
+  output Real result;
+external "builtin";
+annotation(Documentation(info="<html>
+<p>For each data point in the reference file, the sum of all absolute error sums of all given variables is calculated.</p>
+</html>"),preferredView="text");
+end deltaSimulationResults;
+
 public function diffSimulationResults "compares simulation results."
   input String actualFile;
   input String expectedFile;
@@ -3966,6 +3978,49 @@ annotation(preferredView="text",Documentation(info="<html>
 <p>Updates the transition in the class.</p>
 </html>"));
 end updateTransition;
+
+function getInitialStates
+  input TypeName cl;
+  output String[:,:] initialStates;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+<p>Returns list of initial states for the given class.</p>
+<p>Each initial state item contains 2 values i.e, state name and annotation.</p>
+</html>"), preferredView="text");
+end getInitialStates;
+
+function addInitialState
+  input TypeName cl;
+  input String state;
+  input ExpressionOrModification annotate;
+  output Boolean bool;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Adds the initial state to the class.</p>
+</html>"));
+end addInitialState;
+
+function deleteInitialState
+  input TypeName cl;
+  input String state;
+  output Boolean bool;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Deletes the initial state from the class.</p>
+</html>"));
+end deleteInitialState;
+
+function updateInitialState
+  input TypeName cl;
+  input String state;
+  input ExpressionOrModification annotate;
+  output Boolean bool;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Updates the initial state in the class.</p>
+</html>"));
+end updateInitialState;
 
 function generateScriptingAPI
   input TypeName cl;

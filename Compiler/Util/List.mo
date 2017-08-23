@@ -394,6 +394,20 @@ algorithm
   end for;
 end append_reverse;
 
+public function append_reverser<T>
+  "Appends the elements from list2 in reverse order to list1."
+  input list<T> inList1;
+  input list<T> inList2;
+  output list<T> outList=inList1;
+algorithm
+  // Do not optimize the case listEmpty(inList2) and listLength(inList1)==1
+  // since we use listReverseInPlace together with this function.
+  // An alternative would be to keep both (and rename this append_reverse_always_copy)
+  for e in inList2 loop
+    outList := e::outList;
+  end for;
+end append_reverser;
+
 public function appendr<T>
   "Appends two lists in reverse order compared to listAppend."
   input list<T> inList1;
@@ -569,19 +583,13 @@ public function last<T>
   "Returns the last element of a list. Fails if the list is empty."
   input list<T> inList;
   output T outLast;
+protected
+  list<T> rest;
 algorithm
-  outLast := match(inList)
-    local
-      T e;
-      list<T> rest;
-
-    case (e :: rest)
-      algorithm
-        while not listEmpty(rest) loop
-          e::rest := rest;
-        end while;
-      then e;
-  end match;
+  outLast::rest := inList;
+  for e in rest loop
+    outLast := e;
+  end for;
 end last;
 
 public function lastElement<T>
@@ -604,12 +612,10 @@ public function lastListOrEmpty<T>
   if the outer list is empty."
   input list<list<T>> inListList;
   output list<T> outLastList = {};
-protected
-  list<list<T>> rest = inListList;
 algorithm
-  while not listEmpty(rest) loop
-    outLastList :: rest := rest;
-  end while;
+  for e in inListList loop
+    outLastList := e;
+  end for;
 end lastListOrEmpty;
 
 public function secondLast<T>
@@ -757,7 +763,7 @@ algorithm
     else
       e2 :: rest := rest;
       if listEmpty(rest) then
-        outList := if inCompFunc(e2, e1) then inList else e2::{e1};
+        outList := if inCompFunc(e2, e1) then inList else {e2,e1};
       else
         middle := intDiv(listLength(inList), 2);
         (left, right) := split(inList, middle);
@@ -1006,7 +1012,7 @@ algorithm
   a1 := arrayCreate(inN, false);
   a1 := fold1r(inList,arrayUpdate,true,a1);
 
-  for i in inN:1 loop
+  for i in inN:-1:1 loop
     if a1[i] then
       outSorted := i :: outSorted;
     end if;
@@ -1187,18 +1193,14 @@ public function splitOnTrue<T>
     input T inElement;
     output Boolean outResult;
   end PredicateFunc;
-protected
-  T e;
-  list<T> rest = inList;
 algorithm
-  while not listEmpty(rest) loop
-    e :: rest := rest;
+  for e in inList loop
     if inFunc(e) then
       outTrueList := e :: outTrueList;
     else
       outFalseList := e :: outFalseList;
     end if;
-  end while;
+  end for;
 
   outTrueList := listReverseInPlace(outTrueList);
   outFalseList := listReverseInPlace(outFalseList);
@@ -1217,18 +1219,14 @@ public function split1OnTrue<T, ArgT1>
     input ArgT1 inArg1;
     output Boolean outResult;
   end PredicateFunc;
-protected
-  T e;
-  list<T> rest = inList;
 algorithm
-  while not listEmpty(rest) loop
-    e :: rest := rest;
+  for e in inList loop
     if inFunc(e, inArg1) then
       outTrueList := e :: outTrueList;
     else
       outFalseList := e :: outFalseList;
     end if;
-  end while;
+  end for;
 
   outTrueList := listReverseInPlace(outTrueList);
   outFalseList := listReverseInPlace(outFalseList);
@@ -1249,18 +1247,14 @@ public function split2OnTrue<T, ArgT1, ArgT2>
     input ArgT2 inArg2;
     output Boolean outResult;
   end PredicateFunc;
-protected
-  T e;
-  list<T> rest = inList;
 algorithm
-  while not listEmpty(rest) loop
-    e :: rest := rest;
+  for e in inList loop
     if inFunc(e, inArg1, inArg2) then
       outTrueList := e :: outTrueList;
     else
       outFalseList := e :: outFalseList;
     end if;
-  end while;
+  end for;
 
   outTrueList := listReverseInPlace(outTrueList);
   outFalseList := listReverseInPlace(outFalseList);
@@ -1578,6 +1572,50 @@ algorithm
                 intEq(lst_size, listLength(inList2));
 end setEqualOnTrue;
 
+public function intersectionIntSorted
+  "Provides same functionality as listIntersection, but for integer values
+   in sorted lists. The complexity in this case is O(n)."
+  input list<Integer> inList1;
+  input list<Integer> inList2;
+  output list<Integer> outResult = {};
+protected
+  Integer i1, i2;
+  Integer o1, o2;
+  list<Integer> l1 = inList1, l2 = inList2;
+algorithm
+  if listEmpty(inList1) or listEmpty(inList2) then
+    return;
+  end if;
+  i1::l1 := l1;
+  i2::l2 := l2;
+  o1:=i1;o2:=i2;
+  while true loop
+    if i1 > i2 then
+      if listEmpty(l2) then
+        break;
+      end if;
+      i2::l2 := l2;
+      if o2 > i2 then fail();end if; o2:=i2;
+    elseif i1 < i2 then
+      if listEmpty(l1) then
+        break;
+      end if;
+      i1::l1 := l1;
+      if o1 > i1 then fail();end if; o1:=i1;
+    else
+      outResult := i1::outResult;
+      if listEmpty(l1) or listEmpty(l2) then
+        break;
+      end if;
+      i1::l1 := l1;
+      i2::l2 := l2;
+      if o1 > i1 then fail();end if; o1:=i1;
+      if o2 > i2 then fail();end if; o2:=i2;
+    end if;
+  end while;
+  outResult := listReverseInPlace(outResult);
+end intersectionIntSorted;
+
 public function intersectionIntN
   "Provides same functionality as listIntersection, but for integer values
    between 1 and N. The complexity in this case is O(n)."
@@ -1708,7 +1746,7 @@ algorithm
     a := addPos(inList1, a, 1);
     a := addPos(inList2, a, 1);
 
-    for i in inN:1 loop
+    for i in inN:-1:1 loop
       if arrayGet(a, i) == 1 then
         outDifference := i :: outDifference;
       end if;
@@ -1776,7 +1814,7 @@ algorithm
     a := addPos(inList1, a, 1);
     a := addPos(inList2, a, 1);
 
-    for i in inN:1 loop
+    for i in inN:-1:1 loop
       if arrayGet(a, i) > 0 then
         outUnion := i :: outUnion;
       end if;
@@ -3180,6 +3218,49 @@ algorithm
   end for;
 end mapBoolOr;
 
+public function mapBoolAnd<TI>
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value."
+  input list<TI> inList;
+  input MapFunc inFunc;
+  output Boolean res = false;
+
+  partial function MapFunc
+    input TI inElement;
+    output Boolean outBool;
+  end MapFunc;
+algorithm
+  for e in inList loop
+    if not inFunc(e) then
+      return;
+    end if;
+  end for;
+  res := true;
+end mapBoolAnd;
+
+public function mapMapBoolAnd<TI,TI2>
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value."
+  input list<TI> inList;
+  input MapFunc inFunc;
+  input MapBFunc inBFunc;
+  output Boolean res = false;
+
+  partial function MapBFunc
+    input TI2 inElement;
+    output Boolean outBool;
+  end MapBFunc;
+  partial function MapFunc
+    input TI inElement;
+    output TI2 outElement;
+  end MapFunc;
+algorithm
+  for e in inList loop
+    if not inBFunc(inFunc(e)) then
+      return;
+    end if;
+  end for;
+  res := true;
+end mapMapBoolAnd;
+
 
 public function map1BoolOr<TI, ArgT1>
   "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value.
@@ -3202,6 +3283,29 @@ algorithm
     end if;
   end for;
 end map1BoolOr;
+
+
+public function map1BoolAnd<TI, ArgT1>
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value.
+  inFunc takes one additional argument."
+  input list<TI> inList;
+  input MapFunc inFunc;
+  input ArgT1 inArg1;
+  output Boolean res = false;
+
+  partial function MapFunc
+    input TI inElement;
+    input ArgT1 inArg1;
+    output Boolean outBool;
+  end MapFunc;
+algorithm
+  for e in inList loop
+    if not inFunc(e, inArg1) then
+      return;
+    end if;
+  end for;
+  res := true;
+end map1BoolAnd;
 
 
 public function map1ListBoolOr<TI, ArgT1>
