@@ -66,6 +66,26 @@ import Subscript = NFSubscript;
 import TypeCheck = NFTypeCheck;
 import Types;
 import NFSections.Sections;
+import List;
+import DAEUtil;
+
+uniontype TypingError
+  record NO_ERROR end NO_ERROR;
+
+  record OUT_OF_BOUNDS
+    Integer upperBound;
+  end OUT_OF_BOUNDS;
+
+  function isError
+    input TypingError error;
+    output Boolean isError;
+  algorithm
+    isError := match error
+      case NO_ERROR() then false;
+      else true;
+    end match;
+  end isError;
+end TypingError;
 
 public
 function typeClass
@@ -90,21 +110,27 @@ end typeFunction;
 
 function typeComponents
   input InstNode cls;
-  output Type ty;
 protected
   Class c = InstNode.getClass(cls);
   ClassTree cls_tree;
+  list<Dimension> dims;
 algorithm
-  ty := match c
+  () := match c
     case Class.INSTANCED_CLASS(elements = cls_tree as ClassTree.FLAT_TREE())
       algorithm
         for c in cls_tree.components loop
           typeComponent(c);
         end for;
       then
-        Type.COMPLEX(cls);
+        ();
 
-    case Class.INSTANCED_BUILTIN() then c.ty;
+    case Class.DERIVED_CLASS()
+      algorithm
+        typeComponents(c.baseClass);
+      then
+        ();
+
+    case Class.INSTANCED_BUILTIN() then ();
 
     else
       algorithm
@@ -118,35 +144,30 @@ end typeComponents;
 
 function typeComponent
   input InstNode component;
+  output Type ty;
 protected
   Component c = InstNode.component(component);
-  SourceInfo info;
-  Type ty;
 algorithm
-  () := match c
+  ty := match c
     // An untyped component, type it.
     case Component.UNTYPED_COMPONENT()
       algorithm
-        info := InstNode.info(component);
-
         // Type the component's dimensions.
-        typeDimensions(c.dimensions, InstNode.name(component), info);
+        typeDimensions(c.dimensions, component, c.binding, c.info);
+
+        // Construct the type of the component and update the node with it.
+        ty := Type.liftArrayLeftList(InstNode.getType(c.classInst), arrayList(c.dimensions));
+        InstNode.updateComponent(Component.setType(ty, c), component);
 
         // Type the component's children.
-        ty := typeComponents(c.classInst);
-
-        // Add the dimensions from the component to it's type.
-        ty := Type.liftArrayLeftList(ty, arrayList(c.dimensions));
-
-        // Finally, update the component in the instance tree.
-        InstNode.updateComponent(Component.setType(ty, c), component);
+        typeComponents(c.classInst);
       then
-        ();
+        ty;
 
     // A component that has already been typed, skip it.
-    case Component.TYPED_COMPONENT() then ();
-    case Component.ITERATOR() then ();
-    case Component.ENUM_LITERAL() then ();
+    case Component.TYPED_COMPONENT() then c.ty;
+    case Component.ITERATOR() then c.ty;
+    case Component.ENUM_LITERAL(literal = Expression.ENUM_LITERAL(ty = ty)) then ty;
 
     // Any other type of component shouldn't show up here.
     else
@@ -154,7 +175,7 @@ algorithm
         assert(false, getInstanceName() + " got uninstantiated component " +
           InstNode.name(component));
       then
-        ();
+        fail();
 
   end match;
 end typeComponent;
@@ -176,7 +197,7 @@ algorithm
 
         // If the iteration range is structural, it must be a parameter expression.
         if structural then
-          if not Types.isParameterOrConstant(Binding.variability(binding)) then
+          if not DAEUtil.isParamOrConstVarKind(Binding.variability(binding)) then
             Error.addSourceMessageAndFail(Error.NON_PARAMETER_ITERATOR_RANGE,
               {Binding.toString(binding)}, info);
           else
@@ -219,40 +240,111 @@ end typeIterator;
 
 function typeDimensions
   input output array<Dimension> dimensions;
-  input String elementName;
+  input InstNode component;
+  input Binding binding;
   input SourceInfo info;
 algorithm
   for i in 1:arrayLength(dimensions) loop
-    dimensions[i] := typeDimension(dimensions[i], elementName, i, info);
+    typeDimension(dimensions[i], component, binding, i, dimensions, info);
   end for;
 end typeDimensions;
 
 function typeDimension
   input output Dimension dimension;
-  input String elementName;
+  input InstNode component;
+  input Binding binding;
   input Integer index;
+  input array<Dimension> dimensions;
   input SourceInfo info;
 algorithm
   dimension := match dimension
     local
       Expression exp;
-      DAE.Const var;
+      DAE.VarKind var;
+      Dimension dim;
+      Binding b;
+      TypingError ty_err;
+      Type ty;
+      Integer prop_dims;
+
+    // Print an error when a dimension that's currently being processed is
+    // found, which indicates a dependency loop. Another way of handling this
+    // would be to instead view the dimension as unknown and infer it from the
+    // binding, which means that things like x[size(x, 1)] = {...} could be
+    // handled. But that is not specified and doesn't seem needed, and can also
+    // give different results depending on the declaration order of components.
+    case Dimension.UNTYPED(isProcessing = true)
+      algorithm
+        // TODO: Tell the user which variables are involved in the loop (can be
+        //       found with DFS on the dimension expression. Maybe have a limit
+        //       on the output in case there's a lot of dimensions involved.
+        Error.addSourceMessage(Error.CYCLIC_DIMENSIONS,
+          {String(index), InstNode.name(component), Expression.toString(dimension.dimension)}, info);
+      then
+        fail();
 
     // If the dimension is not typed, type it.
     case Dimension.UNTYPED()
       algorithm
-        (exp, _, var) := typeExp(dimension.dimension, info);
+        arrayUpdate(dimensions, index, Dimension.UNTYPED(dimension.dimension, true));
 
-        // TODO: Improve this error message:
-        // "Dimension %s of %s is not a parameter expression."
-        if not Types.isParameterOrConstant(var) then
-          Error.addSourceMessageAndFail(Error.DIMENSION_NOT_KNOWN, {Expression.toString(exp)}, info);
+        (exp, ty, var) := typeExp(dimension.dimension, info);
+        TypeCheck.checkDimension(exp, ty, var, info);
+
+        exp := Ceval.evalExp(exp, Ceval.EvalTarget.DIMENSION(component, index, exp, info));
+        exp := SimplifyExp.simplifyExp(exp);
+
+        // It's possible to get an array expression here, for example if the
+        // dimension expression is a parameter whose binding comes from a
+        // modifier on an array component. If all the elements are equal we can
+        // just take one of them and use that, but we don't yet support the case
+        // where they are different. Creating a dimension from an array leads to
+        // weird things happening, so for now we print an error instead.
+        if not Expression.arrayAllEqual(exp) then
+          Error.addSourceMessage(Error.RAGGED_DIMENSION, {Expression.toString(exp)}, info);
+          fail();
         end if;
 
-        exp := Ceval.evalExp(exp, Ceval.EvalTarget.DIMENSION(elementName, index, exp, info));
-        exp := SimplifyExp.simplifyExp(exp);
+        dim := Dimension.fromExp(Expression.arrayFirstScalar(exp));
+        arrayUpdate(dimensions, index, dim);
       then
-        Dimension.fromExp(exp);
+        dim;
+
+    // If the dimension is unknown, try to infer it from the components binding.
+    case Dimension.UNKNOWN()
+      algorithm
+        dim := match binding
+          // Print an error if there's no binding.
+          case Binding.UNBOUND()
+            algorithm
+              Error.addSourceMessage(Error.FAILURE_TO_DEDUCE_DIMS_NO_MOD,
+                {String(index), InstNode.name(component)}, info);
+            then
+              fail();
+
+          // An untyped binding, type the expression only as much as is needed
+          // to get the dimension we're looking for.
+          case Binding.UNTYPED_BINDING()
+            algorithm
+              prop_dims := InstNode.countDimensions(InstNode.parent(component), binding.propagatedLevels);
+              dim := typeExpDim(binding.bindingExp, index + prop_dims, info);
+            then
+              dim;
+
+          // A typed binding, get the dimension from the binding's type.
+          case Binding.TYPED_BINDING()
+            algorithm
+              prop_dims := InstNode.countDimensions(InstNode.parent(component), binding.propagatedLevels);
+              dim := nthDimensionBoundsChecked(binding.bindingType, index + prop_dims);
+            then
+              dim;
+
+          else Dimension.UNKNOWN();
+        end match;
+
+        arrayUpdate(dimensions, index, dim);
+      then
+        dim;
 
     // Other kinds of dimensions are already typed.
     else dimension;
@@ -273,6 +365,12 @@ algorithm
         for c in cls_tree.components loop
           typeComponentBinding(c);
         end for;
+      then
+        ();
+
+    case Class.DERIVED_CLASS()
+      algorithm
+        cls := typeBindings(c.baseClass);
       then
         ();
 
@@ -301,25 +399,44 @@ algorithm
   () := match c
     local
       Binding binding;
+      InstNode cls;
       MatchKind matchKind;
+      Boolean dirty;
 
     case Component.TYPED_COMPONENT()
       algorithm
         binding := typeBinding(c.binding);
-        if not referenceEq(binding, c.binding) then
-          c.binding := binding;
-          InstNode.updateComponent(c, component);
-        end if;
+        dirty := not referenceEq(binding, c.binding);
 
-        if Binding.isTyped(binding) then
-          (_, _, matchKind) := TypeCheck.matchTypes(Binding.getType(binding), c.ty, Binding.getTypedExp(binding));
-          if not TypeCheck.isCompatibleMatch(matchKind) then
-            Error.addSourceMessage(Error.VARIABLE_BINDING_TYPE_MISMATCH, {InstNode.name(component), Binding.toString(binding), Type.toString(c.ty), Type.toString(Binding.getType(binding))}, Binding.getInfo(binding));
+        // If the binding changed during typing it means it was an untyped
+        // binding which is now typed, and it needs to be type checked.
+        if dirty then
+          binding := TypeCheck.matchBinding(binding, c.ty, component);
+
+          if not TypeCheck.matchVariability(Binding.variability(binding), Component.variability(c)) then
+            Error.addSourceMessage(Error.HIGHER_VARIABILITY_BINDING,
+              {InstNode.name(component), InstUtil.variabilityString(Component.variability(c)),
+               "'" + Binding.toString(binding) + "'", InstUtil.variabilityString(Binding.variability(binding))},
+              Binding.getInfo(binding));
             fail();
           end if;
+
+          c.binding := binding;
         end if;
 
-        typeBindings(c.classInst);
+        cls := typeBindings(c.classInst);
+
+        // The component's type can change, e.g. if it was a derived class that
+        // was resolved to its base class.
+        if not referenceEq(cls, c.classInst) then
+          c.classInst := cls;
+          dirty := true;
+        end if;
+
+        // Update the node if the component changed.
+        if dirty then
+          InstNode.updateComponent(c, component);
+        end if;
       then
         ();
 
@@ -339,13 +456,13 @@ algorithm
     local
       Expression exp;
       Type ty;
-      DAE.Const var;
+      DAE.VarKind var;
 
     case Binding.UNTYPED_BINDING(bindingExp = exp)
       algorithm
         (exp, ty, var) := typeExp(exp, binding.info);
       then
-        Binding.TYPED_BINDING(exp, ty, var, binding.propagatedDims, binding.info);
+        Binding.TYPED_BINDING(exp, ty, var, binding.propagatedLevels, binding.info);
 
     case Binding.TYPED_BINDING() then binding;
     case Binding.UNBOUND() then binding;
@@ -410,7 +527,7 @@ algorithm
         exp := Ceval.evalExp(binding.bindingExp, Ceval.EvalTarget.ATTRIBUTE(binding.bindingExp, binding.info));
         exp := SimplifyExp.simplifyExp(exp);
       then
-        Binding.TYPED_BINDING(exp, binding.bindingType, binding.variability, binding.propagatedDims, binding.info);
+        Binding.TYPED_BINDING(exp, binding.bindingType, binding.variability, binding.propagatedLevels, binding.info);
 
     else
       algorithm
@@ -459,29 +576,37 @@ function typeExp
   input output Expression exp;
   input SourceInfo info;
         output Type ty;
-        output DAE.Const variability;
+        output DAE.VarKind variability;
 
-  import DAE.Const;
+  import DAE.VarKind;
 algorithm
   (exp, ty, variability) := match exp
     local
       Expression e1, e2, e3;
-      DAE.Const var1, var2, var3;
+      DAE.VarKind var1, var2, var3;
       Type ty1, ty2, ty3;
       Operator op;
+      ComponentRef cref;
 
-    case Expression.INTEGER() then (exp, Type.INTEGER(), Const.C_CONST());
-    case Expression.REAL() then (exp, Type.REAL(), Const.C_CONST());
-    case Expression.STRING() then (exp, Type.STRING(), Const.C_CONST());
-    case Expression.BOOLEAN() then (exp, Type.BOOLEAN(), Const.C_CONST());
-    case Expression.ENUM_LITERAL() then (exp, exp.ty, Const.C_CONST());
-    case Expression.CREF() then typeCref(exp.cref, info);
-    case Expression.TYPENAME() then (exp, exp.ty, Const.C_CONST());
+    case Expression.INTEGER() then (exp, Type.INTEGER(), VarKind.CONST());
+    case Expression.REAL() then (exp, Type.REAL(), VarKind.CONST());
+    case Expression.STRING() then (exp, Type.STRING(), VarKind.CONST());
+    case Expression.BOOLEAN() then (exp, Type.BOOLEAN(), VarKind.CONST());
+    case Expression.ENUM_LITERAL() then (exp, exp.ty, VarKind.CONST());
+
+    case Expression.CREF()
+      algorithm
+        (cref, ty, variability) := typeCref(exp.cref, info);
+      then
+        (Expression.CREF(ty, cref), ty, variability);
+
+    case Expression.TYPENAME() then (exp, exp.ty, VarKind.CONST());
     case Expression.ARRAY() then typeArray(exp.elements, info);
     case Expression.RANGE() then typeRange(exp, info);
+    case Expression.TUPLE() then typeTuple(exp.elements, info);
     case Expression.SIZE() then typeSize(exp, info);
 
-    case Expression.END() then (exp, Type.INTEGER(), Const.C_CONST());
+    case Expression.END() then (exp, Type.INTEGER(), VarKind.CONST());
 
     case Expression.BINARY()
       algorithm
@@ -489,7 +614,7 @@ algorithm
         (e2, ty2, var2) := typeExp(exp.exp2, info);
         (exp, ty) := TypeCheck.checkBinaryOperation(e1, ty1, exp.operator, e2, ty2);
       then
-        (exp, ty, Types.constAnd(var1, var2));
+        (exp, ty, InstUtil.variabilityAnd(var1, var2));
 
     case Expression.UNARY()
       algorithm
@@ -504,7 +629,7 @@ algorithm
         (e2, ty2, var2) := typeExp(exp.exp2, info);
         (exp, ty) := TypeCheck.checkLogicalBinaryOperation(e1, ty1, exp.operator, e2, ty2);
       then
-        (exp, ty, Types.constAnd(var1, var2));
+        (exp, ty, InstUtil.variabilityAnd(var1, var2));
 
     case Expression.LUNARY()
       algorithm
@@ -519,7 +644,7 @@ algorithm
         (e2, ty2, var2) := typeExp(exp.exp2, info);
         (exp, ty) := TypeCheck.checkRelationOperation(e1, ty1, exp.operator, e2, ty2);
       then
-        (exp, ty, Types.constAnd(var1, var2));
+        (exp, ty, InstUtil.variabilityAnd(var1, var2));
 
     case Expression.IF()
       algorithm
@@ -546,10 +671,10 @@ function typeExpl
   input SourceInfo info;
   output list<Expression> explTyped = {};
   output list<Type> tyl = {};
-  output list<DAE.Const> varl = {};
+  output list<DAE.VarKind> varl = {};
 protected
   Expression exp;
-  DAE.Const var;
+  DAE.VarKind var;
   Type ty;
 algorithm
   for e in listReverse(expl) loop
@@ -560,32 +685,197 @@ algorithm
   end for;
 end typeExpl;
 
-function typeCref
-  input ComponentRef cref;
+function typeExpDim
+  "Returns the requested dimension of the given expression, while doing as
+   little typing as possible. This function returns TypingError.OUT_OF_BOUNDS if
+   the given index doesn't refer to a valid dimension, in which case the
+   returned dimension is undefined."
+  input Expression exp;
+  input Integer dimIndex;
   input SourceInfo info;
-  output Expression exp;
-  output Type ty;
-  output DAE.Const variability;
+        output Dimension dim;
+        output TypingError error;
 algorithm
-  (exp, ty, variability) := match cref
+  (dim, error) := match exp
     local
-      Component comp;
-      Class cls;
-      ComponentRef cr;
+      Type ty;
+
+    // An untyped array, use typeArrayDim to get the dimension.
+    case Expression.ARRAY(ty = Type.UNKNOWN())
+      then typeArrayDim(exp, dimIndex);
+
+    // A typed array, fetch the dimension from its type.
+    case Expression.ARRAY()
+      then nthDimensionBoundsChecked(exp.ty, dimIndex);
+
+    // A cref, use typeCrefDim to get the dimension.
+    case Expression.CREF()
+      then typeCrefDim(exp.cref, dimIndex, info);
+
+    // Any other expression, type the whole expression and get the dimension
+    // from the type.
+    else
+      algorithm
+        (_, ty, _) := typeExp(exp, info);
+      then
+        nthDimensionBoundsChecked(ty, dimIndex);
+
+  end match;
+end typeExpDim;
+
+function typeArrayDim
+  "Returns the requested dimension of an array dimension. This function is meant
+   to be used on an untyped array, for a typed array it's better to just use
+   e.g.  nthDimensionBoundsChecked on its type."
+  input Expression arrayExp;
+  input Integer dimIndex;
+  output Dimension dim;
+  output TypingError error;
+algorithm
+  // We don't yet know the number of dimensions, but the index must at least be 1.
+  if dimIndex < 1 then
+    dim := Dimension.UNKNOWN();
+    error := TypingError.OUT_OF_BOUNDS(Expression.dimensionCount(arrayExp));
+  else
+    (dim, error) := typeArrayDim2(arrayExp, dimIndex);
+  end if;
+end typeArrayDim;
+
+function typeArrayDim2
+  input Expression arrayExp;
+  input Integer dimIndex;
+  input Integer dimCount = 0;
+        output Dimension dim;
+        output TypingError error;
+algorithm
+  (dim, error) := match (arrayExp, dimIndex)
+    case (Expression.ARRAY(), 1)
+      then (Dimension.fromExpList(arrayExp.elements), TypingError.NO_ERROR());
+
+    // Modelica arrays are non-ragged and only the last dimension of an array
+    // expression can be empty, so just traverse into the first element.
+    case (Expression.ARRAY(), _)
+      then typeArrayDim2(listHead(arrayExp.elements), dimIndex - 1, dimCount + 1);
+
+    else
+      algorithm
+        dim := Dimension.UNKNOWN();
+        error := TypingError.OUT_OF_BOUNDS(dimCount);
+      then
+        (dim, error);
+
+  end match;
+end typeArrayDim2;
+
+function typeCrefDim
+  input ComponentRef cref;
+  input Integer dimIndex;
+  input SourceInfo info;
+  output Dimension dim;
+  output TypingError error;
+algorithm
+  (dim, error) := match cref
+    case ComponentRef.CREF(node = InstNode.COMPONENT_NODE())
+      then typeComponentDim(cref.node, dimIndex, info);
+
+    else
+      algorithm
+        assert(false, getInstanceName() + " got invalid cref.");
+      then
+        fail();
+
+  end match;
+end typeCrefDim;
+
+function typeComponentDim
+  input InstNode component;
+  input Integer dimIndex;
+  input SourceInfo info;
+  output Dimension dim;
+  output TypingError error;
+protected
+  Component c = InstNode.component(component);
+algorithm
+  (dim, error) := match c
+    local
+      Dimension d;
+      Type ty;
+
+    // An untyped component, get the requested dimension from the component and type it.
+    case Component.UNTYPED_COMPONENT()
+      algorithm
+        if dimIndex < 1 or dimIndex > arrayLength(c.dimensions) then
+          error := TypingError.OUT_OF_BOUNDS(arrayLength(c.dimensions));
+          d := Dimension.UNKNOWN();
+        else
+          error := TypingError.NO_ERROR();
+          d := arrayGet(c.dimensions, dimIndex);
+          d := typeDimension(d, component, c.binding, dimIndex, c.dimensions, c.info);
+        end if;
+      then
+        (d, error);
+
+    // A typed component, get the requested dimension from its type.
+    else nthDimensionBoundsChecked(Component.getType(c), dimIndex);
+
+  end match;
+end typeComponentDim;
+
+function nthDimensionBoundsChecked
+  "Returns the requested dimension from the given type, along with a TypingError
+   indicating whether the index was valid or not."
+  input Type ty;
+  input Integer dimIndex;
+  output Dimension dim;
+  output TypingError error;
+protected
+  Integer dim_size = Type.dimensionCount(ty);
+algorithm
+  if dimIndex < 1 or dimIndex > dim_size then
+    dim := Dimension.UNKNOWN();
+    error := TypingError.OUT_OF_BOUNDS(dim_size);
+  else
+    dim := Type.nthDimension(ty, dimIndex);
+    error := TypingError.NO_ERROR();
+  end if;
+end nthDimensionBoundsChecked;
+
+function typeCref
+  input output ComponentRef cref;
+  input SourceInfo info;
+        output Type ty;
+        output DAE.VarKind variability;
+
+  import NFComponentRef.Origin;
+algorithm
+  (cref, ty, variability) := match cref
+    local
+      ComponentRef rest_cr;
+      Type node_ty, cref_ty;
+      list<Subscript> subs;
+
+    case ComponentRef.CREF(origin = Origin.SCOPE)
+      then (cref, Type.UNKNOWN(), DAE.VarKind.VARIABLE());
 
     case ComponentRef.CREF(node = InstNode.COMPONENT_NODE())
       algorithm
-        typeComponent(cref.node);
-        comp := InstNode.component(cref.node);
-        ty := Component.getType(comp);
+        node_ty := typeComponent(cref.node);
         variability := ComponentRef.getVariability(cref);
-        cref.subscripts := typeSubscripts(cref.subscripts, info);
-        cref.ty := Type.subscript(ty, cref.subscripts);
+        subs := typeSubscripts(cref.subscripts, info);
+        cref_ty := Type.subscript(node_ty, subs);
+        (rest_cr, ty, _) := typeCref(cref.restCref, info);
+        ty := Type.liftArrayLeftList(cref_ty, Type.arrayDims(ty));
       then
-        (Expression.CREF(cref), cref.ty, variability);
+        (ComponentRef.CREF(cref.node, subs, cref_ty, cref.origin, rest_cr), ty, variability);
+
+    case ComponentRef.CREF(node = InstNode.CLASS_NODE())
+      then (cref, Type.UNKNOWN(), DAE.VarKind.VARIABLE());
+
+    case ComponentRef.EMPTY()
+      then (cref, Type.UNKNOWN(), DAE.VarKind.VARIABLE());
 
     case ComponentRef.WILD()
-      then (Expression.CREF(ComponentRef.WILD()), Type.UNKNOWN(), DAE.Const.C_VAR());
+      then (cref, Type.UNKNOWN(), DAE.VarKind.VARIABLE());
 
     else
       algorithm
@@ -628,20 +918,21 @@ function typeArray
   input SourceInfo info;
   output Expression arrayExp;
   output Type arrayType = Type.UNKNOWN();
-  output DAE.Const variability = DAE.C_CONST();
+  output DAE.VarKind variability = DAE.VarKind.CONST();
 protected
   Expression exp;
   list<Expression> expl = {};
-  DAE.Const var;
+  DAE.VarKind var;
   Type ty;
 algorithm
   for e in elements loop
+    // TODO: Type checking.
     (exp, ty, var) := typeExp(e, info);
-    variability := Types.constAnd(var, variability);
+    variability := InstUtil.variabilityAnd(var, variability);
     expl := exp :: expl;
   end for;
 
-  arrayType := Type.liftArrayLeft(ty, Dimension.INTEGER(listLength(expl)));
+  arrayType := Type.liftArrayLeft(ty, Dimension.fromExpList(expl));
   arrayExp := Expression.ARRAY(arrayType, listReverse(expl));
 end typeArray;
 
@@ -649,13 +940,13 @@ function typeRange
   input output Expression rangeExp;
   input SourceInfo info;
         output Type rangeType;
-        output DAE.Const variability;
+        output DAE.VarKind variability;
 protected
   Expression start_exp, step_exp, stop_exp;
   Type start_ty, step_ty, stop_ty;
   Option<Expression> ostep_exp;
   Option<Type> ostep_ty;
-  DAE.Const start_var, step_var, stop_var;
+  DAE.VarKind start_var, step_var, stop_var;
   TypeCheck.MatchKind ty_match;
 algorithm
   Expression.RANGE(start = start_exp, step = ostep_exp, stop = stop_exp) := rangeExp;
@@ -663,7 +954,7 @@ algorithm
   // Type start and stop.
   (start_exp, start_ty, start_var) := typeExp(start_exp, info);
   (stop_exp, stop_ty, stop_var) := typeExp(stop_exp, info);
-  variability := Types.constAnd(start_var, stop_var);
+  variability := InstUtil.variabilityAnd(start_var, stop_var);
 
   // Type check start and stop.
   (start_exp, stop_exp, rangeType, ty_match) :=
@@ -677,7 +968,7 @@ algorithm
     // Type step.
     SOME(step_exp) := ostep_exp;
     (step_exp, step_ty, step_var) := typeExp(step_exp, info);
-    variability := Types.constAnd(step_var, variability);
+    variability := InstUtil.variabilityAnd(step_var, variability);
 
     // Type check start and step.
     (start_exp, step_exp, rangeType, ty_match) :=
@@ -702,6 +993,24 @@ algorithm
   rangeExp := Expression.RANGE(rangeType, start_exp, ostep_exp, stop_exp);
 end typeRange;
 
+function typeTuple
+  input list<Expression> elements;
+  input SourceInfo info;
+  output Expression tupleExp;
+  output Type tupleType;
+  output DAE.VarKind variability;
+protected
+  list<Expression> expl;
+  list<Type> tyl;
+  list<DAE.VarKind> valr;
+algorithm
+  (expl, tyl, valr) := typeExpl(elements, info);
+  tupleType := Type.TUPLE(tyl, NONE());
+  tupleExp := Expression.TUPLE(tupleType, expl);
+  variability := List.fold(valr, InstUtil.variabilityAnd, DAE.VarKind.CONST());
+end typeTuple;
+
+protected
 function printRangeTypeError
   input Expression exp1;
   input Type ty1;
@@ -719,48 +1028,78 @@ function typeSize
   input output Expression sizeExp;
   input SourceInfo info;
         output Type sizeType;
-        output DAE.Const variability;
+        output DAE.VarKind variability;
 protected
-  Option<Expression> oindex;
   Expression exp, index;
   Type exp_ty, index_ty;
   TypeCheck.MatchKind ty_match;
+  Integer iindex, dim_size;
+  Dimension dim;
+  TypingError ty_err;
 algorithm
-  Expression.SIZE(exp = exp, dimIndex = oindex) := sizeExp;
+  (sizeExp, sizeType, variability) := match sizeExp
+    case Expression.SIZE(dimIndex = SOME(index))
+      algorithm
+        (index, index_ty, variability) := typeExp(index, info);
 
-  (exp, exp_ty, _) := typeExp(exp, info);
+        // The second argument must be an Integer.
+        (index, _, ty_match) :=
+          TypeCheck.matchTypes(index_ty, Type.INTEGER(), index);
 
-  // The first argument must be an array of any type.
-  if not Type.isArray(exp_ty) then
-    Error.addSourceMessage(Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, {"size"}, info);
-    fail();
-  end if;
+        if TypeCheck.isIncompatibleMatch(ty_match) then
+          Error.addSourceMessage(Error.ARG_TYPE_MISMATCH,
+            {"2", "size ", "dim", Expression.toString(index), Type.toString(index_ty), "Integer"}, info);
+          fail();
+        end if;
 
-  if isSome(oindex) then
-    SOME(index) := oindex;
-    (index, index_ty, variability) := typeExp(index, info);
+        // TODO: Only evaluate the index if it's a constant (parameter?),
+        //       otherwise just return a size expression.
+        index := Ceval.evalExp(index, Ceval.EvalTarget.IGNORE_ERRORS());
+        index := SimplifyExp.simplifyExp(index);
 
-    // The second argument must be an Integer.
-    (index, _, ty_match) :=
-      TypeCheck.matchTypes(index_ty, Type.INTEGER(), index);
+        // TODO: Print an error if the index couldn't be evaluated to an int.
+        Expression.INTEGER(iindex) := index;
 
-    if TypeCheck.isIncompatibleMatch(ty_match) then
-      Error.addSourceMessage(Error.ARG_TYPE_MISMATCH,
-        {"2", "size ", "dim", Expression.toString(index), Type.toString(index_ty), "Integer"}, info);
-      fail();
-    end if;
+        (dim, ty_err) := typeExpDim(sizeExp.exp, iindex, info);
 
-    oindex := SOME(index);
-    sizeType := Type.INTEGER();
-  else
-    // TODO: Fill in correct dimension size here.
-    sizeType := Type.ARRAY(Type.INTEGER(), {Dimension.INTEGER(1)});
-    // The number of dimensions is always known, but the dimension sizes
-    // themselves might not be known here.
-    variability := DAE.C_VAR();
-  end if;
+        () := match ty_err
+          case NO_ERROR() then ();
 
-  sizeExp := Expression.SIZE(exp, oindex);
+          // The first argument wasn't an array.
+          case OUT_OF_BOUNDS(0)
+            algorithm
+              Error.addSourceMessage(Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, {"size"}, info);
+            then
+              fail();
+
+          // The index referred to an invalid dimension.
+          case OUT_OF_BOUNDS()
+            algorithm
+              Error.addSourceMessage(Error.INVALID_SIZE_INDEX,
+                {String(iindex), Expression.toString(sizeExp.exp), String(ty_err.upperBound)}, info);
+            then
+              fail();
+        end match;
+
+        dim_size := Dimension.size(dim);
+      then
+        (Expression.INTEGER(dim_size), Type.INTEGER(), DAE.VarKind.CONST());
+
+    case Expression.SIZE()
+      algorithm
+        (exp, exp_ty, _) := typeExp(sizeExp.exp, info);
+
+        // The first argument must be an array of any type.
+        if not Type.isArray(exp_ty) then
+          Error.addSourceMessage(Error.INVALID_ARGUMENT_TYPE_FIRST_ARRAY, {"size"}, info);
+          fail();
+        end if;
+
+        sizeType := Type.ARRAY(Type.INTEGER(), {Dimension.INTEGER(Type.dimensionCount(exp_ty))});
+      then
+        (Expression.SIZE(exp, NONE()), sizeType, DAE.VarKind.PARAM());
+
+  end match;
 end typeSize;
 
 function typeSections

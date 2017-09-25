@@ -228,7 +228,7 @@ uniontype Component
   algorithm
     ty := match component
       case TYPED_COMPONENT() then component.ty;
-      case UNTYPED_COMPONENT() then Class.getType(InstNode.getClass(component.classInst));
+      case UNTYPED_COMPONENT() then InstNode.getType(component.classInst);
       case ITERATOR() then component.ty;
       else Type.UNKNOWN();
     end match;
@@ -378,6 +378,16 @@ uniontype Component
     end match;
   end isConst;
 
+  function isVar
+    input Component component;
+    output Boolean isConst;
+  algorithm
+    isConst := match variability(component)
+      case DAE.VarKind.VARIABLE() then true;
+      else false;
+    end match;
+  end isVar;
+
   function visibility
     input Component component;
     output DAE.VarVisibility visibility;
@@ -457,6 +467,17 @@ uniontype Component
       else false;
     end match;
   end isRedeclare;
+
+  function dimensionCount
+    input Component component;
+    output Integer count;
+  algorithm
+    count := match component
+      case UNTYPED_COMPONENT() then arrayLength(component.dimensions);
+      case TYPED_COMPONENT() then listLength(Type.arrayDims(component.ty));
+      else 0;
+    end match;
+  end dimensionCount;
 
 end Component;
 

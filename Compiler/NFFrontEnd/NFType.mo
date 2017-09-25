@@ -137,6 +137,26 @@ public
     end if;
   end unliftArray;
 
+  function unliftArrayN
+    input Integer N;
+    input output Type ty;
+  protected
+    Type el_ty;
+    list<Dimension> dims;
+  algorithm
+    ARRAY(el_ty, dims) := ty;
+
+    for i in 1:N loop
+      dims := listRest(dims);
+    end for;
+
+    if listEmpty(dims) then
+      ty := el_ty;
+    else
+      ty := ARRAY(el_ty, dims);
+    end if;
+  end unliftArrayN;
+
   function isInteger
     input Type ty;
     output Boolean isInteger;
@@ -321,19 +341,20 @@ public
     dims := match ty
       case ARRAY() then ty.dimensions;
       case FUNCTION() then arrayDims(ty.resultType);
+      else {};
     end match;
   end arrayDims;
 
-  function getTypeDims
+  function nthDimension
     input Type ty;
-    output list<Dimension> dims;
+    input Integer index;
+    output Dimension dim;
   algorithm
-    try
-      dims := arrayDims(ty);
-    else
-      dims := {};
-    end try;
-  end getTypeDims;
+    dim := match ty
+      case ARRAY() then listGet(ty.dimensions, index);
+      case FUNCTION() then nthDimension(ty.resultType, index);
+    end match;
+  end nthDimension;
 
   function dimensionCount
     input Type ty;
@@ -370,13 +391,13 @@ public
       case Type.REAL() then "Real";
       case Type.STRING() then "String";
       case Type.BOOLEAN() then "Boolean";
-      case Type.ENUMERATION() then "enumeration()";
+      case Type.ENUMERATION() then "enumeration(" + stringDelimitList(ty.literals, ", ") + ")";
       case Type.ENUMERATION_ANY() then "enumeration(:)";
       case Type.CLOCK() then "Clock";
       case Type.ARRAY() then toString(ty.elementType) + "[" + stringDelimitList(List.map(ty.dimensions, Dimension.toString), ", ") + "]";
       case Type.TUPLE() then "tuple(" + stringDelimitList(List.map(ty.types, toString), ", ") + ")";
       case Type.FUNCTION() then "function( output " + toString(ty.resultType) + " )";
-      case Type.NORETCALL() then "noretcall()";
+      case Type.NORETCALL() then "()";
       case Type.UNKNOWN() then "unknown()";
       case Type.COMPLEX() then InstNode.name(ty.cls);
       else

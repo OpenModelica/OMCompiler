@@ -45,7 +45,7 @@ import Type = NFType;
 
 uniontype EvalTarget
   record DIMENSION
-    String name;
+    InstNode component;
     Integer index;
     Expression exp;
     SourceInfo info;
@@ -61,6 +61,16 @@ uniontype EvalTarget
   end RANGE;
 
   record IGNORE_ERRORS end IGNORE_ERRORS;
+
+  function isRange
+    input EvalTarget target;
+    output Boolean isRange;
+  algorithm
+    isRange := match target
+      case RANGE() then true;
+      else false;
+    end match;
+  end isRange;
 end EvalTarget;
 
 function evalExp
@@ -76,13 +86,16 @@ algorithm
       Call call;
       Component comp;
       Option<Expression> oexp;
+      ComponentRef cref;
+      Dimension dim;
 
-    case Expression.CREF(cref=ComponentRef.CREF(node = c as InstNode.COMPONENT_NODE()))
+    case Expression.CREF(cref = cref as ComponentRef.CREF(node = c as InstNode.COMPONENT_NODE()))
       algorithm
         Typing.typeComponentBinding(c);
         binding := Component.getBinding(InstNode.component(c));
+        exp1 := evalBinding(binding, exp, target);
       then
-        evalBinding(binding, exp, target);
+        Expression.subscript(exp1, cref.subscripts);
 
     case Expression.TYPENAME()
       then evalTypename(exp.ty, exp, target);
@@ -117,10 +130,17 @@ algorithm
       then
         Expression.CALL(call);
 
+    case Expression.SIZE(dimIndex = SOME(exp1))
+      algorithm
+        dim := listGet(Type.arrayDims(Expression.typeOf(exp.exp)), Expression.toInteger(evalExp(exp1, target)));
+      then
+        Expression.INTEGER(Dimension.size(dim));
+
     case Expression.SIZE()
       algorithm
-        assert(false, "Unimplemented case for " + Expression.toString(exp) + " in " + getInstanceName());
-      then fail();
+        expl := list(Expression.INTEGER(Dimension.size(d)) for d in Type.arrayDims(Expression.typeOf(exp.exp)));
+      then
+        Expression.ARRAY(Type.ARRAY(Type.INTEGER(), {Dimension.INTEGER(listLength(expl))}), expl);
 
     case Expression.BINARY()
       algorithm
@@ -215,7 +235,7 @@ algorithm
     case EvalTarget.DIMENSION()
       algorithm
         Error.addSourceMessage(Error.STRUCTURAL_PARAMETER_OR_CONSTANT_WITH_NO_BINDING,
-          {Expression.toString(exp), target.name}, target.info);
+          {Expression.toString(exp), InstNode.name(target.component)}, target.info);
       then
         fail();
 
@@ -231,23 +251,29 @@ function evalTypename
 protected
   list<Expression> lits;
 algorithm
-  exp := match ty
-    case Type.ARRAY(elementType = Type.BOOLEAN())
-      then Expression.ARRAY(ty, {Expression.BOOLEAN(false), Expression.BOOLEAN(true)});
+  // Only expand the typename into an array if it's used as a range, and keep
+  // them as typenames when used as e.g. dimensions.
+  if not EvalTarget.isRange(target) then
+    exp := originExp;
+  else
+    exp := match ty
+      case Type.ARRAY(elementType = Type.BOOLEAN())
+        then Expression.ARRAY(ty, {Expression.BOOLEAN(false), Expression.BOOLEAN(true)});
 
-    case Type.ARRAY(elementType = Type.ENUMERATION())
-      algorithm
-        lits := Expression.makeEnumLiterals(ty.elementType);
-      then
-        Expression.ARRAY(ty, lits);
+      case Type.ARRAY(elementType = Type.ENUMERATION())
+        algorithm
+          lits := Expression.makeEnumLiterals(ty.elementType);
+        then
+          Expression.ARRAY(ty, lits);
 
-    else
-      algorithm
-        assert(false, getInstanceName() + " got invalid typename");
-      then
-        fail();
+      else
+        algorithm
+          assert(false, getInstanceName() + " got invalid typename");
+        then
+          fail();
 
-  end match;
+    end match;
+  end if;
 end evalTypename;
 
 annotation(__OpenModelica_Interface="frontend");

@@ -81,12 +81,25 @@ extern double nonlinearSparseSolverMaxDensity;
 extern int nonlinearSparseSolverMinSize;
 extern double newtonXTol;
 extern double newtonFTol;
+extern double maxStepFactor;
 extern double steadyStateTol;
 extern const size_t SIZERINGBUFFER;
 extern int compiledInDAEMode;
 extern int compiledWithSymSolver;
 extern double numericalDifferentiationDeltaXlinearize;
 extern double numericalDifferentiationDeltaXsolver;
+extern double homAdaptBend;
+extern double homHEps;
+extern int homMaxLambdaSteps;
+extern int homMaxNewtonSteps;
+extern int homMaxTries;
+extern double homTauDecreasingFactor;
+extern double homTauDecreasingFactorPredictor;
+extern double homTauIncreasingFactor;
+extern double homTauIncreasingThreshold;
+extern double homTauMax;
+extern double homTauMin;
+extern double homTauStart;
 
 void initializeDataStruc(DATA *data, threadData_t *threadData);
 

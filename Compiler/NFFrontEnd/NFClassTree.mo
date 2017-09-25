@@ -475,7 +475,7 @@ public
             // Make a new extends array, and recursively instantiate the extends nodes.
             exts := arrayCopy(exts);
             for i in 1:arrayLength(exts) loop
-              (node, _, cls_count, comp_count) := instantiate(exts[i]);
+              (node, _, cls_count, comp_count) := instantiate(exts[i], instance);
               exts[i] := node;
               // Add the inherited elements to the class/component counts.
               classCount := cls_count + classCount;
@@ -657,6 +657,17 @@ public
       entry := LookupTree.get(lookupTree(tree), name);
       element := resolveEntry(entry, tree);
     end lookupElement;
+
+    function lookupElementPtr
+      input String name;
+      input ClassTree tree;
+      output Mutable<InstNode> element;
+    protected
+      LookupTree.Entry entry;
+    algorithm
+      entry := LookupTree.get(lookupTree(tree), name);
+      element := resolveEntryPtr(entry, tree);
+    end lookupElementPtr;
 
     function applyExtends
       input ClassTree tree;

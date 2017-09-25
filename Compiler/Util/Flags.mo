@@ -513,7 +513,9 @@ constant DebugFlag NF_UNITCHECK = DEBUG_FLAG(168, "frontEndUnitCheck", false,
 constant DebugFlag DISABLE_COLORING = DEBUG_FLAG(169, "disableColoring", false,
   Util.gettext("Disables coloring algorithm while spasity detection."));
 constant DebugFlag MERGE_ALGORITHM_SECTIONS = DEBUG_FLAG(170, "mergeAlgSections", false,
-  Util.gettext("Disables coloring algorithm while spasity detection."));
+  Util.gettext("Disables coloring algorithm while sparsity detection."));
+constant DebugFlag WARN_NO_NOMINAL = DEBUG_FLAG(171, "warnNoNominal", false,
+  Util.gettext("Prints the iteration variables in the initialization and simulation DAE, which do not have a nominal value."));
 
 
 // This is a list of all debug flags, to keep track of which flags are used. A
@@ -691,7 +693,8 @@ constant list<DebugFlag> allDebugFlags = {
   EVAL_PARAM_DUMP,
   NF_UNITCHECK,
   DISABLE_COLORING,
-  MERGE_ALGORITHM_SECTIONS
+  MERGE_ALGORITHM_SECTIONS,
+  WARN_NO_NOMINAL
 };
 
 public
@@ -1210,8 +1213,8 @@ constant ConfigFlag INIT_OPT_MODULES = CONFIG_FLAG(77, "initOptModules",
   NONE(), EXTERNAL(), STRING_LIST_FLAG({
     "simplifyComplexFunction",
     "tearingSystem",
-    "calculateStrongComponentJacobians",
     "solveSimpleEquations",
+    "calculateStrongComponentJacobians",
     "simplifyAllExpressions",
     "collapseArrayExpressions"
     }),
@@ -1220,10 +1223,12 @@ constant ConfigFlag INIT_OPT_MODULES = CONFIG_FLAG(77, "initOptModules",
     ("collapseArrayExpressions", collapseArrayExpressionsText),
     ("constantLinearSystem", Util.gettext("Evaluates constant linear systems (a*x+b*y=c; d*x+e*y=f; a,b,c,d,e,f are constants) at compile-time.")),
     ("extendDynamicOptimization", Util.gettext("Move loops to constraints.")),
+    ("generateHomotopyComponents", Util.gettext("Finds the parts of the DAE that have to be handled by the homotopy solver and creates a strong component out of it.")),
     ("inlineHomotopy", Util.gettext("Experimental: Inlines the homotopy expression to allow symbolic simplifications.")),
     ("inputDerivativesUsed", Util.gettext("Checks if derivatives of inputs are need to calculate the model.")),
     ("recursiveTearing", Util.notrans("inline and repeat tearing")),
     ("reduceDynamicOptimization", Util.notrans("Removes equations which are not needed for the calculations of cost and constraints. This module requires +d=reduceDynOpt.")),
+    ("replaceHomotopyWithSimplified", Util.notrans("Replaces the homotopy expression homotopy(actual, simplified) with the simplified part.")),
     ("simplifyAllExpressions", Util.notrans("Does simplifications on all expressions.")),
     ("simplifyComplexFunction", Util.notrans("Some simplifications on complex functions (complex refers to the internal data structure)")),
     ("simplifyConstraints", Util.notrans("Rewrites nonlinear constraints into box constraints if possible. This module requires +gDynOpt.")),

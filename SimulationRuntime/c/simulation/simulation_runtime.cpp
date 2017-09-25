@@ -306,14 +306,23 @@ static int getNewtonStrategy()
   return NEWTON_NONE;
 }
 
-static int getNlsLSSolver()
+static int getNlsLSSolver(int nlsSolver)
 {
   int i;
   const char *cflags = omc_flagValue[FLAG_NLS_LS];
   const string *method = cflags ? new string(cflags) : NULL;
 
   if(!method)
-    return NLS_LS_LAPACK; /* default method */
+  {
+    if (nlsSolver == NLS_KINSOL)
+    {
+      return NLS_LS_KLU; /* default kinsol linear solver method */
+    }
+    else
+    {
+      return NLS_LS_LAPACK; /* default method */
+    }
+  }
 
   for(i=1; i<NLS_LS_MAX; ++i)
     if(*method == NLS_LS_METHOD[i])
@@ -834,7 +843,67 @@ int initRuntimeAndSimulation(int argc, char**argv, DATA *data, threadData_t *thr
   data->simulationInfo->lssMethod = getlinearSparseSolverMethod();
   data->simulationInfo->newtonStrategy = getNewtonStrategy();
   data->simulationInfo->nlsCsvInfomation = omc_flag[FLAG_NLS_INFO];
-  data->simulationInfo->nlsLinearSolver = getNlsLSSolver();
+  data->simulationInfo->nlsLinearSolver = getNlsLSSolver(data->simulationInfo->nlsMethod);
+
+  if(omc_flag[FLAG_HOMOTOPY_ADAPT_BEND]) {
+    homAdaptBend = atof(omc_flagValue[FLAG_HOMOTOPY_ADAPT_BEND]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homAdaptBend changed to %f", homAdaptBend);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_H_EPS]) {
+    homHEps = atof(omc_flagValue[FLAG_HOMOTOPY_H_EPS]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homHEps changed to %f", homHEps);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_MAX_LAMBDA_STEPS]) {
+    homMaxLambdaSteps = atoi(omc_flagValue[FLAG_HOMOTOPY_MAX_LAMBDA_STEPS]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homMaxLambdaSteps changed to %d", homMaxLambdaSteps);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_MAX_NEWTON_STEPS]) {
+    homMaxNewtonSteps = atoi(omc_flagValue[FLAG_HOMOTOPY_MAX_NEWTON_STEPS]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homMaxNewtonSteps changed to %d", homMaxNewtonSteps);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_MAX_TRIES]) {
+    homMaxTries = atoi(omc_flagValue[FLAG_HOMOTOPY_MAX_TRIES]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homMaxTries changed to %d", homMaxTries);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_DEC_FACTOR]) {
+    homTauDecreasingFactor = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_DEC_FACTOR]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauDecreasingFactor changed to %f", homTauDecreasingFactor);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_DEC_FACTOR_PRED]) {
+    homTauDecreasingFactorPredictor = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_DEC_FACTOR_PRED]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauDecreasingFactorPredictor changed to %f", homTauDecreasingFactorPredictor);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_INC_FACTOR]) {
+    homTauIncreasingFactor = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_INC_FACTOR]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauIncreasingFactor changed to %f", homTauIncreasingFactor);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_INC_THRESHOLD]) {
+    homTauIncreasingThreshold = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_INC_THRESHOLD]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauIncreasingThreshold changed to %f", homTauIncreasingThreshold);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_MAX]) {
+    homTauMax = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_MAX]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauMax changed to %f", homTauMax);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_MIN]) {
+    homTauMin = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_MIN]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauMin changed to %f", homTauMin);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_START]) {
+    homTauStart = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_START]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauStart changed to %f", homTauStart);
+  }
 
   if(omc_flag[FLAG_LSS_MAX_DENSITY]) {
     linearSparseSolverMaxDensity = atof(omc_flagValue[FLAG_LSS_MAX_DENSITY]);
@@ -860,6 +929,11 @@ int initRuntimeAndSimulation(int argc, char**argv, DATA *data, threadData_t *thr
   if(omc_flag[FLAG_NEWTON_FTOL]) {
     newtonFTol = atof(omc_flagValue[FLAG_NEWTON_FTOL]);
     infoStreamPrint(LOG_STDOUT, 0, "Tolerance for accepting accuracy in Newton solver changed to %g", newtonFTol);
+  }
+
+  if(omc_flag[FLAG_NEWTON_MAX_STEP_FACTOR]) {
+    maxStepFactor = atof(omc_flagValue[FLAG_NEWTON_MAX_STEP_FACTOR]);
+    infoStreamPrint(LOG_STDOUT, 0, "Maximum step size factor for a Newton step changed to %g", newtonFTol);
   }
 
   if(omc_flag[FLAG_STEADY_STATE_TOL]) {

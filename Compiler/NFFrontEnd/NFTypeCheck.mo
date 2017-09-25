@@ -41,6 +41,8 @@ encapsulated package NFTypeCheck
 import DAE;
 import Dimension = NFDimension;
 import Expression = NFExpression;
+import NFInstNode.InstNode;
+import NFBinding.Binding;
 
 protected
 import Debug;
@@ -51,6 +53,10 @@ import List;
 import Types;
 import Operator = NFOperator;
 import Type = NFType;
+import Class = NFClass.Class;
+import ClassTree = NFClassTree;
+import InstUtil = NFInstUtil;
+import DAEUtil;
 
 public
 
@@ -1371,7 +1377,10 @@ algorithm
   compatibleType := match (actualType)
     local
       list<Dimension> dims1, dims2;
+      Dimension dim1, dim2;
       Type ety1, ety2;
+      Boolean compat;
+      InstNode cls;
 
     case Type.INTEGER() then actualType;
     case Type.REAL() then actualType;
@@ -1388,35 +1397,24 @@ algorithm
 
     case Type.ARRAY()
       algorithm
-        // Check that the element types are compatible.
-        ety1 := actualType.elementType;
-        ety2 := Type.arrayElementType(expectedType);
-
         (expression, compatibleType, matchKind) :=
-          matchTypes(ety1, ety2, expression, allowUnknown);
+          matchArrayTypes(actualType, expectedType, expression, allowUnknown);
+      then
+        compatibleType;
 
-        // If the element types are compatible, check the dimensions too.
-        if isCompatibleMatch(matchKind) then
-          dims1 := actualType.dimensions;
-          dims2 := Type.arrayDims(expectedType);
-
-          // The arrays must have the same number of dimensions.
-          if listLength(dims1) == listLength(dims2) then
-            dims1 := list(if Dimension.isEqualKnown(dim1, dim2) then
-              dim1 else Dimension.UNKNOWN() threaded for dim1 in dims1, dim2 in dims2);
-            compatibleType := Type.liftArrayLeftList(compatibleType, dims1);
-          else
-            matchKind := MatchKind.NOT_COMPATIBLE;
-          end if;
-        end if;
+    case Type.TUPLE()
+      algorithm
+        (expression, compatibleType, matchKind) :=
+          matchTupleTypes(actualType, expectedType, expression, allowUnknown);
       then
         compatibleType;
 
     case Type.COMPLEX()
       algorithm
-        assert(false, getInstanceName() + " IMPLEMENT ME.");
+        (expression, compatibleType, matchKind) :=
+          matchComplexTypes(actualType, expectedType, expression, allowUnknown);
       then
-        actualType;
+        compatibleType;
 
     else
       algorithm
@@ -1426,6 +1424,175 @@ algorithm
 
   end match;
 end matchTypes;
+
+function matchComplexTypes
+  input Type actualType;
+  input Type expectedType;
+  input output Expression expression;
+  input Boolean allowUnknown;
+        output Type compatibleType = actualType;
+        output MatchKind matchKind = MatchKind.EXACT;
+protected
+  Class cls1, cls2;
+  InstNode anode, enode;
+  array<InstNode> comps1, comps2;
+  Absyn.Path path;
+  Type ty;
+  Expression e;
+  list<Expression> elements, matched_elements = {};
+  MatchKind mk;
+algorithm
+  Type.COMPLEX(cls = anode) := actualType;
+  Type.COMPLEX(cls = enode) := expectedType;
+  cls1 := InstNode.getClass(anode);
+  cls2 := InstNode.getClass(enode);
+
+  () := match (cls1, cls2, expression)
+    case (Class.INSTANCED_CLASS(elements = ClassTree.FLAT_TREE(components = comps1)),
+          Class.INSTANCED_CLASS(elements = ClassTree.FLAT_TREE(components = comps2)),
+          Expression.RECORD(elements = elements))
+      algorithm
+        if arrayLength(comps1) <> arrayLength(comps2) or
+           arrayLength(comps1) <> listLength(elements) then
+          matchKind := MatchKind.NOT_COMPATIBLE;
+        else
+          for i in 1:arrayLength(comps1) loop
+            e :: elements := elements;
+            (e, _, mk) := matchTypes(InstNode.getType(comps1[i]), InstNode.getType(comps2[i]), e, allowUnknown);
+            matched_elements := e :: matched_elements;
+
+            if mk == MatchKind.CAST then
+              matchKind := mk;
+            elseif mk <> MatchKind.EXACT then
+              matchKind := MatchKind.NOT_COMPATIBLE;
+              break;
+            end if;
+          end for;
+
+          if matchKind == MatchKind.CAST then
+            expression.elements := listReverse(matched_elements);
+          end if;
+        end if;
+      then
+        ();
+
+    case (Class.INSTANCED_CLASS(elements = ClassTree.FLAT_TREE(components = comps1)),
+          Class.INSTANCED_CLASS(elements = ClassTree.FLAT_TREE(components = comps2)), _)
+      algorithm
+        if arrayLength(comps1) <> arrayLength(comps2) then
+          matchKind := MatchKind.NOT_COMPATIBLE;
+        else
+          for i in 1:arrayLength(comps1) loop
+            (_, _, mk) := matchTypes(InstNode.getType(comps1[i]), InstNode.getType(comps2[i]), expression, allowUnknown);
+
+            if mk <> MatchKind.EXACT then
+              matchKind := MatchKind.NOT_COMPATIBLE;
+              break;
+            end if;
+          end for;
+        end if;
+      then
+        ();
+
+    else
+      algorithm
+        matchKind := MatchKind.NOT_COMPATIBLE;
+      then
+        ();
+
+  end match;
+end matchComplexTypes;
+
+function matchArrayTypes
+  input Type arrayType1;
+  input Type arrayType2;
+  input output Expression expression;
+  input Boolean allowUnknown;
+        output Type compatibleType;
+        output MatchKind matchKind;
+protected
+  Type ety1, ety2;
+  list<Dimension> dims1, dims2;
+  Dimension dim1, dim2;
+  Boolean compat;
+algorithm
+  Type.ARRAY(elementType = ety1, dimensions = dims1) := arrayType1;
+  Type.ARRAY(elementType = ety2, dimensions = dims2) := arrayType2;
+
+  // Check that the element types are compatible.
+  (expression, compatibleType, matchKind) :=
+    matchTypes(ety1, ety2, expression, allowUnknown);
+
+  // If the element types are compatible, check the dimensions too.
+  if isCompatibleMatch(matchKind) then
+    // The arrays must have the same number of dimensions.
+    if listLength(dims1) == listLength(dims2) then
+      while not listEmpty(dims1) loop
+        dim1 :: dims1 := dims1;
+        dim2 :: dims2 := dims2;
+
+        // And the dimensions must be equal.
+        (dim1, compat) := matchDimensions(dim1, dim2, allowUnknown);
+
+        if not compat then
+          matchKind := MatchKind.NOT_COMPATIBLE;
+          break;
+        end if;
+
+        compatibleType := Type.liftArrayLeft(compatibleType, dim1);
+      end while;
+    else
+      matchKind := MatchKind.NOT_COMPATIBLE;
+    end if;
+  end if;
+end matchArrayTypes;
+
+function matchTupleTypes
+  input Type tupleType1;
+  input Type tupleType2;
+  input output Expression expression;
+  input Boolean allowUnknown;
+        output Type compatibleType = tupleType1;
+        output MatchKind matchKind = MatchKind.EXACT;
+protected
+  list<Type> tyl1, tyl2;
+  Type ty2;
+algorithm
+  Type.TUPLE(types = tyl1) := tupleType1;
+  Type.TUPLE(types = tyl2) := tupleType2;
+
+  if listLength(tyl1) > listLength(tyl2) then
+    matchKind := MatchKind.NOT_COMPATIBLE;
+    return;
+  end if;
+
+  for ty1 in tyl1 loop
+    ty2 :: tyl2 := tyl2;
+    (_, _, matchKind) := matchTypes(ty1, ty2, expression, allowUnknown);
+
+    if matchKind <> MatchKind.EXACT then
+      break;
+    end if;
+  end for;
+end matchTupleTypes;
+
+function matchDimensions
+  input Dimension dim1;
+  input Dimension dim2;
+  input Boolean allowUnknown;
+  output Dimension compatibleDim;
+  output Boolean compatible = true;
+algorithm
+  if Dimension.isEqualKnown(dim1, dim2) then
+    compatibleDim := dim1;
+  elseif allowUnknown then
+    if Dimension.isKnown(dim1) then
+      compatibleDim := dim1;
+    else
+      compatibleDim := dim2;
+    end if;
+  end if;
+end matchDimensions;
 
 function matchTypes_cast
   input Type actualType;
@@ -2119,17 +2286,17 @@ end getRangeTypeEnum;
 function checkIfExpression
   input Expression condExp;
   input Type condType;
-  input DAE.Const condVar;
+  input DAE.VarKind condVar;
   input Expression thenExp;
   input Type thenType;
-  input DAE.Const thenVar;
+  input DAE.VarKind thenVar;
   input Expression elseExp;
   input Type elseType;
-  input DAE.Const elseVar;
+  input DAE.VarKind elseVar;
   input SourceInfo info;
   output Expression outExp;
   output Type outType;
-  output DAE.Const outVar;
+  output DAE.VarKind outVar;
 protected
    Expression ec, e1, e2;
    String s1, s2, s3, s4;
@@ -2159,22 +2326,102 @@ algorithm
 
   outExp := Expression.IF(ec, e1, e2);
   outType := thenType;
-  outVar := Types.constAnd(thenVar, elseVar);
+  outVar := InstUtil.variabilityAnd(thenVar, elseVar);
 end checkIfExpression;
 
-function checkConstVariability
-  input DAE.Const actualVar;
+function matchVariability
+  input DAE.VarKind actualVar;
   input DAE.VarKind expectedVar;
   output Boolean matching;
 algorithm
   matching := match (actualVar, expectedVar)
-    case (DAE.Const.C_CONST(), _) then true;
+    case (DAE.VarKind.CONST(), _) then true;
     case (_, DAE.VarKind.CONST()) then false;
-    case (DAE.Const.C_PARAM(), _) then true;
+    case (DAE.VarKind.PARAM(), _) then true;
     case (_, DAE.VarKind.PARAM()) then false;
+    case (DAE.VarKind.DISCRETE(), _) then true;
+    case (_, DAE.VarKind.DISCRETE()) then false;
     else true;
   end match;
-end checkConstVariability;
+end matchVariability;
+
+function matchBinding
+  input output Binding binding;
+  input Type componentType;
+  input InstNode component;
+algorithm
+  () := match binding
+    local
+      MatchKind ty_match;
+      Expression exp;
+      Type ty, comp_ty;
+      InstNode parent;
+      list<Dimension> dims;
+
+    case Binding.TYPED_BINDING()
+      algorithm
+        comp_ty := componentType;
+
+        if binding.propagatedLevels > 0 then
+          parent := component;
+
+          for i in 1:binding.propagatedLevels loop
+            parent := InstNode.parent(component);
+            dims := Type.arrayDims(InstNode.getType(parent));
+            comp_ty := Type.liftArrayLeftList(comp_ty, dims);
+          end for;
+        end if;
+
+        (exp, ty, ty_match) := matchTypes(binding.bindingType, comp_ty, binding.bindingExp);
+
+        if not isCompatibleMatch(ty_match) then
+          Error.addSourceMessage(Error.VARIABLE_BINDING_TYPE_MISMATCH,
+            {InstNode.name(component), Binding.toString(binding), Type.toString(comp_ty),
+             Type.toString(binding.bindingType)}, binding.info);
+          fail();
+        elseif isCastMatch(ty_match) then
+          binding := Binding.TYPED_BINDING(exp, ty, binding.variability, binding.propagatedLevels, binding.info);
+        end if;
+      then
+        ();
+
+    case Binding.UNBOUND() then ();
+
+    else
+      algorithm
+        assert(false, getInstanceName() + " got untyped binding " + Binding.toString(binding));
+      then
+        fail();
+  end match;
+end matchBinding;
+
+function checkDimension
+  "Checks that an expression used as a dimension is a parameter expression and
+   has a valid type for a dimension, otherwise prints an error and fails."
+  input Expression exp;
+  input Type ty;
+  input DAE.VarKind var;
+  input SourceInfo info;
+algorithm
+  if not Type.isInteger(ty) then
+    () := match exp
+      case Expression.TYPENAME(ty = Type.ARRAY(elementType = Type.BOOLEAN())) then ();
+      case Expression.TYPENAME(ty = Type.ARRAY(elementType = Type.ENUMERATION())) then ();
+      else
+        algorithm
+          Error.addSourceMessage(Error.INVALID_DIMENSION_TYPE,
+            {Expression.toString(exp), Type.toString(ty)}, info);
+        then
+          fail();
+    end match;
+  end if;
+
+  if not DAEUtil.isParamOrConstVarKind(var) then
+    Error.addSourceMessage(Error.DIMENSION_NOT_KNOWN,
+      {Expression.toString(exp)}, info);
+    fail();
+  end if;
+end checkDimension;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFTypeCheck;

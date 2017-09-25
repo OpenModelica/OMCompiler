@@ -503,7 +503,7 @@ public constant Message INVALID_SIZE_INDEX = MESSAGE(186, TRANSLATION(), ERROR()
 public constant Message ALGORITHM_TRANSITION_FAILURE = MESSAGE(187, TRANSLATION(), ERROR(),
   Util.gettext("Algorithm section is not allowed in %s."));
 public constant Message FAILURE_TO_DEDUCE_DIMS_NO_MOD = MESSAGE(188, TRANSLATION(), ERROR(),
-  Util.gettext("Failed to deduce dimensions of %s due to missing binding equation."));
+  Util.gettext("Failed to deduce dimension %s of %s due to missing binding equation."));
 public constant Message FUNCTION_MULTIPLE_ALGORITHM = MESSAGE(189, TRANSLATION(), WARNING(),
   Util.gettext("The behavior of multiple algorithm sections in function %s is not standard Modelica. OpenModelica will execute the sections in the order in which they were declared or inherited (same ordering as inherited input/output arguments, which also are not standardized)."));
 public constant Message STATEMENT_GENERIC_FAILURE = MESSAGE(190, TRANSLATION(), ERROR(),
@@ -727,6 +727,12 @@ public constant Message RANGE_INVALID_TYPE = MESSAGE(298, TRANSLATION(), ERROR()
   Util.gettext("Range has invalid type %s."));
 public constant Message CLASS_EXTENDS_MISSING_REDECLARE = MESSAGE(299, TRANSLATION(), WARNING(),
   Util.gettext("Missing redeclare prefix on class extends %s, treating like redeclare anyway."));
+public constant Message CYCLIC_DIMENSIONS = MESSAGE(300, TRANSLATION(), ERROR(),
+  Util.gettext("Dimension %s of %s, '%s', could not be evaluated due to a cyclic dependency."));
+public constant Message INVALID_DIMENSION_TYPE = MESSAGE(301, TRANSLATION(), ERROR(),
+  Util.gettext("Dimension '%s' of type %s is not an integer expression or an enumeration or Boolean type name."));
+public constant Message RAGGED_DIMENSION = MESSAGE(302, TRANSLATION(), ERROR(),
+  Util.gettext("Ragged dimensions are not yet supported (from dimension '%s')"));
 public constant Message INITIALIZATION_NOT_FULLY_SPECIFIED = MESSAGE(496, TRANSLATION(), WARNING(),
   Util.gettext("The initial conditions are not fully specified. %s."));
 public constant Message INITIALIZATION_OVER_SPECIFIED = MESSAGE(497, TRANSLATION(), WARNING(),

@@ -300,7 +300,7 @@ algorithm
 
         // Fetch the needed information from the class definition and construct a DERIVED_CLASS.
         prefs := instClassPrefixes(def);
-        dims := list(Dimension.RAW_DIM(d) for d in cdef.attributes.arrayDims);
+        dims := list(Dimension.RAW_DIM(d) for d in Absyn.typeSpecDimensions(ty));
         mod := Class.getModifier(InstNode.getClass(node));
         c := Class.DERIVED_CLASS(ext_node, mod, dims, prefs, cdef.attributes.direction);
         node := InstNode.updateClass(c, node);
@@ -516,6 +516,7 @@ protected
   ClassTree cls_tree;
   Modifier cls_mod, mod;
   list<Modifier> type_attr;
+  list<Dimension> dims;
 algorithm
   cls := InstNode.getClass(node);
   cls_mod := Class.getModifier(cls);
@@ -531,7 +532,7 @@ algorithm
         end if;
 
         redecl_node := expand(cls_mod.element);
-        node := instClass(redecl_node, Modifier.NOMOD(), parent);
+        node := instClass(redecl_node, cls_mod.mod, parent);
       then
         ();
 
@@ -568,7 +569,8 @@ algorithm
       algorithm
         mod := Modifier.fromElement(InstNode.definition(node), InstNode.parent(node));
         mod := Modifier.merge(cls_mod, mod);
-        node := instClass(cls.baseClass, mod, parent);
+        cls.baseClass := instClass(cls.baseClass, mod, parent);
+        node := InstNode.replaceClass(cls, node);
       then
         ();
 
@@ -602,8 +604,8 @@ algorithm
     case CachedData.NO_CACHE()
       algorithm
         inst := instantiate(node);
-        instExpressions(inst);
         InstNode.setCachedData(CachedData.PACKAGE(inst), node);
+        instExpressions(inst);
       then
         inst;
 
@@ -736,6 +738,7 @@ function applyModifier
   input String clsName;
 protected
   list<Modifier> mods;
+  Mutable<InstNode> node_ptr;
   InstNode node;
   Component comp;
 algorithm
@@ -747,18 +750,21 @@ algorithm
 
   for mod in mods loop
     try
-      node := ClassTree.lookupElement(Modifier.name(mod), cls);
+      node_ptr := ClassTree.lookupElementPtr(Modifier.name(mod), cls);
     else
       Error.addSourceMessage(Error.MISSING_MODIFIED_ELEMENT,
         {Modifier.name(mod), clsName}, Modifier.info(mod));
       fail();
     end try;
 
+    node := Mutable.access(node_ptr);
     if InstNode.isComponent(node) then
       InstNode.componentApply(node, Component.mergeModifier, mod);
     else
       partialInstClass(node);
-      InstNode.classApply(node, Class.mergeModifier, mod);
+      node := InstNode.replaceClass(Class.mergeModifier(mod, InstNode.getClass(node)), node);
+      node := InstNode.resetCache(node);
+      Mutable.update(node_ptr, node);
     end if;
   end for;
 
@@ -783,7 +789,7 @@ algorithm
   mod := Component.getModifier(comp);
 
   () := match (mod, comp)
-    case (Modifier.REDECLARE(), _)
+    case (Modifier.REDECLARE(), Component.COMPONENT_DEF(definition = def))
       algorithm
         if not InstNode.isComponent(mod.element) then
           Error.addMultiSourceMessage(Error.INVALID_REDECLARE_AS,
@@ -791,8 +797,11 @@ algorithm
             {InstNode.info(mod.element), InstNode.info(node)});
         end if;
 
-        comp := InstNode.component(mod.element);
-        InstNode.updateComponent(comp, node);
+        comp_mod := Modifier.fromElement(def, parent);
+        comp_mod := Modifier.merge(comp_mod, mod.mod);
+        inst_comp := InstNode.component(mod.element);
+        inst_comp := Component.setModifier(comp_mod, inst_comp);
+        InstNode.updateComponent(inst_comp, node);
         instComponent(node, parent, InstNode.parent(mod.element));
       then
         ();
@@ -804,14 +813,14 @@ algorithm
 
         dims := list(Dimension.RAW_DIM(d) for d in def.attributes.arrayDims);
         Modifier.checkEach(comp_mod, listEmpty(dims), InstNode.name(node));
-        comp_mod := Modifier.propagate(comp_mod, listLength(dims));
+        binding := Modifier.binding(comp_mod);
+        comp_mod := Modifier.propagate(comp_mod);
 
         // Instantiate the type of the component.
         cls := instTypeSpec(def.typeSpec, comp_mod, scope, node, def.info);
 
         // Instantiate attributes and create the untyped components.
         attr := instComponentAttributes(def.attributes, def.prefixes);
-        binding := Modifier.binding(comp_mod);
         inst_comp := Component.UNTYPED_COMPONENT(cls, listArray(dims), binding,
            attr, SCode.isElementRedeclare(def), def.info);
         InstNode.updateComponent(inst_comp, node);
@@ -907,7 +916,7 @@ algorithm
       algorithm
         // Instantiate expressions in the extends nodes.
         sections := ClassTree.foldExtends(cls_tree,
-          function instExpressions(scope = node), sections);
+          function instExpressions(scope = scope), sections);
 
         // Instantiate expressions in the local components.
         ClassTree.applyLocalComponents(cls_tree,
@@ -920,6 +929,18 @@ algorithm
         // Instantiate local equation/algorithm sections.
         sections := instSections(node, scope, sections);
         InstNode.classApply(node, Class.setSections, sections);
+      then
+        ();
+
+    case Class.DERIVED_CLASS()
+      algorithm
+        sections := instExpressions(cls.baseClass, scope, sections);
+
+        if not listEmpty(cls.dims) then
+          cls.dims := list(instDimension(d, InstNode.parent(node), InstNode.info(node))
+            for d in cls.dims);
+          InstNode.updateClass(cls, node);
+        end if;
       then
         ();
 
@@ -958,18 +979,45 @@ function instComponentExpressions
   input InstNode scope;
 protected
   Component c = InstNode.component(component);
-  array<Dimension> dims;
+  array<Dimension> dims, all_dims;
+  list<Dimension> cls_dims;
+  Integer len;
 algorithm
   () := match c
     case Component.UNTYPED_COMPONENT(dimensions = dims)
       algorithm
         c.binding := instBinding(c.binding);
-
-        for i in 1:arrayLength(dims) loop
-          dims[i] := instDimension(dims[i], scope, c.info);
-        end for;
-
         instExpressions(c.classInst, component);
+
+        cls_dims := Class.getDimensions(InstNode.getClass(c.classInst));
+        len := arrayLength(dims);
+
+        if listEmpty(cls_dims) then
+          // If we have no type dimensions, simply instantiate the component's dimensions.
+          for i in 1:len loop
+            dims[i] := instDimension(dims[i], scope, c.info);
+          end for;
+        else
+          // If we have type dimensions, allocate space for them and add them to
+          // the component's dimensions.
+          all_dims := Dangerous.arrayCreateNoInit(len + listLength(cls_dims), Dimension.UNKNOWN());
+
+          // Instantiate the component's dimensions.
+          for i in 1:len loop
+            all_dims[i] := instDimension(dims[i], scope, c.info);
+          end for;
+
+          // Add the already instantiated dimensions from the type.
+          len := len + 1;
+          for e in cls_dims loop
+            all_dims[len] := e;
+            len := len + 1;
+          end for;
+
+          // Update the dimensions in the component.
+          c.dimensions := all_dims;
+        end if;
+
         InstNode.updateComponent(c, component);
       then
         ();
@@ -995,7 +1043,7 @@ algorithm
       algorithm
         bind_exp := instExp(binding.bindingExp, binding.scope, binding.info, allowTypename);
       then
-        Binding.UNTYPED_BINDING(bind_exp, false, binding.scope, binding.propagatedDims, binding.info);
+        Binding.UNTYPED_BINDING(bind_exp, false, binding.scope, binding.propagatedLevels, binding.info);
 
     else binding;
   end match;
@@ -1060,6 +1108,12 @@ algorithm
         e3 := instExp(absynExp.stop, scope, info);
       then
         Expression.RANGE(Type.UNKNOWN(), e1, oe, e3);
+
+    case Absyn.Exp.TUPLE()
+      algorithm
+        expl := list(instExp(e, scope, info) for e in absynExp.expressions);
+      then
+        Expression.TUPLE(Type.UNKNOWN(), expl);
 
     case Absyn.Exp.BINARY()
       algorithm
@@ -1151,7 +1205,7 @@ algorithm
 
     cref := match comp
       case Component.ITERATOR()
-        then Expression.CREF(ComponentRef.fromNode(node, comp.ty, {}, Origin.ITERATOR));
+        then Expression.CREF(Type.UNKNOWN(), ComponentRef.fromNode(node, comp.ty, {}, Origin.ITERATOR));
 
       case Component.ENUM_LITERAL()
         then comp.literal;
@@ -1161,7 +1215,7 @@ algorithm
           cr := ComponentRef.fromNodeList(InstNode.scopeList(found_scope));
           cr := makeCref(absynCref, nodes, scope, info, cr);
         then
-          Expression.CREF(cr);
+          Expression.CREF(Type.UNKNOWN(), cr);
     end match;
   else
     if allowTypename then
@@ -1176,7 +1230,7 @@ algorithm
     else
       cr := ComponentRef.fromNodeList(InstNode.scopeList(found_scope));
       cr := makeCref(absynCref, nodes, scope, info, cr);
-      cref := Expression.CREF(cr);
+      cref := Expression.CREF(Type.UNKNOWN(), cr);
     end if;
   end if;
 
@@ -1344,7 +1398,7 @@ algorithm
 
     case SCode.EEquation.EQ_FOR(info = info)
       algorithm
-        binding := Binding.fromAbsyn(scodeEq.range, SCode.NOT_EACH(), 0, scope, info);
+        binding := Binding.fromAbsyn(scodeEq.range, SCode.NOT_EACH(), scope, info);
         binding := instBinding(binding, allowTypename = true);
 
         (for_scope, iter) := addIteratorToScope(scodeEq.index, binding, info, scope);
@@ -1472,7 +1526,7 @@ algorithm
 
     case SCode.Statement.ALG_FOR(info = info)
       algorithm
-        binding := Binding.fromAbsyn(scodeStmt.range, SCode.NOT_EACH(), 0, scope, info);
+        binding := Binding.fromAbsyn(scodeStmt.range, SCode.NOT_EACH(), scope, info);
         binding := instBinding(binding, allowTypename = true);
 
         (for_scope, iter) := addIteratorToScope(scodeStmt.index, binding, info, scope);

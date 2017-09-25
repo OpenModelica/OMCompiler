@@ -6882,6 +6882,9 @@ algorithm
 
   // generate system for initialization
   (outInitDAE, outInitDAE_lambda0_option, outRemovedInitialEquationLst, globalKnownVars) := Initialization.solveInitialSystem(dae);
+  if Flags.isSet(Flags.WARN_NO_NOMINAL) then
+    warnAboutIterationVariablesWithNoNominal(outInitDAE);
+  end if;
 
   // use function tree from initDAE further for simDAE
   simDAE := BackendDAEUtil.setFunctionTree(dae, BackendDAEUtil.getFunctions(outInitDAE.shared));
@@ -6897,6 +6900,9 @@ algorithm
 
   // post-optimization phase
   simDAE := postOptimizeDAE(simDAE, postOptModules, matchingAlgorithm, daeHandler);
+  if Flags.isSet(Flags.WARN_NO_NOMINAL) then
+    warnAboutIterationVariablesWithNoNominal(simDAE);
+  end if;
 
   // sort the globalKnownVars
   simDAE := sortGlobalKnownVarsInDAE(simDAE);
@@ -7562,17 +7568,19 @@ end allPostOptimizationModules;
 protected function allInitOptimizationModules
   "This list contains all back end init-optimization modules."
   output list<tuple<BackendDAEFunc.optimizationModule, String>> allInitOptimizationModules = {
+    (Initialization.replaceHomotopyWithSimplified, "replaceHomotopyWithSimplified"),
     (SymbolicJacobian.constantLinearSystem, "constantLinearSystem"),
     (BackendDAEOptimize.inlineHomotopy, "inlineHomotopy"),
     (BackendDAEOptimize.inlineFunctionInLoops, "forceInlineFunctionInLoops"), // before simplifyComplexFunction
     (BackendDAEOptimize.simplifyComplexFunction, "simplifyComplexFunction"),
-  (CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
+    (CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
     (DynamicOptimization.reduceDynamicOptimization, "reduceDynamicOptimization"), // before tearing
     (Tearing.tearingSystem, "tearingSystem"),
     (BackendDAEOptimize.simplifyLoops, "simplifyLoops"),
     (Tearing.recursiveTearing, "recursiveTearing"),
-    (SymbolicJacobian.calculateStrongComponentJacobians, "calculateStrongComponentJacobians"),
     (ExpressionSolve.solveSimpleEquations, "solveSimpleEquations"),
+    (BackendDAEOptimize.generateHomotopyComponents, "generateHomotopyComponents"), // after tearing, after solveSimpleEquations, before calculateStrongComponentJacobians
+    (SymbolicJacobian.calculateStrongComponentJacobians, "calculateStrongComponentJacobians"),
     (BackendDAEOptimize.simplifyAllExpressions, "simplifyAllExpressions"),
     (SymbolicJacobian.inputDerivativesUsed, "inputDerivativesUsed"),
     (DynamicOptimization.removeLoops, "extendDynamicOptimization"),
@@ -7769,6 +7777,8 @@ end getPostOptModules;
 
 public function getInitOptModules
   input Option<list<String>> inInitOptModules;
+  input list<String> inEnabledModules = {};
+  input list<String> inDisabledModules = {};
   output list<tuple<BackendDAEFunc.optimizationModule, String>> outInitOptModules;
 protected
   list<String> initOptModules;
@@ -7807,6 +7817,8 @@ algorithm
   end if;
 
   outInitOptModules := selectOptModules(initOptModules, enabledModules, disabledModules, allInitOptimizationModules());
+  initOptModules := List.map(outInitOptModules, Util.tuple22);
+  outInitOptModules := selectOptModules(initOptModules, inEnabledModules, inDisabledModules, allInitOptimizationModules());
 end getInitOptModules;
 
 protected function selectOptModules
@@ -7905,6 +7917,27 @@ algorithm
     then fail();
   end match;
 end selectOptModules1;
+
+public function isInitOptModuleActivated " returns true if given initOptModule is activated
+  author: ptaeuber"
+  input String initOptModule;
+  input list<tuple<BackendDAEFunc.optimizationModule, String>> activatedInitOptModules = {};
+  output Boolean isActivated = false;
+protected
+  list<tuple<BackendDAEFunc.optimizationModule, String>> modules = activatedInitOptModules;
+  String s;
+algorithm
+  if listEmpty(modules) then
+    modules := getInitOptModules(NONE());
+  end if;
+  for module in modules loop
+    (_, s) := module;
+    if stringEqual(s, initOptModule) then
+      isActivated := true;
+      return;
+    end if;
+  end for;
+end isInitOptModuleActivated;
 
 /*************************************************
  * profiler stuff
@@ -9234,6 +9267,100 @@ protected function getVariableNamesForErrorMessage
 algorithm
   names := stringDelimitList(list(ComponentReference.printComponentRefStr(BackendVariable.varCref(BackendVariable.getVarAt(varsArray, v))) for v in vars), ", ");
 end getVariableNamesForErrorMessage;
+
+// =============================================================================
+// warn about iteration variables with no nominal attribute
+//
+// =============================================================================
+
+protected function warnAboutIterationVariablesWithNoNominal
+" author: ptaeuber"
+  input BackendDAE.BackendDAE inDAE;
+protected
+  BackendDAE.StrongComponents comps;
+  String daeTypeStr, compKind;
+  list<Integer> vlst = {};
+  list<BackendDAE.Var> vars;
+algorithm
+  daeTypeStr := BackendDump.printBackendDAEType2String(inDAE.shared.backendDAEType);
+  for syst in inDAE.eqs loop
+    BackendDAE.EQSYSTEM(matching=BackendDAE.MATCHING(comps=comps)) := syst;
+
+    // Go through all the strongly connected components.
+    for comp in comps loop
+      // Get the component's variables.
+      (compKind, vlst) := match(comp)
+        case BackendDAE.EQUATIONSYSTEM(vars = vlst, jacType = BackendDAE.JAC_NONLINEAR())
+          then ("nonlinear equation system in the " + daeTypeStr + " DAE:", vlst);
+        case BackendDAE.EQUATIONSYSTEM(vars = vlst, jacType = BackendDAE.JAC_GENERIC())
+          then ("equation system w/o analytic Jacobian in the " + daeTypeStr + " DAE:", vlst);
+        case BackendDAE.EQUATIONSYSTEM(vars = vlst, jacType = BackendDAE.JAC_NO_ANALYTIC())
+          then ("equation system w/o analytic Jacobian in the " + daeTypeStr + " DAE:", vlst);
+        case BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(tearingvars = vlst), linear = false)
+          then ("torn nonlinear equation system in the " + daeTypeStr + " DAE:", vlst);
+        // If the component is none of these types, do nothing.
+        else ("", {});
+      end match;
+
+      if not listEmpty(vlst) then
+        // Filter out the variables that are missing start values.
+        vars := List.map1r(vlst, BackendVariable.getVarAt, syst.orderedVars);
+        vars := list(v for v guard(not BackendVariable.varHasNominalValue(v)) in vars);
+
+        // Print a warning if we found any variables with missing start values.
+        if not listEmpty(vars) then
+          Error.addCompilerWarning(BackendDump.varListStringIndented(vars, "Iteration variables with no nominal value in " + compKind));
+        end if;
+      end if;
+    end for;
+  end for;
+end warnAboutIterationVariablesWithNoNominal;
+
+public function getLinearfromJacType "  author: Frenkel TUD 2012-09"
+  input BackendDAE.JacobianType jacType;
+  output Boolean linear;
+algorithm
+  linear := match(jacType)
+    case (BackendDAE.JAC_CONSTANT()) then true;
+    case (BackendDAE.JAC_LINEAR()) then true;
+    case (BackendDAE.JAC_NONLINEAR()) then false;
+    case (BackendDAE.JAC_NO_ANALYTIC()) then false;
+  end match;
+end getLinearfromJacType;
+
+public function containsHomotopyCall
+  input DAE.Exp inExp;
+  input Boolean inHomotopy;
+  output DAE.Exp outExp;
+  output Boolean outHomotopy;
+protected
+  Boolean b;
+algorithm
+  (outExp, outHomotopy) := Expression.traverseExpTopDown(inExp, containsHomotopyCall2, inHomotopy);
+end containsHomotopyCall;
+
+protected function containsHomotopyCall2
+  input DAE.Exp inExp;
+  input Boolean inHomotopy;
+  output DAE.Exp outExp = inExp;
+  output Boolean cont;
+  output Boolean outHomotopy;
+protected
+  Boolean b;
+algorithm
+  (outExp, outHomotopy, cont) := match(inExp, inHomotopy)
+    case (_, true)
+     then (inExp, true, false);
+
+    case (DAE.CALL(path=Absyn.IDENT(name="homotopy")), _)
+     then (inExp, true, false);
+
+    case (DAE.CREF(componentRef=DAE.CREF_IDENT(ident=BackendDAE.homotopyLambda)), _)
+     then (inExp, true, false);
+
+    else (inExp, inHomotopy, true);
+  end match;
+end containsHomotopyCall2;
 
 annotation(__OpenModelica_Interface="backend");
 end BackendDAEUtil;

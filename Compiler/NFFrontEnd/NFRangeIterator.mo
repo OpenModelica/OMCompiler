@@ -63,6 +63,9 @@ public
         Integer istart, istep, istop;
         Real rstart, rstep, rstop;
         Type ty;
+        list<String> literals;
+        Absyn.Path path;
+        list<Expression> values;
 
       case Expression.ARRAY() then ARRAY_RANGE(exp.elements);
 
@@ -85,6 +88,28 @@ public
                             step = NONE(),
                             stop = Expression.REAL(rstop))
         then REAL_RANGE(rstart, 1.0, rstop);
+
+      case Expression.RANGE(start = Expression.ENUM_LITERAL(ty = ty, index = istart),
+                            step = NONE(),
+                            stop = Expression.ENUM_LITERAL(index = istop))
+        algorithm
+          Type.ENUMERATION(typePath = path, literals = literals) := ty;
+          values := {};
+
+          if istart <= istop then
+            for i in 2:istart loop
+              literals := listRest(literals);
+            end for;
+
+            for i in istart:istop loop
+              values := Expression.ENUM_LITERAL(ty, listHead(literals), i) :: values;
+              literals := listRest(literals);
+            end for;
+
+            values := listReverse(values);
+          end if;
+        then
+          ARRAY_RANGE(values);
 
       else
         algorithm
@@ -154,6 +179,44 @@ public
       case ARRAY_RANGE() then not listEmpty(iterator.values);
     end match;
   end hasNext;
+
+  function toList
+    input RangeIterator iterator;
+    output list<Expression> expl = {};
+  protected
+    RangeIterator iter;
+    Expression exp;
+  algorithm
+    iter := iterator;
+
+    while hasNext(iter) loop
+      (iter, exp) := next(iter);
+      expl := exp :: expl;
+    end while;
+
+    expl := listReverse(expl);
+  end toList;
+
+  function map<T>
+    input RangeIterator iterator;
+    input FuncT func;
+    output list<T> lst = {};
+
+    partial function FuncT
+      input Expression exp;
+      output T res;
+    end FuncT;
+  protected
+    RangeIterator iter = iterator;
+    Expression exp;
+  algorithm
+    while hasNext(iter) loop
+      (iter, exp) := next(iter);
+      lst := func(exp) :: lst;
+    end while;
+
+    lst := listReverse(lst);
+  end map;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFRangeIterator;
