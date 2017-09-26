@@ -3864,6 +3864,7 @@ template expTypeFromExpFlagXml(Exp exp, Integer flag)
  "Generate type helper."
 ::=
   match exp
+  case SIZE(sz=SOME(__))
   case ICONST(__)        then match flag case 8 then "int" case 1 then "integer" else "modelica_integer"
   case RCONST(__)        then match flag case 1 then "real" else "modelica_real"
   case SCONST(__)        then if acceptMetaModelicaGrammar() then
