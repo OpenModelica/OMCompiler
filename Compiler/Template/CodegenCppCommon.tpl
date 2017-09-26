@@ -2185,6 +2185,7 @@ end daeExpLbinary;
 template expTypeFromExpFlag(Exp exp, Integer flag)
 ::=
   match exp
+  case SIZE(sz=SOME(__))
   case ICONST(__)        then match flag case 8 then "int" case 1 then "int" else "int"
   case RCONST(__)        then match flag case 1 then "double" else "double"
   case SCONST(__)        then if acceptMetaModelicaGrammar() then

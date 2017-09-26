@@ -3667,6 +3667,7 @@ template expTypeFromExpFlag(Exp exp, Integer flag)
  "Generate type helper."
 ::=
   match exp
+  case SIZE(sz=SOME(__))
   case ICONST(__)        then match flag case 8 then "int" case 1 then "integer" else "modelica_integer"
   case RCONST(__)        then match flag case 1 then "real" else "modelica_real"
   case SCONST(__)        then match flag case 1 then "string" else "modelica_string"
@@ -5887,8 +5888,8 @@ simple_alloc_1d_base_array(&<%tvar%>, <%nElts%>, <%tvardata%>);
       let &preExp += '<%tvar%> = <%sExp%>;<%\n%>'
       tvar
     else
-    let &preExp += '<%tvar%> = <%typeStr%>_to_modelica_string(<%sExp%><%enumStr%>, <%minlenExp%>, <%leftjustExp%>);<%\n%>'
-    tvar
+      let &preExp += '<%tvar%> = <%typeStr%>_to_modelica_string(<%sExp%><%enumStr%>, <%minlenExp%>, <%leftjustExp%>);<%\n%>'
+      tvar
     end match
 
   case CALL(path=IDENT(name="String"), expLst={s, minlen, leftjust, signdig}) then
