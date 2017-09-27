@@ -592,15 +592,29 @@ fmi2Status fmi2Reset(fmi2Component c)
 fmi2Status fmi2GetReal(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, fmi2Real value[])
 {
   int i;
-  ModelInstance *comp = (ModelInstance *)c;
+  ModelInstance *comp = (ModelInstance*)c;
+
   if (invalidState(comp, "fmi2GetReal", modelInitializationMode|modelEventMode|modelContinuousTimeMode|modelTerminated|modelError, ~0))
     return fmi2Error;
   if (nvr > 0 && nullPointer(comp, "fmi2GetReal", "vr[]", vr))
     return fmi2Error;
   if (nvr > 0 && nullPointer(comp, "fmi2GetReal", "value[]", value))
     return fmi2Error;
+
 #if NUMBER_OF_REALS > 0
-  for (i = 0; i < nvr; i++) {
+  if (comp->_need_update)
+  {
+    comp->fmuData->callback->functionODE(comp->fmuData, comp->threadData);
+    overwriteOldSimulationData(comp->fmuData);
+    comp->fmuData->callback->functionAlgebraics(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->output_function(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->function_storeDelayed(comp->fmuData, comp->threadData);
+    storePreValues(comp->fmuData);
+    comp->_need_update = 0;
+  }
+
+  for (i = 0; i < nvr; i++)
+  {
     if (vrOutOfRange(comp, "fmi2GetReal", vr[i], NUMBER_OF_REALS))
       return fmi2Error;
     value[i] = getReal(comp, vr[i]); // to be implemented by the includer of this file
@@ -620,7 +634,20 @@ fmi2Status fmi2GetInteger(fmi2Component c, const fmi2ValueReference vr[], size_t
     return fmi2Error;
   if (nvr > 0 && nullPointer(comp, "fmi2GetInteger", "value[]", value))
     return fmi2Error;
-  for (i = 0; i < nvr; i++) {
+
+  if (comp->_need_update)
+  {
+    comp->fmuData->callback->functionODE(comp->fmuData, comp->threadData);
+    overwriteOldSimulationData(comp->fmuData);
+    comp->fmuData->callback->functionAlgebraics(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->output_function(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->function_storeDelayed(comp->fmuData, comp->threadData);
+    storePreValues(comp->fmuData);
+    comp->_need_update = 0;
+  }
+
+  for (i = 0; i < nvr; i++)
+  {
     if (vrOutOfRange(comp, "fmi2GetInteger", vr[i], NUMBER_OF_INTEGERS))
       return fmi2Error;
     value[i] = getInteger(comp, vr[i]); // to be implemented by the includer of this file
@@ -639,6 +666,18 @@ fmi2Status fmi2GetBoolean(fmi2Component c, const fmi2ValueReference vr[], size_t
     return fmi2Error;
   if (nvr > 0 && nullPointer(comp, "fmi2GetBoolean", "value[]", value))
     return fmi2Error;
+
+  if (comp->_need_update)
+  {
+    comp->fmuData->callback->functionODE(comp->fmuData, comp->threadData);
+    overwriteOldSimulationData(comp->fmuData);
+    comp->fmuData->callback->functionAlgebraics(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->output_function(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->function_storeDelayed(comp->fmuData, comp->threadData);
+    storePreValues(comp->fmuData);
+    comp->_need_update = 0;
+  }
+
   for (i = 0; i < nvr; i++)
   {
     if (vrOutOfRange(comp, "fmi2GetBoolean", vr[i], NUMBER_OF_BOOLEANS))
@@ -659,7 +698,20 @@ fmi2Status fmi2GetString(fmi2Component c, const fmi2ValueReference vr[], size_t 
     return fmi2Error;
   if (nvr>0 && nullPointer(comp, "fmi2GetString", "value[]", value))
     return fmi2Error;
-  for (i=0; i<nvr; i++) {
+
+  if (comp->_need_update)
+  {
+    comp->fmuData->callback->functionODE(comp->fmuData, comp->threadData);
+    overwriteOldSimulationData(comp->fmuData);
+    comp->fmuData->callback->functionAlgebraics(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->output_function(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->function_storeDelayed(comp->fmuData, comp->threadData);
+    storePreValues(comp->fmuData);
+    comp->_need_update = 0;
+  }
+
+  for (i=0; i<nvr; i++)
+  {
     if (vrOutOfRange(comp, "fmi2GetString", vr[i], NUMBER_OF_STRINGS))
       return fmi2Error;
     value[i] = getString(comp, vr[i]); // to be implemented by the includer of this file
@@ -683,7 +735,8 @@ fmi2Status fmi2SetReal(fmi2Component c, const fmi2ValueReference vr[], size_t nv
     return fmi2Error;
   FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetReal: nvr = %d", nvr)
   // no check whether setting the value is allowed in the current state
-  for (i = 0; i < nvr; i++) {
+  for (i = 0; i < nvr; i++)
+  {
     if (vrOutOfRange(comp, "fmi2SetReal", vr[i], NUMBER_OF_REALS+NUMBER_OF_STATES))
       return fmi2Error;
     FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetReal: #r%d# = %.16g", vr[i], value[i])
@@ -701,7 +754,7 @@ fmi2Status fmi2SetInteger(fmi2Component c, const fmi2ValueReference vr[], size_t
   int meStates = modelInstantiated|modelInitializationMode|modelEventMode;
   int csStates = modelInstantiated|modelInitializationMode|modelEventMode|modelContinuousTimeMode;
 
-  if (invalidState(comp, "fmi2SetReal", meStates, csStates))
+  if (invalidState(comp, "fmi2SetInteger", meStates, csStates))
     return fmi2Error;
   if (nvr > 0 && nullPointer(comp, "fmi2SetInteger", "vr[]", vr))
     return fmi2Error;
@@ -709,7 +762,8 @@ fmi2Status fmi2SetInteger(fmi2Component c, const fmi2ValueReference vr[], size_t
     return fmi2Error;
   FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetInteger: nvr = %d", nvr)
 
-  for (i = 0; i < nvr; i++) {
+  for (i = 0; i < nvr; i++)
+  {
     if (vrOutOfRange(comp, "fmi2SetInteger", vr[i], NUMBER_OF_INTEGERS))
       return fmi2Error;
     FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetInteger: #i%d# = %d", vr[i], value[i])
@@ -726,7 +780,7 @@ fmi2Status fmi2SetBoolean(fmi2Component c, const fmi2ValueReference vr[], size_t
   int meStates = modelInstantiated|modelInitializationMode|modelEventMode;
   int csStates = modelInstantiated|modelInitializationMode|modelEventMode|modelContinuousTimeMode;
 
-  if (invalidState(comp, "fmi2SetReal", meStates, csStates))
+  if (invalidState(comp, "fmi2SetBoolean", meStates, csStates))
     return fmi2Error;
   if (nvr>0 && nullPointer(comp, "fmi2SetBoolean", "vr[]", vr))
     return fmi2Error;
@@ -734,7 +788,8 @@ fmi2Status fmi2SetBoolean(fmi2Component c, const fmi2ValueReference vr[], size_t
     return fmi2Error;
   FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetBoolean: nvr = %d", nvr)
 
-  for (i = 0; i < nvr; i++) {
+  for (i = 0; i < nvr; i++)
+  {
     if (vrOutOfRange(comp, "fmi2SetBoolean", vr[i], NUMBER_OF_BOOLEANS))
       return fmi2Error;
     FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetBoolean: #b%d# = %s", vr[i], value[i] ? "true" : "false")
@@ -752,7 +807,7 @@ fmi2Status fmi2SetString(fmi2Component c, const fmi2ValueReference vr[], size_t 
   int meStates = modelInstantiated|modelInitializationMode|modelEventMode;
   int csStates = modelInstantiated|modelInitializationMode|modelEventMode|modelContinuousTimeMode;
 
-  if (invalidState(comp, "fmi2SetReal", meStates, csStates))
+  if (invalidState(comp, "fmi2SetString", meStates, csStates))
     return fmi2Error;
   if (nvr>0 && nullPointer(comp, "fmi2SetString", "vr[]", vr))
     return fmi2Error;
@@ -760,11 +815,11 @@ fmi2Status fmi2SetString(fmi2Component c, const fmi2ValueReference vr[], size_t 
     return fmi2Error;
   FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetString: nvr = %d", nvr)
 
-  for (i = 0; i < nvr; i++) {
+  for (i = 0; i < nvr; i++)
+  {
     if (vrOutOfRange(comp, "fmi2SetString", vr[i], NUMBER_OF_STRINGS))
       return fmi2Error;
     FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetString: #s%d# = '%s'", vr[i], value[i])
-
     if (setString(comp, vr[i], value[i]) != fmi2OK) // to be implemented by the includer of this file
       return fmi2Error;
   }
