@@ -483,7 +483,7 @@ public function insertListSorted<T>
   partial function CompareFunc
     input T inElement1;
     input T inElement2;
-    output Boolean inRes;
+    output Boolean outRes;
   end CompareFunc;
 algorithm
   outList := listReverseInPlace(insertListSorted1(inList, inList2, inCompFunc, {}));
@@ -501,7 +501,7 @@ protected function insertListSorted1<T>
   partial function CompareFunc
     input T inElement1;
     input T inElement2;
-    output Boolean inRes;
+    output Boolean outRes;
   end CompareFunc;
 protected
   list<T> listRest, listRest2, tmpResultList;
@@ -737,43 +737,53 @@ algorithm
 end stripN;
 
 public function sort<T>
+  input list<T> inList;
+  input CompareFunc inCompFunc;
+  output list<T> outList;
+
+  partial function CompareFunc
+    input T inElement1;
+    input T inElement2;
+    output Boolean outRes;
+  end CompareFunc;
+protected
+  Integer len = listLength(inList);
+algorithm
+  outList := if len > 1 then sort_helper(inList, inCompFunc, len) else inList;
+end sort;
+
+protected function sort_helper<T>
   "Sorts a list given an ordering function with the mergesort algorithm.
     Example:
       sort({2, 1, 3}, intGt) => {1, 2, 3}
       sort({2, 1, 3}, intLt) => {3, 2, 1}"
   input list<T> inList;
   input CompareFunc inCompFunc;
-  output list<T> outList= {};
+  input Integer len;
+  output list<T> outList= inList;
 
   partial function CompareFunc
     input T inElement1;
     input T inElement2;
-    output Boolean inRes;
+    output Boolean outRes;
   end CompareFunc;
 protected
-  list<T> rest = inList;
   T e1, e2;
   list<T> left, right;
   Integer middle;
 algorithm
-  if not listEmpty(rest) then
-    e1 :: rest := rest;
-    if listEmpty(rest) then
-      outList := inList;
-    else
-      e2 :: rest := rest;
-      if listEmpty(rest) then
-        outList := if inCompFunc(e2, e1) then inList else {e2,e1};
-      else
-        middle := intDiv(listLength(inList), 2);
-        (left, right) := split(inList, middle);
-        left := sort(left, inCompFunc);
-        right := sort(right, inCompFunc);
-        outList := merge(left, right, inCompFunc, {});
-      end if;
-    end if;
+  if len <= 1 then
+    // nothing
+  elseif  len == 2 then
+    e1::e2::_ := inList;
+    outList := if inCompFunc(e2, e1) then inList else {e2,e1};
+  else
+    middle := intDiv(len, 2);
+    left := sort_helper(inList, inCompFunc, middle);
+    right := sort_helper(stripN(inList, middle), inCompFunc, len - middle);
+    outList := merge(left, middle, right, len - middle, inCompFunc);
   end if;
-end sort;
+end sort_helper;
 
 public function sortedDuplicates<T>
   "Returns a list of all duplicates in a sorted list, using the given comparison
@@ -921,10 +931,12 @@ end sortedUniqueOnlyDuplicates;
 protected function merge<T>
   "Helper function to sort, merges two sorted lists."
   input list<T> inLeft;
+  input Integer lenLeft;
   input list<T> inRight;
+  input Integer lenRight;
   input CompareFunc inCompFunc;
-  input list<T> acc;
-  output list<T> outList;
+  input list<T> acc = {};
+  output list<T> outList = {};
 
   partial function CompareFunc
     input T inElement1;
@@ -932,29 +944,30 @@ protected function merge<T>
     output Boolean outRes;
   end CompareFunc;
 algorithm
-  outList := match (inLeft, inRight)
+
+  outList := match (inLeft, inRight, lenLeft, lenRight)
     local
-      Boolean b;
       T l, r, el;
       list<T> l_rest, r_rest, res;
+      Integer len1, len2;
 
     /* Tail recursive version */
-    case (l :: l_rest, r :: r_rest)
+    case (_, _, 0, 0) then listReverseInPlace(acc);
+    case (l_rest, r :: r_rest, 0, len2) then merge(l_rest, 0, r_rest, len2-1, inCompFunc, r :: acc);
+    case (l :: l_rest, r_rest, len1, 0) then merge(l_rest, len1-1, r_rest, 0, inCompFunc, l :: acc);
+    case (l :: l_rest, r :: r_rest, len1, len2)
       algorithm
         if inCompFunc(r, l) then
           r_rest := inRight;
           el := l;
+          len1 := len1 - 1;
         else
           l_rest := inLeft;
           el := r;
+          len2 := len2 - 1;
         end if;
       then
-        merge(l_rest, r_rest, inCompFunc, el :: acc);
-
-    case ({}, {}) then listReverseInPlace(acc);
-    case ({}, _) then append_reverse(acc,inRight);
-    case (_, {}) then append_reverse(acc,inLeft);
-
+        merge(l_rest, len1, r_rest, len2, inCompFunc, el :: acc);
   end match;
 end merge;
 
