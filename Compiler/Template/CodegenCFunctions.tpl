@@ -6740,7 +6740,7 @@ case exp as MATCHEXPRESSION(__) then
           <%varDeclsInner%>
           <%preExpInner%>
           <%match exp.matchType
-          case MATCH(switch=SOME(_)) then '<%done%> = 0;<%\n%>{'
+          case MATCH(switch=SOME(_)) then '<%done%> = 0;<%\n%>(void)<%done%>;<%\n%>{'
           else
           <<
           <%ix%> = 0;
