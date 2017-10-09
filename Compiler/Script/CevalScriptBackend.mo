@@ -756,6 +756,7 @@ algorithm
       list<SimpleModelicaParser.ParseTree> parseTree1, parseTree2;
       list<tuple<Diff, list<Token>>> diffs;
       list<tuple<Diff, list<SimpleModelicaParser.ParseTree>>> treeDiffs;
+      SourceInfo info;
 
     case (cache,_,"setClassComment",{Values.CODE(Absyn.C_TYPENAME(path)),Values.STRING(str)},st as GlobalScript.SYMBOLTABLE(ast=p),_)
       equation
@@ -1316,10 +1317,16 @@ algorithm
         (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true);
       then (cache,ret_val,st_1);
 
+    case (cache,env,"translateModelFMU", _,st,_)
+      then (cache,Values.STRING(""),st);
+
     case (cache,env,"buildModelFMU", Values.CODE(Absyn.C_TYPENAME(className))::Values.STRING(str1)::Values.STRING(str2)::Values.STRING(filenameprefix)::Values.ARRAY(valueLst=cvars)::_,st,_)
       algorithm
         (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true, list(ValuesUtil.extractValueString(vv) for vv in cvars));
       then (cache,ret_val,st_1);
+
+    case (cache,env,"buildModelFMU", _,st,_)
+      then (cache,Values.STRING(""),st);
 
     case (cache,env,"translateModelXML",{Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(filenameprefix)},st,_)
       equation
@@ -2039,9 +2046,9 @@ algorithm
 
     case (cache,_,"getAnnotationNamedModifiers",{Values.CODE(Absyn.C_TYPENAME(classpath)),Values.STRING(annotationname)},st as GlobalScript.SYMBOLTABLE(ast=p),_)
       equation
-          Absyn.CLASS(_,_,_,_,_,cdef,_) =Interactive.getPathedClassInProgram(classpath,p);
+          Absyn.CLASS(body=cdef,info=info) =Interactive.getPathedClassInProgram(classpath,p);
           annlst= getAnnotationList(cdef);
-          modifiernamelst=getElementArgsModifiers(annlst,annotationname);
+          modifiernamelst=getElementArgsModifiers(annlst,annotationname,Absyn.pathString(classpath),info);
           v1 = ValuesUtil.makeArray(List.map(modifiernamelst, ValuesUtil.makeString));
       then
           (cache,v1,st);
@@ -3217,6 +3224,9 @@ algorithm
     outValue := Values.STRING("");
     return;
   end try;
+
+  System.realtimeTick(ClockIndexes.RT_CLOCK_BUILD_MODEL);
+
   isWindows := System.os() == "Windows_NT";
   // compile
   quote := if isWindows then "" else "'";
@@ -7758,6 +7768,8 @@ function getElementArgsModifiers
  "@author arun Helper function which parses list of elementargs,annotationname returns the list of modifiers name in the annotation"
     input list<Absyn.ElementArg> inargs;
     input String instring;
+    input String inClass;
+    input SourceInfo info;
     output list<String> outstring;
 algorithm
     outstring:=match(inargs,instring)
@@ -7777,9 +7789,12 @@ algorithm
 
   case((_::eltarglst),name1)
     then
-        getElementArgsModifiers(eltarglst,name1);
+        getElementArgsModifiers(eltarglst,name1,inClass,info);
 
-  case({},_) then {"The searched annotation name not found"};
+  case ({},_)
+    algorithm
+      Error.addSourceMessage(Error.CLASS_ANNOTATION_DOES_NOT_EXIST, {instring, inClass}, info);
+    then {};
  end match;
 end getElementArgsModifiers;
 

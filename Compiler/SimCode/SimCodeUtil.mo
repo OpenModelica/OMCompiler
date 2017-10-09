@@ -894,7 +894,7 @@ protected function setJacobianVars "author: unknown
 protected
   SimCodeVar.SimVars vars;
 algorithm
-  if listLength(iJacobianVars) > 0 then
+  if not listEmpty(iJacobianVars) then
     vars := oModelInfo.vars;
     vars.jacobianVars := iJacobianVars;
     oModelInfo.vars := vars;
@@ -3252,121 +3252,112 @@ protected function createNonlinearResidualEquations
   input list<BackendDAE.Equation> eqs;
   input Integer iuniqueEqIndex;
   input list<SimCodeVar.SimVar> itempvars;
-  output list<SimCode.SimEqSystem> eqSystems;
-  output Integer ouniqueEqIndex;
-  output list<SimCodeVar.SimVar> otempvars;
+  output list<SimCode.SimEqSystem> eqSystems = {};
+  output Integer ouniqueEqIndex = iuniqueEqIndex;
+  output list<SimCodeVar.SimVar> otempvars = itempvars;
 algorithm
-  (eqSystems, ouniqueEqIndex, otempvars) := matchcontinue (eqs)
-    local
-      Integer size, uniqueEqIndex;
-      DAE.Exp res_exp, e1, e2, e, lhse;
-      list<DAE.Exp> explst, explst1;
-      list<BackendDAE.Equation> rest;
-      BackendDAE.Equation eq;
-      list<SimCode.SimEqSystem> eqSystemsRest, eqSystlst;
-      list<Integer> ds;
-      DAE.ComponentRef left;
-      list<DAE.Statement> algStatements;
-      DAE.ElementSource source;
-      list<tuple<DAE.Exp, DAE.Exp>> exptl;
-      list<DAE.ComponentRef> crefs, crefstmp;
-      list<SimCodeVar.SimVar> tempvars;
-      BackendVarTransform.VariableReplacements repl;
-      DAE.Type ty;
-      String errorMessage;
-      DAE.Expand crefExpand;
+  try
+    for eq in listReverse(eqs) loop
+      eqSystems := match (eq, ouniqueEqIndex)
+        local
+          DAE.Exp res_exp, e1, e2, e, lhse;
+          list<DAE.Exp> explst, explst1;
+          list<SimCode.SimEqSystem> eqSystlst;
+          list<Integer> ds;
+          DAE.ComponentRef left;
+          list<DAE.Statement> algStatements;
+          DAE.ElementSource source;
+          list<tuple<DAE.Exp, DAE.Exp>> exptl;
+          list<DAE.ComponentRef> crefs, crefstmp;
+          BackendVarTransform.VariableReplacements repl;
+          DAE.Type ty;
+          DAE.Expand crefExpand;
+          Integer uniqueEqIndex;
 
-    case ({})
-    then ({}, iuniqueEqIndex, itempvars);
+        case (BackendDAE.EQUATION(exp=e1, scalar=e2, source=source), uniqueEqIndex) equation
+          res_exp = Expression.createResidualExp(e1, e2);
+          res_exp = Expression.replaceDerOpInExp(res_exp);
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source)::eqSystems;
 
-    case (BackendDAE.EQUATION(exp=e1, scalar=e2, source=source)::rest) equation
-      res_exp = Expression.createResidualExp(e1, e2);
-      res_exp = Expression.replaceDerOpInExp(res_exp);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, iuniqueEqIndex, itempvars);
-    then (SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source)::eqSystemsRest, uniqueEqIndex+1, tempvars);
+        case (BackendDAE.RESIDUAL_EQUATION(exp=e, source=source), uniqueEqIndex) equation
+          (res_exp, _) = ExpressionSimplify.simplify(e);
+          res_exp = Expression.replaceDerOpInExp(res_exp);
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source) :: eqSystems;
 
-    case (BackendDAE.RESIDUAL_EQUATION(exp=e, source=source)::rest) equation
-      (res_exp, _) = ExpressionSimplify.simplify(e);
-      res_exp = Expression.replaceDerOpInExp(res_exp);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, iuniqueEqIndex, itempvars);
-    then (SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source) :: eqSystemsRest, uniqueEqIndex+1, tempvars);
+        // An array equation
+        case (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2, source=source), uniqueEqIndex) equation
+          ty = Expression.typeof(e1);
+          left = ComponentReference.makeCrefIdent("$TMP_" + intString(uniqueEqIndex), ty, {});
+          lhse = DAE.CREF(left,ty);
 
-    // An array equation
-    case (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2, source=source)::rest) equation
-      ty = Expression.typeof(e1);
-      left = ComponentReference.makeCrefIdent("$TMP_" + intString(iuniqueEqIndex), ty, {});
-      lhse = DAE.CREF(left,ty);
+          res_exp = Expression.createResidualExp(e1, e2);
+          res_exp = Expression.replaceDerOpInExp(res_exp);
+          crefstmp = ComponentReference.expandCref(left, false);
+          explst1 = List.map(crefstmp, Expression.crefExp);
+          (eqSystlst, uniqueEqIndex) = List.map1Fold(explst1, makeSES_RESIDUAL, source, uniqueEqIndex);
+          eqSystlst = SimCode.SES_ARRAY_CALL_ASSIGN(uniqueEqIndex, lhse, res_exp, source)::eqSystlst;
+          otempvars = createArrayTempVar(left, ds, explst1, otempvars);
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then listAppend(eqSystlst, eqSystems);
 
-      res_exp = Expression.createResidualExp(e1, e2);
-      res_exp = Expression.replaceDerOpInExp(res_exp);
-      crefstmp = ComponentReference.expandCref(left, false);
-      explst1 = List.map(crefstmp, Expression.crefExp);
-      (eqSystlst, uniqueEqIndex) = List.map1Fold(explst1, makeSES_RESIDUAL, source, iuniqueEqIndex);
-      eqSystlst = SimCode.SES_ARRAY_CALL_ASSIGN(uniqueEqIndex, lhse, res_exp, source)::eqSystlst;
-      tempvars = createArrayTempVar(left, ds, explst1, itempvars);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, uniqueEqIndex+1, tempvars);
-      eqSystemsRest = listAppend(eqSystlst, eqSystemsRest);
-    then (eqSystemsRest, uniqueEqIndex, tempvars);
+        // A complex equation
+        case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source), uniqueEqIndex) equation
+          (e1, _) = ExpressionSimplify.simplify(e1);
+          e1 = Expression.replaceDerOpInExp(e1);
+          (e2, _) = ExpressionSimplify.simplify(e2);
+          e2 = Expression.replaceDerOpInExp(e2);
+          (eqSystlst, ouniqueEqIndex, otempvars) = createNonlinearResidualEquationsComplex(e1, e2, source, uniqueEqIndex, otempvars);
+        then listAppend(eqSystlst, eqSystems);
 
-    // A complex equation
-    case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source)::rest) equation
-      (e1, _) = ExpressionSimplify.simplify(e1);
-      e1 = Expression.replaceDerOpInExp(e1);
-      (e2, _) = ExpressionSimplify.simplify(e2);
-      e2 = Expression.replaceDerOpInExp(e2);
-      (eqSystlst, uniqueEqIndex, tempvars) = createNonlinearResidualEquationsComplex(e1, e2, source, iuniqueEqIndex, itempvars);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, uniqueEqIndex, tempvars);
-      eqSystemsRest = listAppend(eqSystlst, eqSystemsRest);
-    then (eqSystemsRest, uniqueEqIndex, tempvars);
+        case (BackendDAE.WHEN_EQUATION(whenEquation=BackendDAE.WHEN_STMTS()), _) equation
+          // This following does not work. It does not take index or elseWhen into account.
+          // The generated code for the when-equation also does not solve a linear system; it uses the variables directly.
+          /*
+           tp = Expression.typeof(e2);
+           e1 = Expression.makeCrefExp(left, tp);
+           res_exp = DAE.BINARY(e1, DAE.SUB(tp), e2);
+           res_exp = ExpressionSimplify.simplify(res_exp);
+           res_exp = Expression.replaceDerOpInExp(res_exp);
+           (eqSystemsRest) = createNonlinearResidualEquations(rest, repl, uniqueEqIndex );
+           then
+           (SimCode.SES_RESIDUAL(0, res_exp) :: eqSystemsRest, entrylst1);
+           */
+          Error.addSourceMessage(Error.UNSUPPORTED_LANGUAGE_FEATURE, {"non-linear equations within when-equations", "Perform non-linear operations outside the when-equation (this is slower, but works)"}, BackendEquation.equationInfo(eq));
+        then fail();
 
-    case ((eq as BackendDAE.WHEN_EQUATION(whenEquation=BackendDAE.WHEN_STMTS()))::_) equation
-      // This following does not work. It does not take index or elseWhen into account.
-      // The generated code for the when-equation also does not solve a linear system; it uses the variables directly.
-      /*
-       tp = Expression.typeof(e2);
-       e1 = Expression.makeCrefExp(left, tp);
-       res_exp = DAE.BINARY(e1, DAE.SUB(tp), e2);
-       res_exp = ExpressionSimplify.simplify(res_exp);
-       res_exp = Expression.replaceDerOpInExp(res_exp);
-       (eqSystemsRest) = createNonlinearResidualEquations(rest, repl, uniqueEqIndex );
-       then
-       (SimCode.SES_RESIDUAL(0, res_exp) :: eqSystemsRest, entrylst1);
-       */
-      Error.addSourceMessage(Error.UNSUPPORTED_LANGUAGE_FEATURE, {"non-linear equations within when-equations", "Perform non-linear operations outside the when-equation (this is slower, but works)"}, BackendEquation.equationInfo(eq));
-    then fail();
+        case (BackendDAE.ALGORITHM(alg=DAE.ALGORITHM_STMTS(algStatements), source=source, expand=crefExpand), uniqueEqIndex) equation
+          crefs = CheckModel.checkAndGetAlgorithmOutputs(DAE.ALGORITHM_STMTS(algStatements), source, crefExpand);
+          // BackendDump.debugStrCrefLstStr(("Crefs : ", crefs, ", ", "\n"));
+          (crefstmp, repl) = createTmpCrefs(crefs, uniqueEqIndex, {}, BackendVarTransform.emptyReplacements());
+          // BackendDump.debugStrCrefLstStr(("Crefs : ", crefstmp, ", ", "\n"));
+          explst = List.map(crefs, Expression.crefExp);
+          explst = List.map(explst, Expression.replaceDerOpInExp);
 
-    case (BackendDAE.ALGORITHM(alg=DAE.ALGORITHM_STMTS(algStatements), source=source, expand=crefExpand)::rest) equation
-      crefs = CheckModel.checkAndGetAlgorithmOutputs(DAE.ALGORITHM_STMTS(algStatements), source, crefExpand);
-      // BackendDump.debugStrCrefLstStr(("Crefs : ", crefs, ", ", "\n"));
-      (crefstmp, repl) = createTmpCrefs(crefs, iuniqueEqIndex, {}, BackendVarTransform.emptyReplacements());
-      // BackendDump.debugStrCrefLstStr(("Crefs : ", crefstmp, ", ", "\n"));
-      explst = List.map(crefs, Expression.crefExp);
-      explst = List.map(explst, Expression.replaceDerOpInExp);
+          // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
+          (algStatements, _) = BackendVarTransform.replaceStatementLst(algStatements, repl, SOME(BackendVarTransform.skipPreOperator), {}, false);
+          // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
 
-      // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
-      (algStatements, _) = BackendVarTransform.replaceStatementLst(algStatements, repl, SOME(BackendVarTransform.skipPreOperator), {}, false);
-      // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
+          explst1 = List.map(crefstmp, Expression.crefExp);
+          explst1 = List.map(explst1, Expression.replaceDerOpInExp);
+          otempvars = createTempVarsforCrefs(explst1, otempvars);
 
-      explst1 = List.map(crefstmp, Expression.crefExp);
-      explst1 = List.map(explst1, Expression.replaceDerOpInExp);
-      tempvars = createTempVarsforCrefs(explst1, itempvars);
+          // 0 = a - tmp
+          exptl = List.threadTuple(explst, explst1);
+          (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, uniqueEqIndex);
 
-      // 0 = a - tmp
-      exptl = List.threadTuple(explst, explst1);
-      (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, iuniqueEqIndex);
+          eqSystlst = SimCode.SES_ALGORITHM(uniqueEqIndex, algStatements)::eqSystlst;
+          // Tpl.tplPrint(SimCodeDump.dumpEqs, eqSystlst);
 
-      eqSystlst = SimCode.SES_ALGORITHM(uniqueEqIndex, algStatements)::eqSystlst;
-      // Tpl.tplPrint(SimCodeDump.dumpEqs, eqSystlst);
-
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, uniqueEqIndex+1, tempvars);
-      eqSystemsRest = listAppend(eqSystlst, eqSystemsRest);
-    then (eqSystemsRest, uniqueEqIndex, tempvars);
-
-    case (eq::_) equation
-      errorMessage = "function createNonlinearResidualEquations failed for equation: " + BackendDump.equationString(eq);
-      Error.addSourceMessage(Error.INTERNAL_ERROR, {errorMessage}, BackendEquation.equationInfo(eq));
-    then fail();
-  end matchcontinue;
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then listAppend(eqSystlst, eqSystems);
+      end match;
+    end for;
+  else
+    Error.addMessage(Error.INTERNAL_ERROR, {"function createNonlinearResidualEquations failed"});
+    fail();
+  end try;
 end createNonlinearResidualEquations;
 
 public function dimsToAllIndexes
@@ -4898,7 +4889,7 @@ protected function createAllDiffedSimVars "author: wbraun"
   input list<SimCodeVar.SimVar> iVars;
   output list<SimCodeVar.SimVar> outVars;
 algorithm
-  outVars := matchcontinue(inVars, inCref, inAllVars, inIndex, inMatrixName, iVars)
+  outVars := match(inVars, inCref, inAllVars, inIndex, inMatrixName, iVars)
   local
     BackendDAE.Var  v1;
     SimCodeVar.SimVar r1;
@@ -4908,51 +4899,59 @@ algorithm
     Boolean isProtected;
     Boolean hideResult = false;
     Integer index;
+    BackendDAE.VarKind varkind;
 
-    case({}, _, _, _, _, _)
-    then listReverse(iVars);
+    case({}, _, _, _, _, _) then listReverse(iVars);
+
     // skip for dicrete variable
     case(BackendDAE.VAR(varKind=BackendDAE.DISCRETE())::restVar, cref, _, _, _, _) equation
      then
        createAllDiffedSimVars(restVar, cref, inAllVars, inIndex, inMatrixName, iVars);
 
-     case(BackendDAE.VAR(varName=currVar, varKind=BackendDAE.STATE(), values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      BackendVariable.getVarSingle(currVar, inAllVars);
-      currVar = ComponentReference.crefPrefixDer(currVar);
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.STATE_DER(), "", "", "", inIndex, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex+1, inMatrixName, r1::iVars);
-
-    case(BackendDAE.VAR(varName=currVar, values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      BackendVariable.getVarSingle(currVar, inAllVars);
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.STATE_DER(), "", "", "", inIndex, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex+1, inMatrixName, r1::iVars);
-
-     case(BackendDAE.VAR(varName=currVar, varKind=BackendDAE.STATE(), values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      currVar = ComponentReference.crefPrefixDer(currVar);
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.VARIABLE(), "", "", "", -1, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex, inMatrixName, r1::iVars);
-
-    case(BackendDAE.VAR(varName=currVar, values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.VARIABLE(), "", "", "", -1, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex, inMatrixName, r1::iVars);
-
+     case(BackendDAE.VAR(varName=currVar, varKind=varkind, values = dae_var_attr)::restVar, cref, _, index, _, _) algorithm
+      try
+        BackendVariable.getVarSingle(currVar, inAllVars);
+        r1 := match (varkind)
+          case BackendDAE.STATE()
+            equation
+              currVar = ComponentReference.crefPrefixDer(currVar);
+              derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
+              isProtected = getProtected(dae_var_attr);
+              index = index + 1;
+            then
+              SimCodeVar.SIMVAR(derivedCref, BackendDAE.STATE_DER(), "", "", "", inIndex, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
+          else
+            equation
+              derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
+              isProtected = getProtected(dae_var_attr);
+              index = index + 1;
+            then
+              SimCodeVar.SIMVAR(derivedCref, BackendDAE.STATE_DER(), "", "", "", inIndex, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
+        end match;
+      else
+        r1 := match (varkind)
+          case BackendDAE.STATE()
+            equation
+              currVar = ComponentReference.crefPrefixDer(currVar);
+              derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
+              isProtected = getProtected(dae_var_attr);
+            then
+              SimCodeVar.SIMVAR(derivedCref, BackendDAE.VARIABLE(), "", "", "", -1, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
+          else
+            equation
+              derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
+              isProtected = getProtected(dae_var_attr);
+            then
+              SimCodeVar.SIMVAR(derivedCref, BackendDAE.VARIABLE(), "", "", "", -1, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
+        end match;
+      end try;
+     then
+       createAllDiffedSimVars(restVar, cref, inAllVars, index, inMatrixName, r1::iVars);
     else
      equation
       Error.addInternalError("function createAllDiffedSimVars failed", sourceInfo());
     then fail();
-  end matchcontinue;
+  end match;
 end createAllDiffedSimVars;
 
 protected function collectAllJacobianEquations
@@ -5865,7 +5864,7 @@ algorithm
       // wbraun:
       // TODO: Fix createNonlinearResidualEquations support cases where
       //       solved variables are on rhs and also lhs. This is not
-      //       cosidered yet there.
+      //       considered yet there.
       (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations({inEquation}, iuniqueEqIndex, itempvars);
       (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(inEquation, BackendDAEUtil.containsHomotopyCall, false);
     then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, listLength(inVars)+listLength(tempvars)-listLength(itempvars), NONE(), homotopySupport, false, false), NONE())}, uniqueEqIndex+1, tempvars);
