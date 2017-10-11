@@ -33,6 +33,11 @@ package builtin
     output Integer c;
   end intAdd;
 
+  function intNeg
+    input Integer a;
+    output Integer b;
+  end intNeg;
+
   function boolAnd
     input Boolean b1;
     input Boolean b2;
@@ -1020,6 +1025,12 @@ package SimCodeUtil
     input list<SimCode.SimEqSystem> inEqs;
     output list<SimCode.SimEqSystem> eqs;
   end sortSimpleAssignmentBasedOnLhs;
+
+  function lookupVR
+    input DAE.ComponentRef cr;
+    input SimCode.SimCode simCode;
+    output Integer vr;
+  end lookupVR;
 
 end SimCodeUtil;
 
