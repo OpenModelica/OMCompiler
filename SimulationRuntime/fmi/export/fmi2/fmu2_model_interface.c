@@ -310,6 +310,8 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
     fmi2Boolean visible, fmi2Boolean loggingOn) {
   // ignoring arguments: fmuResourceLocation, visible
   ModelInstance *comp;
+  int fmi2callbacksOK = 0;
+  threadData_t *threadData = NULL;
   if (!functions->logger) {
     return NULL;
   }
@@ -329,9 +331,8 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   comp = (ModelInstance *)functions->allocateMemory(1, sizeof(ModelInstance));
   if (comp) {
     DATA* fmudata = NULL;
-  MODEL_DATA* modelData = NULL;
-  SIMULATION_INFO* simInfo = NULL;
-    threadData_t *threadData = NULL;
+    MODEL_DATA* modelData = NULL;
+    SIMULATION_INFO* simInfo = NULL;
     int i;
 
     comp->instanceName = (fmi2String)functions->allocateMemory(1 + strlen(instanceName), sizeof(char));
@@ -386,6 +387,9 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
 #endif
   /* read input vars */
   /* input_function(comp->fmuData); */
+  MMC_INIT(X);
+  pthread_setspecific(mmc_thread_data_key, threadData);
+  MMC_TRY_INTERNAL(mmc_jumper)
 #if !defined(OMC_NUM_NONLINEAR_SYSTEMS) || OMC_NUM_NONLINEAR_SYSTEMS>0
   /* allocate memory for non-linear system solvers */
   initializeNonlinearSystems(comp->fmuData, comp->threadData);
@@ -402,6 +406,11 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   /* allocate memory for state selection */
   initializeStateSetJacobians(comp->fmuData, comp->threadData);
 #endif
+  fmi2callbacksOK = 1;
+  MMC_CATCH_INTERNAL(mmc_jumper)
+  if (!fmi2callbacksOK) {
+    return NULL;
+  }
 #ifdef FMU_EXPERIMENTAL
   /* allocate memory for Jacobian */
   comp->_has_jacobian = !comp->fmuData->callback->initialAnalyticJacobianA(comp->fmuData, comp->threadData);
