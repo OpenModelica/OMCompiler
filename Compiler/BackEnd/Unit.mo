@@ -38,9 +38,9 @@ encapsulated package Unit
                authors: Jan Hagemann and Lennart Ochel (FH Bielefeld, Germany)"
 
 public
-import DAE;
 import AvlTreeStringToUnit;
-import HashTableUnitToString;
+import AvlTreeUnitToString;
+import DAE;
 import System;
 
 protected
@@ -152,18 +152,18 @@ algorithm
 end getKnownUnits;
 
 public function getKnownUnitsInverse
-  output HashTableUnitToString.HashTable outKnownUnitsInverse;
+  output AvlTreeUnitToString.Tree outKnownUnitsInverse;
 protected
   String s;
   Unit ut;
 algorithm
-  outKnownUnitsInverse := HashTableUnitToString.emptyHashTableSized(Util.nextPrime(4 * listLength(LU_COMPLEXUNITS)));
+  outKnownUnitsInverse := AvlTreeUnitToString.EMPTY();
 
   for unit in LU_COMPLEXUNITS loop
     (s, ut) := unit;
 
-    if not BaseHashTable.hasKey(ut, outKnownUnitsInverse) then
-      outKnownUnitsInverse := BaseHashTable.add((ut, s), outKnownUnitsInverse);
+    if not AvlTreeUnitToString.hasKey(outKnownUnitsInverse, ut) then
+      outKnownUnitsInverse := AvlTreeUnitToString.add(outKnownUnitsInverse, ut, s);
     end if;
   end for;
 end getKnownUnitsInverse;
@@ -469,7 +469,7 @@ end unitRoot;
 
 public function unitString "Unit to Modelica unit string"
   input Unit inUnit;
-  input HashTableUnitToString.HashTable inHtU2S = getKnownUnitsInverse();
+  input AvlTreeUnitToString.Tree inHtU2S = getKnownUnitsInverse();
   output String outString;
 algorithm
   outString := match(inUnit)
@@ -478,8 +478,8 @@ algorithm
       Boolean b;
       Unit unit;
 
-    case _ guard BaseHashTable.hasKey(inUnit, inHtU2S) equation
-      s = BaseHashTable.get(inUnit, inHtU2S);
+    case _ guard AvlTreeUnitToString.hasKey(inHtU2S, inUnit) equation
+      s = AvlTreeUnitToString.get(inHtU2S, inUnit);
     then s;
 
     case unit as UNIT() equation

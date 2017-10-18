@@ -359,6 +359,7 @@ if true then /* Suppress output */
     "../Util/AvlTree.mo",
     "../Util/AvlTreeString.mo",
     "../Util/AvlTreeStringToUnit.mo",
+    "../Util/AvlTreeUnitToString.mo",
     "../Util/AvlSetInt.mo",
 
     "../Util/DiffAlgorithm.mo",
@@ -374,7 +375,6 @@ if true then /* Suppress output */
     "../Util/HashTableCrToExpSourceTpl.mo",
     "../Util/HashTableCrToCrEqLst.mo",
     "../Util/HashTableCrToUnit.mo",
-    "../Util/HashTableUnitToString.mo",
     "../Util/PriorityQueue.mo",
     "../Util/Serializer.mo",
     "../Util/SimulationResults.mo",

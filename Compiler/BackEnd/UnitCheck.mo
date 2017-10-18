@@ -46,6 +46,7 @@ import Unit;
 
 protected
 import AvlTreeStringToUnit;
+import AvlTreeUnitToString;
 import BackendDAEUtil;
 import BackendDump;
 import BackendEquation;
@@ -57,7 +58,6 @@ import Expression;
 import ExpressionDump;
 import Flags;
 import HashTableCrToUnit;
-import HashTableUnitToString;
 import List;
 
 // =============================================================================
@@ -75,7 +75,7 @@ protected
   BackendDAE.Variables orderedVars, globalKnownVars, aliasVars;
   HashTableCrToUnit.HashTable HtCr2U1, HtCr2U2;
   AvlTreeStringToUnit.Tree HtS2U;
-  HashTableUnitToString.HashTable HtU2S;
+  AvlTreeUnitToString.Tree HtU2S;
   list<BackendDAE.Equation> eqList;
   list<BackendDAE.Var> varList, paraList, aliasList;
 algorithm
@@ -143,17 +143,17 @@ end addUnit2HtS2U;
 protected function addUnit2HtU2S
   input String inKey;
   input Unit.Unit inValue;
-  input HashTableUnitToString.HashTable inHtU2S;
-  output HashTableUnitToString.HashTable outHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
+  output AvlTreeUnitToString.Tree outHtU2S;
 algorithm
   outHtU2S := matchcontinue(inHtU2S)
   local
-    HashTableUnitToString.HashTable HtU2S;
+    AvlTreeUnitToString.Tree HtU2S;
 
   case (_)
     equation
-      false = BaseHashTable.hasKey(inValue, inHtU2S);
-      HtU2S = BaseHashTable.add((inValue,inKey),inHtU2S);
+      false = AvlTreeUnitToString.hasKey(inHtU2S, inValue);
+      HtU2S = AvlTreeUnitToString.add(inHtU2S, inValue, inKey);
   then HtU2S;
 
   else inHtU2S;
@@ -165,7 +165,7 @@ end addUnit2HtU2S;
 protected function returnVar "returns the new calculated units in DAE"
   input BackendDAE.Var inVar;
   input HashTableCrToUnit.HashTable inHtCr2U;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
   output BackendDAE.Var outVar;
 algorithm
   outVar := match(inVar)
@@ -202,12 +202,12 @@ protected function algo "algorithm to check the consistency"
   input list<BackendDAE.Equation> ineqList;
   input HashTableCrToUnit.HashTable inHtCr2U;
   input AvlTreeStringToUnit.Tree inHtS2U;
-  input HashTableUnitToString.HashTable inHtU2S;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  input AvlTreeUnitToString.Tree inHtU2S;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, AvlTreeUnitToString.Tree /* outHtU2S */> outTpl;
 protected
   HashTableCrToUnit.HashTable HtCr2U;
   AvlTreeStringToUnit.Tree HtS2U;
-  HashTableUnitToString.HashTable HtU2S;
+  AvlTreeUnitToString.Tree HtU2S;
   Boolean b1, b2, b3;
 
 algorithm
@@ -227,14 +227,14 @@ protected function algo2 "help-function"
   input list<BackendDAE.Equation> ineqList;
   input HashTableCrToUnit.HashTable inHtCr2U;
   input AvlTreeStringToUnit.Tree inHtS2U;
-  input HashTableUnitToString.HashTable inHtU2S;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  input AvlTreeUnitToString.Tree inHtU2S;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, AvlTreeUnitToString.Tree /* outHtU2S */> outTpl;
 algorithm
   outTpl:=match(inB1, inB2, inB3, inparaList, ineqList, inHtCr2U, inHtS2U, inHtU2S)
     local
       HashTableCrToUnit.HashTable HtCr2U;
       AvlTreeStringToUnit.Tree HtS2U;
-      HashTableUnitToString.HashTable HtU2S;
+      AvlTreeUnitToString.Tree HtU2S;
       DAE.ComponentRef cr;
 
     case (true, true, false, _, _, _, _, _)
@@ -254,12 +254,12 @@ end algo2;
 //
 protected function foldEquation "folds the equations or return the error message of incosistent equations"
   input BackendDAE.Equation inEq;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* inHtS2U */, AvlTreeUnitToString.Tree /* inHtU2S */> inTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* outHtS2U */, AvlTreeUnitToString.Tree /* outHtU2S */> outTpl;
 protected
   HashTableCrToUnit.HashTable HtCr2U;
   AvlTreeStringToUnit.Tree HtS2U;
-  HashTableUnitToString.HashTable HtU2S;
+  AvlTreeUnitToString.Tree HtU2S;
   list<list<tuple<DAE.Exp, Unit.Unit>>> expListList;
   Boolean b;
 algorithm
@@ -279,10 +279,10 @@ protected function foldEquation2 "help-function"
   input BackendDAE.Equation inEq;
   input HashTableCrToUnit.HashTable inHtCr2U;
   input AvlTreeStringToUnit.Tree inHtS2U;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
   output HashTableCrToUnit.HashTable outHtCr2U;
   output AvlTreeStringToUnit.Tree outHtS2U;
-  output HashTableUnitToString.HashTable outHtU2S;
+  output AvlTreeUnitToString.Tree outHtU2S;
   output list<list<tuple<DAE.Exp, Unit.Unit>>> outexpListList;
 
 algorithm
@@ -292,7 +292,7 @@ algorithm
       BackendDAE.Equation eq;
       HashTableCrToUnit.HashTable HtCr2U;
       AvlTreeStringToUnit.Tree HtS2U;
-      HashTableUnitToString.HashTable HtU2S;
+      AvlTreeUnitToString.Tree HtU2S;
       list<list<tuple<DAE.Exp, Unit.Unit>>> expList;
       DAE.ComponentRef cr;
       list<BackendDAE.WhenOperator> whenStmtLst;
@@ -373,8 +373,8 @@ end foldEquation2;
 //
 protected function foldBindingExp "folds the Binding expressions"
   input BackendDAE.Var inVar;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* inHtS2U */, AvlTreeUnitToString.Tree /* inHtU2S */> inTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* outHtS2U */, AvlTreeUnitToString.Tree /* outHtU2S */> outTpl;
 algorithm
   outTpl := matchcontinue(inVar, inTpl)
     local
@@ -382,7 +382,7 @@ algorithm
       DAE.ComponentRef cref;
       HashTableCrToUnit.HashTable HtCr2U;
       AvlTreeStringToUnit.Tree HtS2U;
-      HashTableUnitToString.HashTable HtU2S;
+      AvlTreeUnitToString.Tree HtU2S;
       Boolean b;
       BackendDAE.Equation eq;
 
@@ -405,7 +405,7 @@ end foldBindingExp;
 protected function Errorfunction "returns the incostinent Equation with sub-expression"
   input list<tuple<DAE.Exp, Unit.Unit>> inexpList;
   input BackendDAE.Equation inEq;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
 algorithm
   _ := match(inexpList, inEq, inHtU2S)
     local
@@ -428,7 +428,7 @@ end Errorfunction;
 //
 protected function Errorfunction2 "help-function"
   input list<tuple<DAE.Exp, Unit.Unit>> inexpList;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
   output String outS;
 algorithm
   outS := match(inexpList, inHtU2S)
@@ -458,7 +458,7 @@ end Errorfunction2;
 protected function notification "dumps the calculated units"
   input HashTableCrToUnit.HashTable inHtCr2U1;
   input HashTableCrToUnit.HashTable inHtCr2U2;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
 algorithm
   _ := matchcontinue(inHtCr2U1, inHtCr2U2, inHtU2S)
   local
@@ -484,7 +484,7 @@ end notification;
 protected function notification2 "help-function"
   input list<tuple<DAE.ComponentRef, Unit.Unit>> inLt1;
   input HashTableCrToUnit.HashTable inHtCr2U2;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
   output String outS;
 
 algorithm
@@ -517,10 +517,10 @@ end notification2;
 //
 protected function insertUnitInEquation "inserts the units in Equation and check if the equation is consistent or not"
   input DAE.Exp inEq;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, AvlTreeStringToUnit.Tree /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, AvlTreeStringToUnit.Tree /* inHtS2U */, AvlTreeUnitToString.Tree /* inHtU2S */> inTpl;
   input Unit.Unit inUt;
   output Unit.Unit outUt;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, AvlTreeUnitToString.Tree /* outHtU2S */> outTpl;
   output list<list<tuple<DAE.Exp, Unit.Unit>>> outexpList;
 algorithm
   (outUt, outTpl, outexpList) := matchcontinue(inEq, inTpl, inUt)
@@ -530,7 +530,7 @@ algorithm
       DAE.Type ty;
       HashTableCrToUnit.HashTable HtCr2U;
       AvlTreeStringToUnit.Tree HtS2U;
-      HashTableUnitToString.HashTable HtU2S;
+      AvlTreeUnitToString.Tree HtU2S;
       Integer i, i1, i2, i3, i4, i5, i6, i7;
       list<DAE.ComponentRef> lcr, lcr2;
       list<DAE.Exp> ExpList;
@@ -863,10 +863,10 @@ protected function foldCallArg "help-function for CALL case in function insertUn
   input list<DAE.Exp> inExpList;
   input HashTableCrToUnit.HashTable inHtCr2U;
   input AvlTreeStringToUnit.Tree inHtS2U;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
   output HashTableCrToUnit.HashTable outHtCr2U = inHtCr2U;
   output AvlTreeStringToUnit.Tree outHtS2U = inHtS2U;
-  output HashTableUnitToString.HashTable outHtU2S = inHtU2S;
+  output AvlTreeUnitToString.Tree outHtU2S = inHtU2S;
   output list<list<tuple<DAE.Exp, Unit.Unit>>> outExpListList = {};
 protected
   list<list<tuple<DAE.Exp, Unit.Unit>>> expListList;
@@ -976,8 +976,8 @@ end updateHtCr2U;
 //
 protected function convertUnitString2unit "converts String to unit"
   input BackendDAE.Var var;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, AvlTreeStringToUnit.Tree /* HtS2U */, HashTableUnitToString.HashTable /* HtU2S */> inTpl;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* HtS2U */, HashTableUnitToString.HashTable /* HtU2S */> outTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, AvlTreeStringToUnit.Tree /* HtS2U */, AvlTreeUnitToString.Tree /* HtU2S */> inTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* HtS2U */, AvlTreeUnitToString.Tree /* HtU2S */> outTpl;
 
 algorithm
   outTpl := matchcontinue(var, inTpl)
@@ -988,7 +988,7 @@ algorithm
     DAE.ComponentRef cr;
     Unit.Unit ut;
     AvlTreeStringToUnit.Tree HtS2U;
-    HashTableUnitToString.HashTable HtU2S;
+    AvlTreeUnitToString.Tree HtU2S;
     HashTableCrToUnit.HashTable HtCr2U;
 
   case (BackendDAE.VAR(varType=DAE.T_REAL(), values = SOME(DAE.VAR_ATTR_REAL(unit=SOME(DAE.SCONST(unitString))))), (HtCr2U, HtS2U, HtU2S))
@@ -1017,10 +1017,10 @@ protected function parse "author: lochel"
   input String inUnitString;
   input DAE.ComponentRef inCref;
   input AvlTreeStringToUnit.Tree inHtS2U;
-  input HashTableUnitToString.HashTable inHtU2S;
+  input AvlTreeUnitToString.Tree inHtU2S;
   output Unit.Unit outUnit;
   output AvlTreeStringToUnit.Tree outHtS2U = inHtS2U;
-  output HashTableUnitToString.HashTable outHtU2S = inHtU2S;
+  output AvlTreeUnitToString.Tree outHtU2S = inHtU2S;
 algorithm
   try
     outUnit := AvlTreeStringToUnit.get(inHtS2U, inUnitString);
