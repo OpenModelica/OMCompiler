@@ -96,14 +96,6 @@ partial function FuncEq input Key key1; input Key key2; output Boolean b; end Fu
 partial function FuncKeyString input Key key; output String str; end FuncKeyString;
 partial function FuncValString input Value val; output String str; end FuncValString;
 
-public function bucketToValuesSize
-"calculate the values array size based on the bucket size"
-  input Integer szBucket;
-  output Integer szArr;
-algorithm
-  szArr := realInt(realMul(intReal(szBucket), 0.6)); // intDiv(szBucket, 10);
-end bucketToValuesSize;
-
 public function emptyHashTableWork
   input Integer szBucket;
   input FuncsTuple fntpl;
@@ -112,17 +104,14 @@ protected
   array<list<tuple<Key,Integer>>> arr;
   list<Option<tuple<Key,Value>>> lst;
   array<Option<tuple<Key,Value>>> emptyarr;
-protected
-  Integer szArr;
 algorithm
   if szBucket < 1 then
     Error.addInternalError("Got internal hash table size " + intString(szBucket) + " <1", sourceInfo());
     fail();
   end if;
   arr := arrayCreate(szBucket, {});
-  szArr := bucketToValuesSize(szBucket);
-  emptyarr := arrayCreate(szArr, NONE());
-  hashTable := (arr,(0,szArr,emptyarr),szBucket,fntpl);
+  emptyarr := arrayCreate(szBucket, NONE());
+  hashTable := (arr, (0, szBucket, emptyarr), szBucket, fntpl);
 end emptyHashTableWork;
 
 public function add
