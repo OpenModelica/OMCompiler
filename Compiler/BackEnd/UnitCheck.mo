@@ -45,10 +45,11 @@ import DAE;
 import Unit;
 
 protected
+import AvlTreeStringToUnit;
+import BackendDAEUtil;
 import BackendDump;
 import BackendEquation;
 import BackendVariable;
-import BackendDAEUtil;
 import BaseHashTable;
 import ComponentReference;
 import Error;
@@ -56,7 +57,6 @@ import Expression;
 import ExpressionDump;
 import Flags;
 import HashTableCrToUnit;
-import HashTableStringToUnit;
 import HashTableUnitToString;
 import List;
 
@@ -74,7 +74,7 @@ protected
   BackendDAE.Shared shared;
   BackendDAE.Variables orderedVars, globalKnownVars, aliasVars;
   HashTableCrToUnit.HashTable HtCr2U1, HtCr2U2;
-  HashTableStringToUnit.HashTable HtS2U;
+  AvlTreeStringToUnit.Tree HtS2U;
   HashTableUnitToString.HashTable HtU2S;
   list<BackendDAE.Equation> eqList;
   list<BackendDAE.Var> varList, paraList, aliasList;
@@ -132,28 +132,28 @@ algorithm
 end unitChecking;
 
 protected function addUnit2HtS2U
-  input tuple<String, Unit.Unit> inTpl;
-  input HashTableStringToUnit.HashTable inHtS2U;
-  output HashTableStringToUnit.HashTable outHtS2U;
+  input String inKey;
+  input Unit.Unit inValue;
+  input AvlTreeStringToUnit.Tree inHtS2U;
+  output AvlTreeStringToUnit.Tree outHtS2U;
 algorithm
-  outHtS2U := BaseHashTable.add(inTpl,inHtS2U);
+  outHtS2U := AvlTreeStringToUnit.add(inHtS2U, inKey, inValue);
 end addUnit2HtS2U;
 
 protected function addUnit2HtU2S
-  input tuple<String, Unit.Unit> inTpl;
+  input String inKey;
+  input Unit.Unit inValue;
   input HashTableUnitToString.HashTable inHtU2S;
   output HashTableUnitToString.HashTable outHtU2S;
 algorithm
-  outHtU2S := matchcontinue(inTpl, inHtU2S)
+  outHtU2S := matchcontinue(inHtU2S)
   local
-    String s;
-    Unit.Unit ut;
     HashTableUnitToString.HashTable HtU2S;
 
-  case ((s, ut), _)
+  case (_)
     equation
-      false = BaseHashTable.hasKey(ut, inHtU2S);
-      HtU2S = BaseHashTable.add((ut,s),inHtU2S);
+      false = BaseHashTable.hasKey(inValue, inHtU2S);
+      HtU2S = BaseHashTable.add((inValue,inKey),inHtU2S);
   then HtU2S;
 
   else inHtU2S;
@@ -201,12 +201,12 @@ protected function algo "algorithm to check the consistency"
   input list<BackendDAE.Var> inparaList;
   input list<BackendDAE.Equation> ineqList;
   input HashTableCrToUnit.HashTable inHtCr2U;
-  input HashTableStringToUnit.HashTable inHtS2U;
+  input AvlTreeStringToUnit.Tree inHtS2U;
   input HashTableUnitToString.HashTable inHtU2S;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, HashTableStringToUnit.HashTable /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
 protected
   HashTableCrToUnit.HashTable HtCr2U;
-  HashTableStringToUnit.HashTable HtS2U;
+  AvlTreeStringToUnit.Tree HtS2U;
   HashTableUnitToString.HashTable HtU2S;
   Boolean b1, b2, b3;
 
@@ -226,14 +226,14 @@ protected function algo2 "help-function"
   input list<BackendDAE.Var> inparaList;
   input list<BackendDAE.Equation> ineqList;
   input HashTableCrToUnit.HashTable inHtCr2U;
-  input HashTableStringToUnit.HashTable inHtS2U;
+  input AvlTreeStringToUnit.Tree inHtS2U;
   input HashTableUnitToString.HashTable inHtU2S;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, HashTableStringToUnit.HashTable /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
 algorithm
   outTpl:=match(inB1, inB2, inB3, inparaList, ineqList, inHtCr2U, inHtS2U, inHtU2S)
     local
       HashTableCrToUnit.HashTable HtCr2U;
-      HashTableStringToUnit.HashTable HtS2U;
+      AvlTreeStringToUnit.Tree HtS2U;
       HashTableUnitToString.HashTable HtU2S;
       DAE.ComponentRef cr;
 
@@ -254,11 +254,11 @@ end algo2;
 //
 protected function foldEquation "folds the equations or return the error message of incosistent equations"
   input BackendDAE.Equation inEq;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, HashTableStringToUnit.HashTable /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, HashTableStringToUnit.HashTable /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
 protected
   HashTableCrToUnit.HashTable HtCr2U;
-  HashTableStringToUnit.HashTable HtS2U;
+  AvlTreeStringToUnit.Tree HtS2U;
   HashTableUnitToString.HashTable HtU2S;
   list<list<tuple<DAE.Exp, Unit.Unit>>> expListList;
   Boolean b;
@@ -278,10 +278,10 @@ end foldEquation;
 protected function foldEquation2 "help-function"
   input BackendDAE.Equation inEq;
   input HashTableCrToUnit.HashTable inHtCr2U;
-  input HashTableStringToUnit.HashTable inHtS2U;
+  input AvlTreeStringToUnit.Tree inHtS2U;
   input HashTableUnitToString.HashTable inHtU2S;
   output HashTableCrToUnit.HashTable outHtCr2U;
-  output HashTableStringToUnit.HashTable outHtS2U;
+  output AvlTreeStringToUnit.Tree outHtS2U;
   output HashTableUnitToString.HashTable outHtU2S;
   output list<list<tuple<DAE.Exp, Unit.Unit>>> outexpListList;
 
@@ -291,7 +291,7 @@ algorithm
       DAE.Exp temp, rhs, lhs;
       BackendDAE.Equation eq;
       HashTableCrToUnit.HashTable HtCr2U;
-      HashTableStringToUnit.HashTable HtS2U;
+      AvlTreeStringToUnit.Tree HtS2U;
       HashTableUnitToString.HashTable HtU2S;
       list<list<tuple<DAE.Exp, Unit.Unit>>> expList;
       DAE.ComponentRef cr;
@@ -373,15 +373,15 @@ end foldEquation2;
 //
 protected function foldBindingExp "folds the Binding expressions"
   input BackendDAE.Var inVar;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, HashTableStringToUnit.HashTable /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, HashTableStringToUnit.HashTable /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, Boolean /* success */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
 algorithm
   outTpl := matchcontinue(inVar, inTpl)
     local
       DAE.Exp exp, crefExp;
       DAE.ComponentRef cref;
       HashTableCrToUnit.HashTable HtCr2U;
-      HashTableStringToUnit.HashTable HtS2U;
+      AvlTreeStringToUnit.Tree HtS2U;
       HashTableUnitToString.HashTable HtU2S;
       Boolean b;
       BackendDAE.Equation eq;
@@ -517,10 +517,10 @@ end notification2;
 //
 protected function insertUnitInEquation "inserts the units in Equation and check if the equation is consistent or not"
   input DAE.Exp inEq;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, HashTableStringToUnit.HashTable /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, AvlTreeStringToUnit.Tree /* inHtS2U */, HashTableUnitToString.HashTable /* inHtU2S */> inTpl;
   input Unit.Unit inUt;
   output Unit.Unit outUt;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, HashTableStringToUnit.HashTable /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* outHtS2U */, HashTableUnitToString.HashTable /* outHtU2S */> outTpl;
   output list<list<tuple<DAE.Exp, Unit.Unit>>> outexpList;
 algorithm
   (outUt, outTpl, outexpList) := matchcontinue(inEq, inTpl, inUt)
@@ -529,7 +529,7 @@ algorithm
       DAE.Exp exp1, exp2, exp3;
       DAE.Type ty;
       HashTableCrToUnit.HashTable HtCr2U;
-      HashTableStringToUnit.HashTable HtS2U;
+      AvlTreeStringToUnit.Tree HtS2U;
       HashTableUnitToString.HashTable HtU2S;
       Integer i, i1, i2, i3, i4, i5, i6, i7;
       list<DAE.ComponentRef> lcr, lcr2;
@@ -616,8 +616,8 @@ algorithm
       ut = Unit.unitMul(ut, ut2);
       s1 = Unit.unitString(ut, HtU2S);
       expListList = listAppend(expListList, expListList2);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (ut, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.MUL(), exp2), (HtCr2U, HtS2U, HtU2S), Unit.MASTER()) equation
@@ -634,8 +634,8 @@ algorithm
       s1 = Unit.unitString(ut, HtU2S);
       HtCr2U = List.fold1(lcr, updateHtCr2U, ut, HtCr2U);
       expListList = listAppend(expListList, expListList2);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (inUt, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.MUL(), exp2), (HtCr2U, HtS2U, HtU2S), Unit.MASTER()) equation
@@ -652,8 +652,8 @@ algorithm
       s1 = Unit.unitString(ut, HtU2S);
       HtCr2U = List.fold1(lcr, updateHtCr2U, ut, HtCr2U);
       expListList = listAppend(expListList, expListList2);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (inUt, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.MUL(), exp2), (HtCr2U, HtS2U, HtU2S), _) equation
@@ -670,8 +670,8 @@ algorithm
       ut = Unit.unitDiv(ut, ut2);
       s1 = Unit.unitString(ut, HtU2S);
       expListList = listAppend(expListList, expListList2);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (ut, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.DIV(), exp2), (HtCr2U, HtS2U, HtU2S), Unit.MASTER()) equation
@@ -688,8 +688,8 @@ algorithm
       s1 = Unit.unitString(ut, HtU2S);
       HtCr2U = List.fold1(lcr, updateHtCr2U, ut, HtCr2U);
       expListList = listAppend(expListList, expListList2);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (inUt, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.DIV(), exp2), (HtCr2U, HtS2U, HtU2S), Unit.MASTER()) equation
@@ -706,8 +706,8 @@ algorithm
       s1 = Unit.unitString(ut, HtU2S);
       HtCr2U = List.fold1(lcr, updateHtCr2U, ut, HtCr2U);
       expListList = listAppend(expListList, expListList2);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (inUt, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.DIV(), exp2), (HtCr2U, HtS2U, HtU2S), _) equation
@@ -723,8 +723,8 @@ algorithm
       true = realEq(r, intReal(i));
       ut = Unit.unitPow(ut, i);
       s1 = Unit.unitString(ut, HtU2S);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (ut, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.POW(), DAE.RCONST(r)), (HtCr2U, HtS2U, HtU2S), ut as Unit.UNIT()) equation
@@ -732,8 +732,8 @@ algorithm
       Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7) = Unit.unitRoot(ut, r);
       HtCr2U = List.fold1(lcr, updateHtCr2U, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), HtCr2U);
       s1 = Unit.unitString(Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), HtU2S);
-      HtS2U = addUnit2HtS2U((s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7)), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7)), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), HtS2U);
+      HtU2S = addUnit2HtU2S(s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), HtU2S);
     then (inUt, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.BINARY(exp1, DAE.POW(), DAE.RCONST(_)), (HtCr2U, HtS2U, HtU2S), _) equation
@@ -751,16 +751,16 @@ algorithm
       ut = Unit.unitMul(inUt, Unit.UNIT(1e0, 0, 0, 0, 1, 0, 0, 0));
       HtCr2U = List.fold1(lcr, updateHtCr2U, ut, HtCr2U);
       s1 = Unit.unitString(ut, HtU2S);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (inUt, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.CALL(path = Absyn.IDENT(name = "der"), expLst = {exp1}), (HtCr2U, HtS2U, HtU2S), _) equation
       (ut as Unit.UNIT(), (HtCr2U, HtS2U, HtU2S), expListList)=insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
       ut=Unit.unitDiv(ut, Unit.UNIT(1e0, 0, 0, 0, 1, 0, 0, 0));
       s1=Unit.unitString(ut, HtU2S);
-      HtS2U=addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S=addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U=addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S=addUnit2HtU2S(s1, ut, HtU2S);
     then (ut, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.CALL(path = Absyn.IDENT(name = "der"), expLst = {exp1}), (HtCr2U, HtS2U, HtU2S), Unit.MASTER()) equation
@@ -772,8 +772,8 @@ algorithm
       (ut as Unit.UNIT(), (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
       Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7) = Unit.unitRoot(ut, 2.0);
       s1 = Unit.unitString(Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), HtU2S);
-      HtS2U = addUnit2HtS2U((s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7)), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7)), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), HtS2U);
+      HtU2S = addUnit2HtU2S(s1, Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), HtU2S);
     then (Unit.UNIT(factor1, i1, i2, i3, i4, i5, i6, i7), (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.CALL(path = Absyn.IDENT(name = "sqrt"), expLst = {exp1}), (HtCr2U, HtS2U, HtU2S), Unit.UNIT()) equation
@@ -781,8 +781,8 @@ algorithm
       ut = Unit.unitPow(inUt, 2);
       s1 = Unit.unitString(ut, HtU2S);
       HtCr2U = List.fold1(lcr, updateHtCr2U, ut, HtCr2U);
-      HtS2U = addUnit2HtS2U((s1, ut), HtS2U);
-      HtU2S = addUnit2HtU2S((s1, ut), HtU2S);
+      HtS2U = addUnit2HtS2U(s1, ut, HtS2U);
+      HtU2S = addUnit2HtU2S(s1, ut, HtU2S);
     then (inUt, (HtCr2U, HtS2U, HtU2S), expListList);
 
     case (DAE.CALL(path = Absyn.IDENT(name = "sqrt"), expLst = {exp1}), (HtCr2U, HtS2U, HtU2S), _) equation
@@ -841,8 +841,8 @@ algorithm
     case (DAE.CREF(componentRef=cr), (HtCr2U, HtS2U, HtU2S), _) equation
       true = ComponentReference.crefEqual(cr, DAE.crefTime);
       ut = Unit.UNIT(1e0, 0, 0, 0, 1, 0, 0, 0);
-      HtS2U = addUnit2HtS2U(("time", ut), HtS2U);
-      HtU2S = addUnit2HtU2S(("time", ut), HtU2S);
+      HtS2U = addUnit2HtS2U("time", ut, HtS2U);
+      HtU2S = addUnit2HtU2S("time", ut, HtU2S);
     then (ut, (HtCr2U, HtS2U, HtU2S), {});
 
     //CREF
@@ -862,10 +862,10 @@ end insertUnitInEquation;
 protected function foldCallArg "help-function for CALL case in function insertUnitInEquation"
   input list<DAE.Exp> inExpList;
   input HashTableCrToUnit.HashTable inHtCr2U;
-  input HashTableStringToUnit.HashTable inHtS2U;
+  input AvlTreeStringToUnit.Tree inHtS2U;
   input HashTableUnitToString.HashTable inHtU2S;
   output HashTableCrToUnit.HashTable outHtCr2U = inHtCr2U;
-  output HashTableStringToUnit.HashTable outHtS2U = inHtS2U;
+  output AvlTreeStringToUnit.Tree outHtS2U = inHtS2U;
   output HashTableUnitToString.HashTable outHtU2S = inHtU2S;
   output list<list<tuple<DAE.Exp, Unit.Unit>>> outExpListList = {};
 protected
@@ -976,8 +976,8 @@ end updateHtCr2U;
 //
 protected function convertUnitString2unit "converts String to unit"
   input BackendDAE.Var var;
-  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, HashTableStringToUnit.HashTable /* HtS2U */, HashTableUnitToString.HashTable /* HtU2S */> inTpl;
-  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, HashTableStringToUnit.HashTable /* HtS2U */, HashTableUnitToString.HashTable /* HtU2S */> outTpl;
+  input tuple<HashTableCrToUnit.HashTable /* inHtCr2U */, AvlTreeStringToUnit.Tree /* HtS2U */, HashTableUnitToString.HashTable /* HtU2S */> inTpl;
+  output tuple<HashTableCrToUnit.HashTable /* outHtCr2U */, AvlTreeStringToUnit.Tree /* HtS2U */, HashTableUnitToString.HashTable /* HtU2S */> outTpl;
 
 algorithm
   outTpl := matchcontinue(var, inTpl)
@@ -987,7 +987,7 @@ algorithm
     list<String> listStr;
     DAE.ComponentRef cr;
     Unit.Unit ut;
-    HashTableStringToUnit.HashTable HtS2U;
+    AvlTreeStringToUnit.Tree HtS2U;
     HashTableUnitToString.HashTable HtU2S;
     HashTableCrToUnit.HashTable HtCr2U;
 
@@ -1004,8 +1004,8 @@ algorithm
     equation
       cr = BackendVariable.varCref(var);
       HtCr2U = BaseHashTable.add((cr,Unit.MASTER({cr})),HtCr2U);
-      HtS2U = addUnit2HtS2U(("-",Unit.MASTER({cr})),HtS2U);
-      HtU2S = addUnit2HtU2S(("-",Unit.MASTER({cr})),HtU2S);
+      HtS2U = addUnit2HtS2U("-", Unit.MASTER({cr}), HtS2U);
+      HtU2S = addUnit2HtU2S("-", Unit.MASTER({cr}), HtU2S);
   then ((HtCr2U, HtS2U, HtU2S));
 
   else inTpl; //skip Non-Real Variables
@@ -1016,14 +1016,14 @@ end convertUnitString2unit;
 protected function parse "author: lochel"
   input String inUnitString;
   input DAE.ComponentRef inCref;
-  input HashTableStringToUnit.HashTable inHtS2U;
+  input AvlTreeStringToUnit.Tree inHtS2U;
   input HashTableUnitToString.HashTable inHtU2S;
   output Unit.Unit outUnit;
-  output HashTableStringToUnit.HashTable outHtS2U = inHtS2U;
+  output AvlTreeStringToUnit.Tree outHtS2U = inHtS2U;
   output HashTableUnitToString.HashTable outHtU2S = inHtU2S;
 algorithm
   try
-    outUnit := BaseHashTable.get(inUnitString, inHtS2U);
+    outUnit := AvlTreeStringToUnit.get(inHtS2U, inUnitString);
   else
     outUnit := matchcontinue(inUnitString)
       case ""
@@ -1034,8 +1034,8 @@ algorithm
 
       else Unit.UNKNOWN(inUnitString);
     end matchcontinue;
-    outHtS2U := addUnit2HtS2U((inUnitString, outUnit), outHtS2U);
-    outHtU2S := addUnit2HtU2S((inUnitString, outUnit), outHtU2S);
+    outHtS2U := addUnit2HtS2U(inUnitString, outUnit, outHtS2U);
+    outHtU2S := addUnit2HtU2S(inUnitString, outUnit, outHtU2S);
   end try;
 end parse;
 

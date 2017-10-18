@@ -39,7 +39,7 @@ encapsulated package Unit
 
 public
 import DAE;
-import HashTableStringToUnit;
+import AvlTreeStringToUnit;
 import HashTableUnitToString;
 import System;
 
@@ -138,12 +138,16 @@ public constant list<tuple<String, Unit>> LU_COMPLEXUNITS = {
 /*                 fac, mol, cd, m, s, A, K, g*/
 
 public function getKnownUnits
-  output HashTableStringToUnit.HashTable outKnownUnits;
+  output AvlTreeStringToUnit.Tree outKnownUnits;
+protected
+  String s;
+  Unit ut;
 algorithm
-  outKnownUnits := HashTableStringToUnit.emptyHashTableSized(Util.nextPrime(4 * listLength(LU_COMPLEXUNITS)));
+  outKnownUnits := AvlTreeStringToUnit.EMPTY();
 
   for unit in LU_COMPLEXUNITS loop
-    outKnownUnits := BaseHashTable.add(unit, outKnownUnits);
+    (s, ut) := unit;
+    outKnownUnits := AvlTreeStringToUnit.add(outKnownUnits, s, ut);
   end for;
 end getKnownUnits;
 
@@ -564,7 +568,7 @@ end prefix2String;
 public function parseUnitString "author: lochel
   The second argument is optional."
   input String inUnitString;
-  input HashTableStringToUnit.HashTable inKnownUnits = getKnownUnits();
+  input AvlTreeStringToUnit.Tree inKnownUnits = getKnownUnits();
   output Unit outUnit;
 protected
   list<String> charList;
@@ -585,7 +589,7 @@ protected function parser3
   input list<Boolean> inMul "true=Mul, false=Div, initial call with true";
   input list<Token> inTokenList "Tokenliste";
   input Unit inUnit "initial call with UNIT(1e0, 0, 0, 0, 0, 0, 0, 0)";
-  input HashTableStringToUnit.HashTable inHtS2U;
+  input AvlTreeStringToUnit.Tree inHtS2U;
   output Unit outUnit;
 algorithm
   outUnit := matchcontinue(inMul, inTokenList, inUnit, inHtS2U)
@@ -655,7 +659,7 @@ end parser3;
 
 protected function unitToken2unit
   input String inS;
-  input HashTableStringToUnit.HashTable inHtS2U;
+  input AvlTreeStringToUnit.Tree inHtS2U;
   output Unit outUnit;
 algorithm
   outUnit := matchcontinue(inS, inHtS2U)
@@ -665,7 +669,7 @@ algorithm
       Unit ut;
 
     case (_, _) equation
-      ut=BaseHashTable.get(inS, inHtS2U);
+      ut = AvlTreeStringToUnit.get(inHtS2U, inS);
     then ut;
 
     else equation
