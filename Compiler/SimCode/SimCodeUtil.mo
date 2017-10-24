@@ -439,7 +439,7 @@ algorithm
 
     // collect fmi partial derivative
     if FMI.isFMIVersion20(FMUVersion) then
-      (SymbolicJacsFMI, modelStructure, modelInfo, SymbolicJacsTemp, uniqueEqIndex) := createFMIModelStructure(inFMIDer, modelInfo, uniqueEqIndex);
+      (SymbolicJacsFMI, modelStructure, modelInfo, SymbolicJacsTemp, uniqueEqIndex) := createFMIModelStructure(inFMIDer, modelInfo, uniqueEqIndex, inInitDAE);
       SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
     end if;
     // collect symbolic jacobians in linear loops of the overall jacobians
@@ -12686,6 +12686,7 @@ public function createFMIModelStructure
   input BackendDAE.SymbolicJacobians inSymjacs;
   input SimCode.ModelInfo inModelInfo;
   input Integer inUniqueEqIndex;
+  input BackendDAE.BackendDAE inInitDAE;
   output list<SimCode.JacobianMatrix> symJacFMI = {};
   output Option<SimCode.FmiModelStructure> outFmiModelStructure;
   output SimCode.ModelInfo outModelInfo = inModelInfo;
@@ -12709,17 +12710,19 @@ protected
    list<SimCodeVar.SimVar> tempvars;
    SimCodeVar.SimVars vars;
    SimCode.HashTableCrefToSimVar crefSimVarHT;
+   SimCode.FmiInitialUnknowns fmiInitUnknowns;
+   constant Boolean debug = false;
 algorithm
   try
-    //print("Start creating createFMIModelStructure\n");
-    // combine the transposed sparse pattern of matrix A and B
-    // to obtain dependencies for the derivativesq
+    if debug then print("Start creating createFMIModelStructure\n"); end if;
+    // get the sparsity pattern of the matrix FMIDER
+    // to obtain dependencies for the derivatives and outputs
     SOME((optcontPartDer, spPattern as (_, spTA, (diffCrefsA, diffedCrefsA),_), spColors)) := SymbolicJacobian.getJacobianMatrixbyName(inSymjacs, "FMIDER");
 
     crefSimVarHT := createCrefToSimVarHT(inModelInfo);
-    //print("-- Got matrixes\n");
+    if debug then print("-- create Hashtable\n"); end if;
+
     (spTA, derdiffCrefsA) := translateSparsePatterCref2DerCref(spTA, crefSimVarHT, {}, {});
-    //print("-- translateSparsePatterCref2DerCref matrixes AB\n");
 
     // collect all variable
     varsA := getSimVars2Crefs(diffedCrefsA, crefSimVarHT);
@@ -12727,11 +12730,11 @@ algorithm
     varsA := listAppend(varsA, varsB);
     varsB := getSimVars2Crefs(diffCrefsA, crefSimVarHT);
     varsA := listAppend(varsA, varsB);
-    //print("-- created vars for AB\n");
+    if debug then print("-- Translate the crefs to simcode cref to obtain the right index\n"); end if;
     sparseInts := sortSparsePattern(varsA, spTA, true);
-    //print("-- sorted vars for AB\n");
 
     derivatives := translateSparsePatterInts2FMIUnknown(sparseInts, {});
+    if debug then print("-- Sorted and transformed to dependency info\n"); end if;
 
     (derivatives, outputs) := List.split(derivatives, inModelInfo.varInfo.numStateVars);
 
@@ -12745,10 +12748,15 @@ algorithm
     else
       contPartSimDer := NONE();
     end if;
+    if debug then print("-- FMI directional derivatives created\n"); end if;
 
     //TODO: create DiscreteStates with dependencies, like derivatives
     clockedStates := List.filterOnTrue(inModelInfo.vars.algVars, isClockedStateSimVar);
     discreteStates := List.map1(clockedStates, createFmiUnknownFromSimVar, 2*listLength(derivatives)+1);
+
+    // create initial unknonw dependencies
+    fmiInitUnknowns := getFMIInitialDep(inInitDAE, crefSimVarHT);
+    if debug then print("-- FMI initial unknown created\n"); end if;
 
     outFmiModelStructure :=
       SOME(
@@ -12757,7 +12765,7 @@ algorithm
           SimCode.FMIDERIVATIVES(derivatives),
           contPartSimDer,
           SimCode.FMIDISCRETESTATES(discreteStates),
-          SimCode.FMIINITIALUNKNOWNS({})));
+          fmiInitUnknowns));
 else
   Error.addInternalError("SimCodeUtil.createFMIModelStructure failed", sourceInfo());
   fail();
@@ -12865,6 +12873,46 @@ algorithm
          mergeSparsePatter(restA, restB, (crefA,listOut)::inAccum);
    end match;
 end mergeSparsePatter;
+
+protected function getFMIInitialDep
+  input BackendDAE.BackendDAE initDAE;
+  input SimCode.HashTableCrefToSimVar crefSimVarHT;
+  output SimCode.FmiInitialUnknowns fmiInitUnknowns;
+protected
+  list<BackendDAE.Var> initUnknowns, states;
+  list<DAE.ComponentRef> diffCrefs, diffedCrefs, derdiffCrefs;
+  list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> spT;
+  list<tuple<Integer, list<Integer>>> sparseInts;
+  list<SimCode.FmiUnknown> unknowns;
+  list<SimCodeVar.SimVar> vars1, vars2;
+  BackendDAE.BackendDAE tmpBDAE;
+algorithm
+  try
+    //prepare initialUnknows
+    tmpBDAE := BackendDAEOptimize.collapseIndependentBlocks(initDAE);
+    tmpBDAE := BackendDAEUtil.transformBackendDAE(tmpBDAE, SOME((BackendDAE.NO_INDEX_REDUCTION(), BackendDAE.EXACT())), NONE(), NONE());
+
+    // TODO: filter the initUnknows for variables
+    // with causality = "output" and causality = "calculatedParameter"
+    // and all continuous-time states and all state derivatives
+    initUnknowns := BackendDAEUtil.getOrderedVarsLst(tmpBDAE);
+
+    ((_, spT, (diffCrefs, diffedCrefs),_),_) := SymbolicJacobian.generateSparsePattern(tmpBDAE, initUnknowns, initUnknowns);
+
+    // collect all variable
+    vars1 := getSimVars2Crefs(diffedCrefs, crefSimVarHT);
+    vars2 := getSimVars2Crefs(diffCrefs, crefSimVarHT);
+    vars1 := listAppend(vars1, vars2);
+
+    sparseInts := sortSparsePattern(vars1, spT, true);
+    unknowns := translateSparsePatterInts2FMIUnknown(sparseInts, {});
+
+    fmiInitUnknowns := SimCode.FMIINITIALUNKNOWNS(unknowns);
+  else
+    fmiInitUnknowns := SimCode.FMIINITIALUNKNOWNS({});
+  end try;
+end getFMIInitialDep;
+
 
 public function getStateSimVarIndexFromIndex
   input list<SimCodeVar.SimVar> inStateVars;
