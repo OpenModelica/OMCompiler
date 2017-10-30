@@ -177,16 +177,25 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
     virtual void initialize();
 
     // getters for given value references
-    virtual void getReal(const unsigned int vr[], int nvr, double value[]);
-    virtual void getInteger(const unsigned int vr[], int nvr, int value[]);
-    virtual void getBoolean(const unsigned int vr[], int nvr, int value[]);
-    virtual void getString(const unsigned int vr[], int nvr, string value[]);
+    virtual void getReal(const unsigned int vr[], size_t nvr, double value[]);
+    virtual void getInteger(const unsigned int vr[], size_t nvr, int value[]);
+    virtual void getBoolean(const unsigned int vr[], size_t nvr, int value[]);
+    virtual void getString(const unsigned int vr[], size_t nvr, string value[]);
 
     // setters for given value references
-    virtual void setReal(const unsigned int vr[], int nvr, const double value[]);
-    virtual void setInteger(const unsigned int vr[], int nvr, const int value[]);
-    virtual void setBoolean(const unsigned int vr[], int nvr, const int value[]);
-    virtual void setString(const unsigned int vr[], int nvr, const string value[]);
+    virtual void setReal(const unsigned int vr[], size_t nvr, const double value[]);
+    virtual void setInteger(const unsigned int vr[], size_t nvr, const int value[]);
+    virtual void setBoolean(const unsigned int vr[], size_t nvr, const int value[]);
+    virtual void setString(const unsigned int vr[], size_t nvr, const string value[]);
+
+    // Jacobian
+    void getDirectionalDerivative(const unsigned int vrUnknown[], size_t nUnknown,
+                                  const unsigned int vrKnown[], size_t nKnown,
+                                  const double dvKnown[], double dvUnknown[]);
+
+   protected:
+    static unsigned int _inputRefs[];  ///< Value references of input variables
+    static unsigned int _outputRefs[]; ///< Value references of output variables
   };
 
   /// create instance of <%modelShortName%>FMU
@@ -198,7 +207,7 @@ template fmuModelCppFile(SimCode simCode,Text& extraFuncs,Text& extraFuncsDecl,T
  "Generates code for FMU target."
 ::=
 match simCode
-case SIMCODE(modelInfo=MODELINFO(__)) then
+case SIMCODE(modelInfo=MODELINFO(vars=SIMVARS(inputVars=inputVars, outputVars=outputVars))) then
   let modelName = dotPath(modelInfo.name)
   let modelShortName = lastIdentOfPath(modelInfo.name)
   let modelLongName = System.stringReplace(modelName, ".", "_")
@@ -274,6 +283,12 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
     return new <%modelShortName%>FMU(globalSettings, simObjects);
   }
 
+  // static model properties
+  unsigned int <%modelShortName%>FMU::_inputRefs[] = {<%inputVars |> var =>
+    match var case SIMVAR(name=name) then intSub(getVariableIndex(cref2simvar(name, simCode)), 1) ;separator=", "%>};
+  unsigned int <%modelShortName%>FMU::_outputRefs[] = {<%outputVars |> var =>
+    match var case SIMVAR(name=name) then intSub(getVariableIndex(cref2simvar(name, simCode)), 1) ;separator=", "%>};
+
   // constructor
   <%modelShortName%>FMU::<%modelShortName%>FMU(IGlobalSettings* globalSettings, shared_ptr<ISimObjects> simObjects)
     : <%modelShortName%>Initialize(globalSettings, simObjects) {
@@ -285,13 +300,17 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
     <%modelShortName%>Initialize::initializeMemory();
     <%modelShortName%>Initialize::initializeFreeVariables();
     <%modelShortName%>Jacobian::initialize();
-    <%modelShortName%>Jacobian::initializeColoredJacobianA();
   }
 
   // getters
   <%if isFMIVersion10(FMUVersion) then accessFunctionsFMU1(simCode, "get", modelShortName, modelInfo) else accessFunctionsFMU2(simCode, "get", modelShortName, modelInfo)%>
+
   // setters
   <%if isFMIVersion10(FMUVersion) then accessFunctionsFMU1(simCode, "set", modelShortName, modelInfo) else accessFunctionsFMU2(simCode, "set", modelShortName, modelInfo)%>
+
+  // Jacobian
+  <%directionalDerivativeFunction(simCode)%>
+
   >>
   // TODO:
   // <%setDefaultStartValues(modelInfo)%>
@@ -499,7 +518,7 @@ case MODELINFO(vars=SIMVARS(__)) then
   <%accessVarsFunctionFMU1(simCode, direction, modelShortName, "Integer", "int", "_pointerToIntVars")%>
   <%accessVarsFunctionFMU1(simCode, direction, modelShortName, "Boolean", "int", "_pointerToBoolVars")%>
 
-  void <%modelShortName%>FMU::<%direction%>String(const unsigned int vr[], int nvr, <%qualifier%> string value[]) {
+  void <%modelShortName%>FMU::<%direction%>String(const unsigned int vr[], size_t nvr, <%qualifier%> string value[]) {
   }
   >>
 end accessFunctionsFMU1;
@@ -509,8 +528,8 @@ template accessVarsFunctionFMU1(SimCode simCode, String direction, String modelS
 ::=
   let qualifier = if stringEq(direction, "set") then "const"
   <<
-  void <%modelShortName%>FMU::<%direction%><%typeName%>(const unsigned int vr[], int nvr, <%qualifier%> <%typeImpl%> value[]) {
-    for (int i = 0; i < nvr; i++)
+  void <%modelShortName%>FMU::<%direction%><%typeName%>(const unsigned int vr[], size_t nvr, <%qualifier%> <%typeImpl%> value[]) {
+    for (size_t i = 0; i < nvr; i++)
     {
       <%if stringEq(direction, "get") then
         'value[i] = <%arrayName%>[vr[i]];'
@@ -539,8 +558,8 @@ template accessVarsFunctionFMU2(SimCode simCode, String direction, String modelS
 ::=
   let qualifier = if stringEq(direction, "set") then "const"
   <<
-  void <%modelShortName%>FMU::<%direction%><%typeName%>(const unsigned int vr[], int nvr, <%qualifier%> <%typeImpl%> value[]) {
-    for (int i = 0; i < nvr; i++, vr++, value++) {
+  void <%modelShortName%>FMU::<%direction%><%typeName%>(const unsigned int vr[], size_t nvr, <%qualifier%> <%typeImpl%> value[]) {
+    for (size_t i = 0; i < nvr; i++, vr++, value++) {
       // access variables and aliases in SimVars memory
       if (*vr < _dim<%typeName%>)
         <%if stringEq(direction, "get") then
@@ -634,6 +653,64 @@ match simVar
     <%vecName%>[<%index%>] = value[i]; break;
   >>
 end accessVecVarFMU2;
+
+template directionalDerivativeFunction(SimCode simCode)
+ "Generates getDirectionalDerivative."
+::=
+match simCode
+case SIMCODE(modelInfo=MODELINFO(varInfo=VARINFO(numInVars=numInVars, numOutVars=numOutVars))) then
+  let modelShortName = lastIdentOfPath(modelInfo.name)
+  <<
+  void <%modelShortName%>FMU::getDirectionalDerivative(
+      const unsigned int vrUnknown[], size_t nUnknown,
+      const unsigned int vrKnown[], size_t nKnown,
+      const double dvKnown[], double dvUnknown[])
+  {
+  <% if CodegenFMUCommon.providesDirectionalDerivative(simCode) then
+  <<
+    unsigned int idx, *ref_p, ref_1;
+
+    _FMIDERjac_x.clear();
+    ref_p = NULL;
+    for (size_t j = 0; j < nKnown; j++) {
+      idx = vrKnown[j];
+      if (idx >= _dimContinuousStates) {
+        // find input reference
+        if (ref_p == NULL || idx < ref_1)
+          ref_p = _inputRefs; // reset ref_p if vrKnown decreases
+        ref_p = std::find(ref_p, _inputRefs + <%numInVars%>, vrKnown[j]);
+        ref_1 = idx;
+        idx = _dimContinuousStates + (ref_p - _inputRefs);
+      }
+      if (idx >= _FMIDERjac_x.size())
+        throw std::invalid_argument("getDirectionalDerivative with wrong value reference of known " + omcpp::to_string(vrKnown[j]));
+      _FMIDERjac_x(idx) = dvKnown[j];
+    }
+    calcFMIDERJacobianColumn();
+    ref_p = NULL;
+    for (size_t i = 0; i < nUnknown; i++) {
+      idx = vrUnknown[i] - _dimContinuousStates; // derivatives behind states
+      if (idx >= _dimContinuousStates) {
+        // find output reference
+        if (ref_p == NULL || idx < ref_1)
+          ref_p = _outputRefs; // reset ref_p if vrUnknown decreases
+        ref_p = std::find(ref_p, _outputRefs + <%numOutVars%>, vrUnknown[i]);
+        ref_1 = idx;
+        idx = _dimContinuousStates + (ref_p - _outputRefs);
+      }
+      if (idx >= _FMIDERjac_y.size())
+        throw std::invalid_argument("getDirectionalDerivative with wrong value reference of unknown " + omcpp::to_string(vrUnknown[i]));
+      dvUnknown[i] = _FMIDERjac_y(idx);
+    }
+  >>
+  else
+  <<
+    throw ModelicaSimulationError(MATH_FUNCTION, "No derivative code, see flag disableDirectionalDerivatives");
+  >>
+  %>
+  }
+  >>
+end directionalDerivativeFunction;
 
 template fmuMakefile(String target, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, String FMUVersion, String additionalLinkerFlags_GCC,
                             String additionalLinkerFlags_MSVC, String additionalCFlags_GCC, String additionalCFlags_MSVC)
