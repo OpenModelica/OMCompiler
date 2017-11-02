@@ -76,6 +76,7 @@ const char *FLAG_NAME[FLAG_MAX+1] = {
   /* FLAG_INPUT_CSV */                    "csvInput",
   /* FLAG_INPUT_FILE */                   "exInputFile",
   /* FLAG_INPUT_FILE_STATES */            "stateFile",
+  /* FLAG_INPUT_PATH */                   "inputPath",
   /* FLAG_IPOPT_HESSE*/                   "ipopt_hesse",
   /* FLAG_IPOPT_INIT*/                    "ipopt_init",
   /* FLAG_IPOPT_JAC*/                     "ipopt_jac",
@@ -118,6 +119,7 @@ const char *FLAG_NAME[FLAG_MAX+1] = {
   /* FLAG_OPTIMIZER_NP */                 "optimizerNP",
   /* FLAG_OPTIMIZER_TGRID */              "optimizerTimeGrid",
   /* FLAG_OUTPUT */                       "output",
+  /* FLAG_OUTPUT_PATH */                  "outputPath",
   /* FLAG_OVERRIDE */                     "override",
   /* FLAG_OVERRIDE_FILE */                "overrideFile",
   /* FLAG_PORT */                         "port",
@@ -180,6 +182,7 @@ const char *FLAG_DESC[FLAG_MAX+1] = {
   /* FLAG_INPUT_CSV */                    "value specifies an csv-file with inputs for the simulation/optimization of the model",
   /* FLAG_INPUT_FILE */                   "value specifies an external file with inputs for the simulation/optimization of the model",
   /* FLAG_INPUT_FILE_STATES */            "value specifies an file with states start values for the optimization of the model",
+  /* FLAG_INPUT_PATH */                   "value specifies a path for reading the input files i.e., model_init.xml and model_info.json",
   /* FLAG_IPOPT_HESSE */                  "value specifies the hessian for Ipopt",
   /* FLAG_IPOPT_INIT */                   "value specifies the initial guess for optimization",
   /* FLAG_IPOPT_JAC */                    "value specifies the Jacobian for Ipopt",
@@ -222,6 +225,7 @@ const char *FLAG_DESC[FLAG_MAX+1] = {
   /* FLAG_OPTIMIZER_NP */                 "value specifies the number of points in a subinterval",
   /* FLAG_OPTIMIZER_TGRID */              "value specifies external file with time points.",
   /* FLAG_OUTPUT */                       "output the variables a, b and c at the end of the simulation to the standard output",
+  /* FLAG_OUTPUT_PATH */                  "value specifies a path for writing the output files i.e., model_res.mat, model_prof.intdata, model_prof.realdata etc.",
   /* FLAG_OVERRIDE */                     "override the variables or the simulation settings in the XML setup file",
   /* FLAG_OVERRIDE_FILE */                "will override the variables or the simulation settings in the XML setup file with the values from the file",
   /* FLAG_PORT */                         "value specifies the port for simulation status (default disabled)",
@@ -343,6 +347,8 @@ const char *FLAG_DETAILED_DESC[FLAG_MAX+1] = {
   "  Value specifies an external file with inputs for the simulation/optimization of the model.",
   /* FLAG_INPUT_FILE_STATES */
   "  Value specifies an file with states start values for the optimization of the model.",
+  /* FLAG_INPUT_PATH */
+  "  Value specifies a path for reading the input files i.e., model_init.xml and model_info.json",
   /* FLAG_IPOPT_HESSE */
   "  Value specifies the hessematrix for Ipopt(OMC, BFGS, const).",
   /* FLAG_IPOPT_INIT */
@@ -466,6 +472,8 @@ const char *FLAG_DETAILED_DESC[FLAG_MAX+1] = {
   /* FLAG_OUTPUT */
   "  Output the variables a, b and c at the end of the simulation to the standard\n"
   "  output: time = value, a = value, b = value, c = value",
+  /* FLAG_OUTPUT_PATH */
+  "  Value specifies a path for writing the output files i.e., model_res.mat, model_prof.intdata, model_prof.realdata etc.",
   /* FLAG_OVERRIDE */
   "  Override the variables or the simulation settings in the XML setup file\n"
   "  For example: var1=start1,var2=start2,par3=start3,startTime=val1,stopTime=val2",
@@ -548,6 +556,7 @@ const int FLAG_TYPE[FLAG_MAX] = {
   /* FLAG_INPUT_CSV */                    FLAG_TYPE_OPTION,
   /* FLAG_INPUT_FILE */                   FLAG_TYPE_OPTION,
   /* FLAG_INPUT_FILE_STATES */            FLAG_TYPE_OPTION,
+  /* FLAG_INPUT_PATH */                   FLAG_TYPE_OPTION,
   /* FLAG_IPOPT_HESSE */                  FLAG_TYPE_OPTION,
   /* FLAG_IPOPT_INIT */                   FLAG_TYPE_OPTION,
   /* FLAG_IPOPT_JAC */                    FLAG_TYPE_OPTION,
@@ -590,6 +599,7 @@ const int FLAG_TYPE[FLAG_MAX] = {
   /* FLAG_OPTIZER_NP */                   FLAG_TYPE_OPTION,
   /* FLAG_OPTIZER_TGRID */                FLAG_TYPE_OPTION,
   /* FLAG_OUTPUT */                       FLAG_TYPE_OPTION,
+  /* FLAG_OUTPUT_PATH */                  FLAG_TYPE_OPTION,
   /* FLAG_OVERRIDE */                     FLAG_TYPE_OPTION,
   /* FLAG_OVERRIDE_FILE */                FLAG_TYPE_OPTION,
   /* FLAG_PORT */                         FLAG_TYPE_OPTION,
