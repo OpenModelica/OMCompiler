@@ -2814,6 +2814,51 @@ algorithm
   end try;
 end containsCref;
 
+public function getVarAndAttributes
+  input DAE.ComponentRef inCref;
+  input BackendDAE.Variables inVariables;
+  output list<BackendDAE.Var> outVarList;
+  output list<Integer> outIntList;
+protected
+  list<BackendDAE.Var> varList;
+  list<Integer> intList;
+algorithm
+  // variable itself
+  (outVarList, outIntList) := getVar(inCref, inVariables);
+
+  // start attribute
+  try
+    (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixStart(inCref), inVariables);
+    outVarList := listAppend(varList, outVarList);
+    outIntList := listAppend(intList, outIntList);
+  else
+  end try;
+
+  // min attribute
+  try
+    (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixMin(inCref), inVariables);
+    outVarList := listAppend(varList, outVarList);
+    outIntList := listAppend(intList, outIntList);
+  else
+  end try;
+
+  // max attribute
+  try
+    (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixMax(inCref), inVariables);
+    outVarList := listAppend(varList, outVarList);
+    outIntList := listAppend(intList, outIntList);
+  else
+  end try;
+
+  // nominal attribute
+  try
+    (varList, intList) := BackendVariable.getVar(ComponentReference.crefPrefixNominal(inCref), inVariables);
+    outVarList := listAppend(varList, outVarList);
+    outIntList := listAppend(intList, outIntList);
+  else
+  end try;
+end getVarAndAttributes;
+
 public function getVar
 "author: PA
   Return a variable(s) and its index(es) in the vector.
