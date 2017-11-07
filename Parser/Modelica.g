@@ -118,7 +118,6 @@ goto rule ## func ## Ex; }}
   void* mmc_mk_box_eat_all(int ix, ...) {return NULL;}
   #if defined(OMC_BOOTSTRAPPING)
   #endif
-  #define ARRAY_REDUCTION_NAME "\$array"
 }
 
 /*------------------------------------------------------------------
@@ -1331,7 +1330,7 @@ primary returns [void* ast]
           "Empty array constructors are not valid in Modelica.", primary, $start->line, $start->charPosition+1, LT(1)->line, LT(1)->charPosition);
         $ast = Absyn__ARRAY(for_or_el.ast);
       } else {
-        $ast = Absyn__CALL(Absyn__CREF_5fIDENT(mmc_mk_scon(ARRAY_REDUCTION_NAME), mmc_mk_nil()),for_or_el.ast);
+        $ast = Absyn__CALL(Absyn__CREF_5fIDENT(mmc_mk_scon("array"), mmc_mk_nil()),for_or_el.ast);
       }
     }
   | T_END { $ast = Absyn__END; }
