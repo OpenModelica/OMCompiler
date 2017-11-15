@@ -99,6 +99,8 @@ uniontype TypingError
   end isError;
 end TypingError;
 
+type EquationScope = enumeration(NORMAL, INITIAL, IF, IF_PARAMETER);
+
 public
 function typeClass
   input InstNode cls;
@@ -1545,6 +1547,7 @@ end typeSections;
 
 function typeEquation
   input output Equation eq;
+  input EquationScope scope = EquationScope.NORMAL;
 algorithm
   eq := match eq
     local
@@ -1572,7 +1575,14 @@ algorithm
         Equation.EQUALITY(e1, e2, ty, eq.info);
 
     case Equation.CONNECT()
-      then typeConnect(eq.lhs, eq.rhs, eq.info);
+      algorithm
+        if scope == EquationScope.IF then
+          Error.addSourceMessage(Error.CONNECT_IN_IF,
+            {Expression.toString(eq.lhs), Expression.toString(eq.rhs)}, eq.info);
+          fail();
+        end if;
+      then
+        typeConnect(eq.lhs, eq.rhs, eq.info);
 
     case Equation.FOR()
       algorithm
@@ -1862,6 +1872,7 @@ protected
   list<Equation> eql;
   Variability accum_var = Variability.CONSTANT, var;
   list<tuple<Expression, list<Equation>>> bl = {};
+  EquationScope eq_scope = EquationScope.IF;
 algorithm
   for b in branches loop
     (cond, eql) := b;
@@ -1871,9 +1882,10 @@ algorithm
     if var <= Variability.PARAMETER then
       cond := Ceval.evalExp(cond, Ceval.EvalTarget.IGNORE_ERRORS());
       cond := SimplifyExp.simplifyExp(cond);
+      eq_scope := EquationScope.IF_PARAMETER;
     end if;
 
-    eql := list(typeEquation(e) for e in eql);
+    eql := list(typeEquation(e, eq_scope) for e in eql);
     bl := (cond, eql) :: bl;
   end for;
 
