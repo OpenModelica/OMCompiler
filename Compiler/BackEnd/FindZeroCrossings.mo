@@ -811,7 +811,7 @@ end findZeroCrossingsIfEqns;
 protected function findZeroCrossingsinJacobians
   input BackendDAE.StrongComponents inStrongComponents;
   input BackendDAE.ZeroCrossingSet zeroCrossingLst;
-  input DoubleEndedList<BackendDAE.ZeroCrossing> relationsLst;
+  input BackendDAE.ZeroCrossingSet relationsLst;
   input BackendDAE.ZeroCrossingSet samplesLst;
   input BackendDAE.Variables allVariables;
   input BackendDAE.Variables globalKnownVars;
@@ -855,7 +855,7 @@ end findZeroCrossingsinJacobians;
 protected function replaceZCExpinFullJacobian
   input BackendDAE.FullJacobian fullJac;
   input BackendDAE.ZeroCrossingSet zeroCrossingLst;
-  input DoubleEndedList<BackendDAE.ZeroCrossing> relationsLst;
+  input BackendDAE.ZeroCrossingSet relationsLst;
   input BackendDAE.ZeroCrossingSet samplesLst;
   input BackendDAE.Variables allVariables;
   input BackendDAE.Variables globalKnownVars;
@@ -881,7 +881,7 @@ end replaceZCExpinFullJacobian;
 protected function replaceZCExpinSymJacobian
   input BackendDAE.SymbolicJacobian symJac;
   input BackendDAE.ZeroCrossingSet zeroCrossingLst;
-  input DoubleEndedList<BackendDAE.ZeroCrossing> relationsLst;
+  input BackendDAE.ZeroCrossingSet relationsLst;
   input BackendDAE.ZeroCrossingSet samplesLst;
   input BackendDAE.Variables allVariables;
   input BackendDAE.Variables globalKnownVars;
@@ -900,7 +900,7 @@ end replaceZCExpinSymJacobian;
 protected function replaceZeroCrossingsJacBackend
   input BackendDAE.BackendDAE inBackendDAE;
   input BackendDAE.ZeroCrossingSet zeroCrossingLst;
-  input DoubleEndedList<BackendDAE.ZeroCrossing> relationsLst;
+  input BackendDAE.ZeroCrossingSet relationsLst;
   input BackendDAE.ZeroCrossingSet samplesLst;
   input BackendDAE.Variables allVariables;
   input BackendDAE.Variables globalKnownVars;
