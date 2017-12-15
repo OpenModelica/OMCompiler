@@ -91,9 +91,9 @@ DAE.eqs := list( (match syst
        tmpComp := comp;
        if BackendEquation.isEquation(eqn) then
          (eqn,solved) := solveSimpleEquationsWork(eqn, var, DAE.shared);
-         syst.orderedEqs := BackendEquation.setAtIndex(syst.orderedEqs, eindex, eqn);
-
-         if not solved then
+         if solved then
+           syst.orderedEqs := BackendEquation.setAtIndex(syst.orderedEqs, eindex, eqn);
+         else
            tmpComp := BackendDAE.EQUATIONSYSTEM({eindex}, {vindx}, BackendDAE.EMPTY_JACOBIAN() ,BackendDAE.JAC_NONLINEAR(), false);
          end if;
        end if; // isEquation
