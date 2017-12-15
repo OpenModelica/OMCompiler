@@ -2280,6 +2280,7 @@ algorithm
 
      var1 = BackendVariable.getVarAt(vars, varIdx1);
      var2 = BackendVariable.getVarAt(vars, varIdx2);
+     true = (BackendVariable.isStateVar(var1) and BackendVariable.isStateVar(var2)) or (BackendVariable.isDummyStateVar(var1) and BackendVariable.isDummyStateVar(var2));
 
      //choose alias variable
      if BackendVariable.isStateVar(var1) then varIdxAlias = varIdx2; varIdx_remain = varIdx1;
