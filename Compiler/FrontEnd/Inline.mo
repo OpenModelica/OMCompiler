@@ -1016,7 +1016,7 @@ algorithm
     local
       list<DAE.Statement> stmts;
       VarTransform.VariableReplacements repl;
-      DAE.ComponentRef cr;
+      DAE.ComponentRef cr, cr1, cr2;
       DAE.ElementSource source;
       DAE.Exp exp, exp1, exp2;
       DAE.Statement stmt;
@@ -1053,6 +1053,31 @@ algorithm
         (repl,assertStmts) = mergeFunctionBody(stmts,iRepl,stmt::assertStmtsIn);
       then
         (repl,assertStmts);
+    // if a then x := b; else x := c; end if; => x := if a then b else c;
+    case (DAE.STMT_IF(exp = exp,
+           statementLst = {DAE.STMT_ASSIGN(exp1 = DAE.CREF(componentRef = cr1), exp = exp1)},
+           else_=DAE.ELSE(statementLst={DAE.STMT_ASSIGN(exp1 = DAE.CREF(componentRef = cr2), exp = exp2)}))::stmts,_,_)
+      guard ComponentReference.crefEqual(cr1, cr2)
+      equation
+        (exp,_) = VarTransform.replaceExp(exp,iRepl,NONE());
+        (exp1,_) = VarTransform.replaceExp(exp1,iRepl,NONE());
+        (exp2,_) = VarTransform.replaceExp(exp2,iRepl,NONE());
+        repl = VarTransform.addReplacementNoTransitive(iRepl,cr1,DAE.IFEXP(exp,exp1,exp2));
+        (repl,assertStmts) = mergeFunctionBody(stmts,repl,assertStmtsIn);
+      then (repl,assertStmts);
+
+    case (DAE.STMT_IF(exp = exp,
+           statementLst = {DAE.STMT_ASSIGN_ARR(lhs = DAE.CREF(componentRef = cr1), exp = exp1)},
+           else_=DAE.ELSE(statementLst={DAE.STMT_ASSIGN_ARR(lhs = DAE.CREF(componentRef = cr2), exp = exp2)}))::stmts,_,_)
+      guard ComponentReference.crefEqual(cr1, cr2)
+      equation
+        (exp,_) = VarTransform.replaceExp(exp,iRepl,NONE());
+        (exp1,_) = VarTransform.replaceExp(exp1,iRepl,NONE());
+        (exp2,_) = VarTransform.replaceExp(exp2,iRepl,NONE());
+        repl = VarTransform.addReplacementNoTransitive(iRepl,cr1,DAE.IFEXP(exp,exp1,exp2));
+        (repl,assertStmts) = mergeFunctionBody(stmts,repl,assertStmtsIn);
+      then (repl,assertStmts);
+
   end match;
 end mergeFunctionBody;
 
@@ -1399,7 +1424,7 @@ public function replaceArgs
 algorithm
   (outExp,outTuple) := matchcontinue (inExp,inTuple)
     local
-      DAE.ComponentRef cref;
+      DAE.ComponentRef cref, firstCref;
       list<tuple<DAE.ComponentRef, DAE.Exp>> argmap;
       DAE.Exp e;
       Absyn.Path path;
@@ -1421,6 +1446,18 @@ algorithm
       guard
         BaseHashTable.hasKey(ComponentReference.crefFirstCref(cref),checkcr)
       then (inExp,(argmap,checkcr,false));
+
+    case (DAE.CREF(componentRef = cref),(argmap,checkcr,true))
+      algorithm
+        firstCref := ComponentReference.crefFirstCref(cref);
+        {} := ComponentReference.crefSubs(firstCref);
+        e := getExpFromArgMap(argmap,firstCref);
+        while not ComponentReference.crefIsIdent(cref) loop
+          cref := ComponentReference.crefRest(cref);
+          {} := ComponentReference.crefSubs(cref);
+          e := DAE.RSUB(e, -1, ComponentReference.crefFirstIdent(cref), ComponentReference.crefType(cref));
+        end while;
+      then (e,inTuple);
 
     case (DAE.CREF(componentRef = cref),(argmap,checkcr,true))
       equation
