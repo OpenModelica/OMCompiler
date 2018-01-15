@@ -36,6 +36,26 @@
 
 #include "FMU2Wrapper.h"
 
+/* FMI extension for multi-rate sampled data systems */
+typedef fmi2Status fmi2GetClockTYPE(fmi2Component, const int fmi2Integer[],
+                                    size_t, fmi2Boolean[]);
+typedef fmi2Status fmi2SetClockTYPE(fmi2Component, const int fmiInteger[],
+                                    size_t, const fmi2Boolean[],
+                                    const fmi2Boolean*);
+typedef fmi2Status fmi2GetIntervalTYPE(fmi2Component, const int fmiInteger[],
+                                       size_t, fmi2Real[]);
+typedef fmi2Status fmi2SetIntervalTYPE(fmi2Component, const int fmiInteger[],
+                                       size_t, const fmi2Real[]);
+
+extern "C"
+{
+  FMI2_Export fmi2GetClockTYPE fmi2GetClock;
+  FMI2_Export fmi2SetClockTYPE fmi2SetClock;
+  FMI2_Export fmi2GetIntervalTYPE fmi2GetInterval;
+  FMI2_Export fmi2SetIntervalTYPE fmi2SetInterval;
+}
+
+/* Common definitions */
 #define LOG_CALL(w, ...) \
   FMU2_LOG(w, fmi2OK, logFmi2Call, __VA_ARGS__)
 
@@ -386,8 +406,13 @@ extern "C"
                                           fmi2Real dvUnknown[])
   {
     FMU2Wrapper *w = reinterpret_cast<FMU2Wrapper*>(c);
-    LOG_CALL(w, "fmi2GetDirectionalDerivative not implemented");
-    return fmi2Error;
+    LOG_CALL(w, "fmi2GetDirectionalDerivative(nUnknown = %d, nKnown = %d)", nUnknown, nKnown);
+    try {
+      return w->getDirectionalDerivative(vUnknown_ref, nUnknown,
+                                         vKnown_ref, nKnown, dvKnown,
+                                         dvUnknown);
+    }
+    CATCH_EXCEPTION(w);
   }
 
   // ---------------------------------------------------------------------------

@@ -250,12 +250,12 @@ algorithm
     //        to the environment variable! Don't ask me why, ask Microsoft.
     omhome := "set OPENMODELICAHOME=\"" + System.stringReplace(omhome_1, "/", "\\") + "\"&& ";
     setMakeVars := sum("set "+var+"&& " for var in makeVarsNoBinding);
-    cdWorkingDir := if stringLength(workingDir) == 0 then "" else ("cd \"" + workingDir + "\"&& ");
+    cdWorkingDir := if stringEmpty(workingDir) then "" else ("cd \"" + workingDir + "\"&& ");
     winCompileMode := if Config.getRunningTestsuite() then "serial" else "parallel";
     s_call := stringAppendList({omhome,cdWorkingDir,setMakeVars,"\"",omhome_1,pd,"share",pd,"omc",pd,"scripts",pd,"Compile","\""," ",fileprefix," ",Config.simulationCodeTarget()," ", System.openModelicaPlatform(), " ", winCompileMode});
   else
     numParallel := if Config.getRunningTestsuite() then 1 else Config.noProc();
-    cdWorkingDir := if stringLength(workingDir) == 0 then "" else (" -C \"" + workingDir + "\"");
+    cdWorkingDir := if stringEmpty(workingDir) then "" else (" -C \"" + workingDir + "\"");
     setMakeVars := sum(" "+var for var in makeVarsNoBinding);
     s_call := stringAppendList({System.getMakeCommand()," -j",intString(numParallel),cdWorkingDir," -f ",fileprefix,".makefile",setMakeVars});
   end if;
@@ -326,7 +326,7 @@ algorithm
         // see https://trac.openmodelica.org/OpenModelica/ticket/2422
         // prio = if_(stringEq(prio,""), "default", prio);
         mp = System.realpath(dir + "/../") + System.groupDelimiter() + Settings.getModelicaPath(Config.getRunningTestsuite());
-        (p1,true) = loadModel((Absyn.IDENT(cname),{prio})::{}, mp, p, true, true, checkUses, true);
+        (p1,true) = loadModel((Absyn.IDENT(cname),{prio},true)::{}, mp, p, true, true, checkUses, true);
       then p1;
 
     case (_, _, _, _)
@@ -354,7 +354,7 @@ protected type LoadModelFoldArg =
   tuple<String /*modelicaPath*/, Boolean /*forceLoad*/, Boolean /*notifyLoad*/, Boolean /*checkUses*/, Boolean /*requireExactVersion*/>;
 
 public function loadModel
-  input list<tuple<Absyn.Path,list<String>>> imodelsToLoad;
+  input list<tuple<Absyn.Path,list<String>,Boolean /* Only use the first entry on the MODELICAPATH */>> imodelsToLoad;
   input String modelicaPath;
   input Absyn.Program ip;
   input Boolean forceLoad;
@@ -370,28 +370,34 @@ algorithm
 end loadModel;
 
 protected function loadModel1
-  input tuple<Absyn.Path,list<String>> modelToLoad;
+  input tuple<Absyn.Path,list<String>,Boolean> modelToLoad;
   input LoadModelFoldArg inArg;
   input tuple<Absyn.Program, Boolean> inTpl;
   output tuple<Absyn.Program, Boolean> outTpl;
 protected
-  list<tuple<Absyn.Path,list<String>>> modelsToLoad;
-  Boolean b, b1, success, forceLoad, notifyLoad, checkUses, requireExactVersion;
+  list<tuple<Absyn.Path,list<String>,Boolean>> modelsToLoad;
+  Boolean b, b1, success, forceLoad, notifyLoad, checkUses, requireExactVersion, onlyCheckFirstModelicaPath;
   Absyn.Path path;
   list<String> versionsLst;
-  String pathStr, versions, className, version, modelicaPath;
+  String pathStr, versions, className, version, modelicaPath, thisModelicaPath;
   Absyn.Program p, pnew;
   Error.MessageTokens msgTokens;
 algorithm
-  (path, versionsLst) := modelToLoad;
+  (path, versionsLst, onlyCheckFirstModelicaPath) := modelToLoad;
   (modelicaPath, forceLoad, notifyLoad, checkUses, requireExactVersion) := inArg;
+  if onlyCheckFirstModelicaPath then
+    /* Using loadFile() */
+    thisModelicaPath::_ := System.strtok(modelicaPath, System.groupDelimiter());
+  else
+    thisModelicaPath := modelicaPath;
+  end if;
   try
     (p, success) := inTpl;
     if checkModelLoaded(modelToLoad, p, forceLoad, NONE()) then
       pnew := Absyn.PROGRAM({}, Absyn.TOP());
       version := "";
     else
-      pnew := ClassLoader.loadClass(path, versionsLst, modelicaPath, NONE(), requireExactVersion);
+      pnew := ClassLoader.loadClass(path, versionsLst, thisModelicaPath, NONE(), requireExactVersion);
       version := getPackageVersion(path, pnew);
       b := not notifyLoad or forceLoad;
       msgTokens := {Absyn.pathString(path), version};
@@ -409,7 +415,7 @@ algorithm
     (p, _) := inTpl;
     pathStr := Absyn.pathString(path);
     versions := stringDelimitList(versionsLst, ",");
-    msgTokens := {pathStr, versions, modelicaPath};
+    msgTokens := {pathStr, versions, thisModelicaPath};
     if forceLoad then
       Error.addMessage(Error.LOAD_MODEL, msgTokens);
       outTpl := (p, false);
@@ -421,7 +427,7 @@ algorithm
 end loadModel1;
 
 protected function checkModelLoaded
-  input tuple<Absyn.Path,list<String>> tpl;
+  input tuple<Absyn.Path,list<String>,Boolean> tpl;
   input Absyn.Program p;
   input Boolean forceLoad;
   input Option<String> failNonLoad;
@@ -435,14 +441,14 @@ algorithm
       Absyn.Path path;
 
     case (_,_,true,_) then false;
-    case ((path,str1::_),_,false,_)
+    case ((path,str1::_,_),_,false,_)
       equation
         cdef = Interactive.getPathedClassInProgram(path,p);
         ostr2 = Absyn.getNamedAnnotationInClass(cdef,Absyn.IDENT("version"),Interactive.getAnnotationStringValueOrFail);
         checkValidVersion(path,str1,ostr2);
       then true;
     case (_,_,_,NONE()) then false;
-    case ((path,_),_,_,SOME(str2))
+    case ((path,_,_),_,_,SOME(str2))
       equation
         str1 = Absyn.pathString(path);
         Error.addMessage(Error.INST_NON_LOADED, {str1,str2});
@@ -604,6 +610,8 @@ algorithm
       SCode.Encapsulated encflag;
       SCode.Restriction restr;
       list<list<Values.Value>> valsLst;
+      Boolean new_inst;
+
     case (cache,_,"parseString",{Values.STRING(str1),Values.STRING(str2)},st,_)
       equation
         Absyn.PROGRAM(classes=classes,within_=within_) = Parser.parsestring(str1,str2);
@@ -938,8 +946,15 @@ algorithm
 
     case (_,_,"setCommandLineOptions",{Values.STRING(str)},st,_)
       equation
+        new_inst = Flags.isSet(Flags.SCODE_INST);
         args = System.strtok(str, " ");
-        _ = Flags.readArgs(args);
+        {} = Flags.readArgs(args);
+
+        // Invalidate the builtin cache if the newInst flag was toggled,
+        // so we don't reuse the wrong builtin program.
+        if new_inst <> Flags.isSet(Flags.SCODE_INST) then
+          setGlobalRoot(Global.builtinIndex, {});
+        end if;
       then
         (FCore.emptyCache(),Values.BOOL(true),st);
 
@@ -1347,7 +1362,7 @@ algorithm
         if b1 then
           Config.setLanguageStandard(Config.versionStringToStd(str));
         end if;
-        (p,b) = loadModel({(path,strings)},mp,p,true,b,true,requireExactVersion);
+        (p,b) = loadModel({(path,strings,false)},mp,p,true,b,true,requireExactVersion);
         if b1 then
           Config.setLanguageStandard(oldLanguageStd);
         end if;
@@ -1954,6 +1969,9 @@ algorithm
   outAcc := match inExp
     local
       String name;
+
+    case DAE.REDUCTION(reductionInfo = DAE.REDUCTIONINFO(path = Absyn.FULLYQUALIFIED(Absyn.QUALIFIED(name = name))))
+      then List.consOnTrue(not listMember(name, inAcc), name, inAcc);
 
     case DAE.CALL(path = Absyn.FULLYQUALIFIED(Absyn.QUALIFIED(name = name)),
                   attr = DAE.CALL_ATTR(builtin = false))

@@ -31,61 +31,62 @@
 
 encapsulated uniontype NFBinding
 public
-  import DAE;
-  import NFExpression.Expression;
+  import Expression = NFExpression;
   import NFInstNode.InstNode;
   import SCode;
   import Type = NFType;
+  import NFPrefixes.Variability;
+  import BindingOrigin = NFBindingOrigin;
 
 protected
   import Dump;
   import Binding = NFBinding;
 
 public
+  type Origin = enumeration(COMPONENT, EXTENDS, CLASS);
+
   record UNBOUND end UNBOUND;
 
   record RAW_BINDING
     Absyn.Exp bindingExp;
     InstNode scope;
-    Integer propagatedDims;
-    SourceInfo info;
+    BindingOrigin origin;
   end RAW_BINDING;
 
   record UNTYPED_BINDING
-    Absyn.Exp bindingExp;
+    Expression bindingExp;
     Boolean isProcessing;
     InstNode scope;
-    Integer propagatedDims;
-    SourceInfo info;
+    BindingOrigin origin;
   end UNTYPED_BINDING;
 
   record TYPED_BINDING
     Expression bindingExp;
     Type bindingType;
-    DAE.Const variability;
-    Integer propagatedDims;
-    SourceInfo info;
+    Variability variability;
+    BindingOrigin origin;
   end TYPED_BINDING;
+
+  record FLAT_BINDING
+    Expression bindingExp;
+  end FLAT_BINDING;
 
 public
   function fromAbsyn
     input Option<Absyn.Exp> bindingExp;
-    input SCode.Each eachPrefix;
-    input Integer dimensions;
+    input Boolean eachPrefix;
+    input Integer level;
     input InstNode scope;
     input SourceInfo info;
+    input BindingOrigin.ElementType ty = NFBindingOrigin.ElementType.COMPONENT;
     output Binding binding;
   algorithm
     binding := match bindingExp
       local
         Absyn.Exp exp;
-        Integer pd;
 
       case SOME(exp)
-        algorithm
-          pd := if SCode.eachBool(eachPrefix) then -1 else dimensions;
-        then
-          RAW_BINDING(exp, scope, pd, info);
+        then RAW_BINDING(exp, scope, BindingOrigin.create(eachPrefix, level, ty, info));
 
       else UNBOUND();
     end match;
@@ -101,9 +102,19 @@ public
     end match;
   end isBound;
 
+  function isUnbound
+    input Binding binding;
+    output Boolean isUnbound;
+  algorithm
+    isUnbound := match binding
+      case UNBOUND() then true;
+      else false;
+    end match;
+  end isUnbound;
+
   function untypedExp
     input Binding binding;
-    output Option<Absyn.Exp> exp;
+    output Option<Expression> exp;
   algorithm
     exp := match binding
       case UNTYPED_BINDING() then SOME(binding.bindingExp);
@@ -117,9 +128,40 @@ public
   algorithm
     exp := match binding
       case TYPED_BINDING() then SOME(binding.bindingExp);
+      case FLAT_BINDING() then SOME(binding.bindingExp);
       else NONE();
     end match;
   end typedExp;
+
+  function getTypedExp
+    input Binding binding;
+    output Expression exp;
+  algorithm
+    exp := match binding
+      case TYPED_BINDING() then binding.bindingExp;
+      case FLAT_BINDING() then binding.bindingExp;
+    end match;
+  end getTypedExp;
+
+  function setTypedExp
+    input Expression exp;
+    input output Binding binding;
+  algorithm
+    () := match binding
+      case TYPED_BINDING()
+        algorithm
+          binding.bindingExp := exp;
+        then
+          ();
+    end match;
+  end setTypedExp;
+
+  function variability
+    input Binding binding;
+    output Variability var;
+  algorithm
+    TYPED_BINDING(variability = var) := binding;
+  end variability;
 
   function getInfo
     input Binding binding;
@@ -127,23 +169,51 @@ public
   algorithm
     info := match binding
       case UNBOUND() then Absyn.dummyInfo;
-      case RAW_BINDING() then binding.info;
-      case UNTYPED_BINDING() then binding.info;
-      case TYPED_BINDING() then binding.info;
+      case RAW_BINDING() then binding.origin.info;
+      case UNTYPED_BINDING() then binding.origin.info;
+      case TYPED_BINDING() then binding.origin.info;
     end match;
   end getInfo;
+
+  function getOrigin
+    input Binding binding;
+    output BindingOrigin origin;
+  algorithm
+    origin := match binding
+      case RAW_BINDING() then binding.origin;
+      case UNTYPED_BINDING() then binding.origin;
+      case TYPED_BINDING() then binding.origin;
+    end match;
+  end getOrigin;
+
+  function getType
+    input Binding binding;
+    output Type ty;
+  algorithm
+    TYPED_BINDING(bindingType = ty) := binding;
+  end getType;
 
   function isEach
     input Binding binding;
     output Boolean isEach;
   algorithm
     isEach := match binding
-      case RAW_BINDING() then binding.propagatedDims == -1;
-      case UNTYPED_BINDING() then binding.propagatedDims == -1;
-      case TYPED_BINDING() then binding.propagatedDims == -1;
+      case RAW_BINDING() then BindingOrigin.isEach(binding.origin);
+      case UNTYPED_BINDING() then BindingOrigin.isEach(binding.origin);
+      case TYPED_BINDING() then BindingOrigin.isEach(binding.origin);
       else false;
     end match;
   end isEach;
+
+  function isTyped
+    input Binding binding;
+    output Boolean isTyped;
+  algorithm
+    isTyped := match binding
+      case TYPED_BINDING() then true;
+      else false;
+    end match;
+  end isTyped;
 
   function toString
     input Binding binding;
@@ -153,10 +223,32 @@ public
     string := match binding
       case UNBOUND() then "";
       case RAW_BINDING() then prefix + Dump.printExpStr(binding.bindingExp);
-      case UNTYPED_BINDING() then prefix + Dump.printExpStr(binding.bindingExp);
+      case UNTYPED_BINDING() then prefix + Expression.toString(binding.bindingExp);
       case TYPED_BINDING() then prefix + Expression.toString(binding.bindingExp);
     end match;
   end toString;
+
+  function isEqual
+    input Binding binding1;
+    input Binding binding2;
+    output Boolean equal;
+  algorithm
+    equal := match (binding1, binding2)
+      case (UNBOUND(), UNBOUND()) then true;
+
+      // TODO: Handle propagated dims.
+      case (RAW_BINDING(), RAW_BINDING())
+        then Absyn.expEqual(binding1.bindingExp, binding2.bindingExp);
+
+      case (UNTYPED_BINDING(), UNTYPED_BINDING())
+        then Expression.isEqual(binding1.bindingExp, binding2.bindingExp);
+
+      case (TYPED_BINDING(), TYPED_BINDING())
+        then Expression.isEqual(binding1.bindingExp, binding2.bindingExp);
+
+      else false;
+    end match;
+  end isEqual;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFBinding;

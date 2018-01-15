@@ -598,10 +598,14 @@ function cat "Concatenate arrays along given dimension"
 end cat;
 
 function actualStream
+  input Real x;
+  output Real y;
   external "builtin";
 end actualStream;
 
 function inStream
+  input Real x;
+  output Real y;
   external "builtin";
   annotation(Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'inStream()'\">inStream()</a>
@@ -760,12 +764,13 @@ end getInstanceName;
 
 function spatialDistribution "Not yet implemented"
   input Real in0;
-  input Real x;
-  input Real initialPoints[:];
-  input Real initialValues[size(initialPoints)];
   input Real in1;
+  input Real x;
   input Boolean positiveVelocity;
-  output Real val;
+  parameter input Real initialPoints[:](each min = 0, each max = 1) = {0.0, 1.0};
+  parameter input Real initialValues[size(initialPoints, 1)] = {0.0, 0.0};
+  output Real out0;
+  output Real out1;
 external "builtin";
 annotation(version="Modelica 3.3");
 end spatialDistribution;
@@ -1516,7 +1521,7 @@ function setPreOptModules "example input: removeFinalParameters,removeSimpleEqua
   input String modules;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+preOptModules=" + modules);
+  success := setCommandLineOptions("--preOptModules=" + modules);
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setPreOptModules;
 
@@ -1524,7 +1529,7 @@ function setCheapMatchingAlgorithm "example input: 3"
   input Integer matchingAlgorithm;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+cheapmatchingAlgorithm=" + String(matchingAlgorithm));
+  success := setCommandLineOptions("--cheapmatchingAlgorithm=" + String(matchingAlgorithm));
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setCheapMatchingAlgorithm;
 
@@ -1543,7 +1548,7 @@ function setMatchingAlgorithm "example input: omc"
   input String matchingAlgorithm;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+matchingAlgorithm=" + matchingAlgorithm);
+  success := setCommandLineOptions("--matchingAlgorithm=" + matchingAlgorithm);
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setMatchingAlgorithm;
 
@@ -1562,7 +1567,7 @@ function setIndexReductionMethod "example input: dynamicStateSelection"
   input String method;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+indexReductionMethod=" + method);
+  success := setCommandLineOptions("--indexReductionMethod=" + method);
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setIndexReductionMethod;
 
@@ -1570,7 +1575,7 @@ function setPostOptModules "example input: lateInline,inlineArrayEqn,removeSimpl
   input String modules;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+postOptModules=" + modules);
+  success := setCommandLineOptions("--postOptModules=" + modules);
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setPostOptModules;
 
@@ -1589,7 +1594,7 @@ function setTearingMethod "example input: omcTearing"
   input String tearingMethod;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+tearingMethod=" + tearingMethod);
+  success := setCommandLineOptions("--tearingMethod=" + tearingMethod);
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setTearingMethod;
 
@@ -1646,6 +1651,16 @@ function directoryExists
 algorithm
   exists := Internal.stat(dirName) == Internal.FileType.Directory;
 end directoryExists;
+
+impure function stat
+  input String fileName;
+  output Boolean success;
+  output Real fileSize;
+  output Real mtime;
+external "builtin" annotation(__OpenModelica_Impure=true,Documentation(info="<html>
+<p>Like <a href=\"http://linux.die.net/man/2/stat\">stat(2)</a>, except the output is of type real because of limited precision of Integer.</p>
+</html>"));
+end stat;
 
 impure function readFile
   "The contents of the given file are returned.
@@ -1862,7 +1877,7 @@ function setAnnotationVersion "Sets the annotation version."
   input String annotationVersion;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+annotationVersion=" + annotationVersion);
+  success := setCommandLineOptions("--annotationVersion=" + annotationVersion);
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setAnnotationVersion;
 
@@ -1889,7 +1904,7 @@ function setVectorizationLimit
   input Integer vectorizationLimit;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+v=" + String(vectorizationLimit));
+  success := setCommandLineOptions("-v=" + String(vectorizationLimit));
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setVectorizationLimit;
 
@@ -1905,7 +1920,7 @@ public function setDefaultOpenCLDevice
   input Integer defdevid;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+o=" + String(defdevid));
+  success := setCommandLineOptions("-o=" + String(defdevid));
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setDefaultOpenCLDevice;
 
@@ -1926,7 +1941,7 @@ function setOrderConnections "Sets the orderConnection flag."
   input Boolean orderConnections;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+orderConnections=" + String(orderConnections));
+  success := setCommandLineOptions("--orderConnections=" + String(orderConnections));
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setOrderConnections;
 
@@ -1940,7 +1955,7 @@ function setLanguageStandard "Sets the Modelica Language Standard."
   input String inVersion;
   output Boolean success;
 algorithm
-  success := setCommandLineOptions("+std=" + inVersion);
+  success := setCommandLineOptions("--std=" + inVersion);
 annotation(__OpenModelica_EarlyInline = true, preferredView="text");
 end setLanguageStandard;
 
@@ -2586,7 +2601,19 @@ function simulate "simulates a modelica model by generating c code, build it and
   input String variableFilter = ".*" "Filter for variables that should store in result file. <default> = \".*\"";
   input String cflags = "<default>" "cflags. <default> = \"\"";
   input String simflags = "<default>" "simflags. <default> = \"\"";
-  output String simulationResults;
+  output SimulationResult simulationResults;
+  record SimulationResult
+    String resultFile;
+    String simulationOptions;
+    String messages;
+    Real timeFrontend;
+    Real timeBackend;
+    Real timeSimCode;
+    Real timeTemplates;
+    Real timeCompile;
+    Real timeSimulation;
+    Real timeTotal;
+  end SimulationResult;
 external "builtin";
 annotation(preferredView="text");
 end simulate;
@@ -2614,6 +2641,43 @@ function buildModel "builds a modelica model by generating c code and build it.
 external "builtin";
 annotation(preferredView="text");
 end buildModel;
+
+function buildLabel "builds Lable."
+input TypeName className "the class that should be built";
+ input Real startTime = 0.0 "the start time of the simulation. <default> = 0.0";
+  input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
+  input Integer numberOfIntervals = 500 "number of intervals in the result file. <default> = 500";
+  input Real tolerance = 1e-6 "tolerance used by the integration method. <default> = 1e-6";
+  input String method = "dassl" "integration method used for simulation. <default> = dassl";
+  input String fileNamePrefix = "" "fileNamePrefix. <default> = \"\"";
+  input String options = "" "options. <default> = \"\"";
+  input String outputFormat = "mat" "Format for the result file. <default> = \"mat\"";
+  input String variableFilter = ".*" "Filter for variables that should store in result file. <default> = \".*\"";
+  input String cflags = "" "cflags. <default> = \"\"";
+  input String simflags = "" "simflags. <default> = \"\"";
+output String[2] buildModelResults;
+external "builtin";
+annotation(preferredView="text");
+end buildLabel;
+
+function reduceTerms "reduce terms."
+input TypeName className "the class that should be built";
+ input Real startTime = 0.0 "the start time of the simulation. <default> = 0.0";
+  input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
+  input Integer numberOfIntervals = 500 "number of intervals in the result file. <default> = 500";
+  input Real tolerance = 1e-6 "tolerance used by the integration method. <default> = 1e-6";
+  input String method = "dassl" "integration method used for simulation. <default> = dassl";
+  input String fileNamePrefix = "" "fileNamePrefix. <default> = \"\"";
+  input String options = "" "options. <default> = \"\"";
+  input String outputFormat = "mat" "Format for the result file. <default> = \"mat\"";
+  input String variableFilter = ".*" "Filter for variables that should store in result file. <default> = \".*\"";
+  input String cflags = "" "cflags. <default> = \"\"";
+  input String simflags = "" "simflags. <default> = \"\"";
+  input String labelstoCancel="";
+output String[2] buildModelResults;
+external "builtin";
+annotation(preferredView="text");
+end reduceTerms;
 
 function moveClass
  "Moves a class up or down depending on the given offset, where a positive
@@ -2937,6 +3001,18 @@ external "builtin";
 annotation(preferredView="text");
 end compareSimulationResults;
 
+public function deltaSimulationResults "calculates the sum of absolute errors."
+  input String filename;
+  input String reffilename;
+  input String method "method to compute then error. choose 1norm, 2norm, maxerr";
+  input String[:] vars = fill("",0);
+  output Real result;
+external "builtin";
+annotation(Documentation(info="<html>
+<p>For each data point in the reference file, the sum of all absolute error sums of all given variables is calculated.</p>
+</html>"),preferredView="text");
+end deltaSimulationResults;
+
 public function diffSimulationResults "compares simulation results."
   input String actualFile;
   input String expectedFile;
@@ -3118,6 +3194,23 @@ annotation(
 </html>"),
   preferredView="text");
 end removeExtendsModifiers;
+
+function getConnectionCount "Counts the number of connect equation in a class."
+  input TypeName className;
+  output Integer count;
+external "builtin";
+annotation(preferredView="text");
+end getConnectionCount;
+
+function getNthConnection "Returns the Nth connection.
+  Example command:
+  getNthConnection(A) => {\"from\", \"to\", \"comment\"}"
+  input TypeName className;
+  input Integer index;
+  output String[:] result;
+external "builtin";
+annotation(preferredView="text");
+end getNthConnection;
 
 function getAlgorithmCount "Counts the number of Algorithm sections in a class."
   input TypeName class_;
@@ -3903,7 +3996,7 @@ end checkInterfaceOfPackages;
 
 function sortStrings
   input String arr[:];
-  output String sorted;
+  output String sorted[:];
   external "builtin";
 annotation(
   Documentation(info="<html>
@@ -3924,6 +4017,7 @@ function getClassInformation
   output String version;
   output String preferredView;
   output Boolean state;
+  output String access;
 external "builtin";
 annotation(
   Documentation(info="<html>
@@ -3997,6 +4091,49 @@ annotation(preferredView="text",Documentation(info="<html>
 <p>Updates the transition in the class.</p>
 </html>"));
 end updateTransition;
+
+function getInitialStates
+  input TypeName cl;
+  output String[:,:] initialStates;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+<p>Returns list of initial states for the given class.</p>
+<p>Each initial state item contains 2 values i.e, state name and annotation.</p>
+</html>"), preferredView="text");
+end getInitialStates;
+
+function addInitialState
+  input TypeName cl;
+  input String state;
+  input ExpressionOrModification annotate;
+  output Boolean bool;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Adds the initial state to the class.</p>
+</html>"));
+end addInitialState;
+
+function deleteInitialState
+  input TypeName cl;
+  input String state;
+  output Boolean bool;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Deletes the initial state from the class.</p>
+</html>"));
+end deleteInitialState;
+
+function updateInitialState
+  input TypeName cl;
+  input String state;
+  input ExpressionOrModification annotate;
+  output Boolean bool;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Updates the initial state in the class.</p>
+</html>"));
+end updateInitialState;
 
 function generateScriptingAPI
   input TypeName cl;

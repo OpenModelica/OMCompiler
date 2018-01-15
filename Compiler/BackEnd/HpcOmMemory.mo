@@ -49,6 +49,7 @@ import BaseHashTable;
 import ComponentReference;
 import Config;
 import Error;
+import ExpandableArray;
 import Expression;
 import Flags;
 import GraphML;
@@ -2107,7 +2108,7 @@ import Util;
     Integer i;
   algorithm
     tmpArray := iArray;
-    for i in List.intRange(arrayLength(tmpArray)) loop
+    for i in 1:arrayLength(tmpArray) loop
       if(intNe(i, iIndex)) then
         tmpArray := arrayUpdate(tmpArray, i, arrayGet(tmpArray, i) + iOffset);
       end if;
@@ -2454,12 +2455,10 @@ import Util;
     output array<list<Integer>> oMapping; //eqIdx -> list<scVarIdx>
   protected
     BackendDAE.EquationArray orderedEqs;
-    array<Option<BackendDAE.Equation>> equOptArr;
     list<Option<BackendDAE.Equation>> equOptList;
   algorithm
     BackendDAE.EQSYSTEM(orderedEqs=orderedEqs) := iEqSystem;
-    BackendDAE.EQUATION_ARRAY(equOptArr=equOptArr) := orderedEqs;
-    equOptList := arrayList(equOptArr);
+    equOptList := arrayList(ExpandableArray.getData(orderedEqs));
     oMapping := listArray(List.map1Option(equOptList, getEqSCVarMapping0, iHt));
   end getEqSCVarMappingByEqSystem;
 
@@ -2554,7 +2553,6 @@ import Util;
     Integer varIdx,eqSysIdx,varOffset,scVarIdx, compIdx, nodeIdx, scVarOffset;
     BackendDAE.EqSystem eqSystem;
     BackendDAE.Variables orderedVars;
-    BackendDAE.VariableArray varArr;
     array<Option<BackendDAE.Var>> varOptArr;
     BackendDAE.Var var;
     DAE.ComponentRef varName;
@@ -2718,7 +2716,6 @@ import Util;
     Integer varIdx,eqSysIdx,varOffset,scVarIdx,clIdx,nodeIdx, nodeIdx, scVarOffset;
     BackendDAE.EqSystem eqSystem;
     BackendDAE.Variables orderedVars;
-    BackendDAE.VariableArray varArr;
     array<Option<BackendDAE.Var>> varOptArr;
     BackendDAE.Var var;
     DAE.ComponentRef varName;
@@ -2926,7 +2923,7 @@ import Util;
       //print("appendVariablesToGraph: Appending variable " + description + " to graph with index " + intString(iGraphIdx) + "\n");
       if(isValidVar) then
         nodeLabel := GraphML.NODELABEL_INTERNAL(intString(varIdx), NONE(), GraphML.FONTPLAIN());
-        tmpGraphInfo := GraphML.addNode("var" + intString(varIdx), GraphML.COLOR_GREEN2, {nodeLabel}, GraphML.ELLIPSE(), SOME(description), {(iThreadIdAttributeIdx,threadText)}, iGraphIdx, tmpGraphInfo);
+        tmpGraphInfo := GraphML.addNode("var" + intString(varIdx), GraphML.COLOR_GREEN2,GraphML.BORDERWIDTH_STANDARD, {nodeLabel}, GraphML.ELLIPSE(), SOME(description), {(iThreadIdAttributeIdx,threadText)}, iGraphIdx, tmpGraphInfo);
       end if;
     end for;
     tmpGraphInfo := appendTaskVarEdgesToGraph(iTaskSolvedVarsMapping, iTaskUnsolvedVarsMapping, tmpGraphInfo);
@@ -3059,7 +3056,7 @@ import Util;
         threadText := "Th " + intString(threadOwner);
         nodeLabelText := intString(realScVarIdx);
         nodeLabel := GraphML.NODELABEL_INTERNAL(nodeLabelText, NONE(), GraphML.FONTPLAIN());
-        (oGraphInfo,_) := GraphML.addNode(nodeId, GraphML.COLOR_GREEN2, {nodeLabel}, GraphML.ELLIPSE(), SOME(varString), {(iAttThreadIdIdx,threadText)}, iTopGraphIdx, iGraphInfo);
+        (oGraphInfo,_) := GraphML.addNode(nodeId, GraphML.COLOR_GREEN2,GraphML.BORDERWIDTH_STANDARD, {nodeLabel}, GraphML.ELLIPSE(), SOME(varString), {(iAttThreadIdIdx,threadText)}, iTopGraphIdx, iGraphInfo);
         //print("--handled with realScVarIdx '" + intString(realScVarIdx) + "'\n");
        else
          oGraphInfo := iGraphInfo;

@@ -197,12 +197,13 @@ solveLis(DATA *data, threadData_t *threadData, int sysNumber)
 {
   void *dataAndThreadData[2] = {data, threadData};
   LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
-  DATA_LIS* solverData = (DATA_LIS*)systemData->solverData;
+  DATA_LIS* solverData = (DATA_LIS*)systemData->solverData[0];
   int i, ret, success = 1, ni, iflag = 1, n = systemData->size, eqSystemNumber = systemData->equationIndex;
   char *lis_returncode[] = {"LIS_SUCCESS", "LIS_ILL_OPTION", "LIS_BREAKDOWN", "LIS_OUT_OF_MEMORY", "LIS_MAXITER", "LIS_NOT_IMPLEMENTED", "LIS_ERR_FILE_IO"};
   LIS_INT err;
 
   int indexes[2] = {1,eqSystemNumber};
+  double tmpJacEvalTime;
   infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with Lis Solver",
          eqSystemNumber, (int) systemData->size,
          data->localData[0]->timeValue);
@@ -243,12 +244,13 @@ solveLis(DATA *data, threadData_t *threadData, int sysNumber)
       err = lis_vector_set_value(LIS_INS_VALUE, i, systemData->b[i], solverData->b);
     }
   }
-  infoStreamPrint(LOG_LS, 0, "###  %f  time to set Matrix A and vector b.", rt_ext_tp_tock(&(solverData->timeClock)));
-
+  tmpJacEvalTime = rt_ext_tp_tock(&(solverData->timeClock));
+  systemData->jacobianTime += tmpJacEvalTime;
+  infoStreamPrint(LOG_LS_V, 0, "###  %f  time to set Matrix A and vector b.", tmpJacEvalTime);
 
   rt_ext_tp_tick(&(solverData->timeClock));
   err = lis_solve(solverData->A,solverData->b,solverData->x,solverData->solver);
-  infoStreamPrint(LOG_LS, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
+  infoStreamPrint(LOG_LS_V, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
 
   if (err){
     warningStreamPrint(LOG_LS_V, 0, "lis_solve : %s(code=%d)\n\n ", lis_returncode[err], err);

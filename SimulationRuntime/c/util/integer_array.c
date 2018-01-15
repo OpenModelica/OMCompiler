@@ -302,33 +302,9 @@ void simple_indexed_assign_integer_array2(const integer_array_t * source,
 void indexed_assign_integer_array(const integer_array_t source, integer_array_t* dest,
                                   const index_spec_t* dest_spec)
 {
-    _index_t* idx_vec1;
-    _index_t* idx_size;
-    int i,j;
-
-    omc_assert_macro(base_array_ok(&source));
-    omc_assert_macro(base_array_ok(dest));
-    omc_assert_macro(index_spec_ok(dest_spec));
-    omc_assert_macro(index_spec_fit_base_array(dest_spec, dest));
-    for(i = 0,j = 0; i < dest_spec->ndims; ++i) {
-        if(dest_spec->dim_size[i] != 0) {
-            ++j;
-        }
-    }
-    omc_assert_macro(j == source.ndims);
-
-    idx_vec1 = size_alloc(dest->ndims);
-    idx_size = size_alloc(dest_spec->ndims);
-
-    for(i = 0; i < dest_spec->ndims; ++i) {
-        idx_vec1[i] = 0;
-
-        if(dest_spec->index[i] != NULL) { /* is 'S' or 'A' */
-            idx_size[i] = imax(dest_spec->dim_size[i],1);
-        } else { /* is 'W' */
-            idx_size[i] = dest->dim_size[i];
-        }
-    }
+    _index_t* idx_vec1, idx_size;
+    int j;
+    indexed_assign_base_array_size_alloc(&source, dest, dest_spec, &idx_vec1, &idx_size);
 
     j = 0;
     do {
@@ -424,34 +400,7 @@ void index_alloc_integer_array(const integer_array_t * source,
              const index_spec_t* source_spec,
              integer_array_t* dest)
 {
-    int i;
-    int j;
-
-    omc_assert_macro(base_array_ok(source));
-    omc_assert_macro(index_spec_ok(source_spec));
-    omc_assert_macro(index_spec_fit_base_array(source_spec,source));
-
-
-    for(i = 0, j = 0; i < source_spec->ndims; ++i) {
-         if(source_spec->dim_size[i] != 0) { /* is 'W' or 'A' */
-           ++j;
-         }
-    }
-    dest->ndims = j;
-    dest->dim_size = size_alloc(dest->ndims);
-
-    for(i = 0, j = 0; i < source_spec->ndims; ++i) {
-        if(source_spec->dim_size[i] != 0) { /* is 'W' or 'A' */
-            if(source_spec->index[i] != NULL) { /* is 'A' */
-                dest->dim_size[j] = source_spec->dim_size[i];
-            } else { /* is 'W' */
-                dest->dim_size[j] = source->dim_size[i];
-            }
-
-            ++j;
-        }
-    }
-
+    index_alloc_base_array_size(source, source_spec, dest);
     alloc_integer_array_data(dest);
     index_integer_array(source, source_spec, dest);
 }
@@ -635,13 +584,13 @@ modelica_integer* integer_array_element_addr(const integer_array_t * source,int 
  * k is one based
  */
 void cat_integer_array(int k, integer_array_t* dest, int n,
-                    integer_array_t* first,...)
+                    const integer_array_t* first,...)
 {
     va_list ap;
     int i, j, r, c;
     int n_sub = 1, n_super = 1;
     int new_k_dim_size = 0;
-    integer_array_t **elts = (integer_array_t**)malloc(sizeof(integer_array_t *) * n);
+    const integer_array_t **elts = (const integer_array_t**)malloc(sizeof(integer_array_t *) * n);
 
     omc_assert_macro(elts);
     /* collect all array ptrs to simplify traversal.*/
@@ -649,7 +598,7 @@ void cat_integer_array(int k, integer_array_t* dest, int n,
     elts[0] = first;
 
     for(i = 1; i < n; i++) {
-        elts[i] = va_arg(ap,integer_array_t*);
+        elts[i] = va_arg(ap,const integer_array_t*);
     }
     va_end(ap);
 
@@ -697,13 +646,13 @@ void cat_integer_array(int k, integer_array_t* dest, int n,
  * k is one based
  */
 void cat_alloc_integer_array(int k, integer_array_t* dest, int n,
-                          integer_array_t* first,...)
+                          const integer_array_t* first,...)
 {
     va_list ap;
     int i, j, r, c;
     int n_sub = 1, n_super = 1;
     int new_k_dim_size = 0;
-    integer_array_t **elts = (integer_array_t**)malloc(sizeof(integer_array_t *) * n);
+    const integer_array_t **elts = (const integer_array_t**)malloc(sizeof(integer_array_t *) * n);
 
     omc_assert_macro(elts);
     /* collect all array ptrs to simplify traversal.*/
@@ -711,7 +660,7 @@ void cat_alloc_integer_array(int k, integer_array_t* dest, int n,
     elts[0] = first;
 
     for(i = 1; i < n; i++) {
-        elts[i] = va_arg(ap,integer_array_t*);
+        elts[i] = va_arg(ap,const integer_array_t*);
     }
     va_end(ap);
 

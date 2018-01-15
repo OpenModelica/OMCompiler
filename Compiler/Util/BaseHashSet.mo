@@ -293,6 +293,20 @@ algorithm
   end matchcontinue;
 end has;
 
+public function hasAll "Returns true if all keys are in the HashSet."
+  input list<Key> keys;
+  input HashSet hashSet;
+  output Boolean b = true;
+algorithm
+  for key in keys loop
+    b := has(key, hashSet);
+
+    if not b then
+      return;
+    end if;
+  end for;
+end hasAll;
+
 public function get
 "Returns Key from the HashSet. Fails if not present"
   input Key key;
@@ -336,26 +350,16 @@ protected function get2
   input list<tuple<Key,Integer>> keyIndices;
   input FuncEq keyEqual;
   output Integer index;
+protected
+  Key key2;
 algorithm
-  index := matchcontinue (key,keyIndices,keyEqual)
-    local
-      Key key2;
-      list<tuple<Key,Integer>> xs;
-
-    // search for the key, found the good one
-    case (_,((key2,index) :: _),_)
-      equation
-        true = keyEqual(key, key2);
-      then
-        index;
-
-    // search more
-    case (_,(_ :: xs),_)
-      equation
-        index = get2(key, xs, keyEqual);
-      then
-        index;
-  end matchcontinue;
+  for t in keyIndices loop
+    (key2,index) := t;
+    if keyEqual(key, key2) then
+      return;
+    end if;
+  end for;
+  fail();
 end get2;
 
 public function printHashSet ""

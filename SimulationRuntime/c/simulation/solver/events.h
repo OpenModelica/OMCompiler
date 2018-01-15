@@ -37,6 +37,7 @@
 #include "simulation_data.h"
 #include "simulation/solver/solver_main.h"
 #include "util/list.h"
+#include "simulation/solver/fmi_events.h"
 
 #ifdef __cplusplus
 extern "C" {

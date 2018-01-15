@@ -38,28 +38,30 @@ encapsulated package OnRelaxation "
 public import BackendDAE;
 public import DAE;
 
-protected import Array;
-protected import BackendDAEUtil;
-protected import BackendDAEEXT;
-protected import BackendDump;
-protected import BackendEquation;
-protected import BackendVariable;
-protected import BackendDAETransform;
-protected import BaseHashSet;
-protected import ComponentReference;
-protected import Differentiate;
-protected import DumpGraphML;
-protected import Expression;
-protected import ExpressionDump;
-protected import ExpressionSimplify;
-protected import HashSet;
-protected import HashTable4;
-protected import List;
-protected import Matching;
-protected import Sorting;
-protected import SymbolicJacobian;
-protected import Util;
-protected import MetaModelica.Dangerous;
+protected
+import AdjacencyMatrix;
+import Array;
+import BackendDAEEXT;
+import BackendDAETransform;
+import BackendDAEUtil;
+import BackendDump;
+import BackendEquation;
+import BackendVariable;
+import BaseHashSet;
+import ComponentReference;
+import Differentiate;
+import DumpGraphML;
+import Expression;
+import ExpressionDump;
+import ExpressionSimplify;
+import HashSet;
+import HashTable4;
+import List;
+import Matching;
+import MetaModelica.Dangerous;
+import Sorting;
+import SymbolicJacobian;
+import Util;
 
 
 /*
@@ -140,7 +142,7 @@ algorithm
         esize = listLength(eindex);
         ass1 = arrayCreate(size, -1);
         ass2 = arrayCreate(size, -1);
-        eqn_lst = BackendEquation.getEqns(eindex, BackendEquation.getEqnsFromEqSystem(isyst));
+        eqn_lst = BackendEquation.getList(eindex, BackendEquation.getEqnsFromEqSystem(isyst));
         eqns = BackendEquation.listEquation(eqn_lst);
         var_lst = List.map1r(vindx, BackendVariable.getVarAt, BackendVariable.daeVars(isyst));
         vars = BackendVariable.listVar1(var_lst);
@@ -364,7 +366,7 @@ algorithm
           BackendDAEUtil.profilerstart1();
         /*
         vars = BackendVariable.addVars(var_lst, vars);
-        eqns = BackendEquation.addEquations(neweqns, teqns);
+        eqns = BackendEquation.addList(neweqns, teqns);
         subsyst = BackendDAEUtil.createEqSystem(vars, eqns);
           (subsyst, m, mt, mapEqnIncRow, mapIncRowEqn) = BackendDAEUtil.getIncidenceMatrixScalar(subsyst, BackendDAE.NORMAL(), SOME(funcs));
           print("Relaxed System:\n");
@@ -715,7 +717,6 @@ algorithm
       list<Integer> rest, roots, constraints, elst, rlst;
       Integer o;
       Boolean foundflow, constr;
-      list<Boolean> blst;
       list<BackendDAE.Var> vlst;
     case ({}, _, _, _, _, _, _, _, _, _, _, _)
       then
@@ -730,8 +731,7 @@ algorithm
         // check for partner
         //  BackendDump.debuglst((rlst, intString, ", ", "\n"));
         vlst = List.map1r(rlst, BackendVariable.getVarAt, vars);
-        blst = List.map(vlst, BackendVariable.isFlowVar);
-        constr = Util.boolAndList(blst);
+        constr = List.mapBoolAnd(vlst, BackendVariable.isFlowVar);
         constraints = List.consOnTrue(constr, o, iconstraints);
         //  print("Process Orphan " + intString(o) + "\n");
         //  BackendDump.debuglst((mt[o], intString, ", ", "\n"));
@@ -1034,7 +1034,7 @@ protected
 algorithm
   //  print("Add orpan[" + intString(orphan) + "] = " + intString(preorphan) + "\n");
   olst := arr[orphan];
-  olst := List.union({preorphan}, olst);
+  olst := List.unionElt(preorphan, olst);
   _:=arrayUpdate(arr, orphan, olst);
 end addPreOrphan;
 
@@ -1468,7 +1468,7 @@ algorithm
   // add links to the order
   omark := getOrphansOrderEdvanced4(linkslst, m, mt, mark, rowmarks, order, {});
   //  BackendDump.dumpIncidenceMatrix(m);
-  mt := BackendDAEUtil.transposeMatrix(m, arrayLength(mt));
+  mt := AdjacencyMatrix.transposeAdjacencyMatrix(m, arrayLength(mt));
   comps := Sorting.TarjanTransposed(mt, ass);
   //  BackendDump.dumpComponentsOLD(comps);
   sortvorphans := List.flattenReverse(comps);
@@ -1535,7 +1535,7 @@ algorithm
     case (e::_, _, _)
       equation
         len = listLength(ass[e]);
-        size = BackendEquation.equationSize(BackendEquation.equationNth1(eqnsarr, e));
+        size = BackendEquation.equationSize(BackendEquation.get(eqnsarr, e));
         true = intLt(len, size);
       then
         e;
@@ -1821,8 +1821,8 @@ algorithm
       sb = intString(b);
       cr = ComponentReference.makeCrefIdent(stringAppendList({"$tmp", sa, "_", sb}), DAE.T_REAL_DEFAULT, {});
       cexp = Expression.crefExp(cr);
-      eqns = BackendEquation.addEquation(BackendDAE.EQUATION(cexp, e, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN), inEqns);
-      v = BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+      eqns = BackendEquation.add(BackendDAE.EQUATION(cexp, e, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN), inEqns);
+      v = BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
       vars = BackendVariable.addVar(v, inVars);
     then
       (vars, eqns, cexp, (a, b+1));
@@ -1980,7 +1980,7 @@ algorithm
     case ((r, c, BackendDAE.RESIDUAL_EQUATION(exp = e))::rest, _, _, _, _, _, _)
       equation
         i = mapIncRowEqn[r];
-        eqn = BackendEquation.equationNth1(eqns, i);
+        eqn = BackendEquation.get(eqns, i);
         b1 = BackendEquation.isArrayEquation(eqn);
         b = func(e);
         lst = List.consOnTrue(b and b1, c, m[r]);
@@ -2186,9 +2186,9 @@ protected
 algorithm
  (eqns, vars, ass2, eqnssort, varssort) := inTpl;
  // get Eqn
- e := BackendEquation.equationNth1(eqns, indx);
+ e := BackendEquation.get(eqns, indx);
  // add equation
- eqnssort := BackendEquation.addEquation(e, eqnssort);
+ eqnssort := BackendEquation.add(e, eqnssort);
  // get vars of equations
  vindxs := ass2[indx];
  vlst := List.map1r(vindxs, BackendVariable.getVarAt, vars);
@@ -3241,7 +3241,6 @@ algorithm
       list<DAE.ComponentRef> crlst, crlst1;
       list<DAE.Exp> elst;
       list<Integer> ilst;
-      list<Boolean> blst;
       HashSet.HashSet set;
 
     // a = f(...)
@@ -3310,8 +3309,7 @@ algorithm
         crlst = List.uniqueOnTrue(crlst, ComponentReference.crefEqualNoStringCompare);
         true = intEq(size, listLength(crlst));
         cr::crlst1 = crlst;
-        blst = List.map1(crlst1, ComponentReference.crefEqualWithoutLastSubs, cr);
-        true = Util.boolAndList(blst);
+        true = List.map1BoolAnd(crlst1, ComponentReference.crefEqualWithoutLastSubs, cr);
         // check if crefs no on other side
         set = HashSet.emptyHashSet();
         crnosubs = ComponentReference.crefStripLastSubs(cr);
@@ -3334,8 +3332,7 @@ algorithm
         crlst = List.uniqueOnTrue(crlst, ComponentReference.crefEqualNoStringCompare);
         true = intEq(size, listLength(crlst));
         cr::crlst1 = crlst;
-        blst = List.map1(crlst1, ComponentReference.crefEqualWithoutLastSubs, cr);
-        true = Util.boolAndList(blst);
+        true = List.map1BoolAnd(crlst1, ComponentReference.crefEqualWithoutLastSubs, cr);
         // check if crefs no on other side
         set = HashSet.emptyHashSet();
         crnosubs = ComponentReference.crefStripLastSubs(cr);

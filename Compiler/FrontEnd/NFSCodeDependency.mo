@@ -49,6 +49,7 @@ protected import Debug;
 protected import Error;
 protected import Flags;
 protected import List;
+protected import Mutable;
 protected import NFSCodeCheck;
 protected import NFSCodeFlattenRedeclare;
 protected import NFSCodeLookup;
@@ -414,12 +415,12 @@ algorithm
   _ := match(inItem, inEnv)
     local
       NFSCodeEnv.Frame cls_env;
-      Util.StatefulBoolean is_used;
+      Mutable<Boolean> is_used;
       String name;
 
     case (NFSCodeEnv.VAR(isUsed = SOME(is_used)), _)
       equation
-        Util.setStatefulBoolean(is_used, true);
+        Mutable.update(is_used, true);
         markEnvAsUsed(inEnv);
       then
         ();
@@ -441,11 +442,11 @@ protected function markFrameAsUsed
 algorithm
   _ := match(inFrame)
     local
-      Util.StatefulBoolean is_used;
+      Mutable<Boolean> is_used;
 
     case NFSCodeEnv.FRAME(isUsed = SOME(is_used))
       equation
-        Util.setStatefulBoolean(is_used, true);
+        Mutable.update(is_used, true);
       then
         ();
 
@@ -461,15 +462,15 @@ protected function markEnvAsUsed
 algorithm
   _ := matchcontinue(inEnv)
     local
-      Util.StatefulBoolean is_used;
+      Mutable<Boolean> is_used;
       Env rest_env;
       NFSCodeEnv.Frame f;
 
     case ((f as NFSCodeEnv.FRAME(isUsed = SOME(is_used))) :: rest_env)
       equation
-        false = Util.getStatefulBoolean(is_used);
+        false = Mutable.access(is_used);
         markEnvAsUsed2(f, rest_env);
-        Util.setStatefulBoolean(is_used, true);
+        Mutable.update(is_used, true);
         markEnvAsUsed(rest_env);
       then
         ();
@@ -994,7 +995,7 @@ algorithm
   _ := matchcontinue(inName, inAttr, inEnv, inInfo)
     local
       EnvTree.Tree cls_and_vars;
-      Util.StatefulBoolean is_used;
+      Mutable<Boolean> is_used;
       SCode.Variability var;
 
     case (_, SCode.ATTR(variability = var), NFSCodeEnv.FRAME(clsAndVars = cls_and_vars) :: _, _)
@@ -1002,7 +1003,7 @@ algorithm
         true = SCode.isParameterOrConst(var);
         NFSCodeEnv.VAR(isUsed = SOME(is_used)) =
           EnvTree.get(cls_and_vars, inName);
-        Util.setStatefulBoolean(is_used, true);
+        Mutable.update(is_used, true);
       then
         ();
 
@@ -1019,14 +1020,14 @@ algorithm
   _ := matchcontinue(inName, inRestriction, inEnv, inInfo)
     local
       EnvTree.Tree cls_and_vars;
-      Util.StatefulBoolean is_used;
+      Mutable<Boolean> is_used;
 
     case (_, _, NFSCodeEnv.FRAME(clsAndVars = cls_and_vars) :: _, _)
       equation
         true = markAsUsedOnRestriction2(inRestriction);
         NFSCodeEnv.VAR(isUsed = SOME(is_used)) =
           EnvTree.get(cls_and_vars, inName);
-        Util.setStatefulBoolean(is_used, true);
+        Mutable.update(is_used, true);
       then
         ();
 
@@ -1665,7 +1666,7 @@ algorithm
       then
         ((equ, env));
 
-    case ((equ as SCode.EQ_REINIT(cref = cref1, info = info), env))
+    case ((equ as SCode.EQ_REINIT(cref = Absyn.CREF(componentRef = cref1), info = info), env))
       equation
         analyseCref(cref1, env, info);
         (equ, _) = SCode.traverseEEquationExps(equ, traverseExp, (env, info));
@@ -1788,13 +1789,13 @@ algorithm
       Env env2;
       SCode.Element cls;
       NFSCodeEnv.ClassType cls_ty;
-      Util.StatefulBoolean is_used;
+      Mutable<Boolean> is_used;
 
     // Check if the current environment is not used, we can quit here if that's
     // the case.
     case (_, NFSCodeEnv.FRAME(name = SOME(_), isUsed = SOME(is_used)) :: _)
       algorithm
-        false := Util.getStatefulBoolean(is_used);
+        false := Mutable.access(is_used);
       then
         false;
 
@@ -2034,49 +2035,37 @@ end updateItemEnv;
 
 protected function collectUsedClassDef
   "Collects the contents of a class definition."
-  input SCode.ClassDef inClassDef;
-  input Env inEnv;
+  input output SCode.ClassDef classDef;
+  input output Env env;
   input NFSCodeEnv.Frame inClassEnv;
   input Absyn.Path inClassName;
   input Absyn.Path inAccumPath;
-  output SCode.ClassDef outClass;
-  output Env outEnv;
 algorithm
-  (outClass, outEnv) :=
-  match(inClassDef, inEnv, inClassEnv, inClassName, inAccumPath)
+  () := match classDef
     local
       list<SCode.Element> el;
-      list<SCode.Equation> neq, ieq;
-      list<SCode.AlgorithmSection> nal, ial;
-      list<SCode.ConstraintSection> nco;
-      Option<SCode.ExternalDecl> ext_decl;
-      list<SCode.Annotation> annl;
-      Option<SCode.Comment> cmt;
-      SCode.Ident bc;
-      SCode.Mod mods;
-      Env env;
-      list<Absyn.NamedArg> clats;
+      SCode.ClassDef cdef;
 
-    case (SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl), _, _, _, _)
-      equation
-        (el, env) =
-          collectUsedElements(el, inEnv, inClassEnv, inClassName, inAccumPath);
+    case SCode.PARTS(elementLst = el)
+      algorithm
+        (el, env) := collectUsedElements(el, env, inClassEnv, inClassName, inAccumPath);
+        classDef.elementLst := el;
       then
-        (SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl), env);
+        ();
 
-    case (SCode.CLASS_EXTENDS(bc, mods,
-        SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl)), _, _, _, _)
-      equation
-        (el, env) =
-          collectUsedElements(el, inEnv, inClassEnv, inClassName, inAccumPath);
+    case SCode.CLASS_EXTENDS(composition = cdef)
+      algorithm
+        (cdef, env) := collectUsedClassDef(cdef, env, inClassEnv, inClassName, inAccumPath);
+        classDef.composition := cdef;
       then
-        (SCode.CLASS_EXTENDS(bc, mods,
-          SCode.PARTS(el, neq, ieq, nal, ial, nco, clats, ext_decl)), env);
+        ();
 
-    case (SCode.ENUMERATION(), _, _, _, _)
-      then (inClassDef, {inClassEnv});
+    else
+      algorithm
+        env := {inClassEnv};
+      then
+        ();
 
-    else (inClassDef, {inClassEnv});
   end match;
 end collectUsedClassDef;
 
@@ -2204,7 +2193,7 @@ protected
   list<SCode.Element> re;
   Option<SCode.Element> cei;
   NFSCodeEnv.ImportTable imps;
-  Option<Util.StatefulBoolean> is_used;
+  Option<Mutable<Boolean>> is_used;
   Env env;
 algorithm
   {NFSCodeEnv.FRAME(name, ty, cls_and_vars, NFSCodeEnv.EXTENDS_TABLE(bcl, re, cei),

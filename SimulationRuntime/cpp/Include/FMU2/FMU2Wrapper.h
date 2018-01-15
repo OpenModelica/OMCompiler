@@ -142,7 +142,7 @@ class FMU2Wrapper
                                 const fmi2String  value[]);
   virtual fmi2Status setClock  (const fmi2Integer clockIndex[],
                                 size_t nClockIndex, const fmi2Boolean tick[],
-                                const fmi2Boolean subactive[]);
+                                const fmi2Boolean *subactive);
   virtual fmi2Status setInterval(const fmi2Integer clockIndex[],
                                  size_t nClockIndex, const fmi2Real interval[]);
 
@@ -161,6 +161,14 @@ class FMU2Wrapper
   virtual fmi2Status getEventIndicators (fmi2Real eventIndicators[], size_t ni);
   virtual fmi2Status getContinuousStates(fmi2Real states[], size_t nx);
   virtual fmi2Status getNominalsOfContinuousStates(fmi2Real x_nominal[], size_t nx);
+
+  // Jacobian
+  fmi2Status getDirectionalDerivative(const fmi2ValueReference vrUnknown[],
+                                      size_t nUnknown,
+                                      const fmi2ValueReference vrKnown[],
+                                      size_t nKnown,
+                                      const fmi2Real dvKnown[],
+                                      fmi2Real dvUnknown[]);
 
  private:
   FMU2GlobalSettings _global_settings;

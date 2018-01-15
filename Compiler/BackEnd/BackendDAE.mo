@@ -38,6 +38,7 @@ encapsulated package BackendDAE
 import Absyn;
 import DAE;
 import DoubleEndedList;
+import ExpandableArray;
 import FCore;
 import HashTable3;
 import HashTableCG;
@@ -87,6 +88,8 @@ public uniontype SubClock
     MMath.Rational shift;
     Option<String> solver;
   end SUBCLOCK;
+  record INFERED_SUBCLOCK
+  end INFERED_SUBCLOCK;
 end SubClock;
 
 public constant SubClock DEFAULT_SUBCLOCK = SUBCLOCK(MMath.RAT1, MMath.RAT0, NONE());
@@ -211,13 +214,7 @@ uniontype VariableArray "array of Equations are expandable, to amortize the cost
 end VariableArray;
 
 public
-uniontype EquationArray
-  record EQUATION_ARRAY
-    Integer size "size of the Equations in scalar form";
-    Integer numberOfElement "no. elements";
-    array<Option<Equation>> equOptArr;
-  end EQUATION_ARRAY;
-end EquationArray;
+type EquationArray = ExpandableArray<Equation>;
 
 public
 uniontype Var "variables"
@@ -227,10 +224,11 @@ uniontype Var "variables"
     .DAE.VarDirection varDirection "input, output or bidirectional";
     .DAE.VarParallelism varParallelism "parallelism of the variable. parglobal, parlocal or non-parallel";
     Type varType "built-in type or enumeration";
-    Option< .DAE.Exp> bindExp "Binding expression e.g. for parameters";
+    Option<.DAE.Exp> bindExp "Binding expression e.g. for parameters";
+    Option<.DAE.Exp> tplExp "Variable is part of a tuple. Needed for the globalKnownVars and localKnownVars";
     .DAE.InstDims arryDim "array dimensions of non-expanded var";
     .DAE.ElementSource source "origin of variable";
-    Option< .DAE.VariableAttributes> values "values on built-in attributes";
+    Option<.DAE.VariableAttributes> values "values on built-in attributes";
     Option<TearingSelect> tearingSelectOption "value for TearingSelect";
     .DAE.Exp hideResult "expression from the hideResult annotation";
     Option<SCode.Comment> comment "this contains the comment and annotation from Absyn";
@@ -380,6 +378,8 @@ uniontype Equation
     EquationAttributes attr;
   end FOR_EQUATION;
 
+  record DUMMY_EQUATION
+  end DUMMY_EQUATION;
 end Equation;
 
 public
@@ -630,31 +630,22 @@ end TimeEvent;
 //
 // AdjacencyMatrixes
 //
-
 public
 type IncidenceMatrixElementEntry = Integer;
-
-public
 type IncidenceMatrixElement = list<IncidenceMatrixElementEntry>;
-
-public
 type IncidenceMatrix = array<IncidenceMatrixElement> "array<list<Integer>>";
-
-public
 type IncidenceMatrixT = IncidenceMatrix
 "a list of equation indices (1..n), one for each variable. Equations that -only-
  contain the state variable and not the derivative have a negative index.";
 
 public
+type AdjacencyMatrix = IncidenceMatrix;
+type AdjacencyMatrixT = IncidenceMatrixT;
+
+public
 type AdjacencyMatrixElementEnhancedEntry = tuple<Integer,Solvability,Constraints>;
-
-public
 type AdjacencyMatrixElementEnhanced = list<AdjacencyMatrixElementEnhancedEntry>;
-
-public
 type AdjacencyMatrixEnhanced = array<AdjacencyMatrixElementEnhanced>;
-
-public
 type AdjacencyMatrixTEnhanced = AdjacencyMatrixEnhanced;
 
 public
@@ -718,10 +709,12 @@ public constant Integer SymbolicJacobianDIndex = 4;
 public constant String derivativeNamePrefix = "$DERAlias";
 public constant String partialDerivativeNamePrefix = "$pDER";
 public constant String functionDerivativeNamePrefix = "$funDER";
+public constant String outputStateAliasPrefix = "$outputStateAlias_";
 
 public constant String optimizationMayerTermName = "$OMC$objectMayerTerm";
 public constant String optimizationLagrangeTermName = "$OMC$objectLagrangeTerm";
 public constant String symSolverDT = "__OMC_DT";
+public constant String homotopyLambda = "__HOM_LAMBDA";
 
 type FullJacobian = Option<list<tuple<Integer, Integer, Equation>>>;
 

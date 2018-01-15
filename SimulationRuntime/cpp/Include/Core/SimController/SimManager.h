@@ -23,9 +23,8 @@ public:
 
     // for real-time usage (VxWorks and BODAS)
     void runSingleStep();
-
+    void SetCheckTimeout(bool checkTimeout); // When the labeling reduction is used, then checking the timeout is enabeled
 private:
-    void computeEndTimes(std::vector<std::pair<double,int> > &tStopsSub);
     void computeSampleCycles();
 
     void runSingleProcess();
@@ -52,7 +51,7 @@ private:
                                                       _lastCycleTime;
     shared_ptr<Initialization>                 _initialization;
 
-
+    bool _checkTimeout;
     shared_ptr<ITime> _timeevent_system;
     shared_ptr<IEvent> _event_system;
     shared_ptr<IContinuous> _cont_system;

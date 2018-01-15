@@ -36,7 +36,7 @@ encapsulated package SimCode
 
 
   The entry points to this module are the translateModel function and the
-  translateFunctions fuction.
+  translateFunctions function.
 
   Except for the entry points, the only other public functions are those that
   can be imported and called from templates.
@@ -52,6 +52,7 @@ encapsulated package SimCode
 
 // public imports
 import Absyn;
+import AvlTreeCRToInt;
 import BackendDAE;
 import DAE;
 import HashTable;
@@ -108,7 +109,6 @@ uniontype SimCode
     list<list<SimEqSystem>> odeEquations;
     list<list<SimEqSystem>> algebraicEquations;
     list<ClockedPartition> clockedPartitions;
-    Boolean useHomotopy "true if homotopy(...) is used during initialization";
     list<SimEqSystem> initialEquations;
     list<SimEqSystem> initialEquations_lambda0;
     list<SimEqSystem> removedInitialEquations;
@@ -135,7 +135,9 @@ uniontype SimCode
     list<JacobianMatrix> jacobianMatrixes;
     Option<SimulationSettings> simulationSettingsOpt;
     String fileNamePrefix, fullPathPrefix "Used in FMI where files are generated in a special directory";
+    String fmuTargetName;
     HpcOmSimCode.HpcOmData hpcomData;
+    AvlTreeCRToInt.Tree valueReferences "Used in FMI";
     //maps each variable to an array of storage indices (with this information, arrays must not be unrolled) and a list for the array-dimensions
     //if the variable is not part of an array (if it is a scalar value), then the array has size 1
     HashTableCrIListArray.HashTable varToArrayIndexMapping;
@@ -215,6 +217,8 @@ uniontype ModelInfo "Container for metadata about a Modelica model."
     Integer nClocks;
     Integer nSubClocks;
     Boolean hasLargeLinearEquationSystems; // True if model has large linear eq. systems that are crucial for performance.
+    list<SimEqSystem> linearSystems;
+    list<SimEqSystem> nonLinearSystems;
   end MODELINFO;
 end ModelInfo;
 
@@ -377,6 +381,7 @@ uniontype LinearSystem
   record LINEARSYSTEM
     Integer index;
     Boolean partOfMixed;
+    Boolean tornSystem;
     list<SimCodeVar.SimVar> vars;
     list<DAE.Exp> beqs;
     list<tuple<Integer, Integer, SimEqSystem>> simJac;
@@ -385,6 +390,7 @@ uniontype LinearSystem
     Option<JacobianMatrix> jacobianMatrix;
     list<DAE.ElementSource> sources;
     Integer indexLinearSystem;
+    Integer nUnknowns "Number of variables that are solved in this system. Needed because 'crefs' only contains the iteration variables.";
   end LINEARSYSTEM;
 end LinearSystem;
 
@@ -395,9 +401,11 @@ uniontype NonlinearSystem
     list<SimEqSystem> eqs;
     list<DAE.ComponentRef> crefs;
     Integer indexNonLinearSystem;
+    Integer nUnknowns "Number of variables that are solved in this system. Needed because 'crefs' only contains the iteration variables.";
     Option<JacobianMatrix> jacobianMatrix;
     Boolean homotopySupport;
     Boolean mixedSystem;
+    Boolean tornSystem;
   end NONLINEARSYSTEM;
 end NonlinearSystem;
 
@@ -479,6 +487,7 @@ public uniontype FmiModelStructure
   record FMIMODELSTRUCTURE
     FmiOutputs fmiOutputs;
     FmiDerivatives fmiDerivatives;
+    Option<JacobianMatrix> continuousPartialDerivatives;
     FmiDiscreteStates fmiDiscreteStates;
     FmiInitialUnknowns fmiInitialUnknowns;
   end FMIMODELSTRUCTURE;

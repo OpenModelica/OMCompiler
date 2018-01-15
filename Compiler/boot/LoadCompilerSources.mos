@@ -2,7 +2,7 @@
 
 // "FrontEnd";
 if true then /* Suppress output */
-  setCommandLineOptions("+g=MetaModelica");
+  setCommandLineOptions("-g=MetaModelica");
   alwaysfiles := {
     // "../Util/MessagePack.mo", // TODO: Add once we bootstrapped omc, maybe
     "../Util/File.mo",
@@ -89,34 +89,48 @@ if true then /* Suppress output */
 
   // "NFFrontEnd";
     "../NFFrontEnd/NFBinding.mo",
+    "../NFFrontEnd/NFBindingOrigin.mo",
     "../NFFrontEnd/NFBuiltin.mo",
+    "../NFFrontEnd/NFBuiltinFuncs.mo",
+    "../NFFrontEnd/NFCall.mo",
+    "../NFFrontEnd/NFCeval.mo",
+    "../NFFrontEnd/NFComplexType.mo",
     "../NFFrontEnd/NFComponent.mo",
-    //"../NFFrontEnd/NFConnect2.mo",
-    //"../NFFrontEnd/NFConnectCheck.mo",
-    //"../NFFrontEnd/NFConnectEquations.mo",
-    //"../NFFrontEnd/NFConnectUtil2.mo",
-    //"../NFFrontEnd/NFConnectionSets.mo",
+    "../NFFrontEnd/NFComponentRef.mo",
+    "../NFFrontEnd/NFConvertDAE.mo",
+    "../NFFrontEnd/NFConnectEquations.mo",
+    "../NFFrontEnd/NFConnection.mo",
+    "../NFFrontEnd/NFConnections.mo",
+    "../NFFrontEnd/NFConnectionSets.mo",
+    "../NFFrontEnd/NFConnector.mo",
     "../NFFrontEnd/NFDimension.mo",
     "../NFFrontEnd/NFEquation.mo",
     //"../NFFrontEnd/NFEvalFunction.mo",
-    //"../NFFrontEnd/NFExpandableConnectors.mo",
     "../NFFrontEnd/NFExpression.mo",
-    "../NFFrontEnd/NFExtend.mo",
+    "../NFFrontEnd/NFExpressionIterator.mo",
+    "../NFFrontEnd/NFExpOrigin.mo",
+    "../NFFrontEnd/NFFlatModel.mo",
     "../NFFrontEnd/NFFlatten.mo",
-    "../NFFrontEnd/NFFunc.mo",
-    "../NFFrontEnd/NFImport.mo",
+    "../NFFrontEnd/NFFunction.mo",
     "../NFFrontEnd/NFInst.mo",
     "../NFFrontEnd/NFClass.mo",
+    "../NFFrontEnd/NFClassTree.mo",
     "../NFFrontEnd/NFInstNode.mo",
     "../NFFrontEnd/NFInstUtil.mo",
     "../NFFrontEnd/NFLookup.mo",
     "../NFFrontEnd/NFLookupState.mo",
-    "../NFFrontEnd/NFMod.mo",
+    "../NFFrontEnd/NFModifier.mo",
     "../NFFrontEnd/NFOperator.mo",
-    "../NFFrontEnd/NFPrefix.mo",
+    "../NFFrontEnd/NFPrefixes.mo",
+    "../NFFrontEnd/NFRangeIterator.mo",
     "../NFFrontEnd/NFRecord.mo",
+    "../NFFrontEnd/NFRestriction.mo",
+    "../NFFrontEnd/NFScalarize.mo",
+    "../NFFrontEnd/NFSimplifyExp.mo",
+    "../NFFrontEnd/NFSections.mo",
     "../NFFrontEnd/NFStatement.mo",
     "../NFFrontEnd/NFSubscript.mo",
+    "../NFFrontEnd/NFPackage.mo",
     "../NFFrontEnd/NFType.mo",
     "../NFFrontEnd/NFTypeCheck.mo",
     "../NFFrontEnd/NFTyping.mo",
@@ -125,6 +139,7 @@ if true then /* Suppress output */
     "../NFFrontEnd/NFHashTableUnitToString.mo",
     "../NFFrontEnd/NFHashTableCrToUnit.mo",
     "../NFFrontEnd/NFUnit.mo",
+    "../NFFrontEnd/NFVariable.mo",
 
   // "BackEnd";
     "../BackEnd/BackendDAE.mo",
@@ -167,7 +182,9 @@ if true then /* Suppress output */
   // "Util";
     "../Util/Array.mo",
     "../Util/AvlSetCR.mo",
+    "../Util/AvlSetPath.mo",
     "../Util/AvlSetString.mo",
+    "../Util/AvlTreeCRToInt.mo",
     "../Util/BaseAvlTree.mo",
     "../Util/BaseAvlSet.mo",
     "../Util/BaseHashTable.mo",
@@ -178,6 +195,7 @@ if true then /* Suppress output */
     "../Util/Corba.mo",
     //"../Util/Database.mo",
     "../Util/Debug.mo",
+    "../Util/DisjointSets.mo",
     "../Util/DoubleEndedList.mo",
     "../Util/DynLoad.mo",
     "../Util/ErrorExt.mo",
@@ -190,6 +208,7 @@ if true then /* Suppress output */
     "../Util/GraphStream.mo",
     "../Util/GraphStreamExt.mo",
     "../Util/HashSet.mo",
+    "../Util/HashSetExp.mo",
     "../Util/HashSetString.mo",
     "../Util/HashTable2.mo",
     "../Util/HashTable3.mo",
@@ -210,6 +229,8 @@ if true then /* Suppress output */
     "../Util/Lapack.mo",
     "../Util/List.mo",
     "../Util/ModelicaExternalC.mo",
+    "../Util/Mutable.mo",
+    "../Util/Pointer.mo",
     "../Util/Print.mo",
     "../Util/Settings.mo",
     "../Util/StackOverflow.mo",
@@ -217,7 +238,8 @@ if true then /* Suppress output */
     "../Util/Socket.mo",
     "../Util/System.mo",
     "../Util/Util.mo",
-    "../Util/VarTransform.mo"
+    "../Util/VarTransform.mo",
+    "../Util/ZeroMQ.mo"
   };
   backendfiles := if OpenModelica.Scripting.getEnvironmentVar("OPENMODELICA_BACKEND_STUBS")<>"" then
   {
@@ -237,6 +259,7 @@ if true then /* Suppress output */
     "../Stubs/ZeroCrossings.mo"
   }
   else {
+    "../BackEnd/AdjacencyMatrix.mo",
     "../BackEnd/BackendDAEFunc.mo",
     "../BackEnd/BackendDAECreate.mo",
     "../BackEnd/BackendDAEEXT.mo",
@@ -281,8 +304,6 @@ if true then /* Suppress output */
     "../BackEnd/SymbolicImplicitSolver.mo",
     "../BackEnd/SymbolicJacobian.mo",
     "../BackEnd/SynchronousFeatures.mo",
-    "../BackEnd/StateMachineFeatures.mo",
-    "../BackEnd/HashTableSM.mo",
     "../BackEnd/Tearing.mo",
     "../BackEnd/Uncertainties.mo",
     "../BackEnd/UnitCheck.mo",
@@ -302,7 +323,9 @@ if true then /* Suppress output */
     "../FrontEnd/UnitAbsynBuilder.mo",
     "../FrontEnd/UnitChecker.mo",
 
+    "../Lexers/LexerJSON.mo",
     "../Lexers/LexerModelicaDiff.mo",
+    "../Parsers/JSON.mo",
     "../Parsers/SimpleModelicaParser.mo",
 
     "../Script/Refactor.mo",
@@ -319,6 +342,7 @@ if true then /* Suppress output */
     "../SimCode/SimCode.mo",
     "../SimCode/SimCodeMain.mo",
     "../SimCode/SimCodeUtil.mo",
+    "../SimCode/ReduceDAE.mo",
 
     "../Template/CodegenAdevs.mo",
     "../Template/CodegenC.mo",

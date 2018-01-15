@@ -92,6 +92,7 @@ import GC;
 import Global;
 import Graph;
 import HashSet;
+import HashSetExp;
 import HpcOmSimCode;
 import Inline;
 import InstFunction;
@@ -99,6 +100,7 @@ import List;
 import Matching;
 import MetaModelica.Dangerous;
 import Parser;
+import Mutable;
 import PriorityQueue;
 import SCodeDump;
 import SCodeUtil;
@@ -111,7 +113,7 @@ import Util;
 import ValuesUtil;
 import VisualXML;
 import ZeroCrossings;
-
+import ReduceDAE;
 protected constant String UNDERLINE = "========================================";
 
 protected function compareEqSystems
@@ -151,12 +153,9 @@ end simulationFindLiterals;
 public function createSimCode "entry point to create SimCode from BackendDAE."
   input BackendDAE.BackendDAE inBackendDAE;
   input BackendDAE.BackendDAE inInitDAE;
-  input Option<BackendDAE.InlineData> inInlineData;
-  input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
   input Option<BackendDAE.BackendDAE> inInitDAE_lambda0;
+  input Option<BackendDAE.InlineData> inInlineData;
   input list<BackendDAE.Equation> inRemovedInitialEquationLst;
-  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
-  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
   input Absyn.Path inClassName;
   input String filenamePrefix;
   input String inFileDir;
@@ -172,6 +171,8 @@ public function createSimCode "entry point to create SimCode from BackendDAE."
   input Absyn.FunctionArgs args;
   input Boolean isFMU=false;
   input String FMUVersion="";
+  input String fmuTargetName="";
+  input BackendDAE.SymbolicJacobians inFMIDer = {};
   output SimCode.SimCode simCode;
   output tuple<Integer, list<tuple<Integer, Integer>>> outMapping "the highest simEqIndex in the mapping and the mapping simEq-Index -> scc-Index itself";
 protected
@@ -185,8 +186,8 @@ protected
   HashTableCrIListArray.HashTable varToArrayIndexMapping "maps each array-variable to a array of positions";
   HashTableCrILst.HashTable varToIndexMapping "maps each variable to an array position";
   Integer maxDelayedExpIndex, uniqueEqIndex, numberofEqns, numStateSets, numberOfJacobians, sccOffset;
-  Integer numberofLinearSys, numberofNonLinearSys, numberofMixedSys;
-  Option<SimCode.FmiModelStructure> modelStruct;
+  Integer numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberofFixedParameters;
+  Option<SimCode.FmiModelStructure> modelStructure = NONE();
   SimCode.BackendMapping backendMapping;
   SimCode.ExtObjInfo extObjInfo;
   SimCode.HashTableCrefToSimVar crefToSimVarHT;
@@ -198,8 +199,6 @@ protected
   //list<BackendDAE.Equation> paramAsserts, remEqLst;
   list<BackendDAE.Equation> removedInitialEquationLst;
   list<BackendDAE.TimeEvent> timeEvents;
-  list<BackendDAE.Var> allPrimaryParameters "already sorted";
-  list<BackendDAE.Var> primaryParameters "already sorted";
   BackendDAE.ZeroCrossingSet zeroCrossingsSet, sampleZCSet;
   DoubleEndedList<BackendDAE.ZeroCrossing> de_relations;
   list<BackendDAE.ZeroCrossing> zeroCrossings, sampleZC, relations;
@@ -208,7 +207,7 @@ protected
   list<DAE.Constraint> constraints;
   list<DAE.Exp> lits;
   list<SimCode.ClockedPartition> clockedPartitions;
-  list<SimCode.JacobianMatrix> LinearMatrices, SymbolicJacs, SymbolicJacsTemp, SymbolicJacsStateSelect, SymbolicJacsStateSelectInternal, SymbolicJacsNLS;
+  list<SimCode.JacobianMatrix> LinearMatrices, SymbolicJacs, SymbolicJacsTemp, SymbolicJacsStateSelect, SymbolicJacsStateSelectInternal, SymbolicJacsNLS, SymbolicJacsFMI={};
   list<SimCode.SimEqSystem> algorithmAndEquationAsserts;
   list<SimCode.SimEqSystem> localKnownVars;
   list<SimCode.SimEqSystem> allEquations;
@@ -246,10 +245,11 @@ protected
   BackendDAE.InlineData inlineData;
   list<SimCodeVar.SimVar> inlineSimKnVars;
   BackendDAE.Variables emptyVars;
-  constant Boolean debug = false;
   Integer SymEuler_help = 0;
   SimCodeVar.SimVar dtSimVar;
   BackendDAE.Var dtVar;
+
+  constant Boolean debug = false;
 algorithm
   try
     execStat("Backend phase and start with SimCode phase");
@@ -269,13 +269,22 @@ algorithm
     end if;
 
     // initialization stuff
-    (initialEquations, removedInitialEquations, uniqueEqIndex, tempvars) := createInitialEquations(inInitDAE, inRemovedInitialEquationLst, uniqueEqIndex, {});
+    // ********************
+
+    // generate equations for initDAE
+    (initialEquations, uniqueEqIndex, tempvars) := createInitialEquations(inInitDAE, uniqueEqIndex, {});
+
+    // generate equations for initDAE_lambda0
     if isSome(inInitDAE_lambda0) then
       SOME(initDAE_lambda0) := inInitDAE_lambda0;
       (initialEquations_lambda0, uniqueEqIndex, tempvars) := createInitialEquations_lambda0(initDAE_lambda0, uniqueEqIndex, tempvars);
     else
       initialEquations_lambda0 := {};
     end if;
+
+    // generate equations for removed initial equations
+    (removedInitialEquations, uniqueEqIndex, tempvars) := createNonlinearResidualEquations(inRemovedInitialEquationLst, uniqueEqIndex, tempvars);
+
     execStat("simCode: created initialization part");
 
     shared as BackendDAE.SHARED(globalKnownVars=globalKnownVars,
@@ -334,7 +343,7 @@ algorithm
 
     // Assertions and crap
     // create parameter equations
-    ((uniqueEqIndex, startValueEquations)) := BackendDAEUtil.foldEqSystem(dlow, createStartValueEquations, (uniqueEqIndex, {}));
+    ((uniqueEqIndex, startValueEquations, _)) := BackendDAEUtil.foldEqSystem(dlow, createStartValueEquations, (uniqueEqIndex, {}, globalKnownVars));
     if debug then execStat("simCode: createStartValueEquations"); end if;
     ((uniqueEqIndex, nominalValueEquations)) := BackendDAEUtil.foldEqSystem(dlow, createNominalValueEquations, (uniqueEqIndex, {}));
     if debug then execStat("simCode: createNominalValueEquations"); end if;
@@ -344,7 +353,7 @@ algorithm
     if debug then execStat("simCode: createMaxValueEquations"); end if;
     ((uniqueEqIndex, parameterEquations)) := BackendDAEUtil.foldEqSystem(dlow, createVarNominalAssertFromVars, (uniqueEqIndex, {}));
     if debug then execStat("simCode: createVarNominalAssertFromVars"); end if;
-    (uniqueEqIndex, parameterEquations) := createParameterEquations(uniqueEqIndex, parameterEquations, inPrimaryParameters, inAllPrimaryParameters);
+    (uniqueEqIndex, parameterEquations, numberofFixedParameters) := createParameterEquations(uniqueEqIndex, parameterEquations, globalKnownVars);
     if debug then execStat("simCode: createParameterEquations"); end if;
     //((uniqueEqIndex, paramAssertSimEqs)) := BackendEquation.traverseEquationArray(BackendEquation.listEquation(paramAsserts), traversedlowEqToSimEqSystem, (uniqueEqIndex, {}));
     //parameterEquations := listAppend(parameterEquations, paramAssertSimEqs);
@@ -393,11 +402,36 @@ algorithm
     modelInfo := createModelInfo(inClassName, dlow, inInitDAE, functions, {}, numStateSets, inFileDir, listLength(clockedSysts), tempvars);
     if debug then execStat("simCode: createModelInfo and variables"); end if;
 
+    //build labels
+    if(boolAnd(ifcpp,Flags.getConfigBool(Flags.LABELED_REDUCTION))) then
+      Flags.setConfigBool(Flags.GENERATE_LABELED_SIMCODE,true);
+    end if;
+
+    if(ifcpp) then
+      if Flags.getConfigBool(Flags.GENERATE_LABELED_SIMCODE) then
+        (allEquations,modelInfo) := ReduceDAE.buildLabels(allEquations,modelInfo,{},args);
+        //Flags.set(Flags.REDUCE_DAE,true);
+        if debug then execStat("ReduceDAE: buildLabels"); end if;
+      end if;
+    end if;
+
+    tmpSimVars := modelInfo.vars;
+
+    //reduce terms
+    if(ifcpp) then
+      if Flags.getConfigBool(Flags.REDUCE_TERMS) then
+        (allEquations,modelInfo) := ReduceDAE.reduceTerms(allEquations,modelInfo,args);
+        Flags.setConfigBool(Flags.REDUCE_TERMS, false);
+        Flags.disableDebug(Flags.REDUCE_DAE);
+        if debug then execStat("ReduceDAE: reduceTerms"); end if;
+      end if;
+    end if;
     // external objects
     extObjInfo := createExtObjInfo(shared);
 
     // update index of zero-Crossings after equations are created
     zeroCrossings := updateZeroCrossEqnIndex(zeroCrossings, eqBackendSimCodeMapping, BackendDAEUtil.equationArraySizeBDAE(dlow));
+    if debug then execStat("simCode: update zero crossing index"); end if;
 
     // replace div operator with div operator with check of Division by zero
     allEquations := List.map(allEquations, addDivExpErrorMsgtoSimEqSystem);
@@ -413,53 +447,57 @@ algorithm
     initialEquations := List.map(initialEquations, addDivExpErrorMsgtoSimEqSystem);
     initialEquations_lambda0 := List.map(initialEquations_lambda0, addDivExpErrorMsgtoSimEqSystem);
     removedInitialEquations := List.map(removedInitialEquations, addDivExpErrorMsgtoSimEqSystem);
+    if debug then execStat("simCode: addDivExpErrorMsgtoSimEqSystem"); end if;
 
-    // update indexNonLinear in SES_NONLINEAR and count
+    // collect all LinearSystem and NonlinearSystem algebraic system in modelInfo and update
+    // the corresponding index (indexNonLinear, indexLinear) in SES_NONLINEAR and SES_LINEAR
+    // Also collect all jacobians
     SymbolicJacsNLS := {};
-    (initialEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacsTemp) := countandIndexAlgebraicLoops(initialEquations, 0, 0, 0, 0, {});
+    (initialEquations, modelInfo, SymbolicJacsTemp) := addAlgebraicLoopsModelInfo(initialEquations, modelInfo);
     SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
-    (initialEquations_lambda0, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacsTemp) := countandIndexAlgebraicLoops(initialEquations_lambda0, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {});
+    (initialEquations_lambda0, modelInfo, SymbolicJacsTemp) := addAlgebraicLoopsModelInfo(initialEquations_lambda0, modelInfo);
     SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
-    (parameterEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacsTemp) := countandIndexAlgebraicLoops(parameterEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {});
+    (parameterEquations, modelInfo, SymbolicJacsTemp) := addAlgebraicLoopsModelInfo(parameterEquations, modelInfo);
     SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
-    (allEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacsTemp) := countandIndexAlgebraicLoops(allEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {});
+    (allEquations, modelInfo, SymbolicJacsTemp) := addAlgebraicLoopsModelInfo(allEquations, modelInfo);
     SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
-    (clockedPartitions, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacsTemp) := countandIndexAlgebraicLoopsClockPartitions(clockedPartitions, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {});
+    (clockedPartitions, modelInfo, SymbolicJacsTemp) := addAlgebraicLoopsClockPartitions(clockedPartitions, modelInfo);
     SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
-    (inlineEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacsTemp) := countandIndexAlgebraicLoops(inlineEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {});
+    (inlineEquations, modelInfo, SymbolicJacsTemp) := addAlgebraicLoopsModelInfo(inlineEquations, modelInfo);
     SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
 
     // collect symbolic jacobians from state selection
-    (stateSets, SymbolicJacsStateSelect, SymbolicJacsStateSelectInternal, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians) := indexStateSets(stateSets, {}, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {}, {});
+    (stateSets, modelInfo, SymbolicJacsStateSelect) :=  addAlgebraicLoopsModelInfoStateSets(stateSets, modelInfo);
+    if debug then execStat("simCode: collect and index LS/NLS in modelInfo"); end if;
 
-    // generate jacobian or linear model matrices
-    (LinearMatrices, uniqueEqIndex) := createJacobianLinearCode(symJacs, modelInfo, uniqueEqIndex);
-
-    // collect jacobian equation only for equantion info file
-    jacobianEquations := collectAllJacobianEquations(LinearMatrices);
-
+    // collect fmi partial derivative
+    if FMI.isFMIVersion20(FMUVersion) then
+      (SymbolicJacsFMI, modelStructure, modelInfo, SymbolicJacsTemp, uniqueEqIndex) := createFMIModelStructure(inFMIDer, modelInfo, uniqueEqIndex);
+      SymbolicJacsNLS := listAppend(SymbolicJacsTemp, SymbolicJacsNLS);
+      if debug then execStat("simCode: create FMI model structure"); end if;
+    end if;
     // collect symbolic jacobians in linear loops of the overall jacobians
-    (_, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacs) := countandIndexAlgebraicLoops({}, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, LinearMatrices);
+    (LinearMatrices, uniqueEqIndex) := createJacobianLinearCode(symJacs, modelInfo, uniqueEqIndex);
+    (SymbolicJacs, modelInfo, SymbolicJacsTemp) := addAlgebraicLoopsModelInfoSymJacs(LinearMatrices, modelInfo);
+    SymbolicJacs := listAppend(SymbolicJacsFMI, SymbolicJacs);
+    SymbolicJacs := listAppend(SymbolicJacs, SymbolicJacsStateSelect);
+    // collect jacobian equation only for equantion info file
+    jacobianEquations := collectAllJacobianEquations(SymbolicJacs);
+    if debug then execStat("simCode: create Jacobian linear code"); end if;
 
-    jacobianEquations := listAppend(collectAllJacobianEquations(SymbolicJacsStateSelect), jacobianEquations);
-    SymbolicJacsNLS := listAppend(SymbolicJacsStateSelectInternal, SymbolicJacsNLS);
-    SymbolicJacsNLS := listAppend(SymbolicJacsStateSelect, SymbolicJacsNLS);
-    SymbolicJacs := listAppend(SymbolicJacsNLS, SymbolicJacs);
+    SymbolicJacs := listAppend(listReverse(SymbolicJacsNLS), SymbolicJacs);
+    SymbolicJacs := listAppend(SymbolicJacs, SymbolicJacsTemp);
     jacobianSimvars := collectAllJacobianVars(SymbolicJacs);
     modelInfo := setJacobianVars(jacobianSimvars, modelInfo);
     seedVars := collectAllSeedVars(SymbolicJacs);
     modelInfo := setSeedVars(seedVars, modelInfo);
     execStat("simCode: created linear, non-linear and system jacobian parts");
 
-
     // map index also odeEquations and algebraicEquations
     systemIndexMap := List.fold(allEquations, getSystemIndexMap, arrayCreate(uniqueEqIndex, -1));
     odeEquations := List.mapList1_1(odeEquations, setSystemIndexMap, systemIndexMap);
     algebraicEquations := List.mapList1_1(algebraicEquations, setSystemIndexMap, systemIndexMap);
-    numberofEqns := uniqueEqIndex; /* This is a *much* better estimate than the guessed number of equations */
-
-    // create model info
-    modelInfo := addNumEqnsandNumofSystems(modelInfo, numberofEqns, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians);
+    modelInfo := addNumEqns(modelInfo, uniqueEqIndex /* This is a *much* better estimate than the guessed number of equations */ );
 
     odeEquations := makeEqualLengthLists(odeEquations, Config.noProc());
     algebraicEquations := makeEqualLengthLists(algebraicEquations, Config.noProc());
@@ -504,7 +542,7 @@ algorithm
 
     if Flags.getConfigBool(Flags.CALCULATE_SENSITIVITIES) then
       tmpSimVars := modelInfo.vars;
-      (sensitivityVars, countSenParams) := createSimVarsForSensitivities(tmpSimVars.stateVars, tmpSimVars.paramVars, inAllPrimaryParameters);
+      (sensitivityVars, countSenParams) := createSimVarsForSensitivities(tmpSimVars.stateVars, tmpSimVars.paramVars, numberofFixedParameters);
       sensitivityVars := rewriteIndex(sensitivityVars, 0);
       tmpSimVars.sensitivityVars := sensitivityVars;
       modelInfo.vars := tmpSimVars;
@@ -517,18 +555,12 @@ algorithm
     backendMapping := setBackendVarMapping(inBackendDAE, crefToSimVarHT, modelInfo, backendMapping);
     //dumpBackendMapping(backendMapping);
 
-    if if isFMU then FMI.isFMIVersion20(FMUVersion) else false then
-      modelStruct := createFMIModelStructure(symJacs, modelInfo, crefToSimVarHT);
-    else
-      modelStruct := NONE();
-    end if;
-
     (varToArrayIndexMapping, varToIndexMapping) := createVarToArrayIndexMapping(modelInfo);
     //print("HASHTABLE MAPPING\n\n");
     //BaseHashTable.dumpHashTable(varToArrayIndexMapping);
     //print("END MAPPING\n\n");
 
-    (crefToClockIndexHT, _) := List.fold(inBackendDAE.eqs, collectClockedVars, (HashTable.emptyHashTable(), 1));
+    (crefToClockIndexHT, _) := List.fold(listReverse(inBackendDAE.eqs), collectClockedVars, (HashTable.emptyHashTable(), 1));
 
     simCode := SimCode.SIMCODE(modelInfo,
                               {}, // Set by the traversal below...
@@ -539,7 +571,6 @@ algorithm
                               odeEquations,
                               algebraicEquations,
                               clockedPartitions,
-                              inUseHomotopy,
                               initialEquations,
                               initialEquations_lambda0,
                               removedInitialEquations,
@@ -566,13 +597,15 @@ algorithm
                               simSettingsOpt,
                               filenamePrefix,
                               if isFMU then (filenamePrefix+".fmutmp/sources/") else "",
+                              fmuTargetName,
                               HpcOmSimCode.emptyHpcomData,
+                              if isFMU then getValueReferenceMapping(modelInfo) else AvlTreeCRToInt.EMPTY(),
                               varToArrayIndexMapping,
                               varToIndexMapping,
                               crefToSimVarHT,
                               crefToClockIndexHT,
                               SOME(backendMapping),
-                              modelStruct,
+                              modelStructure,
                               SimCode.emptyPartitionData,
                               daeModeData,
                               inlineEquations
@@ -777,6 +810,7 @@ algorithm
     off := off + basePartition.nSubClocks;
     clockedPartitions := SimCode.CLOCKED_PARTITION(basePartition.clock, simSubPartitions)::clockedPartitions;
   end for;
+    clockedPartitions := listReverse(clockedPartitions); // in order to keep the correct indexes for the correct clkfire-calls
 end createClockedSimPartitions;
 
 protected function collectClockedVars "author: rfranke
@@ -893,7 +927,7 @@ protected function setJacobianVars "author: unknown
 protected
   SimCodeVar.SimVars vars;
 algorithm
-  if listLength(iJacobianVars) > 0 then
+  if not listEmpty(iJacobianVars) then
     vars := oModelInfo.vars;
     vars.jacobianVars := iJacobianVars;
     oModelInfo.vars := vars;
@@ -913,25 +947,17 @@ algorithm
   modelInfo.vars := vars;
 end setSeedVars;
 
-protected function addNumEqnsandNumofSystems
+protected function addNumEqns
   input SimCode.ModelInfo modelInfo;
   input Integer numEqns;
-  input Integer numLinearSys;
-  input Integer numNonLinearSys;
-  input Integer numMixedLinearSys;
-  input Integer numOfJacobians;
   output SimCode.ModelInfo omodelInfo = modelInfo;
 protected
   SimCode.VarInfo varInfo;
 algorithm
   varInfo := omodelInfo.varInfo;
   varInfo.numEquations := numEqns;
-  varInfo.numLinearSystems := numLinearSys;
-  varInfo.numNonLinearSystems := numNonLinearSys;
-  varInfo.numMixedSystems := numMixedLinearSys;
-  varInfo.numJacobians := numOfJacobians;
   omodelInfo.varInfo := varInfo;
-end addNumEqnsandNumofSystems;
+end addNumEqns;
 
 protected function getSystemIndexMap
   input SimCode.SimEqSystem inEqn;
@@ -985,7 +1011,7 @@ protected function setSystemIndexMap "
 algorithm
   outEqn := match(inEqn, inSysIndexMap)
     local
-      Integer index, index2, sysIndex, sysIndex2;
+      Integer index, index2, sysIndex, sysIndex2, nUnknowns, nUnknowns2;
       list<SimCode.SimEqSystem> eqs, eqs2;
       list<DAE.ComponentRef> crefs, crefs2;
       SimCode.SimEqSystem cont;
@@ -998,30 +1024,30 @@ algorithm
       list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJac,simJac2;
       list<DAE.ElementSource> sources,sources2;
       Boolean homotopySupport, homotopySupport2;
-      Boolean mixedSystem, mixedSystem2;
+      Boolean mixedSystem, mixedSystem2, tornSystem, tornSystem2;
 
     // no dynamic tearing
-    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, optSymJac, sources, _), NONE()), _) equation
+    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, beqs, simJac, eqs, optSymJac, sources, _, nUnknowns), NONE()), _) equation
       sysIndex = inSysIndexMap[index];
-    then SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, optSymJac, sources, sysIndex), NONE());
+    then SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, beqs, simJac, eqs, optSymJac, sources, sysIndex, nUnknowns), NONE());
 
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, optSymJac, homotopySupport, mixedSystem), NONE()), _) equation
+    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, nUnknowns, optSymJac, homotopySupport, mixedSystem, tornSystem), NONE()), _) equation
       eqs = List.map1(eqs, setSystemIndexMap, inSysIndexMap);
       sysIndex = inSysIndexMap[index];
-    then SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, sysIndex, optSymJac, homotopySupport, mixedSystem), NONE());
+    then SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, sysIndex, nUnknowns, optSymJac, homotopySupport, mixedSystem, tornSystem), NONE());
 
     // dynamic tearing
-    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, optSymJac, sources, _), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, vars2, beqs2, simJac2, eqs2, optSymJac2, sources2, _))), _) equation
+    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, beqs, simJac, eqs, optSymJac, sources, _, nUnknowns), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, _, vars2, beqs2, simJac2, eqs2, optSymJac2, sources2, _, nUnknowns2))), _) equation
       sysIndex = inSysIndexMap[index];
       sysIndex2 = inSysIndexMap[index2];
-    then SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, optSymJac, sources, sysIndex), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, vars2, beqs2, simJac2, eqs2, optSymJac2, sources2, sysIndex2)));
+    then SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, beqs, simJac, eqs, optSymJac, sources, sysIndex, nUnknowns), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, tornSystem, vars2, beqs2, simJac2, eqs2, optSymJac2, sources2, sysIndex2, nUnknowns2)));
 
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=eqs, crefs=crefs, jacobianMatrix=optSymJac, homotopySupport=homotopySupport, mixedSystem=mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index=index2, eqs=eqs2, crefs=crefs2, jacobianMatrix=optSymJac2, homotopySupport=homotopySupport2, mixedSystem=mixedSystem2))), _) equation
+    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=eqs, crefs=crefs, nUnknowns=nUnknowns, jacobianMatrix=optSymJac, homotopySupport=homotopySupport, mixedSystem=mixedSystem, tornSystem=tornSystem), SOME(SimCode.NONLINEARSYSTEM(index=index2, eqs=eqs2, crefs=crefs2, nUnknowns=nUnknowns2, jacobianMatrix=optSymJac2, homotopySupport=homotopySupport2, mixedSystem=mixedSystem2, tornSystem=tornSystem2))), _) equation
       eqs = List.map1(eqs, setSystemIndexMap, inSysIndexMap);
       sysIndex = inSysIndexMap[index];
       eqs2 = List.map1(eqs2, setSystemIndexMap, inSysIndexMap);
       sysIndex2 = inSysIndexMap[index2];
-    then SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, sysIndex, optSymJac, homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, sysIndex2, optSymJac2, homotopySupport2, mixedSystem2)));
+    then SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, sysIndex, nUnknowns, optSymJac, homotopySupport, mixedSystem, tornSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, sysIndex2, nUnknowns2, optSymJac2, homotopySupport2, mixedSystem2, tornSystem2)));
 
     case(SimCode.SES_MIXED(index, cont, discVars, discEqs, _), _) equation
       sysIndex = inSysIndexMap[index];
@@ -1033,236 +1059,215 @@ algorithm
   end match;
 end setSystemIndexMap;
 
-protected function countandIndexAlgebraicLoops "
-  counts algebraic loops and updates index of the systems, further all
-  symbolic jacobians are collected and therefore we also need to seek
-  for algebraic loops."
-  input list<SimCode.SimEqSystem> inEqns;
-  input Integer inLinearSysIndex;
-  input Integer inNonLinSysIndex;
-  input Integer inMixedSysIndex;
-  input Integer inJacobianIndex;
-  input list<SimCode.JacobianMatrix> inSymJacs;
-  output list<SimCode.SimEqSystem> outEqns;
-  output Integer outLinearSysIndex;
-  output Integer outNonLinSysIndex;
-  output Integer outMixedSysIndex;
-  output Integer outJacobianIndex;
-  output list<SimCode.JacobianMatrix> outSymJacs;
-algorithm
-  (outEqns, outSymJacs, outLinearSysIndex, outNonLinSysIndex, outMixedSysIndex, outJacobianIndex) := countandIndexAlgebraicLoopsWork(inEqns, inSymJacs, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, {}, {});
-end countandIndexAlgebraicLoops;
-
-protected function countandIndexAlgebraicLoopsWork "
-  counts algebraic loops and updates index of the systems, further all
-  symbolic jacobians are collected and therefore we also need to seek
-  for algebraic loops."
-  input list<SimCode.SimEqSystem> inEqns;
-  input list<SimCode.JacobianMatrix> inSymJacs;
-  input Integer inLinearSysIndex;
-  input Integer inNonLinSysIndex;
-  input Integer inMixedSysIndex;
-  input Integer inJacobianIndex;
-  input list<SimCode.SimEqSystem> inEqnsAcc;
-  input list<SimCode.JacobianMatrix> inSymJacsAcc;
-  output list<SimCode.SimEqSystem> outEqns;
-  output list<SimCode.JacobianMatrix> outSymJacs;
-  output Integer outLinearSysIndex;
-  output Integer outNonLinSysIndex;
-  output Integer outMixedSysIndex;
-  output Integer outJacobianIndex;
-algorithm
-  (outEqns, outSymJacs, outLinearSysIndex, outNonLinSysIndex, outMixedSysIndex, outJacobianIndex) := match(inEqns, inSymJacs, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, inEqnsAcc, inSymJacsAcc)
-    local
-      Integer index, index2, countLinearSys, countNonLinSys, countMixedSys, countJacobians;
-      list<SimCode.SimEqSystem> eqs, eqs2, rest, res, accEqs;
-      list<DAE.ComponentRef> crefs, crefs2;
-      SimCode.SimEqSystem eq, cont;
-      list<SimCodeVar.SimVar> discVars;
-      list<SimCode.SimEqSystem> discEqs;
-      list<SimCode.JacobianMatrix> symjacs, symjacs2, restSymJacs, accJac;
-      Option<SimCode.JacobianMatrix> optSymJac;
-      SimCode.JacobianMatrix symJac, symJac2;
-      Boolean partOfMixed,partOfMixed2;
-      list<SimCodeVar.SimVar> vars,vars2;
-      list<DAE.Exp> beqs,beqs2;
-      list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJac,simJac2;
-      list<DAE.ElementSource> sources,sources2;
-      Boolean homotopySupport, homotopySupport2;
-      Boolean mixedSystem, mixedSystem2;
-
-    case ({}, {}, _, _, _, _, _, _)
-      then (listReverse(inEqnsAcc), inSymJacsAcc, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex);
-
-    case ({}, symJac::restSymJacs, _, _, _, _, _, _)
-      equation
-        (symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs) = countandIndexAlgebraicLoopsSymJac(symJac, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex);
-        symjacs = symJac::listAppend(symjacs,inSymJacsAcc);
-        (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork({}, restSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians, inEqnsAcc, symjacs);
-      then (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    // No dynamic tearing
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, NONE(), homotopySupport, mixedSystem), NONE())::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex, inNonLinSysIndex+1, inMixedSysIndex, inJacobianIndex, {}, {});
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, inSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians, SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, inNonLinSysIndex, NONE(), homotopySupport, mixedSystem), NONE())::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, SOME(symJac as SimCode.JAC_MATRIX(columns={})), homotopySupport, mixedSystem), NONE())::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex, inNonLinSysIndex+1, inMixedSysIndex, inJacobianIndex, {}, {});
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, inSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians, SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, inNonLinSysIndex, SOME(symJac), homotopySupport, mixedSystem), NONE())::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, SOME(symJac), homotopySupport, mixedSystem), NONE())::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex, inNonLinSysIndex+1, inMixedSysIndex, inJacobianIndex, {}, {});
-        (symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs) = countandIndexAlgebraicLoopsSymJac(symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, listAppend(symjacs,inSymJacs), countLinearSys, countNonLinSys, countMixedSys, countJacobians, SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, inNonLinSysIndex, SOME(symJac), homotopySupport, mixedSystem), NONE())::inEqnsAcc, symJac::inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case (SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, NONE(), sources, _), NONE())::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex+1, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex,  {}, {});
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, inSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians,  SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, NONE(), sources, inLinearSysIndex), NONE())::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case (SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, SOME(symJac), sources, _), NONE())::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex+1, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex,  {}, {});
-        (symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs) = countandIndexAlgebraicLoopsSymJac(symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, listAppend(symjacs,inSymJacs), countLinearSys, countNonLinSys, countMixedSys, countJacobians,  SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, SOME(symJac), sources, inLinearSysIndex), NONE())::inEqnsAcc, symJac::inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    // Dynamic tearing
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, NONE(), homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, _, NONE(), homotopySupport2, mixedSystem2)))::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex, inNonLinSysIndex+1, inMixedSysIndex, inJacobianIndex, {}, {});
-        (eqs2,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs2, {}, countLinearSys, countNonLinSys+1, countMixedSys, countJacobians, {}, {});
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, inSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians, SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, inNonLinSysIndex, NONE(), homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, inNonLinSysIndex+1, NONE(), homotopySupport2, mixedSystem2)))::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, SOME(symJac as SimCode.JAC_MATRIX(columns={})), homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, _, SOME(symJac2 as SimCode.JAC_MATRIX(columns={})), homotopySupport2, mixedSystem2)))::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex, inNonLinSysIndex+1, inMixedSysIndex, inJacobianIndex, {}, {});
-        (eqs2,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs2, {}, countLinearSys, countNonLinSys+1, countMixedSys, countJacobians, {}, {});
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, inSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians, SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, inNonLinSysIndex, SOME(symJac), homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, inNonLinSysIndex+1, SOME(symJac2), homotopySupport2, mixedSystem2)))::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, _, SOME(symJac), homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, _, SOME(symJac2), homotopySupport2, mixedSystem2)))::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex, inNonLinSysIndex+1, inMixedSysIndex, inJacobianIndex, {}, {});
-        (eqs2, symjacs2, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs2, {}, countLinearSys, countNonLinSys+1, countMixedSys, countJacobians, {}, {});
-        (symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs) = countandIndexAlgebraicLoopsSymJac(symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-        (symJac2, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs2) = countandIndexAlgebraicLoopsSymJac(symJac2, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, listAppend(symjacs2,listAppend(symjacs,inSymJacs)), countLinearSys, countNonLinSys, countMixedSys, countJacobians, SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, eqs, crefs, inNonLinSysIndex, SOME(symJac), homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index2, eqs2, crefs2, inNonLinSysIndex+1, SOME(symJac2), homotopySupport2, mixedSystem2)))::inEqnsAcc, symJac2::symJac::inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case (SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, NONE(), sources, _), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, vars2, beqs2, simJac2, eqs2, NONE(), sources2, _)))::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex+1, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex,  {}, {});
-        (eqs2,_, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs2, {}, countLinearSys+1, countNonLinSys, countMixedSys, countJacobians,  {}, {});
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, inSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians,  SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, NONE(), sources, inLinearSysIndex), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, vars2, beqs2, simJac2, eqs2, NONE(), sources2, inLinearSysIndex+1)))::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case (SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, SOME(symJac), sources, _), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, vars2, beqs2, simJac2, eqs2, SOME(symJac2), sources2, _)))::rest, _, _, _, _, _, _, _)
-      equation
-        (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs, {}, inLinearSysIndex+1, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex,  {}, {});
-        (eqs2, symjacs2, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(eqs2, {}, countLinearSys+1, countNonLinSys, countMixedSys, countJacobians,  {}, {});
-        (symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs) = countandIndexAlgebraicLoopsSymJac(symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-        (symJac2, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs2) = countandIndexAlgebraicLoopsSymJac(symJac2, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, listAppend(symjacs2,listAppend(symjacs,inSymJacs)), countLinearSys, countNonLinSys, countMixedSys, countJacobians,  SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, beqs, simJac, eqs, SOME(symJac), sources, inLinearSysIndex), SOME(SimCode.LINEARSYSTEM(index2, partOfMixed2, vars2, beqs2, simJac2, eqs2, SOME(symJac2), sources2, inLinearSysIndex+1)))::inEqnsAcc, symJac2::symJac::inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case (SimCode.SES_MIXED(index, cont, discVars, discEqs, _)::rest, _, _, _, _, _, _, _)
-      equation
-        ({cont}, _, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork({cont}, inSymJacs, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, {}, {});
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, {}, countLinearSys, countNonLinSys, countMixedSys+1, countJacobians, SimCode.SES_MIXED(index, cont, discVars, discEqs, inMixedSysIndex)::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-
-    case (eq::rest, _, _, _, _, _, _, _)
-      equation
-        (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork(rest, inSymJacs, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, eq::inEqnsAcc, inSymJacsAcc);
-      then (res, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
-  end match;
-end countandIndexAlgebraicLoopsWork;
-
-protected function countandIndexAlgebraicLoopsSymJac "
-  helper function to countandIndexAlgebraicLoops"
-  input SimCode.JacobianMatrix inSymjac;
-  input Integer inLinearSysIndex;
-  input Integer inNonLinSysIndex;
-  input Integer inMixedSysIndex;
-  input Integer inJacobianIndex;
-  output SimCode.JacobianMatrix outSymjac;
-  output Integer outLinearSysIndex;
-  output Integer outNonLinSysIndex;
-  output Integer outMixedSysIndex;
-  output Integer outJacobianIndex;
-  output list<SimCode.JacobianMatrix> outSymJacs;
+protected function addAlgebraicLoopsModelInfo "
+Adds algebraic loops from list of SimEqSystem into ModelInfo
+and SimEqSystem equation algebraic system index."
+  input output list<SimCode.SimEqSystem> eqns;
+  input output SimCode.ModelInfo modelInfo;
+  output list<SimCode.JacobianMatrix> symJacs = {};
 protected
-  list<SimCode.JacobianColumn> columns;
-  list<SimCodeVar.SimVar> vars;
-  String name;
-  SimCode.SparsityPattern sparsity,sparsityT;
-  list<list<Integer>> colors;
-  Integer maxcolor, index, partIdx;
+  list<SimCode.SimEqSystem> resEqns = {};
 algorithm
-  SimCode.JAC_MATRIX(columns, vars, name, sparsity, sparsityT, colors, maxcolor, index, partIdx) := inSymjac;
-  (columns, outLinearSysIndex, outNonLinSysIndex, outMixedSysIndex, outJacobianIndex, outSymJacs) := countandIndexAlgebraicLoopsSymJacColumn(columns, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, {});
-  outSymjac := SimCode.JAC_MATRIX(columns, vars, name, sparsity, sparsityT, colors, maxcolor, outJacobianIndex, partIdx);
-  outJacobianIndex := outJacobianIndex + 1;
-end countandIndexAlgebraicLoopsSymJac;
+  for eqn in eqns loop
+    eqn := match(eqn)
+      local
+        SimCode.NonlinearSystem nlSyst, altNlSyst;
+        Option<SimCode.NonlinearSystem> optNlSyst;
+        SimCode.LinearSystem linearSyst, altLinearSyst;
+        Option<SimCode.LinearSystem> optLinearSyst;
+        SimCode.JacobianMatrix tmpSymJac;
+        list<SimCode.JacobianMatrix> tmpSymJacs, tmpAdditionalSymJacs;
+        list<SimCode.SimEqSystem> eqs;
+        SimCode.SimEqSystem system;
+      // nonlinear case
+      case SimCode.SES_NONLINEAR(nlSystem=nlSyst as SimCode.NONLINEARSYSTEM(), alternativeTearing=optNlSyst) equation
 
-protected function countandIndexAlgebraicLoopsSymJacColumn "
-  helper function to countandIndexAlgebraicLoops"
-  input list<SimCode.JacobianColumn> inSymColumn;
-  input Integer inLinearSysIndex;
-  input Integer inNonLinSysIndex;
-  input Integer inMixedSysIndex;
-  input Integer inJacobianIndex;
-  input list<SimCode.JacobianMatrix> inSymJacs;
-  output list<SimCode.JacobianColumn> outSymColumn;
-  output Integer outLinearSysIndex;
-  output Integer outNonLinSysIndex;
-  output Integer outMixedSysIndex;
-  output Integer outJacobianIndex;
-  output list<SimCode.JacobianMatrix> outSymJacs;
+        (nlSyst, modelInfo, symJacs) = updateNonLinearSyst(nlSyst, modelInfo, symJacs);
+
+        // process the alternative system
+        if isSome(optNlSyst) then
+          altNlSyst = Util.getOption(optNlSyst);
+          (altNlSyst, modelInfo, symJacs) = updateNonLinearSyst(altNlSyst, modelInfo, symJacs);
+          optNlSyst = SOME(altNlSyst);
+        end if;
+        system = SimCode.SES_NONLINEAR(nlSyst, optNlSyst);
+        modelInfo.nonLinearSystems = system::modelInfo.nonLinearSystems;
+      then system;
+
+      // linear case
+      case SimCode.SES_LINEAR(lSystem=linearSyst as SimCode.LINEARSYSTEM(), alternativeTearing=optLinearSyst) equation
+
+        (linearSyst, modelInfo, symJacs) = updateLinearSyst(linearSyst, modelInfo, symJacs);
+
+        // process the alternative system
+        if isSome(optLinearSyst) then
+          altLinearSyst = Util.getOption(optLinearSyst);
+          (altLinearSyst, modelInfo, symJacs) = updateLinearSyst(altLinearSyst, modelInfo, symJacs);
+          optLinearSyst = SOME(altLinearSyst);
+        end if;
+        system = SimCode.SES_LINEAR(linearSyst, optLinearSyst);
+        modelInfo.linearSystems = system::modelInfo.linearSystems;
+      then system;
+
+      else eqn;
+    end match;
+    resEqns := eqn::resEqns;
+  end for;
+  eqns := listReverse(resEqns);
+end addAlgebraicLoopsModelInfo;
+
+protected function updateNonLinearSyst
+"Helper function of addAlgebraicLoopsModelInfo
+ Updates nonlinear system indexes"
+  input output SimCode.NonlinearSystem inSyst = inSyst;
+  input output SimCode.ModelInfo modelInfo = modelInfo;
+  input output list<SimCode.JacobianMatrix> allSymJacs = allSymJacs;
+protected
+  SimCode.VarInfo varInfo = modelInfo.varInfo;
+  list<SimCode.SimEqSystem> eqs;
+  SimCode.JacobianMatrix tmpSymJac;
+  list<SimCode.JacobianMatrix> tmpSymJacs;
+  constant Boolean debug = false;
 algorithm
-  (outSymColumn, outLinearSysIndex, outNonLinSysIndex, outMixedSysIndex, outJacobianIndex, outSymJacs) := match(inSymColumn, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, inSymJacs)
-    local
-    list<SimCode.JacobianColumn> rest, result, res1;
-    list<SimCode.SimEqSystem> eqns, eqns1;
-    list<SimCodeVar.SimVar> vars;
-    Integer nRows;
-    Integer countLinearSys, countNonLinSys, countMixedSys, countJacobians;
-    list<SimCode.JacobianMatrix> symJacs;
 
-    case ({}, _, _, _, _, _)
-    then ({}, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, inSymJacs);
+  // set system index and count
+  inSyst.indexNonLinearSystem := varInfo.numNonLinearSystems;
+  varInfo.numNonLinearSystems := varInfo.numNonLinearSystems+1;
+  modelInfo.varInfo := varInfo;
 
-    case (SimCode.JAC_COLUMN(eqns, vars, nRows)::rest, _, _, _, _, _) equation
-      (eqns1, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symJacs) = countandIndexAlgebraicLoops(eqns, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex, inSymJacs);
-      (res1, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symJacs) = countandIndexAlgebraicLoopsSymJacColumn(rest, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symJacs);
-      result = SimCode.JAC_COLUMN(eqns1, vars, nRows)::res1;
-    then (result, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symJacs);
-  end match;
-end countandIndexAlgebraicLoopsSymJacColumn;
+  // collect the jacobian
+  if isSome(inSyst.jacobianMatrix) then
+    tmpSymJac := Util.getOption(inSyst.jacobianMatrix);
+    // add only if the directional derivativ is available and
+    // not just the sparsty pattern
+    if not listEmpty(tmpSymJac.columns) then
+      ({tmpSymJac}, modelInfo, tmpSymJacs) := addAlgebraicLoopsModelInfoSymJacs({tmpSymJac}, modelInfo);
+      inSyst.jacobianMatrix := SOME(tmpSymJac);
+      allSymJacs := listAppend(tmpSymJacs, allSymJacs);
+      allSymJacs := tmpSymJac::allSymJacs;
+    end if;
+  end if;
 
-protected function countandIndexAlgebraicLoopsClockPartitions "
+  // proceed inSyst.eqs
+  (eqs, modelInfo, tmpSymJacs) := addAlgebraicLoopsModelInfo(inSyst.eqs, modelInfo);
+  inSyst.eqs := eqs;
+  allSymJacs := listAppend(tmpSymJacs, allSymJacs);
+
+  if debug then
+    print("Update nonlinear system " + intString(inSyst.indexNonLinearSystem) +
+          " collected Jacobians: " + intString(listLength(allSymJacs)) + "\n");
+  end if;
+end updateNonLinearSyst;
+
+protected function updateLinearSyst
+"Helper function of addAlgebraicLoopsModelInfo
+ Updates linear system indexes"
+  input output SimCode.LinearSystem inSyst = inSyst;
+  input output SimCode.ModelInfo modelInfo = modelInfo;
+  input output list<SimCode.JacobianMatrix> allSymJacs = allSymJacs;
+protected
+  SimCode.VarInfo varInfo = modelInfo.varInfo;
+  list<SimCode.SimEqSystem> eqs;
+  SimCode.JacobianMatrix tmpSymJac;
+  list<SimCode.JacobianMatrix> tmpSymJacs;
+  constant Boolean debug = false;
+algorithm
+
+  // set system index and count
+  inSyst.indexLinearSystem := varInfo.numLinearSystems;
+  varInfo.numLinearSystems := varInfo.numLinearSystems+1;
+  modelInfo.varInfo := varInfo;
+
+  // collect the jacobian
+  if isSome(inSyst.jacobianMatrix) then
+    tmpSymJac := Util.getOption(inSyst.jacobianMatrix);
+    // add only if the directional derivativ is available and
+    // not just the sparsty pattern
+    if not listEmpty(tmpSymJac.columns) then
+      ({tmpSymJac}, modelInfo, tmpSymJacs) := addAlgebraicLoopsModelInfoSymJacs({tmpSymJac}, modelInfo);
+      inSyst.jacobianMatrix := SOME(tmpSymJac);
+      allSymJacs := listAppend(tmpSymJacs, allSymJacs);
+      allSymJacs := tmpSymJac::allSymJacs;
+    end if;
+  end if;
+
+  // proceed inSyst.eqs
+  (eqs, modelInfo, tmpSymJacs) := addAlgebraicLoopsModelInfo(inSyst.residual, modelInfo);
+  inSyst.residual := eqs;
+  allSymJacs := listAppend(tmpSymJacs, allSymJacs);
+
+  if debug then
+    print("Update linear system " + intString(inSyst.indexLinearSystem) +
+          " collected Jacobians: " + intString(listLength(allSymJacs)) + "\n");
+  end if;
+end updateLinearSyst;
+
+protected function addAlgebraicLoopsModelInfoSymJacs "
+Adds algebraic loops from list of SimEqSystem into ModelInfo
+and SimEqSystem equation algebraic system index."
+  input output list<SimCode.JacobianMatrix> symjacs;
+  input output SimCode.ModelInfo modelInfo;
+  output list<SimCode.JacobianMatrix> outSymJacsInSymJacs = {};
+protected
+  SimCode.JacobianColumn column;
+  list<SimCode.SimEqSystem> eqs;
+  SimCode.VarInfo varInfo;
+  list<SimCode.JacobianMatrix> tmpSymJacs;
+  list<SimCode.JacobianMatrix> outSymJacs = {};
+  constant Boolean debug = false;
+algorithm
+  for symjac in symjacs loop
+    varInfo := modelInfo.varInfo;
+    symjac.jacobianIndex := varInfo.numJacobians;
+    varInfo.numJacobians := varInfo.numJacobians + 1;
+    modelInfo.varInfo := varInfo;
+    if debug then
+      print("Collect Jacobian " + symjac.matrixName + " and set index to: " + intString(symjac.jacobianIndex) + "\n");
+    end if;
+  try
+    column::{} := symjac.columns;
+    (eqs, modelInfo, tmpSymJacs) := addAlgebraicLoopsModelInfo(column.columnEqns, modelInfo);
+    outSymJacsInSymJacs := listAppend(tmpSymJacs, outSymJacsInSymJacs);
+    column.columnEqns := eqs;
+    symjac.columns := {column};
+    outSymJacs := symjac::outSymJacs;
+  else
+    outSymJacs := symjac::outSymJacs;
+  end try;
+  end for;
+  symjacs := listReverse(outSymJacs);
+  outSymJacsInSymJacs := listReverse(outSymJacsInSymJacs);
+end addAlgebraicLoopsModelInfoSymJacs;
+
+protected function addAlgebraicLoopsModelInfoStateSets
+" function to collect jacobians for statesets"
+  input list<SimCode.StateSet> inSets;
+  input SimCode.ModelInfo inModelInfo;
+  output list<SimCode.StateSet> outSets = {};
+  output SimCode.ModelInfo modelInfo = inModelInfo;
+  output list<SimCode.JacobianMatrix> outSymJacs = {};
+protected
+  SimCode.JacobianMatrix symJac;
+  list<SimCode.JacobianMatrix> tmpSymJacs;
+algorithm
+  for set in inSets loop
+    ({symJac}, modelInfo, tmpSymJacs) := addAlgebraicLoopsModelInfoSymJacs({set.jacobianMatrix}, modelInfo);
+    outSymJacs := listAppend(tmpSymJacs, outSymJacs);
+    set.jacobianMatrix := symJac;
+    outSymJacs := symJac::outSymJacs;
+    outSets := set::outSets;
+  end for;
+  outSets := listReverse(outSets);
+  outSymJacs := listReverse(outSymJacs);
+end addAlgebraicLoopsModelInfoStateSets;
+
+protected function addAlgebraicLoopsClockPartitions "
   function to process clockPartitions for symbolic jacobians"
   input list<SimCode.ClockedPartition> inColockPartition;
-  input Integer inLinearSysIndex;
-  input Integer inNonLinSysIndex;
-  input Integer inMixedSysIndex;
-  input Integer inJacobianIndex;
-  input list<SimCode.JacobianMatrix> inSymJacs;
+  input SimCode.ModelInfo inModelInfo;
   output list<SimCode.ClockedPartition> outColockPartition = {};
-  output Integer outLinearSysIndex = inLinearSysIndex;
-  output Integer outNonLinSysIndex = inNonLinSysIndex;
-  output Integer outMixedSysIndex = inMixedSysIndex;
-  output Integer outJacobianIndex = inJacobianIndex;
-  output list<SimCode.JacobianMatrix> outSymJacs = inSymJacs;
+  output SimCode.ModelInfo modelInfo = inModelInfo;
+  output list<SimCode.JacobianMatrix> outSymJacs = {};
 protected
   SimCode.SubPartition subPartitionTmp;
   SimCode.ClockedPartition clockPartitionTmp;
@@ -1275,8 +1280,7 @@ algorithm
     subPartitionsTmp := {};
     for subPartion in clockPartion.subPartitions loop
       clockIndex := clockIndex + 1;
-      (equations, outLinearSysIndex, outNonLinSysIndex, outMixedSysIndex, outJacobianIndex, tmpJacs) :=
-       countandIndexAlgebraicLoops(subPartion.equations, outLinearSysIndex, outNonLinSysIndex, outMixedSysIndex, outJacobianIndex, {});
+      (equations, modelInfo, tmpJacs) := addAlgebraicLoopsModelInfo(subPartion.equations, modelInfo);
       tmpJacs := list(rewriteJacPartIdx(a,clockIndex) for a in tmpJacs);
       outSymJacs := listAppend(tmpJacs, outSymJacs);
       subPartitionTmp := SimCode.SUBPARTITION(
@@ -1291,7 +1295,7 @@ algorithm
     outColockPartition := clockPartitionTmp::outColockPartition;
   end for;
   outColockPartition := listReverse(outColockPartition);
-end countandIndexAlgebraicLoopsClockPartitions;
+end addAlgebraicLoopsClockPartitions;
 
 protected function rewriteJacPartIdx
   input SimCode.JacobianMatrix inJac;
@@ -1344,12 +1348,17 @@ protected
   CreateEquationsForSystemsFold foldArg;
   CreateEquationsForSystemsArg arg;
 algorithm
-  arg := (shared, inAllZeroCrossings, createAlgebraicEquations);
-  foldArg := (iuniqueEqIndex, {}, {}, {}, {}, itempvars, {}, {}, iBackendMapping, iSccOffset);
-  (ouniqueEqIndex, oodeEquations, oalgebraicEquations, oallEquations, oequationsForZeroCrossings, otempvars,
-  oeqSccMapping, oeqBackendSimCodeMapping, obackendMapping, oSccOffset) := List.fold1(inSysts, createEquationsForSystems1, arg, foldArg);
-  oequationsForZeroCrossings := Dangerous.listReverseInPlace(oequationsForZeroCrossings);
-  ((ouniqueEqIndex, olocalKnownVars)) := BackendVariable.traverseBackendDAEVars(shared.localKnownVars, traverseKnVarsToSimEqSystem, (ouniqueEqIndex, {}));
+  try
+    arg := (shared, inAllZeroCrossings, createAlgebraicEquations);
+    foldArg := (iuniqueEqIndex, {}, {}, {}, {}, itempvars, {}, {}, iBackendMapping, iSccOffset);
+    (ouniqueEqIndex, oodeEquations, oalgebraicEquations, oallEquations, oequationsForZeroCrossings, otempvars,
+    oeqSccMapping, oeqBackendSimCodeMapping, obackendMapping, oSccOffset) := List.fold1(inSysts, createEquationsForSystems1, arg, foldArg);
+    oequationsForZeroCrossings := Dangerous.listReverseInPlace(oequationsForZeroCrossings);
+    ((ouniqueEqIndex, olocalKnownVars)) := BackendVariable.traverseBackendDAEVars(shared.localKnownVars, traverseKnVarsToSimEqSystem, (ouniqueEqIndex, {}));
+  else
+    Error.addInternalError("createEquationsForSystems failed", sourceInfo());
+    fail();
+  end try;
 end createEquationsForSystems;
 
 protected function createEquationsForSystems1
@@ -1528,9 +1537,9 @@ algorithm
   end if;
 
   // skip is when equations
-  skip := Util.boolAndList(List.map(eqnlst, BackendEquation.isWhenEquation));
+  skip := List.mapBoolAnd(eqnlst, BackendEquation.isWhenEquation);
   // skip is discrete
-  skip := Util.boolAndList(List.map(varlst, BackendVariable.isVarDiscrete)) or skip;
+  skip := skip or List.mapBoolAnd(varlst, BackendVariable.isVarDiscrete);
 
   outFold := match comp
     local
@@ -1553,11 +1562,11 @@ algorithm
         if not listEmpty(equations1) then
           firstSES = listHead(equations1);  // check if the all equations occur with this index in the c file
           firstEqIndex = if isSimEqSys(firstSES) then uniqueEqIndex1-1 else uniqueEqIndex;
-          eqSccMapping = List.fold1(List.intRange2(firstEqIndex, uniqueEqIndex1 - 1), appendSccIdx, sccIndex, eqSccMapping);
-          eqBackendSimCodeMapping = List.fold1(List.intRange2(firstEqIndex, uniqueEqIndex1 - 1), appendSccIdx, index, eqBackendSimCodeMapping);
+          eqSccMapping = appendSccIdxRange(firstEqIndex, uniqueEqIndex1 - 1, sccIndex, eqSccMapping);
+          eqBackendSimCodeMapping = appendSccIdxRange(firstEqIndex, uniqueEqIndex1 - 1, index, eqBackendSimCodeMapping);
           backendMapping = setEqMapping(List.intRange2(firstEqIndex, uniqueEqIndex1 - 1), {index}, backendMapping);
         end if;
-        if BackendEquation.isWhenEquation(BackendEquation.equationNth1(syst.orderedEqs, index)) then
+        if BackendEquation.isWhenEquation(BackendEquation.get(syst.orderedEqs, index)) then
           allEquations = equations1::allEquations;
         else
           (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings) =
@@ -1575,8 +1584,8 @@ algorithm
         varlst = List.map(varlst, BackendVariable.transformXToXd);
         (equations1,_, uniqueEqIndex1, tempvars) = createSingleArrayEqnCode(true, eqnlst, varlst, uniqueEqIndex, tempvars, shared.info);
 
-        eqSccMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, sccIndex, eqSccMapping);
-        eqBackendSimCodeMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, e, eqBackendSimCodeMapping);
+        eqSccMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, sccIndex, eqSccMapping);
+        eqBackendSimCodeMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, e, eqBackendSimCodeMapping);
 
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings) =
             addEquationsToLists(equations1, stateeqnsmark, zceqnsmark, {e}, odeEquations,
@@ -1592,8 +1601,8 @@ algorithm
         varlst = List.map(varlst, BackendVariable.transformXToXd);
         (equations1, uniqueEqIndex1) = createSingleAlgorithmCode(eqnlst, varlst, false, uniqueEqIndex);
 
-        eqSccMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, sccIndex, eqSccMapping);
-        eqBackendSimCodeMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, e, eqBackendSimCodeMapping);
+        eqSccMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, sccIndex, eqSccMapping);
+        eqBackendSimCodeMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, e, eqBackendSimCodeMapping);
 
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings) =
             addEquationsToLists(equations1, stateeqnsmark, zceqnsmark, {e}, odeEquations,
@@ -1611,7 +1620,7 @@ algorithm
         (equations1, uniqueEqIndex1, tempvars) = createSingleComplexEqnCode(listHead(eqnlst), varlst, uniqueEqIndex, tempvars, shared.info, true);
 
         eqSccMapping = appendSccIdx(uniqueEqIndex1-1, sccIndex, eqSccMapping);
-        eqBackendSimCodeMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, e, eqBackendSimCodeMapping);
+        eqBackendSimCodeMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, e, eqBackendSimCodeMapping);
 
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings) =
             addEquationsToLists(equations1, stateeqnsmark, zceqnsmark, {e}, odeEquations,
@@ -1628,8 +1637,8 @@ algorithm
         varlst = List.map(varlst, BackendVariable.transformXToXd);
         (equations1, uniqueEqIndex1, tempvars) = createSingleWhenEqnCode(listHead(eqnlst), varlst, shared, uniqueEqIndex, tempvars);
 
-        eqSccMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, sccIndex, eqSccMapping);
-        eqBackendSimCodeMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, index, eqBackendSimCodeMapping);
+        eqSccMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, sccIndex, eqSccMapping);
+        eqBackendSimCodeMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, index, eqBackendSimCodeMapping);
 
         allEquations = equations1::allEquations;
       then
@@ -1645,8 +1654,8 @@ algorithm
         varlst = List.map(varlst, BackendVariable.transformXToXd);
         (equations1, uniqueEqIndex1, tempvars) = createSingleIfEqnCode(listHead(eqnlst), varlst, shared, true, uniqueEqIndex, tempvars);
 
-        eqSccMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, sccIndex, eqSccMapping);
-        eqBackendSimCodeMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, index, eqBackendSimCodeMapping);
+        eqSccMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, sccIndex, eqSccMapping);
+        eqBackendSimCodeMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, index, eqBackendSimCodeMapping);
 
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings) =
             addEquationsToLists(equations1, stateeqnsmark, zceqnsmark, {e}, odeEquations,
@@ -1662,11 +1671,11 @@ algorithm
         if not listEmpty(equations1) then
           firstSES = listHead(equations1);  // check if the all equations occur with this index in the c file
           firstEqIndex = if isSimEqSys(firstSES) then uniqueEqIndex1-1 else uniqueEqIndex;
-          eqSccMapping = List.fold1(List.intRange2(firstEqIndex, uniqueEqIndex1 - 1), appendSccIdx, sccIndex, eqSccMapping);
-          eqBackendSimCodeMapping = List.fold1(List.intRange2(firstEqIndex, uniqueEqIndex1 - 1), appendSccIdx, index, eqBackendSimCodeMapping);
+          eqSccMapping = appendSccIdxRange(firstEqIndex, uniqueEqIndex1 - 1, sccIndex, eqSccMapping);
+          eqBackendSimCodeMapping = appendSccIdxRange(firstEqIndex, uniqueEqIndex1 - 1, index, eqBackendSimCodeMapping);
           backendMapping = setEqMapping(List.intRange2(firstEqIndex, uniqueEqIndex1 - 1),{index}, backendMapping);
         end if;
-        if BackendEquation.isWhenEquation(BackendEquation.equationNth1(syst.orderedEqs, index)) then
+        if BackendEquation.isWhenEquation(BackendEquation.get(syst.orderedEqs, index)) then
           allEquations = equations1::allEquations;
         else
           (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings) =
@@ -1683,9 +1692,9 @@ algorithm
         // block is dynamic, belong in dynamic section
         (eqnslst, _) = BackendDAETransform.getEquationAndSolvedVarIndxes(comp);
 
-        (equations1, noDiscEquations1, uniqueEqIndex1, tempvars, eqSccMapping, backendMapping) =
+        (_, noDiscEquations1, uniqueEqIndex1, tempvars, eqSccMapping, backendMapping) =
           createOdeSystem(true and createAlgebraicEquations, false, syst, shared, comp, uniqueEqIndex, tempvars, sccIndex, eqSccMapping, backendMapping);
-        //eqSccMapping = List.fold1(List.intRange2(uniqueEqIndex, uniqueEqIndex1 - 1), appendSccIdx, sccIndex, eqSccMapping);
+        //eqSccMapping = appendSccIdxRange(uniqueEqIndex, uniqueEqIndex1 - 1, sccIndex, eqSccMapping);
 
         (odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings) =
             addEquationsToLists(noDiscEquations1, stateeqnsmark, zceqnsmark, eqnslst, odeEquations,
@@ -1711,6 +1720,18 @@ protected function appendSccIdx
 algorithm
   oSccIdc := ((iCurrentIdx,iSccIdx))::iSccIdc;
 end appendSccIdx;
+
+protected function appendSccIdxRange
+  input Integer iCurrentIdxStart;
+  input Integer iCurrentIdxStop;
+  input Integer iSccIdx;
+  input list<tuple<Integer,Integer>> iSccIdc;
+  output list<tuple<Integer,Integer>> oSccIdc;
+algorithm
+    for i in iCurrentIdxStop:-1:iCurrentIdxStart loop
+      oSccIdc := ((i,iSccIdx))::iSccIdc;
+    end for;
+end appendSccIdxRange;
 
 protected function createEquations
   input Boolean includeWhen;
@@ -1768,7 +1789,7 @@ algorithm
 
       // ignore when equations if we should not generate them
     case (false, _, _, BackendDAE.EQSYSTEM(orderedEqs=eqns), _, BackendDAE.SINGLEEQUATION(eqn=index))
-      guard(BackendEquation.isWhenEquation(BackendEquation.equationNth1(eqns, index)))
+      guard(BackendEquation.isWhenEquation(BackendEquation.get(eqns, index)))
      then ({}, {}, iuniqueEqIndex, itempvars);
 
     case (false, _, _, BackendDAE.EQSYSTEM(), _, BackendDAE.SINGLEWHENEQUATION())
@@ -1791,7 +1812,7 @@ algorithm
     case (_, _, _, _, _, BackendDAE.SINGLEEQUATION(eqn=index, var=vindex))
       equation
         if (Flags.isSet(Flags.TEARING_DUMP) or Flags.isSet(Flags.TEARING_DUMPVERBOSE)) and not listEmpty(cons) then
-          print("Single Equation with constraint:\n" + BackendDump.equationString(BackendEquation.equationNth1(syst.orderedEqs, index)) + "\n");
+          print("Single Equation with constraint:\n" + BackendDump.equationString(BackendEquation.get(syst.orderedEqs, index)) + "\n");
           print("Constraints:" + ExpressionDump.constraintDTlistToString(cons,"\n") + "\n\n");
         end if;
         (equations1, uniqueEqIndex, tempvars) = createEquation(index, vindex, syst, shared, skipDiscInAlgorithm, iuniqueEqIndex, itempvars, cons);
@@ -2045,9 +2066,9 @@ algorithm
     end if;
 
     // skip is when equations
-    skip := Util.boolAndList(List.map(orgeqnLst, BackendEquation.isWhenEquation));
+    skip := List.mapBoolAnd(orgeqnLst, BackendEquation.isWhenEquation);
     // skip is discrete
-    skip := Util.boolAndList(List.map(varlst, BackendVariable.isVarDiscrete)) or skip;
+    skip := List.mapBoolAnd(varlst, BackendVariable.isVarDiscrete) or skip;
     // skip algebraic equation if dynamic option is selected
     skipEquations := match Flags.getConfigEnum(Flags.DAE_MODE) case 2 then true; case 3 then BackendDAEUtil.blockIsDynamic(eqnNums, stateeqnsmark); end match;
 
@@ -2082,7 +2103,7 @@ algorithm
 
       //collect also the BackendDAE versions for sparsity and jacobains
       bdaeVars := BackendVariable.addVars(varlst, bdaeVars);
-      bdaeEqns := BackendEquation.addEquations(listReverse(orgeqnLst), bdaeEqns);
+      bdaeEqns := BackendEquation.addList(listReverse(orgeqnLst), bdaeEqns);
 
       // result --> resVarsTmp, algVarsTmp, daeEquationsTmp, bdaeVars, bdaeEqns
     end if;
@@ -2262,7 +2283,7 @@ algorithm
       list<DAE.Exp> expl, crexplst;
       list<DAE.Var> varLst;
       list<DAE.Exp> e1lst, e2lst;
-      SimCode.SimEqSystem simeqn;
+      SimCode.SimEqSystem simeqn_complex;
       list<SimCode.SimEqSystem> eqSystlst;
       list<tuple<DAE.Exp, DAE.Exp>> exptl;
       Integer uniqueEqIndex;
@@ -2323,9 +2344,9 @@ algorithm
       tempvars = createTempVars(varLst, crtmp, itempvars);
       etmp = Expression.crefToExp(crtmp);
       stms = DAE.STMT_ASSIGN(tp, etmp, callExp, source);
-      simeqn = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
+      simeqn_complex = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
       uniqueEqIndex = iuniqueEqIndex + 1;
-      eqSystlst = {simeqn};
+      eqSystlst = {simeqn_complex};
 
       // 0 = tmp - Record()
       // Expand the record for any arrays
@@ -2390,10 +2411,10 @@ protected
   Integer i = 1;
   Integer size;
 algorithm
-  size := BackendDAEUtil.equationArraySize(eqns);
+  size := BackendEquation.getNumberOfEquations(eqns);
   res := {};
   while i <= size loop
-    b:= match BackendEquation.equationNth1(eqns, i)
+    b:= match BackendEquation.get(eqns, i)
       case BackendDAE.WHEN_EQUATION() then true;
       else false;
     end match;
@@ -2530,7 +2551,7 @@ algorithm
     // solved equation
     case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, _, _, _)
       equation
-        BackendDAE.SOLVED_EQUATION(exp=e2, source=source) = BackendEquation.equationNth1(eqns, eqNum);
+        BackendDAE.SOLVED_EQUATION(exp=e2, source=source) = BackendEquation.get(eqns, eqNum);
         (v as BackendDAE.VAR(varName = cr)) = BackendVariable.getVarAt(vars, varNum);
         varexp = Expression.crefExp(cr);
         varexp = if BackendVariable.isStateVar(v) then Expression.expDer(varexp) else varexp;
@@ -2540,7 +2561,7 @@ algorithm
     // when eq
     case (_, _,  BackendDAE.EQSYSTEM(orderedEqs=eqns), BackendDAE.SHARED(), _, _, _)
       equation
-        BackendDAE.WHEN_EQUATION(whenEquation=whenEquation, source=source) = BackendEquation.equationNth1(eqns, eqNum);
+        BackendDAE.WHEN_EQUATION(whenEquation=whenEquation, source=source) = BackendEquation.get(eqns, eqNum);
         BackendDAE.WHEN_STMTS(cond, whenStmtLst, oelseWhen) = whenEquation;
         if isSome(oelseWhen) then
           SOME(elseWhen) = oelseWhen;
@@ -2557,7 +2578,7 @@ algorithm
     // single equation
     case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, _, _, _)
       equation
-        eqn = BackendEquation.equationNth1(eqns, eqNum);
+        eqn = BackendEquation.get(eqns, eqNum);
         BackendDAE.EQUATION(exp=e1, scalar=e2, source=source) = eqn;
         (v as BackendDAE.VAR(varName = cr)) = BackendVariable.getVarAt(vars, varNum);
         varexp = Expression.crefExp(cr);
@@ -2583,7 +2604,7 @@ algorithm
     // change branches without variable to var - pre(var)
     case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, _, _, _)
       equation
-        BackendDAE.EQUATION(exp=e1 as DAE.RCONST(_), scalar=e2 as DAE.IFEXP(), source=source) = BackendEquation.equationNth1(eqns, eqNum);
+        BackendDAE.EQUATION(exp=e1 as DAE.RCONST(_), scalar=e2 as DAE.IFEXP(), source=source) = BackendEquation.get(eqns, eqNum);
         (v as BackendDAE.VAR(varName = cr)) = BackendVariable.getVarAt(vars, varNum);
         varexp = Expression.crefExp(cr);
         varexp = if BackendVariable.isStateVar(v) then Expression.expDer(varexp) else varexp;
@@ -2594,14 +2615,14 @@ algorithm
         eqn = BackendDAE.EQUATION(e1, e2, source, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN);
         (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations({eqn}, iuniqueEqIndex, itempvars);
         cr = if BackendVariable.isStateVar(v) then ComponentReference.crefPrefixDer(cr) else cr;
-        (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(eqn, containsHomotopyCall, false);
+        (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(eqn, BackendDAEUtil.containsHomotopyCall, false);
       then
-        ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, {cr}, 0, NONE(), homotopySupport, false), NONE())}, uniqueEqIndex+1, tempvars);
+        ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, {cr}, 0, 1, NONE(), homotopySupport, false, false), NONE())}, uniqueEqIndex+1, tempvars);
 
     // non-linear
     case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, _, _, _)
       equation
-        (eqn as BackendDAE.EQUATION(exp=e1, scalar=e2)) = BackendEquation.equationNth1(eqns, eqNum);
+        (eqn as BackendDAE.EQUATION(exp=e1, scalar=e2)) = BackendEquation.get(eqns, eqNum);
         (v as BackendDAE.VAR(varName = cr)) = BackendVariable.getVarAt(vars, varNum);
         varexp = Expression.crefExp(cr);
         varexp = if BackendVariable.isStateVar(v) then Expression.expDer(varexp) else varexp;
@@ -2609,14 +2630,14 @@ algorithm
         // index = System.tmpTick();
         (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations({eqn}, iuniqueEqIndex, itempvars);
         cr = if BackendVariable.isStateVar(v) then ComponentReference.crefPrefixDer(cr) else cr;
-        (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(eqn, containsHomotopyCall, false);
+        (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(eqn, BackendDAEUtil.containsHomotopyCall, false);
       then
-        ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, {cr}, 0, NONE(), homotopySupport, false), NONE())}, uniqueEqIndex+1, tempvars);
+        ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, {cr}, 0, 1, NONE(), homotopySupport, false, false), NONE())}, uniqueEqIndex+1, tempvars);
 
     // Algorithm for single variable.
     case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, true, _, _)
       equation
-        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand)  = BackendEquation.equationNth1(eqns, eqNum);
+        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand)  = BackendEquation.get(eqns, eqNum);
         varOutput::{} = CheckModel.checkAndGetAlgorithmOutputs(alg, source, crefExpand);
         v = BackendVariable.getVarAt(vars, varNum);
         // The output variable of the algorithm must be the variable solved
@@ -2631,7 +2652,7 @@ algorithm
     // algorithm for single variable
     case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _,false, _, _)
       equation
-        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand) = BackendEquation.equationNth1(eqns, eqNum);
+        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand) = BackendEquation.get(eqns, eqNum);
         varOutput::{} = CheckModel.checkAndGetAlgorithmOutputs(alg, source, crefExpand);
         v = BackendVariable.getVarAt(vars, varNum);
         // The output variable of the algorithm must be the variable solved
@@ -2645,7 +2666,7 @@ algorithm
     // inverse Algorithm for single variable
     case (_, _, BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqns), _, _, _, _)
       equation
-        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand) = BackendEquation.equationNth1(eqns, eqNum);
+        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand) = BackendEquation.get(eqns, eqNum);
         varOutput::{} = CheckModel.checkAndGetAlgorithmOutputs(alg, source, crefExpand);
         v = BackendVariable.getVarAt(vars, varNum);
         // We need to solve an inverse problem of an algorithm section.
@@ -2658,7 +2679,7 @@ algorithm
     // inverse Algorithm for single variable failed
     case (_, _, BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs = eqns), _, _, _, _)
       equation
-        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand) = BackendEquation.equationNth1(eqns, eqNum);
+        BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand) = BackendEquation.get(eqns, eqNum);
         varOutput::{} = CheckModel.checkAndGetAlgorithmOutputs(alg, source, crefExpand);
         v = BackendVariable.getVarAt(vars, varNum);
         // We need to solve an inverse problem of an algorithm section.
@@ -2749,7 +2770,7 @@ algorithm
 end solveAlgorithmInverse;
 
 // =============================================================================
-// section for ???
+// Section for handling complex equations
 //
 // =============================================================================
 
@@ -2771,12 +2792,11 @@ algorithm
       DAE.Exp e1, e2, e1_1, e2_1, etmp;
       DAE.Statement stms;
       DAE.Type tp;
-      list<DAE.Type> tplst;
-      list<DAE.Exp> expl, crexplst;
+      list<DAE.Exp> expl, crexplst, lhsExpLstRes, rhsExpLstRes, lhsExpLstAss, rhsExpLstAss;
       list<DAE.Var> varLst;
       list<DAE.Exp> e1lst, e2lst;
-      SimCode.SimEqSystem simeqn;
-      list<SimCode.SimEqSystem> eqSystlst;
+      SimCode.SimEqSystem simeqn_complex;
+      list<SimCode.SimEqSystem> eqSystlst, eqSystlst_simpAss;
       list<tuple<DAE.Exp, DAE.Exp>> exptl;
       Integer uniqueEqIndex;
       Absyn.Path path, rpath;
@@ -2845,7 +2865,7 @@ algorithm
       cr = ComponentReference.makeCrefIdent("$TMP_" + ident + intString(iuniqueEqIndex), tp, {});
       e1_1 = Expression.crefToExp(cr);
       stms = DAE.STMT_ASSIGN(tp, e1_1, e2_1, source);
-      simeqn = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
+      simeqn_complex = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
       uniqueEqIndex = iuniqueEqIndex + 1;
 
       // Record()-tmp = 0
@@ -2857,7 +2877,7 @@ algorithm
       exptl = List.threadTuple(e1lst, e2lst);
       /* Create residual equations for each pair*/
       (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, uniqueEqIndex);
-      eqSystlst = simeqn::eqSystlst;
+      eqSystlst = simeqn_complex::eqSystlst;
 
       tempvars = createTempVars(varLst, cr, itempvars);
     then (eqSystlst, uniqueEqIndex, tempvars);
@@ -2872,13 +2892,13 @@ algorithm
       cr = ComponentReference.makeCrefIdent("$TMP_" + ident + intString(iuniqueEqIndex), tp, {});
       e2_1 = Expression.crefExp(cr);
       stms = DAE.STMT_ASSIGN(tp, e2_1, e1_1, source);
-      simeqn = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
+      simeqn_complex = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
       uniqueEqIndex = iuniqueEqIndex + 1;
       // Record()-tmp = 0
       e1lst = List.map1(varLst, Expression.generateCrefsExpFromExpVar, cr);
       exptl = List.threadTuple(e1lst, e2lst);
       (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, uniqueEqIndex);
-      eqSystlst = simeqn::eqSystlst;
+      eqSystlst = simeqn_complex::eqSystlst;
       tempvars = createTempVars(varLst, cr, itempvars);
     then (eqSystlst, uniqueEqIndex, tempvars);
 
@@ -2891,7 +2911,7 @@ algorithm
       cr = ComponentReference.makeCrefIdent("$TMP_" + ident + intString(iuniqueEqIndex), tp, {});
       crexplst = List.map1(expl, Expression.generateCrefsExpFromExp, cr);
       stms = DAE.STMT_TUPLE_ASSIGN(tp, crexplst, inExp1, source);
-      simeqn = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
+      simeqn_complex = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
       uniqueEqIndex = iuniqueEqIndex + 1;
 
       // for creating makeSES_RESIDUAL1 all crefs needs to expanded
@@ -2912,7 +2932,7 @@ algorithm
       // Tuple() - tmp = 0
       exptl = List.threadTuple(expl, crexplst);
       (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, uniqueEqIndex);
-      eqSystlst = simeqn::eqSystlst;
+      eqSystlst = simeqn_complex::eqSystlst;
 
       tempvars = createTempVarsforCrefs(listReverse(crexplst), itempvars);
     then (eqSystlst, uniqueEqIndex, tempvars);
@@ -2926,6 +2946,207 @@ algorithm
     then fail();
   end matchcontinue;
 end createNonlinearResidualEquationsComplex;
+
+protected function createNonlinearResidualEquationsSingleComplex
+  input DAE.Exp inExp;
+  input DAE.Exp inExp1;
+  input DAE.ElementSource source;
+  input Integer iuniqueEqIndex;
+  input list<SimCodeVar.SimVar> itempvars;
+  output list<SimCode.SimEqSystem> equations_;
+  output Integer ouniqueEqIndex;
+  output list<SimCodeVar.SimVar> otempvars;
+  input output list<DAE.ComponentRef> eqCrefs = {};
+algorithm
+  (equations_, ouniqueEqIndex, otempvars) := match (inExp, inExp1)
+    local
+      DAE.ComponentRef cr;
+      list<DAE.ComponentRef> callCrefs;
+      DAE.Statement stms;
+      DAE.Type tp;
+      list<DAE.Exp> expl, callExps, crexplst, lhsExpLstRes, rhsExpLstRes, lhsExpLstAss, rhsExpLstAss;
+      SimCode.SimEqSystem simeqn_complex;
+      list<SimCode.SimEqSystem> eqSystlst, eqSystlst_simpAss;
+      list<tuple<DAE.Exp, DAE.Exp>> exptl;
+      Integer uniqueEqIndex;
+      Absyn.Path path;
+      String ident;
+      list<SimCodeVar.SimVar> tempvars;
+
+    /* Tuple() = f()  */
+    case (DAE.TUPLE(PR=expl), DAE.CALL(path=path, expLst=callExps)) equation
+      // Get all crefs in the call arguments
+      (_, callCrefs) = Expression.traverseExpList(callExps, Expression.traversingComponentRefFinder, {});
+
+      // Prepare cref prefix for temporary variables
+      tp = Expression.typeof(inExp);
+      ident = Absyn.pathStringUnquoteReplaceDot(path, "_");
+      cr = ComponentReference.makeCrefIdent("$TMP_" + ident + intString(iuniqueEqIndex), tp, {});
+
+      // Create temporary variables and residual equations for variables not solved in this equation
+      (eqCrefs, crexplst, lhsExpLstRes, rhsExpLstRes, lhsExpLstAss, rhsExpLstAss) = createTmpCrefExpsForComplexEqnSys(expl, cr, eqCrefs, callCrefs);
+
+      // Create algorithm equation from complex equation with temporary variables
+      stms = DAE.STMT_TUPLE_ASSIGN(tp, crexplst, inExp1, source);
+      simeqn_complex = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
+      uniqueEqIndex = iuniqueEqIndex + 1;
+
+      // Make simple assignments
+      // var := tmp_var
+      exptl = List.threadTuple(lhsExpLstAss, rhsExpLstAss);
+      (eqSystlst_simpAss, uniqueEqIndex) = List.map1Fold(exptl, makeSES_SIMPLE_ASSIGN, source, uniqueEqIndex);
+
+      // Make residual equations
+      // tmp_var - var = 0
+      exptl = List.threadTuple(rhsExpLstRes, lhsExpLstRes);
+      (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, uniqueEqIndex);
+
+      // Add simEqns to eqSystlst and temporary variables to tempvars
+      eqSystlst = simeqn_complex :: listAppend(eqSystlst_simpAss, eqSystlst);
+      tempvars = createTempVarsforCrefs(listReverse(rhsExpLstAss), itempvars);
+      tempvars = createTempVarsforCrefs(listReverse(lhsExpLstRes), tempvars);
+    then (eqSystlst, uniqueEqIndex, tempvars);
+
+    /* To-Do: Add other cases
+       - a = f()
+       - f() = a
+       - Record() = f()
+       - f() = Record()
+    */
+  end match;
+end createNonlinearResidualEquationsSingleComplex;
+
+protected function createTmpCrefExpsForComplexEqnSys
+  "This function creates tmp cref expressions for crefs that are not solved in the current complex equation or occur on rhs and lhs.
+   It also returns lists of expressions to create inner equations and residual equations from.
+   author: ptaeuber 06-2017"
+  input list<DAE.Exp> inExpLst;
+  input DAE.ComponentRef crPrefix;
+  input output list<DAE.ComponentRef> eqCrefs;
+  input list<DAE.ComponentRef> callCrefs;
+  output list<DAE.Exp> outExpList = {};
+  input output list<DAE.Exp> lhsExpLstRes = {};
+  input output list<DAE.Exp> rhsExpLstRes = {};
+  input output list<DAE.Exp> lhsExpLstAss = {};
+  input output list<DAE.Exp> rhsExpLstAss = {};
+protected
+  DAE.Exp newExp;
+algorithm
+  for e in inExpLst loop
+    (eqCrefs, newExp, lhsExpLstRes, rhsExpLstRes, lhsExpLstAss, rhsExpLstAss) := createTmpCrefExpsForComplexEqnSys_work(e, crPrefix, eqCrefs, callCrefs, lhsExpLstRes, rhsExpLstRes, lhsExpLstAss, rhsExpLstAss);
+    outExpList := newExp::outExpList;
+  end for;
+  outExpList := List.listReverseInPlace(outExpList);
+end createTmpCrefExpsForComplexEqnSys;
+
+protected function createTmpCrefExpsForComplexEqnSys_work
+  "This function gets a crefExp and decides if a tmp_crefExp is needed. If yes, tmp_crefExp is created and returned.
+   It also returns lists of expressions to create inner equations and residual equations from.
+   author: ptaeuber 06-2017"
+  input DAE.Exp inExp;
+  input DAE.ComponentRef inCrefPrefix;
+  input output list<DAE.ComponentRef> eqCrefs;
+  input list<DAE.ComponentRef> callCrefs;
+  output DAE.Exp outCrefExp;
+  input output list<DAE.Exp> lhsExpLstRes;
+  input output list<DAE.Exp> rhsExpLstRes;
+  input output list<DAE.Exp> lhsExpLstAss;
+  input output list<DAE.Exp> rhsExpLstAss;
+algorithm
+  outCrefExp := match inExp
+    local
+      String name;
+      DAE.Type ty;
+      DAE.ComponentRef cr, c1;
+      list<DAE.ComponentRef> crlist;
+      DAE.Exp e, exp, tmp_exp;
+      list<DAE.Exp> tmp_lhsExpLstRes = {}, tmp_rhsExpLstRes = {}, tmp_lhsExpLstAss = {}, tmp_rhsExpLstAss = {};
+      Boolean isEqCref, createTmpVar = false;
+
+    // Wild cref
+    case DAE.CREF(componentRef=DAE.WILD()) then inExp;
+
+    // Array cref
+    case DAE.CREF(componentRef=cr) guard Expression.isArrayType(ComponentReference.crefTypeFull(cr))
+      algorithm
+        crlist := ComponentReference.expandCref(cr, true);
+
+        // Loop array crefs to find out if at least one cref is not in cref list
+        // (means not a variable solved in the current equation)
+        for c in crlist loop
+          // Prepare temporary crefExp
+          name := ComponentReference.crefModelicaStr(c);
+          ty := ComponentReference.crefTypeFull(c);
+          c1 := ComponentReference.crefPrependIdent(inCrefPrefix,name,ComponentReference.crefSubs(c),ty);
+          tmp_exp := Expression.makeCrefExp(c1, ty);
+          exp := Expression.makeCrefExp(c, ty);
+
+          isEqCref := List.isMemberOnTrue(c, eqCrefs, ComponentReference.crefEqual);
+          if isEqCref then
+            // Add cref to temporary assignment lists
+            tmp_lhsExpLstAss := exp :: tmp_lhsExpLstAss;
+            tmp_rhsExpLstAss := tmp_exp :: tmp_rhsExpLstAss;
+
+            // Delete that cref because it is not an iteration variable!
+            eqCrefs := List.deleteMemberOnTrue(c, eqCrefs, ComponentReference.crefEqual);
+          else
+            // Add cref to temporary residual lists
+            tmp_lhsExpLstRes := tmp_exp :: tmp_lhsExpLstRes;
+            tmp_rhsExpLstRes := exp :: tmp_rhsExpLstRes;
+          end if;
+
+          createTmpVar := createTmpVar or not isEqCref;
+        end for;
+
+        // If at least one cref is not in cref list create new tmp crefExp (variable) to add to the system
+        if createTmpVar then
+          // Prepare temporary crefExp
+          name := ComponentReference.crefModelicaStr(cr);
+          ty := ComponentReference.crefTypeFull(cr);
+          cr := ComponentReference.crefPrependIdent(inCrefPrefix,name,ComponentReference.crefSubs(cr),ty);
+          e := Expression.makeCrefExp(cr, ty);
+
+          // Add temporary residual and assignment list to global lists
+          lhsExpLstAss := listAppend(tmp_lhsExpLstAss, lhsExpLstAss);
+          rhsExpLstAss := listAppend(tmp_rhsExpLstAss, rhsExpLstAss);
+          lhsExpLstRes := listAppend(tmp_lhsExpLstRes, lhsExpLstRes);
+          rhsExpLstRes := listAppend(tmp_rhsExpLstRes, rhsExpLstRes);
+        else
+          // All the crefs are to be solved in the current equation, so no tmp var is needed
+          e := inExp;
+        end if;
+      then e;
+
+    // Normal cref
+    case DAE.CREF(componentRef=cr)
+      algorithm
+        // If cref is not in cref list (means not a variable solved in the current equation)
+        // create new tmp crefExp (variable) to add to the system
+        // Also do this if cref occurs in lhs and rhs
+        if not List.isMemberOnTrue(cr, eqCrefs, ComponentReference.crefEqual) or List.isMemberOnTrue(cr, callCrefs, ComponentReference.crefEqual) then
+          // Prepare temporary crefExp
+          name := ComponentReference.crefModelicaStr(cr);
+          ty := ComponentReference.crefTypeFull(cr);
+          cr := ComponentReference.crefPrependIdent(inCrefPrefix,name,ComponentReference.crefSubs(cr),ty);
+          e := Expression.makeCrefExp(cr, ty);
+
+          // Add expressions to residual lists
+          lhsExpLstRes := e :: lhsExpLstRes;
+          rhsExpLstRes := inExp :: rhsExpLstRes;
+        else
+          // Cref is to be solved in the current equation on the lhs, so no tmp var is needed
+          e := inExp;
+          // Delete that cref because it is not an iteration variable!
+          eqCrefs := List.deleteMemberOnTrue(cr, eqCrefs, ComponentReference.crefEqual);
+        end if;
+      then e;
+
+    else
+      equation
+        print("SimCodeUtil.createTmpCrefExpsForComplexEqnSys_work: fail for" + ExpressionDump.printExpStr(inExp) + "\n");
+      then fail();
+  end match;
+end createTmpCrefExpsForComplexEqnSys_work;
 
 protected function createArrayTempVar
   input DAE.ComponentRef name;
@@ -2947,7 +3168,7 @@ algorithm
 
     case(DAE.CREF(cr, ty)::rest) equation
       slst = List.map(dims, intString);
-      var = SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false, ty, false, SOME(name), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), slst, false, true, false, NONE());
+      var = SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false, ty, false, SOME(name), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), slst, false, true, false, NONE(), NONE());
       tempvars = createTempVarsforCrefs(rest, {var});
     then List.append_reverse(tempvars, itempvars);
   end match;
@@ -2983,7 +3204,7 @@ algorithm
       arrayCref = ComponentReference.getArrayCref(cr);
       inst_dims = ComponentReference.crefDims(cr);
       numArrayElement = List.map(inst_dims, ExpressionDump.dimensionString);
-      var = SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false, ty, false, arrayCref, SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), numArrayElement, false, true, false, NONE());
+      var = SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false, ty, false, arrayCref, SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), numArrayElement, false, true, false, NONE(), NONE());
     then createTempVarsforCrefs(rest, var::itempvars);
   end match;
 end createTempVarsforCrefs;
@@ -3026,13 +3247,13 @@ algorithm
         arraycref := ComponentReference.crefStripSubs(cr);
         ty := ComponentReference.crefTypeFull(cr);
         var := SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false,
-              ty, false, SOME(arraycref), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, true, false, NONE());
+              ty, false, SOME(arraycref), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, true, false, NONE(), NONE());
 
         /* The rest don't need to be marked i.e. we have 'NONE()'. Just create simvars. */
         ttmpvars := {var};
         for cr in crlst loop
           ty := ComponentReference.crefTypeFull(cr);
-          var := SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false, ty, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, true, false, NONE());
+          var := SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false, ty, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, true, false, NONE(), NONE());
           ttmpvars := var::ttmpvars;
         end for;
         ttmpvars := Dangerous.listReverseInPlace(ttmpvars);
@@ -3046,121 +3267,112 @@ protected function createNonlinearResidualEquations
   input list<BackendDAE.Equation> eqs;
   input Integer iuniqueEqIndex;
   input list<SimCodeVar.SimVar> itempvars;
-  output list<SimCode.SimEqSystem> eqSystems;
-  output Integer ouniqueEqIndex;
-  output list<SimCodeVar.SimVar> otempvars;
+  output list<SimCode.SimEqSystem> eqSystems = {};
+  output Integer ouniqueEqIndex = iuniqueEqIndex;
+  output list<SimCodeVar.SimVar> otempvars = itempvars;
 algorithm
-  (eqSystems, ouniqueEqIndex, otempvars) := matchcontinue (eqs)
-    local
-      Integer size, uniqueEqIndex;
-      DAE.Exp res_exp, e1, e2, e, lhse;
-      list<DAE.Exp> explst, explst1;
-      list<BackendDAE.Equation> rest;
-      BackendDAE.Equation eq;
-      list<SimCode.SimEqSystem> eqSystemsRest, eqSystlst;
-      list<Integer> ds;
-      DAE.ComponentRef left;
-      list<DAE.Statement> algStatements;
-      DAE.ElementSource source;
-      list<tuple<DAE.Exp, DAE.Exp>> exptl;
-      list<DAE.ComponentRef> crefs, crefstmp;
-      list<SimCodeVar.SimVar> tempvars;
-      BackendVarTransform.VariableReplacements repl;
-      DAE.Type ty;
-      String errorMessage;
-      DAE.Expand crefExpand;
+  try
+    for eq in listReverse(eqs) loop
+      eqSystems := match (eq, ouniqueEqIndex)
+        local
+          DAE.Exp res_exp, e1, e2, e, lhse;
+          list<DAE.Exp> explst, explst1;
+          list<SimCode.SimEqSystem> eqSystlst;
+          list<Integer> ds;
+          DAE.ComponentRef left;
+          list<DAE.Statement> algStatements;
+          DAE.ElementSource source;
+          list<tuple<DAE.Exp, DAE.Exp>> exptl;
+          list<DAE.ComponentRef> crefs, crefstmp;
+          BackendVarTransform.VariableReplacements repl;
+          DAE.Type ty;
+          DAE.Expand crefExpand;
+          Integer uniqueEqIndex;
 
-    case ({})
-    then ({}, iuniqueEqIndex, itempvars);
+        case (BackendDAE.EQUATION(exp=e1, scalar=e2, source=source), uniqueEqIndex) equation
+          res_exp = Expression.createResidualExp(e1, e2);
+          res_exp = Expression.replaceDerOpInExp(res_exp);
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source)::eqSystems;
 
-    case (BackendDAE.EQUATION(exp=e1, scalar=e2, source=source)::rest) equation
-      res_exp = Expression.createResidualExp(e1, e2);
-      res_exp = Expression.replaceDerOpInExp(res_exp);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, iuniqueEqIndex, itempvars);
-    then (SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source)::eqSystemsRest, uniqueEqIndex+1, tempvars);
+        case (BackendDAE.RESIDUAL_EQUATION(exp=e, source=source), uniqueEqIndex) equation
+          (res_exp, _) = ExpressionSimplify.simplify(e);
+          res_exp = Expression.replaceDerOpInExp(res_exp);
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source) :: eqSystems;
 
-    case (BackendDAE.RESIDUAL_EQUATION(exp=e, source=source)::rest) equation
-      (res_exp, _) = ExpressionSimplify.simplify(e);
-      res_exp = Expression.replaceDerOpInExp(res_exp);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, iuniqueEqIndex, itempvars);
-    then (SimCode.SES_RESIDUAL(uniqueEqIndex, res_exp, source) :: eqSystemsRest, uniqueEqIndex+1, tempvars);
+        // An array equation
+        case (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2, source=source), uniqueEqIndex) equation
+          ty = Expression.typeof(e1);
+          left = ComponentReference.makeCrefIdent("$TMP_" + intString(uniqueEqIndex), ty, {});
+          lhse = DAE.CREF(left,ty);
 
-    // An array equation
-    case (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2, source=source)::rest) equation
-      ty = Expression.typeof(e1);
-      left = ComponentReference.makeCrefIdent("$TMP_" + intString(iuniqueEqIndex), ty, {});
-      lhse = DAE.CREF(left,ty);
+          res_exp = Expression.createResidualExp(e1, e2);
+          res_exp = Expression.replaceDerOpInExp(res_exp);
+          crefstmp = ComponentReference.expandCref(left, false);
+          explst1 = List.map(crefstmp, Expression.crefExp);
+          (eqSystlst, uniqueEqIndex) = List.map1Fold(explst1, makeSES_RESIDUAL, source, uniqueEqIndex);
+          eqSystlst = SimCode.SES_ARRAY_CALL_ASSIGN(uniqueEqIndex, lhse, res_exp, source)::eqSystlst;
+          otempvars = createArrayTempVar(left, ds, explst1, otempvars);
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then listAppend(eqSystlst, eqSystems);
 
-      res_exp = Expression.createResidualExp(e1, e2);
-      res_exp = Expression.replaceDerOpInExp(res_exp);
-      crefstmp = ComponentReference.expandCref(left, false);
-      explst1 = List.map(crefstmp, Expression.crefExp);
-      (eqSystlst, uniqueEqIndex) = List.map1Fold(explst1, makeSES_RESIDUAL, source, iuniqueEqIndex);
-      eqSystlst = SimCode.SES_ARRAY_CALL_ASSIGN(uniqueEqIndex, lhse, res_exp, source)::eqSystlst;
-      tempvars = createArrayTempVar(left, ds, explst1, itempvars);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, uniqueEqIndex+1, tempvars);
-      eqSystemsRest = listAppend(eqSystlst, eqSystemsRest);
-    then (eqSystemsRest, uniqueEqIndex, tempvars);
+        // A complex equation
+        case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source), uniqueEqIndex) equation
+          (e1, _) = ExpressionSimplify.simplify(e1);
+          e1 = Expression.replaceDerOpInExp(e1);
+          (e2, _) = ExpressionSimplify.simplify(e2);
+          e2 = Expression.replaceDerOpInExp(e2);
+          (eqSystlst, ouniqueEqIndex, otempvars) = createNonlinearResidualEquationsComplex(e1, e2, source, uniqueEqIndex, otempvars);
+        then listAppend(eqSystlst, eqSystems);
 
-    // An complex equation
-    case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source)::rest) equation
-      (e1, _) = ExpressionSimplify.simplify(e1);
-      e1 = Expression.replaceDerOpInExp(e1);
-      (e2, _) = ExpressionSimplify.simplify(e2);
-      e2 = Expression.replaceDerOpInExp(e2);
-      (eqSystlst, uniqueEqIndex, tempvars) = createNonlinearResidualEquationsComplex(e1, e2, source, iuniqueEqIndex, itempvars);
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, uniqueEqIndex, tempvars);
-      eqSystemsRest = listAppend(eqSystlst, eqSystemsRest);
-    then (eqSystemsRest, uniqueEqIndex, tempvars);
+        case (BackendDAE.WHEN_EQUATION(whenEquation=BackendDAE.WHEN_STMTS()), _) equation
+          // This following does not work. It does not take index or elseWhen into account.
+          // The generated code for the when-equation also does not solve a linear system; it uses the variables directly.
+          /*
+           tp = Expression.typeof(e2);
+           e1 = Expression.makeCrefExp(left, tp);
+           res_exp = DAE.BINARY(e1, DAE.SUB(tp), e2);
+           res_exp = ExpressionSimplify.simplify(res_exp);
+           res_exp = Expression.replaceDerOpInExp(res_exp);
+           (eqSystemsRest) = createNonlinearResidualEquations(rest, repl, uniqueEqIndex );
+           then
+           (SimCode.SES_RESIDUAL(0, res_exp) :: eqSystemsRest, entrylst1);
+           */
+          Error.addSourceMessage(Error.UNSUPPORTED_LANGUAGE_FEATURE, {"non-linear equations within when-equations", "Perform non-linear operations outside the when-equation (this is slower, but works)"}, BackendEquation.equationInfo(eq));
+        then fail();
 
-    case ((eq as BackendDAE.WHEN_EQUATION(whenEquation=BackendDAE.WHEN_STMTS()))::_) equation
-      // This following does not work. It does not take index or elseWhen into account.
-      // The generated code for the when-equation also does not solve a linear system; it uses the variables directly.
-      /*
-       tp = Expression.typeof(e2);
-       e1 = Expression.makeCrefExp(left, tp);
-       res_exp = DAE.BINARY(e1, DAE.SUB(tp), e2);
-       res_exp = ExpressionSimplify.simplify(res_exp);
-       res_exp = Expression.replaceDerOpInExp(res_exp);
-       (eqSystemsRest) = createNonlinearResidualEquations(rest, repl, uniqueEqIndex );
-       then
-       (SimCode.SES_RESIDUAL(0, res_exp) :: eqSystemsRest, entrylst1);
-       */
-      Error.addSourceMessage(Error.UNSUPPORTED_LANGUAGE_FEATURE, {"non-linear equations within when-equations", "Perform non-linear operations outside the when-equation (this is slower, but works)"}, BackendEquation.equationInfo(eq));
-    then fail();
+        case (BackendDAE.ALGORITHM(alg=DAE.ALGORITHM_STMTS(algStatements), source=source, expand=crefExpand), uniqueEqIndex) equation
+          crefs = CheckModel.checkAndGetAlgorithmOutputs(DAE.ALGORITHM_STMTS(algStatements), source, crefExpand);
+          // BackendDump.debugStrCrefLstStr(("Crefs : ", crefs, ", ", "\n"));
+          (crefstmp, repl) = createTmpCrefs(crefs, uniqueEqIndex, {}, BackendVarTransform.emptyReplacements());
+          // BackendDump.debugStrCrefLstStr(("Crefs : ", crefstmp, ", ", "\n"));
+          explst = List.map(crefs, Expression.crefExp);
+          explst = List.map(explst, Expression.replaceDerOpInExp);
 
-    case (BackendDAE.ALGORITHM(alg=DAE.ALGORITHM_STMTS(algStatements), source=source, expand=crefExpand)::rest) equation
-      crefs = CheckModel.checkAndGetAlgorithmOutputs(DAE.ALGORITHM_STMTS(algStatements), source, crefExpand);
-      // BackendDump.debugStrCrefLstStr(("Crefs : ", crefs, ", ", "\n"));
-      (crefstmp, repl) = createTmpCrefs(crefs, iuniqueEqIndex, {}, BackendVarTransform.emptyReplacements());
-      // BackendDump.debugStrCrefLstStr(("Crefs : ", crefstmp, ", ", "\n"));
-      explst = List.map(crefs, Expression.crefExp);
-      explst = List.map(explst, Expression.replaceDerOpInExp);
+          // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
+          (algStatements, _) = BackendVarTransform.replaceStatementLst(algStatements, repl, SOME(BackendVarTransform.skipPreOperator), {}, false);
+          // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
 
-      // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
-      (algStatements, _) = BackendVarTransform.replaceStatementLst(algStatements, repl, SOME(BackendVarTransform.skipPreOperator), {}, false);
-      // BackendDump.dumpAlgorithms({DAE.ALGORITHM_STMTS(algStatements)}, 0);
+          explst1 = List.map(crefstmp, Expression.crefExp);
+          explst1 = List.map(explst1, Expression.replaceDerOpInExp);
+          otempvars = createTempVarsforCrefs(explst1, otempvars);
 
-      explst1 = List.map(crefstmp, Expression.crefExp);
-      explst1 = List.map(explst1, Expression.replaceDerOpInExp);
-      tempvars = createTempVarsforCrefs(explst1, itempvars);
+          // 0 = a - tmp
+          exptl = List.threadTuple(explst, explst1);
+          (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, uniqueEqIndex);
 
-      // 0 = a - tmp
-      exptl = List.threadTuple(explst, explst1);
-      (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_RESIDUAL1, source, iuniqueEqIndex);
+          eqSystlst = SimCode.SES_ALGORITHM(uniqueEqIndex, algStatements)::eqSystlst;
+          // Tpl.tplPrint(SimCodeDump.dumpEqs, eqSystlst);
 
-      eqSystlst = SimCode.SES_ALGORITHM(uniqueEqIndex, algStatements)::eqSystlst;
-      // Tpl.tplPrint(SimCodeDump.dumpEqs, eqSystlst);
-
-      (eqSystemsRest, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(rest, uniqueEqIndex+1, tempvars);
-      eqSystemsRest = listAppend(eqSystlst, eqSystemsRest);
-    then (eqSystemsRest, uniqueEqIndex, tempvars);
-
-    case (eq::_) equation
-      errorMessage = "function createNonlinearResidualEquations failed for equation: " + BackendDump.equationString(eq);
-      Error.addSourceMessage(Error.INTERNAL_ERROR, {errorMessage}, BackendEquation.equationInfo(eq));
-    then fail();
-  end matchcontinue;
+          ouniqueEqIndex = uniqueEqIndex + 1;
+        then listAppend(eqSystlst, eqSystems);
+      end match;
+    end for;
+  else
+    Error.addMessage(Error.INTERNAL_ERROR, {"function createNonlinearResidualEquations failed"});
+    fail();
+  end try;
 end createNonlinearResidualEquations;
 
 public function dimsToAllIndexes
@@ -3278,8 +3490,21 @@ protected function makeSES_SIMPLE_ASSIGN
 protected
   DAE.Exp e;
   DAE.ComponentRef cr;
+  String msg;
 algorithm
-  (DAE.CREF(cr, _), e) := inTpl;
+  (cr, e) := match(inTpl)
+    case((DAE.CREF(cr, _), e))
+      then (cr,e);
+    case((DAE.UNARY(DAE.UMINUS(_), DAE.CREF(cr, _)), e))
+      algorithm
+        e := Expression.negate(e);
+      then (cr,Expression.negate(e));
+    else
+      algorithm
+        msg := "SimCodeUtil.makeSES_SIMPLE_ASSIGN failed for: " + ExpressionDump.printExpStr(Util.tuple21(inTpl))+" = "+ExpressionDump.printExpStr(Util.tuple22(inTpl))+"\n";
+        Error.addCompilerWarning(msg);
+      then fail();
+  end match;
   outSimEqn := SimCode.SES_SIMPLE_ASSIGN(iuniqueEqIndex, cr, e, source);
   ouniqueEqIndex := iuniqueEqIndex+1;
 end makeSES_SIMPLE_ASSIGN;
@@ -3371,7 +3596,7 @@ algorithm
         // extract the variables and equations of the block.
         (eqn_lst, var_lst,_) = BackendDAETransform.getEquationAndSolvedVar(comp, eqns, vars);
         // BackendDump.printEquationList(eqn_lst);
-        // BackendDump.dumpVars(var_lst);
+        // BackendDump.dumpVarList(var_lst, "var_lst");
         eqn_lst = BackendEquation.replaceDerOpInEquationList(eqn_lst);
         // States are solved for der(x) not x.
         var_lst_1 = List.map(var_lst, BackendVariable.transformXToXd);
@@ -3379,8 +3604,8 @@ algorithm
         eqns_1 = BackendEquation.listEquation(eqn_lst);
         (equations_, uniqueEqIndex, tempvars) = createOdeSystem2(false, vars_1, globalKnownVars, eqns_1, jacobian, jac_tp, funcs, vars, iuniqueEqIndex, ei, mixedSystem, itempvars);
         uniqueEqIndexMapping = uniqueEqIndex-1; //a system with this index is created that contains all the equations with the indeces from iuniqueEqIndex to uniqueEqIndex-2
-        //tmpEqSccMapping = List.fold1(List.intRange2(iuniqueEqIndex, uniqueEqIndex - 1), appendSccIdx, isccIndex, ieqSccMapping);
-        tmpEqSccMapping = List.fold1(List.intRange2(uniqueEqIndexMapping, uniqueEqIndex - 1), appendSccIdx, isccIndex, ieqSccMapping);
+        //tmpEqSccMapping = appendSccIdxRange(iuniqueEqIndex, uniqueEqIndex - 1, isccIndex, ieqSccMapping);
+        tmpEqSccMapping = appendSccIdxRange(uniqueEqIndexMapping, uniqueEqIndex - 1, isccIndex, ieqSccMapping);
         tmpBackendMapping = setEqMapping(List.intRange2(uniqueEqIndexMapping, uniqueEqIndex - 1),eqIdcs,iBackendMapping);
       then (equations_, equations_, uniqueEqIndex, tempvars, tmpEqSccMapping, tmpBackendMapping);
 
@@ -3476,7 +3701,7 @@ algorithm
     simJac = List.sort(simJac,simJacCSRToCSC);
     end if;
 
-    then ({SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(iuniqueEqIndex, mixedEvent, simVars, beqs, simJac, {}, NONE(), sources, 0), NONE())}, iuniqueEqIndex+1, itempvars);
+    then ({SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(iuniqueEqIndex, mixedEvent, false, simVars, beqs, simJac, {}, NONE(), sources, 0, inVars.numberOfVars), NONE())}, iuniqueEqIndex+1, itempvars);
 
     // Time varying nonlinear jacobian. Non-linear system of equations.
     case (_, BackendDAE.JAC_GENERIC()) equation
@@ -3488,8 +3713,8 @@ algorithm
       (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(eqn_lst, iuniqueEqIndex, itempvars);
       // create symbolic jacobian for simulation
       (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-      (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(eqn_lst, containsHomotopyCall, false);
-    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, jacobianMatrix, homotopySupport, mixedSystem), NONE())}, uniqueEqIndex+1, tempvars);
+      (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(eqn_lst, BackendDAEUtil.containsHomotopyCall, false);
+    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, inVars.numberOfVars+listLength(tempvars)-listLength(itempvars), jacobianMatrix, homotopySupport, mixedSystem, false), NONE())}, uniqueEqIndex+1, tempvars);
 
     // No analytic jacobian available. Generate non-linear system.
     case (_, _) equation
@@ -3499,8 +3724,8 @@ algorithm
       eqn_lst = BackendEquation.equationList(inEquationArray);
       crefs = BackendVariable.getAllCrefFromVariables(inVars);
       (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(eqn_lst, iuniqueEqIndex, itempvars);
-      (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(eqn_lst, containsHomotopyCall, false);
-    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, NONE(), homotopySupport, mixedSystem), NONE())}, uniqueEqIndex+1, tempvars);
+      (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(eqn_lst, BackendDAEUtil.containsHomotopyCall, false);
+    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, inVars.numberOfVars+listLength(tempvars)-listLength(itempvars), NONE(), homotopySupport, mixedSystem, false), NONE())}, uniqueEqIndex+1, tempvars);
 
     // failure
     else equation
@@ -3510,27 +3735,6 @@ algorithm
     then fail();
   end matchcontinue;
 end createOdeSystem2;
-
-protected function containsHomotopyCall
-  input DAE.Exp inExp;
-  input Boolean inHomotopy;
-  output DAE.Exp outExp;
-  output Boolean outHomotopy;
-protected
-  BackendDAE.Variables vars;
-  Boolean b;
-  BackendVarTransform.VariableReplacements repl;
-algorithm
-  (outExp, outHomotopy) := match(inExp, inHomotopy)
-    case (_, true)
-    then (inExp, true);
-
-    case (DAE.CALL(path=Absyn.IDENT(name="homotopy")), _)
-    then (inExp, true);
-
-    else (inExp, inHomotopy);
-  end match;
-end containsHomotopyCall;
 
 protected function checkLinearSystem
   input Integer info;
@@ -3597,18 +3801,16 @@ protected function createTornSystem
 algorithm
    (equations_, ouniqueEqIndex, otempvars) := match(linear, isyst, ishared)
      local
-       list<BackendDAE.Var> tvars, ovarsLst;
-       list<BackendDAE.Equation> reqns, otherEqnsLst;
-       BackendDAE.Variables vars, globalKnownVars, diffVars, ovars;
-       BackendDAE.EquationArray eqns, oeqns;
-       list<SimCodeVar.SimVar> tempvars, simVars;
+       list<BackendDAE.Var> tvars;
+       list<BackendDAE.Equation> reqns;
+       BackendDAE.Variables vars, globalKnownVars;
+       BackendDAE.EquationArray eqns;
+       list<SimCodeVar.SimVar> tempvars, tempvars2, simVars;
        list<SimCode.SimEqSystem> simequations, resEqs;
-       Integer uniqueEqIndex;
+       Integer uniqueEqIndex, nInnerVars;
        list<DAE.ComponentRef> tcrs;
-       DAE.FunctionTree functree;
        Option<SimCode.JacobianMatrix> jacobianMatrix;
-       list<Integer> otherEqnsInts, otherVarsInts, tearingVars, residualEqns;
-       list<list<Integer>> otherVarsIntsLst;
+       list<Integer> tearingVars, residualEqns;
        Boolean homotopySupport;
        BackendDAE.InnerEquations innerEquations;
        BackendDAE.Jacobian inJacobian;
@@ -3617,58 +3819,6 @@ algorithm
        Option<SimCode.LinearSystem> alternativeTearingL;
        Option<SimCode.NonlinearSystem> alternativeTearingNl;
 
-
-/*
-       BackendDAE.EquationArray eqns1;
-       BackendDAE.Variables v;
-       BackendDAE.EqSystem syst;
-       list<DAE.Exp> beqs;
-       list<DAE.ElementSource> sources;
-       BackendVarTransform.VariableReplacements repl;
-
-       BackendDAE.IncidenceMatrix m;
-       list<tuple<Integer, Integer, BackendDAE.Equation>> jac;
-       list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJac;
-
-
-       // for the linear case we could try just to evaluate all equation
-     case(true, _, _, _, _, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), BackendDAE.SHARED(globalKnownVars=globalKnownVars, functionTree=functree), _, _)
-       equation
-         true = intLt(listLength(otherEqns), 12);
-         //get tearing vars
-         tvars = List.map1r(tearingVars, BackendVariable.getVarAt, vars);
-         ((simVars, _)) = List.fold(tvars, traversingdlowvarToSimvarFold, ({}, globalKnownVars));
-         simVars = listReverse(simVars);
-         // get residual eqns
-         reqns = BackendEquation.getEqns(residualEqns, eqns);
-         // solve other equations
-         repl = BackendVarTransform.emptyReplacements();
-         repl = solveInnerEquations(otherEqns, eqns, vars, ishared, repl);
-         // replace other equations in residual equations
-         (reqns, _) = BackendVarTransform.replaceEquations(reqns, repl, SOME(BackendVarTransform.skipPreOperator));
-         // States are solved for der(x) not x.
-         reqns = BackendEquation.replaceDerOpInEquationList(reqns);
-         tvars = List.map(tvars, BackendVariable.transformXToXd);
-         // generatate jacobian
-         v = BackendVariable.listVar1(tvars);
-         eqns1 = BackendEquation.listEquation(reqns);
-         syst = BackendDAE.EQSYSTEM(v, eqns1, NONE(), NONE(), BackendDAE.NO_MATCHING(), {});
-         //  BackendDump.dumpEqSystem(syst);
-         (m, _) = BackendDAEUtil.incidenceMatrix(syst, BackendDAE.ABSOLUTE(), NONE());
-         // calculate jacobian. If constant, linear system of equations. Otherwise nonlinear
-         (SOME(jac),_) = BackendDAEUtil.calculateJacobian(v, eqns1, m, true, ishared);
-         //  print(BackendDump.dumpJacobianStr(SOME(jac)) + "\n");
-         // generate linear System
-         (beqs, sources) = BackendDAEUtil.getEqnSysRhs(eqns1, v, SOME(functree));
-         //repl = BackendVarTransform.emptyReplacements();
-         //((_, beqs, _, _, _)) = BackendEquation.traverseEquationArray(eqns1, BackendDAEUtil.equationToExp, (v, {}, {}, SOME(functree), repl));
-         beqs = listReverse(beqs);
-         simJac = List.map1(jac, jacToSimjac, v);
-         // generate other equations
-         (simequations, uniqueEqIndex, tempvars) = createTornSystemInnerEqns(otherEqns, skipDiscInAlgorithm, isyst, ishared, iuniqueEqIndex+1, itempvars, {SimCode.SES_LINEAR(iuniqueEqIndex, false, simVars, beqs, sources, simJac, 0)});
-       then
-         (simequations, uniqueEqIndex, tempvars);
-*/
      // CASE: linear
      case(true, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), BackendDAE.SHARED(globalKnownVars=globalKnownVars)) equation
        BackendDAE.TEARINGSET(tearingvars=tearingVars, residualequations=residualEqns, innerEquations=innerEquations, jac=inJacobian) = strictTearingSet;
@@ -3685,15 +3835,16 @@ algorithm
        simVars = listReverse(simVars);
 
        // get residual eqns
-       reqns = BackendEquation.getEqns(residualEqns, eqns);
+       reqns = BackendEquation.getList(residualEqns, eqns);
        reqns = BackendEquation.replaceDerOpInEquationList(reqns);
        // generate other equations
-       (simequations, uniqueEqIndex, tempvars) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, iuniqueEqIndex, itempvars, {});
+       (simequations, uniqueEqIndex, tempvars, nInnerVars, _) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, iuniqueEqIndex, itempvars, {});
        (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(reqns, uniqueEqIndex, tempvars);
        simequations = listAppend(simequations, resEqs);
 
        (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-       lSystem = SimCode.LINEARSYSTEM(uniqueEqIndex, false, simVars, {}, {}, simequations, jacobianMatrix, {}, 0);
+       lSystem = SimCode.LINEARSYSTEM(uniqueEqIndex, false, true, simVars, {}, {}, simequations, jacobianMatrix, {}, 0, listLength(tvars)+nInnerVars+listLength(tempvars)-listLength(itempvars));
+       tempvars2 = tempvars;
 
        // Do if dynamic tearing is activated
        if Util.isSome(casualTearingSet) then
@@ -3705,20 +3856,20 @@ algorithm
          simVars = listReverse(simVars);
 
          // get residual eqns
-         reqns = BackendEquation.getEqns(residualEqns, eqns);
+         reqns = BackendEquation.getList(residualEqns, eqns);
          reqns = BackendEquation.replaceDerOpInEquationList(reqns);
          // generate other equations
-         (simequations, uniqueEqIndex, tempvars) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, uniqueEqIndex+1, tempvars, {});
-         (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(reqns, uniqueEqIndex, tempvars);
+         (simequations, uniqueEqIndex, tempvars2, nInnerVars, _) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, uniqueEqIndex+1, tempvars, {});
+         (resEqs, uniqueEqIndex, tempvars2) = createNonlinearResidualEquations(reqns, uniqueEqIndex, tempvars2);
          simequations = listAppend(simequations, resEqs);
 
-         (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-         alternativeTearingL = SOME(SimCode.LINEARSYSTEM(uniqueEqIndex, false, simVars, {}, {}, simequations, jacobianMatrix, {}, 0));
+         (jacobianMatrix, uniqueEqIndex, tempvars2) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars2);
+         alternativeTearingL = SOME(SimCode.LINEARSYSTEM(uniqueEqIndex, false, true, simVars, {}, {}, simequations, jacobianMatrix, {}, 0, listLength(tvars)+nInnerVars+listLength(tempvars2)-listLength(tempvars)));
 
        else
          alternativeTearingL = NONE();
        end if;
-     then ({SimCode.SES_LINEAR(lSystem, alternativeTearingL)}, uniqueEqIndex+1, tempvars);
+     then ({SimCode.SES_LINEAR(lSystem, alternativeTearingL)}, uniqueEqIndex+1, tempvars2);
 
      // CASE: nonlinear
      case(false, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _) equation
@@ -3728,19 +3879,22 @@ algorithm
        tvars = List.map(tvars, BackendVariable.transformXToXd);
 
        // get residual eqns
-       reqns = BackendEquation.getEqns(residualEqns, eqns);
+       reqns = BackendEquation.getList(residualEqns, eqns);
        reqns = BackendEquation.replaceDerOpInEquationList(reqns);
        // generate residual replacements
        tcrs = List.map(tvars, BackendVariable.varCref);
        // generate other equations
-       (simequations, uniqueEqIndex, tempvars) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, iuniqueEqIndex, itempvars, {});
+       (simequations, uniqueEqIndex, tempvars, nInnerVars, homotopySupport) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, iuniqueEqIndex, itempvars, {});
        (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(reqns, uniqueEqIndex, tempvars);
        simequations = listAppend(simequations, resEqs);
 
        (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-       (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(reqns, containsHomotopyCall, false);
+       if not homotopySupport then
+         (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(reqns, BackendDAEUtil.containsHomotopyCall, false);
+       end if;
 
-       nlSystem = SimCode.NONLINEARSYSTEM(uniqueEqIndex, simequations, tcrs, 0, jacobianMatrix, homotopySupport, mixedSystem);
+       nlSystem = SimCode.NONLINEARSYSTEM(uniqueEqIndex, simequations, tcrs, 0, listLength(tvars)+nInnerVars+listLength(tempvars)-listLength(itempvars), jacobianMatrix, homotopySupport, mixedSystem, true);
+       tempvars2 = tempvars;
 
        // Do if dynamic tearing is activated
        if Util.isSome(casualTearingSet) then
@@ -3750,23 +3904,25 @@ algorithm
          tvars = List.map(tvars, BackendVariable.transformXToXd);
 
          // get residual eqns
-         reqns = BackendEquation.getEqns(residualEqns, eqns);
+         reqns = BackendEquation.getList(residualEqns, eqns);
          reqns = BackendEquation.replaceDerOpInEquationList(reqns);
          // generate residual replacements
          tcrs = List.map(tvars, BackendVariable.varCref);
          // generate other equations
-         (simequations, uniqueEqIndex, tempvars) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, uniqueEqIndex+1, tempvars, {});
-         (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(reqns, uniqueEqIndex, tempvars);
+         (simequations, uniqueEqIndex, tempvars2, nInnerVars, homotopySupport) = createTornSystemInnerEqns(innerEquations, skipDiscInAlgorithm, genDiscrete, isyst, ishared, uniqueEqIndex+1, tempvars, {});
+         (resEqs, uniqueEqIndex, tempvars2) = createNonlinearResidualEquations(reqns, uniqueEqIndex, tempvars2);
          simequations = listAppend(simequations, resEqs);
 
-         (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-         (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(reqns, containsHomotopyCall, false);
+         (jacobianMatrix, uniqueEqIndex, tempvars2) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars2);
+         if not homotopySupport then
+           (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(reqns, BackendDAEUtil.containsHomotopyCall, false);
+         end if;
 
-         alternativeTearingNl = SOME(SimCode.NONLINEARSYSTEM(uniqueEqIndex, simequations, tcrs, 0, jacobianMatrix, homotopySupport, mixedSystem));
+         alternativeTearingNl = SOME(SimCode.NONLINEARSYSTEM(uniqueEqIndex, simequations, tcrs, 0, listLength(tvars)+nInnerVars+listLength(tempvars2)-listLength(tempvars), jacobianMatrix, homotopySupport, mixedSystem, true));
        else
          alternativeTearingNl = NONE();
        end if;
-     then ({SimCode.SES_NONLINEAR(nlSystem, alternativeTearingNl)}, uniqueEqIndex+1, tempvars);
+     then ({SimCode.SES_NONLINEAR(nlSystem, alternativeTearingNl)}, uniqueEqIndex+1, tempvars2);
    end match;
 end createTornSystem;
 
@@ -3798,7 +3954,7 @@ algorithm
     case ({}, _, _, _, _) then inRepl;
     case (BackendDAE.INNEREQUATION(eqn=e, vars={v})::rest, _, _, _, _)
       equation
-        (BackendDAE.EQUATION(exp=e1, scalar=e2)) = BackendEquation.equationNth1(inEqns, e);
+        (BackendDAE.EQUATION(exp=e1, scalar=e2)) = BackendEquation.get(inEqns, e);
         (var as BackendDAE.VAR(varName=cr)) = BackendVariable.getVarAt(inVars, v);
         varexp = Expression.crefExp(cr);
         varexp = if BackendVariable.isStateVar(var) then Expression.expDer(varexp) else varexp;
@@ -3812,7 +3968,7 @@ algorithm
         solveInnerEquations(rest, inEqns, inVars, ishared, repl);
     case (BackendDAE.INNEREQUATION(eqn=e, vars=vlst)::rest, _, _, _, _)
       equation
-        (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2)) = BackendEquation.equationNth1(inEqns, e);
+        (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2)) = BackendEquation.get(inEqns, e);
         varlst = List.map1r(vlst, BackendVariable.getVarAt, inVars);
         subslst = Expression.dimensionSizesSubscripts(ds);
         subslst = Expression.rangesToSubscripts(subslst);
@@ -3825,7 +3981,7 @@ algorithm
         solveInnerEquations(rest, inEqns, inVars, ishared, repl);
      case (BackendDAE.INNEREQUATIONCONSTRAINTS(eqn=e, vars={v})::rest, _, _, _, _)
       equation
-        (BackendDAE.EQUATION(exp=e1, scalar=e2)) = BackendEquation.equationNth1(inEqns, e);
+        (BackendDAE.EQUATION(exp=e1, scalar=e2)) = BackendEquation.get(inEqns, e);
         (var as BackendDAE.VAR(varName=cr)) = BackendVariable.getVarAt(inVars, v);
         varexp = Expression.crefExp(cr);
         varexp = if BackendVariable.isStateVar(var) then Expression.expDer(varexp) else varexp;
@@ -3839,7 +3995,7 @@ algorithm
         solveInnerEquations(rest, inEqns, inVars, ishared, repl);
      case (BackendDAE.INNEREQUATIONCONSTRAINTS(eqn=e, vars=vlst)::rest, _, _, _, _)
       equation
-        (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2)) = BackendEquation.equationNth1(inEqns, e);
+        (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2)) = BackendEquation.get(inEqns, e);
         varlst = List.map1r(vlst, BackendVariable.getVarAt, inVars);
         subslst = Expression.dimensionSizesSubscripts(ds);
         subslst = Expression.rangesToSubscripts(subslst);
@@ -3889,65 +4045,6 @@ algorithm
   end match;
 end solveInnerEquations1;
 
-//protected function createTornSystemOtherEqns
-//  input list<tuple<Integer, list<Integer>>> otherEqns;
-//  input Boolean skipDiscInAlgorithm "if true skip discrete algorithm vars";
-//  input BackendDAE.EqSystem isyst;
-//  input BackendDAE.Shared ishared;
-//  input Integer iuniqueEqIndex;
-//  input list<SimCodeVar.SimVar> itempvars;
-//  input list<SimCode.SimEqSystem> isimequations;
-//  output list<SimCode.SimEqSystem> equations_;
-//  output Integer ouniqueEqIndex;
-//  output list<SimCodeVar.SimVar> otempvars;
-//algorithm
-//  (equations_, ouniqueEqIndex, otempvars) :=
-//  createTornSystemOtherEqns_2(otherEqns, skipDiscInAlgorithm, isyst, ishared,
-//  iuniqueEqIndex, itempvars, isimequations);
-//  print(anyString(equations_) + "\n");
-//end createTornSystemOtherEqns;
-//
-//protected function createTornSystemOtherEqns_2
-//  input list<tuple<Integer, list<Integer>>> otherEqns;
-//  input Boolean skipDiscInAlgorithm "if true skip discrete algorithm vars";
-//  input BackendDAE.EqSystem isyst;
-//  input BackendDAE.Shared ishared;
-//  input Integer iuniqueEqIndex;
-//  input list<SimCodeVar.SimVar> itempvars;
-//  input list<SimCode.SimEqSystem> isimequations;
-//  output list<SimCode.SimEqSystem> equations_;
-//  output Integer ouniqueEqIndex;
-//  output list<SimCodeVar.SimVar> otempvars;
-//algorithm
-//   (equations_, ouniqueEqIndex, otempvars) :=
-//   match(otherEqns, skipDiscInAlgorithm, isyst, ishared, iuniqueEqIndex, itempvars, isimequations)
-//     local
-//       BackendDAE.EquationArray eqns;
-//       list<SimCodeVar.SimVar> tempvars;
-//       list<SimCode.SimEqSystem> simequations;
-//       Integer uniqueEqIndex, eqnindx;
-//       BackendDAE.Equation eqn;
-//       list<Integer> vars;
-//       list<tuple<Integer, list<Integer>>> rest;
-//       BackendDAE.StrongComponent comp;
-//
-//     case({}, _, _, _, _, _, _)
-//     then (isimequations, iuniqueEqIndex, itempvars);
-//
-//     case((eqnindx, vars)::rest, _, BackendDAE.EQSYSTEM(orderedEqs=eqns), _, _, _, _) equation
-//       // get Eqn
-//       eqn = BackendEquation.equationNth1(eqns, eqnindx);
-//       // generate comp
-//       comp = createTornSystemOtherEqns1(eqn, eqnindx, vars);
-//       (simequations, _, uniqueEqIndex, tempvars) = createEquations(true, false, true, skipDiscInAlgorithm, isyst, ishared, {comp}, iuniqueEqIndex, itempvars);
-//       simequations = listAppend(isimequations, simequations);
-//       // generade other equations
-//       (simequations, uniqueEqIndex, tempvars) = createTornSystemOtherEqns_2(rest, skipDiscInAlgorithm, isyst, ishared, uniqueEqIndex, tempvars, simequations);
-//     then (simequations, uniqueEqIndex, tempvars);
-//   end match;
-//end createTornSystemOtherEqns_2;
-
-
 protected function createTornSystemInnerEqns
   input BackendDAE.InnerEquations innerEquations;
   input Boolean skipDiscInAlgorithm "if true skip discrete algorithm vars";
@@ -3960,6 +4057,8 @@ protected function createTornSystemInnerEqns
   output list<SimCode.SimEqSystem> equations_;
   output Integer ouniqueEqIndex = iuniqueEqIndex;
   output list<SimCodeVar.SimVar> otempvars = itempvars;
+  output Integer nVars = 0;
+  output Boolean homotopySupport = false;
 protected
   BackendDAE.EquationArray eqns;
   Integer eqnindx;
@@ -3981,7 +4080,11 @@ algorithm
   for eq in innerEquations loop
     // get Eqn
     (eqnindx, vars, cons) := BackendDAEUtil.getEqnAndVarsFromInnerEquation(eq);
-    eqn := BackendEquation.equationNth1(eqns, eqnindx);
+    nVars := nVars + listLength(vars);
+    eqn := BackendEquation.get(eqns, eqnindx);
+    if not homotopySupport then
+      (_, homotopySupport) := BackendEquation.traverseExpsOfEquation(eqn, BackendDAEUtil.containsHomotopyCall, false);
+    end if;
     // generate comp
     comp := createTornSystemInnerEqns1(eqn, eqnindx, vars);
     (simequations, _, ouniqueEqIndex, otempvars) := createEquationsWork(genDiscrete, false, genDiscrete, skipDiscInAlgorithm, isyst, ishared, comp, ouniqueEqIndex, otempvars, cons);
@@ -3990,7 +4093,6 @@ algorithm
 
   equations_ := DoubleEndedList.toListAndClear(equations);
 end createTornSystemInnerEqns;
-
 
 protected function createTornSystemInnerEqns1
   input BackendDAE.Equation eqn;
@@ -4177,53 +4279,12 @@ algorithm
   end matchcontinue;
 end createStateSetsSets;
 
-protected function indexStateSets
-" function to collect jacobians for statesets"
-  input list<SimCode.StateSet> inSets;
-  input list<SimCode.JacobianMatrix> inSymJacs;
-  input Integer iNumLin;
-  input Integer iNumNonLin;
-  input Integer iNumMixed;
-  input Integer iNumJac;
-  input list<SimCode.StateSet> inSetsAccum;
-  input list<SimCode.JacobianMatrix> inSymAccumInternal;
-  output list<SimCode.StateSet> outSets;
-  output list<SimCode.JacobianMatrix> outSymJacs;
-  output list<SimCode.JacobianMatrix> outSymAccumInternal;
-  output Integer oNumLin;
-  output Integer oNumNonLin;
-  output Integer oNumMixed;
-  output Integer oNumJac;
-algorithm
-  (outSets, outSymJacs, outSymAccumInternal, oNumLin, oNumNonLin, oNumMixed, oNumJac) := match(inSets, inSymJacs, iNumLin, iNumNonLin, iNumMixed, iNumJac, inSetsAccum, inSymAccumInternal)
-    local
-      list<SimCode.StateSet> sets;
-      SimCode.StateSet set;
-      SimCode.JacobianMatrix symJac;
-      list<SimCode.JacobianMatrix> symJacs, symJacsInternal;
-      Integer numJac, numLin, numNonLin, numMixed;
-      Integer index;
-      Integer nCandidates;
-      Integer nStates;
-      list<DAE.ComponentRef> states;
-      list<DAE.ComponentRef> statescandidates;
-      DAE.ComponentRef crA;
-    case ({}, _, _, _, _, _, _, _) then (listReverse(inSetsAccum), listReverse(inSymJacs), inSymAccumInternal, iNumLin, iNumNonLin, iNumMixed, iNumJac);
-    case((SimCode.SES_STATESET(index=index, nCandidates=nCandidates, nStates=nStates, states=states, statescandidates=statescandidates, crA=crA, jacobianMatrix=symJac))::sets, _, _, _, _, _, _, _)
-    equation
-      (symJac, numLin, numNonLin, numMixed, numJac, symJacsInternal) = countandIndexAlgebraicLoopsSymJac(symJac, iNumLin, iNumNonLin, iNumMixed, iNumJac);
-      outSymAccumInternal = listAppend(inSymAccumInternal, symJacsInternal);
-      (outSets, outSymJacs, outSymAccumInternal, oNumLin, oNumNonLin, oNumMixed, oNumJac) = indexStateSets(sets, symJac::inSymJacs, numLin, numNonLin, numMixed, numJac, SimCode.SES_STATESET(index, nCandidates, nStates, states, statescandidates, crA, symJac)::inSetsAccum, outSymAccumInternal);
-     then (outSets, outSymJacs, outSymAccumInternal, oNumLin, oNumNonLin, oNumMixed, oNumJac);
-  end match;
-end indexStateSets;
-
 // =============================================================================
 // section to create SimCode symbolic jacobian from BackendDAE.Equations
 //
 // =============================================================================
 
-protected function createSymbolicSimulationJacobian "fuction createSymbolicSimulationJacobian
+protected function createSymbolicSimulationJacobian "function createSymbolicSimulationJacobian
   author: wbraun
   function creates a symbolic jacobian column for
   non-linear systems and tearing systems."
@@ -4329,13 +4390,18 @@ algorithm
         residualVars = BackendVariable.listVar1(residualVarsLst);
         independentVars = BackendVariable.listVar1(independentVarsLst);
 
+        // get cse and other aux vars > columnVars
         ((allVars, _)) = BackendVariable.traverseBackendDAEVars(syst.orderedVars, getFurtherVars , ({}, x));
         systvars = BackendVariable.listVar1(allVars);
         ((columnVars, _)) =  BackendVariable.traverseBackendDAEVars(systvars, traversingdlowvarToSimvar, ({}, emptyVars));
-        columnVars = createAllDiffedSimVars(dependentVarsLst, x, residualVars, 0, name, columnVars);
+        columnVars = List.map1(columnVars, setSimVarKind, BackendDAE.JAC_DIFF_VAR());
+        columnVars = List.map1(columnVars, setSimVarMatrixName, SOME(name));
+        columnVars = rewriteIndex(columnVars, 0);
+
+        columnVars = createAllDiffedSimVars(dependentVarsLst, x, residualVars, 0, listLength(columnVars), name, columnVars);
         columnVars = listReverse(columnVars);
 
-       if Flags.isSet(Flags.JAC_DUMP2) then
+        if Flags.isSet(Flags.JAC_DUMP2) then
           print("\n---+++ all column variables +++---\n");
           print(Tpl.tplString(SimCodeDump.dumpVarsShort, columnVars));
           print("analytical Jacobians -> create all SimCode vars for Matrix " + name + " time: " + realString(clock()) + "\n");
@@ -4363,6 +4429,8 @@ algorithm
 
         // create seed vars
         seedVars = replaceSeedVarsName(seedVars, name);
+        seedVars = List.map1(seedVars, setSimVarKind, BackendDAE.SEED_VAR());
+        seedVars = List.map1(seedVars, setSimVarMatrixName, SOME(name));
 
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> transformed to SimCode for Matrix " + name + " time: " + realString(clock()) + "\n");
@@ -4406,7 +4474,7 @@ protected function createJacobianLinearCode
   output list<SimCode.JacobianMatrix> res = {};
   output Integer ouniqueEqIndex;
 algorithm
-  (res,ouniqueEqIndex) := matchcontinue (inSymjacs, inModelInfo, iuniqueEqIndex)
+  (res,ouniqueEqIndex) := match (inSymjacs, inModelInfo, iuniqueEqIndex)
     local
       SimCode.HashTableCrefToSimVar crefSimVarHT;
       SimCode.JacobianMatrix tmpJac;
@@ -4419,7 +4487,7 @@ algorithm
         (res, ouniqueEqIndex) = createSymbolicJacobianssSimCode(inSymjacs, crefSimVarHT, iuniqueEqIndex, {"A", "B", "C", "D"}, {});
         // _ = Flags.set(Flags.EXEC_STAT, b);
       then (res,ouniqueEqIndex);
-  end matchcontinue;
+  end match;
 end createJacobianLinearCode;
 
 protected function checkForEmptyBDAE
@@ -4430,6 +4498,7 @@ algorithm
     case (NONE())
       then true;
     case (SOME((_,_,{},{},{})))
+      equation
       then true;
     else
       false;
@@ -4437,7 +4506,7 @@ algorithm
 end checkForEmptyBDAE;
 
 protected function createSymbolicJacobianssSimCode
-"fuction creates the linear model matrices column-wise
+"function creates the linear model matrices column-wise
  author: wbraun"
   input BackendDAE.SymbolicJacobians inSymJacobians;
   input SimCode.HashTableCrefToSimVar inSimVarHT;
@@ -4553,6 +4622,8 @@ algorithm
 
         // create seed vars
         seedVars = replaceSeedVarsName(seedVars, name);
+        seedVars = List.map1(seedVars, setSimVarKind, BackendDAE.SEED_VAR());
+        seedVars = List.map1(seedVars, setSimVarMatrixName, SOME(name));
 
         tmpJac = SimCode.JAC_MATRIX({SimCode.JAC_COLUMN({},{},nRows)}, seedVars, name, sparseInts, sparseIntsT, coloring, maxColor, -1, 0);
         linearModelMatrices = tmpJac::inJacobianMatrixes;
@@ -4579,10 +4650,14 @@ algorithm
         dummyVar = ("dummyVar" + name);
         x = DAE.CREF_IDENT(dummyVar, DAE.T_REAL_DEFAULT, {});
 
+        // get cse and other aux vars > columnVars
         emptyVars =  BackendVariable.emptyVars();
         ((allVars, _)) = BackendVariable.traverseBackendDAEVars(syst.orderedVars, getFurtherVars , ({}, x));
         systvars = BackendVariable.listVar1(allVars);
         ((otherColumnVars, _)) =  BackendVariable.traverseBackendDAEVars(systvars, traversingdlowvarToSimvar, ({}, emptyVars));
+        otherColumnVars = List.map1(otherColumnVars, setSimVarKind, BackendDAE.JAC_DIFF_VAR());
+        otherColumnVars = List.map1(otherColumnVars, setSimVarMatrixName, SOME(name));
+        otherColumnVars = rewriteIndex(otherColumnVars, 0);
 
         //sort variable for index
         empty = BackendVariable.listVar1(alldiffedVars);
@@ -4592,7 +4667,13 @@ algorithm
         (_, (_, alldiffedVars)) = List.mapFoldTuple(columnVars, sortBackVarWithSimVarsOrder, (empty, {}));
         alldiffedVars = listReverse(alldiffedVars);
         vars = BackendVariable.listVar1(diffedVars);
-        columnVars = createAllDiffedSimVars(alldiffedVars, x, vars, 0, name, otherColumnVars);
+
+        columnVars = createAllDiffedSimVars(alldiffedVars, x, vars, 0, listLength(otherColumnVars), name, otherColumnVars);
+        if Flags.isSet(Flags.JAC_DUMP2) then
+          print("\n---+++ second columnVars +++---\n");
+          print(Tpl.tplString(SimCodeDump.dumpVarsShort, columnVars));
+          print("analytical Jacobians -> create column variables for matrix " + name + " time: " + realString(clock()) + "\n");
+        end if;
 
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> create all SimCode vars for Matrix " + name + " time: " + realString(clock()) + "\n");
@@ -4642,6 +4723,8 @@ algorithm
 
         // create seed vars
         seedVars = replaceSeedVarsName(seedVars, name);
+        seedVars = List.map1(seedVars, setSimVarKind, BackendDAE.SEED_VAR());
+        seedVars = List.map1(seedVars, setSimVarMatrixName, SOME(name));
 
         tmpJac = SimCode.JAC_MATRIX({SimCode.JAC_COLUMN(columnEquations, columnVars, nRows)}, seedVars, name, sparseInts, sparseIntsT, coloring, maxColor, -1, 0);
         linearModelMatrices = tmpJac::inJacobianMatrixes;
@@ -4704,66 +4787,60 @@ protected function createAllDiffedSimVars "author: wbraun"
   input list<BackendDAE.Var> inVars;
   input DAE.ComponentRef inCref;
   input BackendDAE.Variables inAllVars;
-  input Integer inIndex;
+  input Integer inResIndex;
+  input Integer inTmpIndex;
   input String inMatrixName;
   input list<SimCodeVar.SimVar> iVars;
   output list<SimCodeVar.SimVar> outVars;
 algorithm
-  outVars := matchcontinue(inVars, inCref, inAllVars, inIndex, inMatrixName, iVars)
+  outVars := match(inVars, inCref, inAllVars, inResIndex, inTmpIndex, inMatrixName, iVars)
   local
-    BackendDAE.Var  v1;
-    SimCodeVar.SimVar r1;
+    BackendDAE.Var v, v1;
+    SimCodeVar.SimVar simVar;
     DAE.ComponentRef currVar, cref, derivedCref;
     list<BackendDAE.Var> restVar;
     Option<DAE.VariableAttributes> dae_var_attr;
     Boolean isProtected;
     Boolean hideResult = false;
-    Integer index;
+    Integer resIndex, tmpIndex;
+    BackendDAE.VarKind varkind;
 
-    case({}, _, _, _, _, _)
-    then listReverse(iVars);
-    // skip for dicrete variable
-    case(BackendDAE.VAR(varKind=BackendDAE.DISCRETE())::restVar, cref, _, _, _, _) equation
+    case({}, _, _, _, _, _, _) then listReverse(iVars);
+
+    case((v as BackendDAE.VAR(varName=currVar, varKind=varkind, values = dae_var_attr))::restVar, cref, _, resIndex, tmpIndex, _, _) algorithm
+      try
+        BackendVariable.getVarSingle(currVar, inAllVars);
+        currVar := match (varkind)
+          case BackendDAE.STATE() then ComponentReference.crefPrefixDer(currVar);
+          else currVar;
+        end match;
+        derivedCref := Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
+        v1 := BackendVariable.copyVarNewName(derivedCref, v);
+        v1 := BackendVariable.setVarKind(v1, BackendDAE.JAC_VAR());
+        simVar := dlowvarToSimvar(v1, NONE(), inAllVars);
+        simVar.index := resIndex;
+        resIndex := resIndex + 1;
+      else
+        currVar := match (varkind)
+          case BackendDAE.STATE() then ComponentReference.crefPrefixDer(currVar);
+          else currVar;
+        end match;
+        derivedCref := Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
+        v1 := BackendVariable.copyVarNewName(derivedCref, v);
+        v1 := BackendVariable.setVarKind(v1, BackendDAE.JAC_DIFF_VAR());
+        simVar := dlowvarToSimvar(v1, NONE(), inAllVars);
+        simVar.index := tmpIndex;
+        tmpIndex := tmpIndex + 1;
+      end try;
+      simVar.matrixName := SOME(inMatrixName);
      then
-       createAllDiffedSimVars(restVar, cref, inAllVars, inIndex, inMatrixName, iVars);
-
-     case(BackendDAE.VAR(varName=currVar, varKind=BackendDAE.STATE(), values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      BackendVariable.getVarSingle(currVar, inAllVars);
-      currVar = ComponentReference.crefPrefixDer(currVar);
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.STATE_DER(), "", "", "", inIndex, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex+1, inMatrixName, r1::iVars);
-
-    case(BackendDAE.VAR(varName=currVar, values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      BackendVariable.getVarSingle(currVar, inAllVars);
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.STATE_DER(), "", "", "", inIndex, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex+1, inMatrixName, r1::iVars);
-
-     case(BackendDAE.VAR(varName=currVar, varKind=BackendDAE.STATE(), values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      currVar = ComponentReference.crefPrefixDer(currVar);
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.VARIABLE(), "", "", "", -1, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex, inMatrixName, r1::iVars);
-
-    case(BackendDAE.VAR(varName=currVar, values = dae_var_attr)::restVar, cref, _, _, _, _) equation
-      derivedCref = Differentiate.createDifferentiatedCrefName(currVar, cref, inMatrixName);
-      isProtected = getProtected(dae_var_attr);
-      r1 = SimCodeVar.SIMVAR(derivedCref, BackendDAE.VARIABLE(), "", "", "", -1, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), {}, false, isProtected, hideResult, NONE());
-    then
-      createAllDiffedSimVars(restVar, cref, inAllVars, inIndex, inMatrixName, r1::iVars);
+       createAllDiffedSimVars(restVar, cref, inAllVars, resIndex, tmpIndex, inMatrixName, simVar::iVars);
 
     else
      equation
       Error.addInternalError("function createAllDiffedSimVars failed", sourceInfo());
     then fail();
-  end matchcontinue;
+  end match;
 end createAllDiffedSimVars;
 
 protected function collectAllJacobianEquations
@@ -4796,7 +4873,6 @@ algorithm
       outVars := listAppend(tmp, outVars);
     end for;
   end for;
-  outVars := List.map1(outVars, setSimVarKind, BackendDAE.JAC_VAR());
 end collectAllJacobianVars;
 
 protected function collectAllSeedVars
@@ -4820,6 +4896,13 @@ algorithm
   simVar.varKind := varKind;
 end setSimVarKind;
 
+protected function setSimVarMatrixName
+  input output SimCodeVar.SimVar simVar;
+  input Option<String> optName;
+algorithm
+  simVar.matrixName := optName;
+end setSimVarMatrixName;
+
 protected function makeTmpRealSimCodeVar
   input DAE.ComponentRef inName;
   input BackendDAE.VarKind inVarKind;
@@ -4828,7 +4911,7 @@ algorithm
   outSimVar := SimCodeVar.SIMVAR(inName, inVarKind, "", "", "", -1 /* use -1 to get an error in simulation if something failed */,
         NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT,
         false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource,
-        SimCodeVar.NONECAUS(), NONE(), {}, false, false, false, NONE());
+        SimCodeVar.NONECAUS(), NONE(), {}, false, false, false, NONE(), NONE());
 end makeTmpRealSimCodeVar;
 
 protected function sortSparsePattern
@@ -4841,6 +4924,7 @@ protected
   DAE.ComponentRef cref;
   Integer size, i, j;
   list<Integer> intLst;
+  array<Integer> intArr;
   list<DAE.ComponentRef> crefs;
 algorithm
   //create HT
@@ -4867,7 +4951,9 @@ algorithm
          j := BaseHashTable.get(cr, ht);
          intLst := j :: intLst;
        end for;
-       intLst := List.sort(intLst, intGt);
+       intArr := listArray(intLst);
+       Array.heapSort(intArr);
+       intLst := arrayList(intArr);
        outSparse := (i, intLst) :: outSparse;
     end for;
     outSparse := List.sort(outSparse, Util.compareTupleIntGt);
@@ -4884,6 +4970,7 @@ protected
   DAE.ComponentRef cref;
   Integer size, i, j;
   list<Integer> intLst;
+  array<Integer> intArr;
   list<DAE.ComponentRef> crefs;
 algorithm
   //create HT
@@ -4910,7 +4997,9 @@ algorithm
          j := BaseHashTable.get(cr, ht);
          intLst := j :: intLst;
        end for;
-       intLst := List.sort(intLst, intGt);
+       intArr := listArray(intLst);
+       Array.heapSort(intArr);
+       intLst := arrayList(intArr);
        outSparse := (i, intLst) :: outSparse;
        i := i + 1;
     end for;
@@ -5021,7 +5110,7 @@ algorithm
 end dumpSparsePattern;
 
 protected function createSimCodeSparsePattenDAEmode
-"fuction translates the sparse pattern of the daeMode
+"function translates the sparse pattern of the daeMode
  author: wbraun"
   input BackendDAE.SymbolicJacobians inSymJacobian;
   input SimCode.HashTableCrefToSimVar inSimVarHT;
@@ -5641,7 +5730,6 @@ algorithm
       Boolean homotopySupport;
       BackendDAE.EquationAttributes attr;
 
-
     case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source, attr=attr), _, _, _) equation
       crefs = List.map(inVars, BackendVariable.varCref);
       e1 = Expression.replaceDerOpInExp(e1);
@@ -5649,20 +5737,38 @@ algorithm
       (equations_, uniqueEqIndex, tempvars) = createSingleComplexEqnCode2(crefs, e1, e2, iuniqueEqIndex, itempvars, source, attr, iextra, genDiscrete, inVars);
     then (equations_, uniqueEqIndex, tempvars);
 
+    case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source), _, _, _) equation
+      crefs = List.map(inVars, BackendVariable.varCref);
+
+      // Check that all crefs are of Type Real
+      // otherwise we can't solve that with one Non-linear equation
+      true = List.mapMapBoolAnd(crefs, ComponentReference.crefLastType, Types.isRealOrSubTypeReal);
+
+      // Simplify
+      (e1, _) = ExpressionSimplify.simplify(e1);
+      e1 = Expression.replaceDerOpInExp(e1);
+      (e2, _) = ExpressionSimplify.simplify(e2);
+      e2 = Expression.replaceDerOpInExp(e2);
+
+      // Create nonlinear equation system from complex function
+      (resEqs, uniqueEqIndex, tempvars, crefs) = createNonlinearResidualEquationsSingleComplex(e1, e2, source, iuniqueEqIndex, itempvars, crefs);
+      (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(inEquation, BackendDAEUtil.containsHomotopyCall, false);
+    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, listLength(inVars)+listLength(tempvars)-listLength(itempvars), NONE(), homotopySupport, false, false), NONE())}, uniqueEqIndex+1, tempvars);
+
     case (BackendDAE.COMPLEX_EQUATION(), _, _, _) equation
       crefs = List.map(inVars, BackendVariable.varCref);
 
       // check that all crefs are of Type Real
       // otherwise we can't solve that with one Non-linear equation
-      true = Util.boolAndList(List.mapMap(crefs, ComponentReference.crefLastType, Types.isRealOrSubTypeReal));
+      true = List.mapMapBoolAnd(crefs, ComponentReference.crefLastType, Types.isRealOrSubTypeReal);
 
       // wbraun:
       // TODO: Fix createNonlinearResidualEquations support cases where
       //       solved variables are on rhs and also lhs. This is not
-      //       cosidered yet there.
+      //       considered yet there.
       (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations({inEquation}, iuniqueEqIndex, itempvars);
-      (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(inEquation, containsHomotopyCall, false);
-    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, NONE(), homotopySupport, false), NONE())}, uniqueEqIndex+1, tempvars);
+      (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(inEquation, BackendDAEUtil.containsHomotopyCall, false);
+    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, listLength(inVars)+listLength(tempvars)-listLength(itempvars), NONE(), homotopySupport, false, false), NONE())}, uniqueEqIndex+1, tempvars);
 
     // failure
     case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2), _, _, _) equation
@@ -5670,7 +5776,7 @@ algorithm
 
       // check that all crefs are of Type Real
       // otherwise we can't solve that with one Non-linear equation
-      false = Util.boolAndList(List.mapMap(crefs, ComponentReference.crefLastType, Types.isRealOrSubTypeReal));
+      false = List.mapMapBoolAnd(crefs, ComponentReference.crefLastType, Types.isRealOrSubTypeReal);
 
       s1 = ExpressionDump.printExpStr(e1);
       s2 = ExpressionDump.printExpStr(e2);
@@ -5685,7 +5791,7 @@ algorithm
 
       // check that all crefs are of Type Real
       // otherwise we can't solve that with one Non-linear equation
-      true = Util.boolAndList(List.mapMap(crefs, ComponentReference.crefLastType, Types.isRealOrSubTypeReal));
+      true = List.mapMapBoolAnd(crefs, ComponentReference.crefLastType, Types.isRealOrSubTypeReal);
 
       s1 = ExpressionDump.printExpStr(e1);
       s2 = ExpressionDump.printExpStr(e2);
@@ -5724,7 +5830,7 @@ algorithm
       list<DAE.Exp> expLst, crexplst ,e1lst, e2lst;
       DAE.Ident ident;
       list<tuple<DAE.Exp, DAE.Exp>> exptl;
-      SimCode.SimEqSystem simeqn;
+      SimCode.SimEqSystem simeqn_complex;
       list<SimCode.SimEqSystem> eqSystlst;
       list<SimCodeVar.SimVar> tempvars;
       Integer uniqueEqIndex;
@@ -5771,10 +5877,15 @@ algorithm
         ({SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms})}, iuniqueEqIndex+1, itempvars);
 
     /* Record() = f()  */
-    case (_, DAE.CALL(path=path, expLst=e1lst, attr=DAE.CALL_ATTR(ty= tp as DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path=rpath), varLst=varLst))), e2, _, _, _)
+    case (_, DAE.CALL(path=path, expLst=expLst, attr=DAE.CALL_ATTR(ty= tp as DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path=rpath), varLst=varLst))), e2, _, _, _)
       equation
 
         true = Absyn.pathEqual(path, rpath);
+        // check all crefs are on the lhs
+        ht = HashSet.emptyHashSet();
+        ht = List.fold(crefs, BaseHashSet.add, ht);
+        expLst = Expression.traverseExpList(expLst, Expression.expandCrefs, 0) "The routines generate bad code for arrays inside the record unless we expand them";
+        List.foldAllValue(expLst, createSingleComplexEqnCode3, true, ht);
         (e2_1, _) = Expression.extendArrExp(e2, false);
 
         // tmp = somexp
@@ -5782,18 +5893,16 @@ algorithm
         cr1 = ComponentReference.makeCrefIdent("$TMP_" + ident + intString(iuniqueEqIndex), tp, {});
         e1_1 = Expression.crefToExp(cr1);
         stms = DAE.STMT_ASSIGN(tp, e1_1, e2_1, source);
-        simeqn = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
+        simeqn_complex = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
         uniqueEqIndex = iuniqueEqIndex + 1;
 
         /* Expand the varLst. Each var might be an array or record. */
-        e1lst = List.mapFlat(e1lst, Expression.expandExpression);
-        /* Expand the tmp record and any arrays */
-        e2lst = Expression.expandExpression(e1_1);
+        crexplst = List.map1(varLst, Expression.generateCrefsExpFromExpVar, cr1);
         /* pair each of the expanded expressions to coressponding one*/
-        exptl = List.threadTuple(e1lst, e2lst);
+        exptl = List.threadTuple(expLst, crexplst);
         /* Create residual equations for each pair*/
         (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_SIMPLE_ASSIGN, source, uniqueEqIndex);
-        eqSystlst = simeqn::eqSystlst;
+        eqSystlst = simeqn_complex::eqSystlst;
 
         tempvars = createTempVars(varLst, cr1, itempvars);
       then
@@ -5803,8 +5912,10 @@ algorithm
     case (_, e1, DAE.CALL(path=path, expLst=expLst, attr=DAE.CALL_ATTR(ty= tp as DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path=rpath), varLst=varLst))), _, _, _)
       equation
         true = Absyn.pathEqual(path, rpath);
+        // check all crefs are on the rhs => turn
         ht = HashSet.emptyHashSet();
         ht = List.fold(crefs, BaseHashSet.add, ht);
+        expLst = Expression.traverseExpList(expLst, Expression.expandCrefs, 0) "The routines generate bad code for arrays inside the record unless we expand them";
         List.foldAllValue(expLst, createSingleComplexEqnCode3, true, ht);
         (e1_1, _) = Expression.extendArrExp(e1, false);
         // true = ComponentReference.crefEqualNoStringCompare(cr, cr2);
@@ -5813,13 +5924,13 @@ algorithm
         cr1 = ComponentReference.makeCrefIdent("$TMP_" + ident + intString(iuniqueEqIndex), tp, {});
         e2_1 = Expression.crefExp(cr1);
         stms = DAE.STMT_ASSIGN(tp, e2_1, e1_1, source);
-        simeqn = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
+        simeqn_complex = SimCode.SES_ALGORITHM(iuniqueEqIndex, {stms});
         uniqueEqIndex = iuniqueEqIndex + 1;
         // Record()=tmp
         crexplst = List.map1(varLst, Expression.generateCrefsExpFromExpVar, cr1);
         exptl = List.threadTuple(expLst, crexplst);
         (eqSystlst, uniqueEqIndex) = List.map1Fold(exptl, makeSES_SIMPLE_ASSIGN, source, uniqueEqIndex);
-        eqSystlst = simeqn::eqSystlst;
+        eqSystlst = simeqn_complex::eqSystlst;
         tempvars = createTempVars(varLst, cr1, itempvars);
       then
         (eqSystlst, uniqueEqIndex, tempvars);
@@ -5958,7 +6069,7 @@ algorithm
   (equations_, noDiscequations, ouniqueEqIndex, otempvars) := matchcontinue(genDiscrete, inEquations, inVars, iuniqueEqIndex, itempvars, iextra)
     local
       list<Integer> ds;
-      DAE.Exp e1, e2, e1_1, e2_1, lhse;
+      DAE.Exp e1, e2, e1_1, e2_1, lhse, rhse;
       list<DAE.Exp> ea1, ea2, expLst, expLstTmp;
       list<BackendDAE.Equation> re;
       list<BackendDAE.Var> vars;
@@ -5992,7 +6103,9 @@ algorithm
     // {z1,z2,..} = rhsexp -> solved for {z1,z2,..}
     // => tmp = rhsexp;
     // z1 = tmp[1]; z2 = tmp[2] ....
-    case (_, (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=(e1 as DAE.ARRAY()), right=e2, source=source))::{}, _, _, _, _) equation
+    case (_, (BackendDAE.ARRAY_EQUATION(dimSize=ds, left=e1, right=e2, source=source))::{}, _, _, _, _)
+    guard Expression.isMatrix(e1) or Expression.isArray(e1)
+    equation
       // Flattne multi-dimensional ARRAY{ARRAY} expressions
       expLst = Expression.flattenArrayExpToList(e1);
       // Replace the der() operators
@@ -6019,13 +6132,29 @@ algorithm
 
     // An array equation
     // cref = rhsexp
-    case (_, (BackendDAE.ARRAY_EQUATION(left=lhse as DAE.CREF(cr_1, _), right=e2, source=source))::_, BackendDAE.VAR()::_, _, _, _) equation
+    case (_, (BackendDAE.ARRAY_EQUATION(left=lhse as DAE.CREF(cr_1, _), right=e2, source=source))::_, BackendDAE.VAR(varName=cr)::_, _, _, _)
+    guard ComponentReference.crefEqual(cr_1, ComponentReference.crefStripLastSubs(cr))
+    equation
       e1 = Expression.replaceDerOpInExp(lhse);
       e2 = Expression.replaceDerOpInExp(e2);
       (e1, _) = BackendDAEUtil.collateArrExp(e1, NONE());
       (e2, _) = BackendDAEUtil.collateArrExp(e2, NONE());
       (e1, e2) = solveTrivialArrayEquation(cr_1, e1, e2);
       equation_ = SimCode.SES_ARRAY_CALL_ASSIGN(iuniqueEqIndex, e1, e2, source);
+      uniqueEqIndex = iuniqueEqIndex + 1;
+    then ({equation_}, {equation_}, uniqueEqIndex, itempvars);
+
+    // An array equation
+    // lhsexp = cref
+    case (_, (BackendDAE.ARRAY_EQUATION(left=e1, right=rhse as DAE.CREF(cr_1, _), source=source))::_, BackendDAE.VAR(varName=cr)::_, _, _, _)
+    guard ComponentReference.crefEqual(cr_1, ComponentReference.crefStripLastSubs(cr))
+    equation
+      e1 = Expression.replaceDerOpInExp(e1);
+      e2 = Expression.replaceDerOpInExp(rhse);
+      (e1, _) = BackendDAEUtil.collateArrExp(e1, NONE());
+      (e2, _) = BackendDAEUtil.collateArrExp(e2, NONE());
+      (e2, e1) = solveTrivialArrayEquation(cr_1, e2, e1);
+      equation_ = SimCode.SES_ARRAY_CALL_ASSIGN(iuniqueEqIndex, e2, e1, source);
       uniqueEqIndex = iuniqueEqIndex + 1;
     then ({equation_}, {equation_}, uniqueEqIndex, itempvars);
 
@@ -6096,7 +6225,7 @@ algorithm
       true = intEq(listLength(solvedVars), listLength(knownOutputCrefs));
 
       DAE.ALGORITHM_STMTS(algStatements) = BackendDAEUtil.collateAlgorithm(alg, NONE());
-    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(iuniqueEqIndex+1, {SimCode.SES_INVERSE_ALGORITHM(iuniqueEqIndex, algStatements, knownOutputCrefs)}, solvedVars, 0, NONE(), false, false), NONE())}, iuniqueEqIndex+2);
+    then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(iuniqueEqIndex+1, {SimCode.SES_INVERSE_ALGORITHM(iuniqueEqIndex, algStatements, knownOutputCrefs)}, solvedVars, 0, listLength(vars), NONE(), false, false, false), NONE())}, iuniqueEqIndex+2);
 
     // Error message, inverse algorithms cannot be solved for discrete variables
     case (BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand)::_, _) equation
@@ -6120,18 +6249,16 @@ end createSingleAlgorithmCode;
 
 protected function createInitialEquations "author: lochel"
   input BackendDAE.BackendDAE inInitDAE;
-  input List<BackendDAE.Equation> inRemovedEqnLst;
   input Integer iuniqueEqIndex;
   input list<SimCodeVar.SimVar> itempvars;
   output list<SimCode.SimEqSystem> outInitialEqns = {};
-  output list<SimCode.SimEqSystem> outRemovedInitialEqns = {};
   output Integer ouniqueEqIndex = iuniqueEqIndex;
   output list<SimCodeVar.SimVar> otempvars = itempvars;
 protected
   BackendDAE.EquationArray  removedEqs;
   list<SimCodeVar.SimVar> tempvars;
   Integer uniqueEqIndex;
-  list<SimCode.SimEqSystem> allEquations, knownVarEquations, solvedEquations, removedEquations, aliasEquations, removedInitialEquations;
+  list<SimCode.SimEqSystem> allEquations, knownVarEquations, solvedEquations, removedEquations, aliasEquations;
   BackendDAE.EqSystems systs;
   BackendDAE.Shared shared;
   BackendDAE.Variables globalKnownVars, aliasVars;
@@ -6153,12 +6280,8 @@ algorithm
   allEquations := List.append_reverse(solvedEquations, allEquations);
   allEquations := listAppend(knownVarEquations, allEquations);
 
-  // generate equations from removed initial equations
-  (removedInitialEquations, uniqueEqIndex, tempvars) := createNonlinearResidualEquations(inRemovedEqnLst, uniqueEqIndex, tempvars);
-
   // output
   outInitialEqns := allEquations;
-  outRemovedInitialEqns := removedInitialEquations;
   ouniqueEqIndex := uniqueEqIndex;
   otempvars := tempvars;
 end createInitialEquations;
@@ -6334,8 +6457,8 @@ end createVarNominalAssertFromVars;
 protected function createStartValueEquations
   input BackendDAE.EqSystem syst;
   input BackendDAE.Shared shared;
-  input tuple<Integer, list<SimCode.SimEqSystem>> acc;
-  output tuple<Integer, list<SimCode.SimEqSystem>> startValueEquations;
+  input tuple<Integer, list<SimCode.SimEqSystem>, BackendDAE.Variables > acc;
+  output tuple<Integer, list<SimCode.SimEqSystem>, BackendDAE.Variables> startValueEquations;
 algorithm
   startValueEquations := matchcontinue (syst, shared, acc)
     local
@@ -6343,11 +6466,11 @@ algorithm
       list<BackendDAE.Equation>  startValueEquationsTmp2;
       list<SimCode.SimEqSystem> simeqns, simeqns1;
       Integer uniqueEqIndex;
+      BackendDAE.Variables globalKnownVars;
 
-    // this is the old version if the new fails
-    case (BackendDAE.EQSYSTEM(orderedVars=vars), BackendDAE.SHARED(aliasVars=av), (uniqueEqIndex, simeqns)) equation
+    case (BackendDAE.EQSYSTEM(orderedVars=vars), BackendDAE.SHARED(aliasVars=av), (uniqueEqIndex, simeqns, globalKnownVars)) equation
       // vars
-      ((startValueEquationsTmp2, _)) = BackendVariable.traverseBackendDAEVars(vars, createInitialAssignmentsFromStart, ({}, av));
+      ((startValueEquationsTmp2, _, _)) = BackendVariable.traverseBackendDAEVars(vars, createInitialAssignmentsFromStart, ({}, av, globalKnownVars));
       startValueEquationsTmp2 = listReverse(startValueEquationsTmp2);
       // kvars
       // ((startValueEquationsTmp, _)) = BackendVariable.traverseBackendDAEVars(globalKnownVars, createInitialAssignmentsFromStart, ({}, av));
@@ -6355,8 +6478,7 @@ algorithm
       // startValueEquationsTmp2 = listAppend(startValueEquationsTmp2, startValueEquationsTmp);
 
       (simeqns1, uniqueEqIndex) = List.mapFold(startValueEquationsTmp2, dlowEqToSimEqSystem, uniqueEqIndex);
-    then
-      ((uniqueEqIndex, listAppend(simeqns1, simeqns)));
+    then ((uniqueEqIndex, listAppend(simeqns1, simeqns), globalKnownVars));
 
     else equation
       Error.addInternalError("function createStartValueEquations failed", sourceInfo());
@@ -6469,12 +6591,13 @@ algorithm
 end makeSolved_SES_SIMPLE_ASSIGN_fromStartValue;
 
 protected function createParameterEquations
+"Traverses the globalKnownVars and creates simEqns for the variable if necessary."
   input Integer inUniqueEqIndex;
   input list<SimCode.SimEqSystem> acc;
-  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
-  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
+  input BackendDAE.Variables globalKnownVars;
   output Integer outUniqueEqIndex = inUniqueEqIndex;
   output list<SimCode.SimEqSystem> outParameterEquations = {};
+  output Integer nFixedParameters;
 protected
   list<SimCode.SimEqSystem> simvarasserts;
   list<DAE.Algorithm> varasserts;
@@ -6482,21 +6605,13 @@ protected
   BackendDAE.Var p;
   SimCode.SimEqSystem simEq;
 algorithm
+  (outUniqueEqIndex, outParameterEquations, varasserts, nFixedParameters, _) := BackendVariable.traverseBackendDAEVars(globalKnownVars, createSimEqsForGlobalKnownVars, (outUniqueEqIndex, outParameterEquations, {}, 0, HashSetExp.emptyHashSetSized(Util.nextPrime(globalKnownVars.numberOfVars))));
+
   if Flags.isSet(Flags.PARAM_DLOW_DUMP) then
-    BackendDump.dumpVarList(inPrimaryParameters, "parameters in order");
+    print("\nparameters in order (" + intString(listLength(outParameterEquations)) + ")\n" + UNDERLINE + "\n");
+    dumpSimEqSystemLst(listReverse(outParameterEquations), "\n");
+    print("\n");
   end if;
-
-  for p in inPrimaryParameters loop
-    (simEq, outUniqueEqIndex) := makeSolved_SES_SIMPLE_ASSIGN_fromStartValue(p, outUniqueEqIndex);
-    outParameterEquations := simEq::outParameterEquations;
-  end for;
-
-  // get min/max and nominal asserts
-  varasserts := {};
-  for p in inAllPrimaryParameters loop
-    varasserts2 := createVarAsserts(p);
-    varasserts := List.append_reverse(varasserts2, varasserts);
-  end for;
 
   varasserts := MetaModelica.Dangerous.listReverseInPlace(varasserts);
   (simvarasserts, outUniqueEqIndex) := List.mapFold(varasserts, dlowAlgToSimEqSystem, outUniqueEqIndex);
@@ -6506,33 +6621,119 @@ algorithm
   outParameterEquations := listReverse(outParameterEquations);
 end createParameterEquations;
 
+
+protected function createSimEqsForGlobalKnownVars
+"Decides if a simEq is generated from the globalKnownVar and creates it.
+ author: ptaeuber"
+  input output BackendDAE.Var globalKnownVar;
+  input tuple<Integer, list<SimCode.SimEqSystem>, list<DAE.Algorithm>, Integer, HashSetExp.HashSet> inTuple;
+  output tuple<Integer, list<SimCode.SimEqSystem>, list<DAE.Algorithm>, Integer, HashSetExp.HashSet> outTuple;
+protected
+  Integer uniqueEqIndex, nFixedParameters;
+  SimCode.SimEqSystem simEq;
+  list<SimCode.SimEqSystem> parameterEquations;
+  list<DAE.Algorithm> varasserts, varasserts2;
+  HashSetExp.HashSet tplExpHT;
+algorithm
+  (uniqueEqIndex, parameterEquations, varasserts, nFixedParameters, tplExpHT) := inTuple;
+
+  // Get min/max and nominal asserts for fixed parameters
+  if BackendVariable.isParam(globalKnownVar) and BackendVariable.varFixed(globalKnownVar) then
+    varasserts2 := createVarAsserts(globalKnownVar);
+    varasserts := List.append_reverse(varasserts2, varasserts);
+    nFixedParameters := nFixedParameters + 1;
+  end if;
+
+  // Create SimCode Equation for special globalKnownVars
+  if (BackendVariable.isParam(globalKnownVar) and BackendVariable.varFixed(globalKnownVar) and (BackendVariable.isFinalOrProtectedVar(globalKnownVar) or BackendVariable.varHasNonConstantBindExpOrStartValue(globalKnownVar)))
+    or (BackendVariable.isVarAlg(globalKnownVar) and not BackendVariable.isInput(globalKnownVar)) and BackendVariable.varFixed(globalKnownVar)
+    or (BackendVariable.isExtObj(globalKnownVar) and BackendVariable.varHasBindExp(globalKnownVar) and BackendVariable.varFixed(globalKnownVar))
+   then
+
+    _ := match(globalKnownVar)
+      local
+        DAE.Exp call, tplExp, rec;
+        DAE.ElementSource source;
+        list<DAE.Exp> expl;
+        DAE.Type tp;
+
+      // tuple_cse = call
+      case BackendDAE.VAR(tplExp = SOME(tplExp as DAE.TUPLE(expl)))
+        algorithm
+          if BaseHashSet.has(tplExp, tplExpHT) then
+            outTuple := (uniqueEqIndex, parameterEquations, varasserts, nFixedParameters, tplExpHT);
+            return;
+          else
+            tp := Expression.typeof(tplExp);
+            SOME(call) := globalKnownVar.bindExp;
+            source := BackendVariable.getVarSource(globalKnownVar);
+            simEq := SimCode.SES_ALGORITHM(uniqueEqIndex, {DAE.STMT_TUPLE_ASSIGN(tp, expl, call, source)});
+            uniqueEqIndex := uniqueEqIndex+1;
+            tplExpHT := BaseHashSet.add(tplExp, tplExpHT);
+          end if;
+       then ();
+
+      // record_cse = call
+      case BackendDAE.VAR(tplExp = SOME(rec))
+        algorithm
+          if BaseHashSet.has(rec, tplExpHT) then
+            outTuple := (uniqueEqIndex, parameterEquations, varasserts, nFixedParameters, tplExpHT);
+            return;
+          else
+            tp := Expression.typeof(rec);
+            SOME(call) := globalKnownVar.bindExp;
+            source := BackendVariable.getVarSource(globalKnownVar);
+            simEq := SimCode.SES_ALGORITHM(uniqueEqIndex, {DAE.STMT_ASSIGN(tp, rec, call, source)});
+            uniqueEqIndex := uniqueEqIndex+1;
+            tplExpHT := BaseHashSet.add(rec, tplExpHT);
+          end if;
+       then ();
+
+      // 'normal' globalKnownVars
+      else
+        algorithm
+          (simEq, uniqueEqIndex) := makeSolved_SES_SIMPLE_ASSIGN_fromStartValue(globalKnownVar, uniqueEqIndex);
+       then ();
+      end match;
+
+    parameterEquations := simEq::parameterEquations;
+  end if;
+
+  outTuple := (uniqueEqIndex, parameterEquations, varasserts, nFixedParameters, tplExpHT);
+end createSimEqsForGlobalKnownVars;
+
+
 protected function createInitialAssignmentsFromStart
   input BackendDAE.Var inVar;
-  input tuple<list<BackendDAE.Equation>, BackendDAE.Variables> inTpl;
+  input tuple<list<BackendDAE.Equation>, BackendDAE.Variables, BackendDAE.Variables> inTpl;
   output BackendDAE.Var outVar;
-  output tuple<list<BackendDAE.Equation>, BackendDAE.Variables> outTpl;
+  output tuple<list<BackendDAE.Equation>, BackendDAE.Variables, BackendDAE.Variables> outTpl;
 algorithm
   (outVar,outTpl) := matchcontinue (inVar,inTpl)
     local
       BackendDAE.Var var;
       BackendDAE.Equation initialEquation;
       list<BackendDAE.Equation> eqns;
-      DAE.ComponentRef name;
-      DAE.Exp startv;
+      DAE.ComponentRef cref;
+      DAE.Exp startExp;
       DAE.ElementSource source;
       BackendDAE.Variables av;
+      BackendDAE.Variables globalKnownVars;
+      list<DAE.ComponentRef> parameters;
 
       // also add an assignment for variables that have non-constant
       // expressions, e.g. parameter values, as start.  NOTE: such start
       // attributes can then not be changed in the text file, since the initial
       // calc. will override those entries!
-    case (var as BackendDAE.VAR(varName=name, source=source), (eqns, av))
+    case (var as BackendDAE.VAR(varName=cref, source=source), (eqns, av, globalKnownVars))
       equation
-        startv = BackendVariable.varStartValueFail(var);
-        false = Expression.isConst(startv);
+        startExp = BackendVariable.varStartValueFail(var);
+        parameters = Expression.getAllCrefs(startExp);
+        true = BackendVariable.areAllCrefsPrimaryParameters(parameters, globalKnownVars) "add equations if the start value depends only on primary parameters";
+        false = Expression.isConst(startExp) "don't add equations for constant start values";
         SimCodeVar.NOALIAS() = getAliasVar(var, SOME(av));
-        initialEquation = BackendDAE.SOLVED_EQUATION(name, startv, source, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN);
-      then (var, (initialEquation :: eqns, av));
+        initialEquation = BackendDAE.SOLVED_EQUATION(ComponentReference.crefPrefixStart(cref), startExp, source, BackendDAE.EQ_ATTR_DEFAULT_INITIAL);
+      then (var, (initialEquation :: eqns, av, globalKnownVars));
 
     else (inVar,inTpl);
   end matchcontinue;
@@ -6679,12 +6880,11 @@ algorithm
                              ny_int, np_int, na_int, ny_bool, np_bool, na_bool, ny_string, np_string, na_string,
                              numStateSets, numOptimizeConstraints, numOptimizeFinalConstraints);
     if debug then execStat("simCode: createVarInfo"); end if;
-    if debug then execStat("simCode: getHighestDerivation"); end if;
     hasLargeEqSystems := hasLargeEquationSystems(dlow, inInitDAE);
     if debug then execStat("simCode: hasLargeEquationSystems"); end if;
     modelInfo := SimCode.MODELINFO(class_, dlow.shared.info.description, directory, varInfo, vars, functions,
                                    labels, arrayLength(dlow.shared.partitionsInfo.basePartitions),
-                                   arrayLength(dlow.shared.partitionsInfo.subPartitions), hasLargeEqSystems);
+                                   arrayLength(dlow.shared.partitionsInfo.subPartitions), hasLargeEqSystems, {}, {});
   else
     Error.addInternalError("createModelInfo failed", sourceInfo());
     fail();
@@ -6922,7 +7122,7 @@ algorithm
       varIdx := arrayGet(varMap,intAbs(varIdx0));
       var := BackendVariable.getVarAt(varArr,varIdx);
       cref := BackendVariable.varCref(var);
-      eq := BackendEquation.equationNth1(eqs,eqIdx);
+      eq := BackendEquation.get(eqs,eqIdx);
       //print("solve eq("+intString(eqIdx)+"): ");
       //BackendDump.printEquationList({eq});
       //print(" for var("+intString(varIdx0)+"): "+ComponentReference.printComponentRefStr(cref)+"\n");
@@ -6940,7 +7140,7 @@ algorithm
       workList := List.append_reverse(newEqIdcs,workList);
       //print("check these equations again: "+stringDelimitList(List.map(newEqIdcs,intString),", ")+"\n");
       // replace the var with the new start value in these equations
-      eqLst := List.map1r(newEqIdcs,BackendEquation.equationNth1,eqs);
+      eqLst := List.map1r(newEqIdcs,BackendEquation.get,eqs);
       (eqLst,_) := BackendEquation.traverseExpsOfEquationList(eqLst,replaceCrefWithStartValue,varArr);
       eqArr := List.threadFold(newEqIdcs,eqLst,BackendEquation.setAtIndexFirst,eqs);
       // update the incidenceMatrix m and remove the idcs for the calculated var
@@ -6969,7 +7169,7 @@ algorithm
   end match;
 end artificialVarKind;
 
-protected function replaceCrefWithStartValue"replaces a cref with its constant start value. Only if the BackendDAE.Varkind is not artificial in order to avoid guess-start values
+protected function replaceCrefWithStartValue "replaces a cref with its constant start value. Only if the BackendDAE.Varkind is not artificial in order to avoid guess-start values
 Waurich 2015-01"
   input DAE.Exp expIn;
   input BackendDAE.Variables varsIn;
@@ -6998,14 +7198,17 @@ algorithm
       // print("VAR: "+BackendDump.varString(var)+" -->");
        if BackendVariable.varHasBindExp(var) /*and Expression.isConst(BackendVariable.varBindExp(var))*/ then
          exp = BackendVariable.varBindExp(var);
-         exp = replaceCrefWithStartValue(exp,varsIn);
+         if 0 <> Expression.compare(exp, expIn) then
+           // Or should this be an error? Replacing the start-value by itself...
+           exp = replaceCrefWithStartValue(exp,varsIn);
+         end if;
        elseif BackendVariable.varHasStartValue(var) then
          exp = BackendVariable.varStartValue(var);
        else
          exp = expIn;
        end if;
        //print(" has START:"+ ExpressionDump.printExpStr(exp)+"\n");
-       true = Expression.isConst(exp);
+       exp = if Expression.isConst(exp) then exp else expIn;
      then (exp,varsIn);
 
    case(DAE.CALL(path=Absyn.IDENT("sample"), expLst=expLst),_)
@@ -7188,65 +7391,92 @@ protected
   BackendDAE.Variables aliasVars1, aliasVars2;
   BackendDAE.EqSystems systs1, systs2;
   BackendDAE.Shared shared;
-  array<HashSet.HashSet> hs = arrayCreate(1, HashSet.emptyHashSetSized(Util.nextPrime(BackendDAEUtil.daeSize(inSimDAE)+BackendDAEUtil.daeSize(inInitDAE))));
+  Mutable<HashSet.HashSet> hs;
   array<list<SimCodeVar.SimVar>> simVars = arrayCreate(size(SimVarsIndex,1), {});
+  Integer primeSize;
+
+  constant Boolean debug = false;
 algorithm
   BackendDAE.DAE(eqs=systs1, shared=shared as BackendDAE.SHARED(globalKnownVars=globalKnownVars1, localKnownVars=localKnownVars1, externalObjects=extvars1, aliasVars=aliasVars1)) := inSimDAE;
   BackendDAE.DAE(eqs=systs2, shared=BackendDAE.SHARED(globalKnownVars=globalKnownVars2, localKnownVars=localKnownVars2, externalObjects=extvars2, aliasVars=aliasVars2)) := inInitDAE;
+
+  primeSize := Util.nextPrime(
+    integer(1.4*(
+    BackendVariable.varsSize(globalKnownVars1)+BackendVariable.varsSize(globalKnownVars2)+
+    BackendVariable.varsSize(localKnownVars1)+BackendVariable.varsSize(localKnownVars2)+
+    BackendVariable.varsSize(aliasVars1)+BackendVariable.varsSize(aliasVars2)+
+    BackendVariable.varsSize(extvars1)+BackendVariable.varsSize(extvars2)+
+    BackendDAEUtil.daeSize(inSimDAE)+BackendDAEUtil.daeSize(inInitDAE)
+  )));
+  hs := Mutable.create(HashSet.emptyHashSetSized(primeSize));
 
   if not Flags.isSet(Flags.NO_START_CALC) then
     (systs1) := List.map2(systs1, preCalculateStartValues, globalKnownVars1, shared);
     (globalKnownVars1, _) := BackendVariable.traverseBackendDAEVarsWithUpdate(globalKnownVars1, evaluateStartValues, shared);
     //systs2 := List.map1(systs2, preCalculateStartValues, globalKnownVars2);
+    if debug then execStat("createVars: evaluateStartValues"); end if;
   end if;
 
   // ### simulation ###
   // Extract from variable list
   simVars := List.fold1(list(BackendVariable.daeVars(syst) for syst in systs1), BackendVariable.traverseBackendDAEVars, function extractVarsFromList(aliasVars=aliasVars1, vars=globalKnownVars1, hs=hs), simVars);
+  if debug then execStat("createVars: variable list"); end if;
 
   // Extract from known variable list
   simVars := BackendVariable.traverseBackendDAEVars(globalKnownVars1, function extractVarsFromList(aliasVars=aliasVars1, vars=globalKnownVars1, hs=hs), simVars);
+  if debug then execStat("createVars: known variable list"); end if;
 
   // Extract from localKnownVars variable list
   simVars := BackendVariable.traverseBackendDAEVars(localKnownVars1, function extractVarsFromList(aliasVars=aliasVars1, vars=globalKnownVars1, hs=hs), simVars);
+  if debug then execStat("createVars: local known variables list"); end if;
 
   // Extract from removed variable list
   simVars := BackendVariable.traverseBackendDAEVars(aliasVars1, function extractVarsFromList(aliasVars=aliasVars1, vars=globalKnownVars1, hs=hs), simVars);
+  if debug then execStat("createVars: removed variables list"); end if;
 
   // Extract from external object list
   simVars := BackendVariable.traverseBackendDAEVars(extvars1, function extractVarsFromList(aliasVars=aliasVars1, vars=globalKnownVars1, hs=hs), simVars);
+  if debug then execStat("createVars: external object list"); end if;
 
 
   // ### initialization ###
   // Extract from variable list
   simVars := List.fold1(list(BackendVariable.daeVars(syst) for syst in systs2), BackendVariable.traverseBackendDAEVars, function extractVarsFromList(aliasVars=aliasVars2, vars=globalKnownVars2, hs=hs), simVars);
+  if debug then execStat("createVars: variable list (init)"); end if;
 
   // Extract from known variable list
   simVars := BackendVariable.traverseBackendDAEVars(globalKnownVars2, function extractVarsFromList(aliasVars=aliasVars2, vars=globalKnownVars2, hs=hs), simVars);
+  if debug then execStat("createVars: known variable list (init)"); end if;
 
   // Extract from localKnownVars variable list
   simVars := BackendVariable.traverseBackendDAEVars(localKnownVars2, function extractVarsFromList(aliasVars=aliasVars2, vars=globalKnownVars2, hs=hs), simVars);
+  if debug then execStat("createVars: local known variables list (init)"); end if;
 
   // Extract from removed variable list
   simVars := BackendVariable.traverseBackendDAEVars(aliasVars2, function extractVarsFromList(aliasVars=aliasVars2, vars=globalKnownVars2, hs=hs), simVars);
+  if debug then execStat("createVars: removed variables list (init)"); end if;
 
   // Extract from external object list
   simVars := BackendVariable.traverseBackendDAEVars(extvars2, function extractVarsFromList(aliasVars=aliasVars2, vars=globalKnownVars2, hs=hs), simVars);
-
+  if debug then execStat("createVars: external object list (init)"); end if;
 
   addTempVars(simVars, tempvars);
+  if debug then execStat("createVars: addTempVars"); end if;
   //BaseHashSet.printHashSet(hs);
 
   // sort variables on index
   sortSimvars(simVars);
+  if debug then execStat("createVars: sortSimVars"); end if;
 
   if stringEqual(Config.simCodeTarget(), "Cpp") then
     extendIncompleteArray(simVars);
+    if debug then execStat("createVars: Cpp, extendIncompleteArray"); end if;
   end if;
 
   // Index of algebraic and parameters need to fix due to separation of integer variables
   fixIndex(simVars);
   setVariableIndex(simVars);
+  if debug then execStat("createVars: fix and set index"); end if;
 
   outVars := SimCodeVar.SIMVARS(
     Dangerous.arrayGetNoBoundsChecking(simVars, Integer(SimVarsIndex.state)),
@@ -7284,9 +7514,9 @@ protected function extractVarsFromList
   input output BackendDAE.Var var;
   input output array<list<SimCodeVar.SimVar>> simVars;
   input BackendDAE.Variables aliasVars, vars;
-  input array<HashSet.HashSet> hs;
+  input Mutable<HashSet.HashSet> hs;
 algorithm
-  if if ComponentReference.isPreCref(var.varName) then false else not BaseHashSet.has(var.varName, arrayGet(hs,1)) then
+  if if ComponentReference.isPreCref(var.varName) or ComponentReference.isStartCref(var.varName) then false else not BaseHashSet.has(var.varName, Mutable.access(hs)) then
     /* ignore variable, since they are treated by kind in the codegen */
     if not BackendVariable.isAlgebraicOldState(var) then
       extractVarFromVar(var, aliasVars, vars, simVars, hs);
@@ -7304,7 +7534,7 @@ protected function extractVarFromVar
   input BackendDAE.Variables inAliasVars;
   input BackendDAE.Variables inVars;
   input array<list<SimCodeVar.SimVar>> simVars;
-  input array<HashSet.HashSet> hs "all processed crefs";
+  input Mutable<HashSet.HashSet> hs "all processed crefs";
 protected
   SimCodeVar.SimVar simVar;
   SimCodeVar.SimVar derivSimvar;
@@ -7318,10 +7548,10 @@ algorithm
 
 
   // update HashSet
-  arrayUpdate(hs, 1, BaseHashSet.add(simVar.name, arrayGet(hs,1)));
+  Mutable.update(hs, BaseHashSet.add(simVar.name, Mutable.access(hs)));
   if (not isalias) and (BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar)) then
     derivSimvar := derVarFromStateVar(simVar);
-    arrayUpdate(hs, 1, BaseHashSet.add(derivSimvar.name, arrayGet(hs,1)));
+    Mutable.update(hs, BaseHashSet.add(derivSimvar.name, Mutable.access(hs)));
   else
     derivSimvar := simVar; // Just in case
   end if;
@@ -7443,6 +7673,9 @@ algorithm
   deriv.arrayCref := Util.applyOption(deriv.arrayCref, ComponentReference.crefPrefixDer);
   deriv.name := ComponentReference.crefPrefixDer(deriv.name);
   deriv.varKind := BackendDAE.STATE_DER();
+  if deriv.comment <> "" then
+    deriv.comment := "der(" + deriv.comment + ")";
+  end if;
   try
     unit := Unit.parseUnitString(deriv.unit);
     unit := Unit.unitDiv(unit, Unit.UNIT(1e0, 0, 0, 0, 1, 0, 0, 0));
@@ -7451,7 +7684,11 @@ algorithm
     deriv.unit := "";
   end try;
   deriv.displayUnit := "";
+  deriv.minValue := NONE();
+  deriv.maxValue := NONE();
   deriv.initialValue := NONE();
+  deriv.nominalValue := NONE();
+  deriv.isFixed := false;
   deriv.aliasvar := SimCodeVar.NOALIAS();
   deriv.causality := SimCodeVar.INTERNAL();
   deriv.variable_index := NONE();
@@ -7759,7 +7996,7 @@ algorithm
     then s;
 
     // dynamic tearing
-    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index=idx, indexLinearSystem=idxLS, vars=vars, beqs=beqs, residual=residual, jacobianMatrix=jac), SOME(SimCode.LINEARSYSTEM(indexLinearSystem=_))))
+    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index=idx, indexLinearSystem=idxLS, vars=vars, beqs=beqs, residual=residual, jacobianMatrix=jac), SOME(SimCode.LINEARSYSTEM())))
       equation
         s = "strict set:\n"+intString(idx) +": "+ " (LINEAR) index:"+intString(idxLS)+" jacobian: "+boolString(Util.isSome(jac))+"\n";
         s = s+"\tvariables:\n\t"+stringDelimitList(List.map(vars,simVarString),"\t\n");
@@ -7857,7 +8094,7 @@ algorithm
     then ();
 
     // dynamic tearing
-    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(residual=residual, jacobianMatrix=jac, simJac=simJac), SOME(SimCode.LINEARSYSTEM(index=idx2,indexLinearSystem=idxLS2, residual=residual2, jacobianMatrix=jac2, simJac=simJac2))))
+    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(jacobianMatrix=jac, simJac=simJac), SOME(SimCode.LINEARSYSTEM(index=idx2,indexLinearSystem=idxLS2, residual=residual2, jacobianMatrix=jac2, simJac=simJac2))))
       equation
         print(simEqSystemString(eqSysIn));
         print("\n\tsimJac:\n");
@@ -7879,7 +8116,7 @@ algorithm
     then ();
 
     // dynamic tearing
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(jacobianMatrix=jac,eqs=eqs, crefs=crefs), SOME(SimCode.NONLINEARSYSTEM(index=idx2,indexNonLinearSystem=idxNLS2,jacobianMatrix=jac2,eqs=eqs2, crefs=crefs2))))
+    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(jacobianMatrix=jac), SOME(SimCode.NONLINEARSYSTEM(index=idx2,indexNonLinearSystem=idxNLS2,jacobianMatrix=jac2,eqs=eqs2, crefs=crefs2))))
       equation
         print(simEqSystemString(eqSysIn));
         dumpJacobianMatrix(jac);
@@ -7962,13 +8199,16 @@ algorithm
       SimCode.JacobianMatrix jac;
       list<SimCode.JacobianColumn> cols;
       list<SimCode.SimEqSystem> colEqs;
+      list<SimCodeVar.SimVar> colVars;
     case(SOME(jac))
       equation
         SimCode.JAC_MATRIX(columns=cols, jacobianIndex=idx) = jac;
-        colEqs = List.flatten(list(a.columnEqns for a in cols));
+        colEqs  = List.flatten(list(a.columnEqns for a in cols));
+        colVars = List.flatten(list(a.columnVars for a in cols));
         print("\tJacobian idx: "+intString(idx)+"\n\t");
         dumpSimEqSystemLst(colEqs,"\n\t");
         print("\n");
+        dumpVarLst(colVars,"columnVars("+intString(listLength(colVars))+")");
       then ();
     case(NONE())
       then ();
@@ -8329,14 +8569,9 @@ algorithm
     outHT := List.fold(vars.intConstVars, addSimVarToHashTable, outHT);
     outHT := List.fold(vars.boolConstVars, addSimVarToHashTable, outHT);
     outHT := List.fold(vars.stringConstVars, addSimVarToHashTable, outHT);
-    if Config.simCodeTarget()=="Cpp" then
-      // Not needed in the hashtable (actually breaks code generation
-      // due to bad indexes, no information that they are seed variables
-      // and so on...
-      outHT := List.fold(vars.sensitivityVars, addSimVarToHashTable, outHT);
-      outHT := List.fold(vars.jacobianVars, addSimVarToHashTable, outHT);
-      outHT := List.fold(vars.seedVars, addSimVarToHashTable, outHT);
-    end if;
+    outHT := List.fold(vars.sensitivityVars, addSimVarToHashTable, outHT);
+    outHT := List.fold(vars.jacobianVars, addSimVarToHashTable, outHT);
+    outHT := List.fold(vars.seedVars, addSimVarToHashTable, outHT);
     outHT := List.fold(vars.realOptimizeConstraintsVars, addSimVarToHashTable, outHT);
     outHT := List.fold(vars.realOptimizeFinalConstraintsVars, addSimVarToHashTable, outHT);
   else
@@ -8659,7 +8894,7 @@ algorithm
                             and isFixed;
       then
         SimCodeVar.SIMVAR(cr, kind, commentStr, unit, displayUnit, -1 /* use -1 to get an error in simulation if something failed */,
-        minValue, maxValue, initVal, nomVal, isFixed, type_, isDiscrete, arrayCref, aliasvar, source, caus, NONE(), numArrayElement, isValueChangeable, isProtected, hideResult, NONE());
+        minValue, maxValue, initVal, nomVal, isFixed, type_, isDiscrete, arrayCref, aliasvar, source, caus, NONE(), numArrayElement, isValueChangeable, isProtected, hideResult, NONE(), NONE());
 
     // Start value of states may be changeable
     case ((BackendDAE.VAR(varName = cr,
@@ -8690,7 +8925,7 @@ algorithm
         // print("name: " + ComponentReference.printComponentRefStr(cr) + "indx: " + intString(indx) + "\n");
       then
         SimCodeVar.SIMVAR(cr, kind, commentStr, unit, displayUnit, -1 /* use -1 to get an error in simulation if something failed */,
-        minValue, maxValue, initVal, nomVal, isFixed, type_, isDiscrete, arrayCref, aliasvar, source, caus, NONE(), numArrayElement, isValueChangeable, isProtected, hideResult, NONE());
+        minValue, maxValue, initVal, nomVal, isFixed, type_, isDiscrete, arrayCref, aliasvar, source, caus, NONE(), numArrayElement, isValueChangeable, isProtected, hideResult, NONE(), NONE());
 
     case ((BackendDAE.VAR(varName = cr,
       varKind = kind,
@@ -8720,7 +8955,7 @@ algorithm
         // print("name: " + ComponentReference.printComponentRefStr(cr) + "indx: " + intString(indx) + "\n");
       then
         SimCodeVar.SIMVAR(cr, kind, commentStr, unit, displayUnit, -1 /* use -1 to get an error in simulation if something failed */,
-        minValue, maxValue, initVal, nomVal, isFixed, type_, isDiscrete, arrayCref, aliasvar, source, caus, NONE(), numArrayElement, isValueChangeable, isProtected, hideResult, NONE());
+        minValue, maxValue, initVal, nomVal, isFixed, type_, isDiscrete, arrayCref, aliasvar, source, caus, NONE(), numArrayElement, isValueChangeable, isProtected, hideResult, NONE(), NONE());
   end match;
 end dlowvarToSimvar;
 
@@ -8912,7 +9147,7 @@ algorithm
       list<SimCodeVar.SimVar> vars,vars1;
       list<DAE.Exp> elst, elst1;
       list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJac, simJac1;
-      Integer index, index1, indexSys, indexSys1;
+      Integer index, index1, indexSys, indexSys1, nUnknowns, nUnknowns1;
       list<DAE.ComponentRef> crefs, crefs1;
       SimCode.SimEqSystem cont, cont1, elseWhenEq, elseWhen;
       list<SimCode.SimEqSystem> discEqs, discEqs1;
@@ -8922,7 +9157,7 @@ algorithm
       Option<SimCode.JacobianMatrix> symJac, symJac1;
       list<DAE.ElementSource> sources,sources1;
       Boolean homotopySupport, homotopySupport1;
-      Boolean mixedSystem, mixedSystem1;
+      Boolean mixedSystem, mixedSystem1, tornSystem, tornSystem1;
       list<BackendDAE.WhenOperator> whenStmtLst, whenOps;
       BackendDAE.WhenOperator whenOpNew;
       Option<SimCode.SimEqSystem> oelsewe;
@@ -8960,24 +9195,24 @@ algorithm
          */
 
     // no dynamic tearing
-    case SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst, simJac, discEqs, symJac, sources, indexSys), NONE())
+    case SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, elst, simJac, discEqs, symJac, sources, indexSys, nUnknowns), NONE())
       equation
         simJac1 = List.map(simJac, addDivExpErrorMsgtosimJac);
         symJac = addDivExpErrorMsgtosymJac(symJac);
         elst1 = List.map1(elst, addDivExpErrorMsgtoExp, DAE.emptyElementSource);
         discEqs1 =  List.map(discEqs, addDivExpErrorMsgtoSimEqSystem);
       then
-        SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst1, simJac1, discEqs1, symJac, sources, indexSys), NONE());
+        SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, elst1, simJac1, discEqs1, symJac, sources, indexSys, nUnknowns), NONE());
 
-    case SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=discEqs, crefs=crefs, indexNonLinearSystem=indexSys, jacobianMatrix=symJac, homotopySupport=homotopySupport, mixedSystem=mixedSystem), NONE())
+    case SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=discEqs, crefs=crefs, indexNonLinearSystem=indexSys, nUnknowns=nUnknowns, jacobianMatrix=symJac, homotopySupport=homotopySupport, mixedSystem=mixedSystem, tornSystem=tornSystem), NONE())
       equation
         discEqs =  List.map(discEqs, addDivExpErrorMsgtoSimEqSystem);
         symJac = addDivExpErrorMsgtosymJac(symJac);
       then
-        SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, discEqs, crefs, indexSys, symJac, homotopySupport, mixedSystem), NONE());
+        SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, discEqs, crefs, indexSys, nUnknowns, symJac, homotopySupport, mixedSystem, tornSystem), NONE());
 
     // dynamic tearing
-    case SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst, simJac, discEqs, symJac, sources, indexSys), SOME(SimCode.LINEARSYSTEM(index1, partOfMixed1, vars1, elst1, simJac1, discEqs1, symJac1, sources1, indexSys1)))
+    case SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, elst, simJac, discEqs, symJac, sources, indexSys, nUnknowns), SOME(SimCode.LINEARSYSTEM(index1, partOfMixed1, tornSystem1, vars1, elst1, simJac1, discEqs1, symJac1, sources1, indexSys1, nUnknowns1)))
       equation
         simJac = List.map(simJac, addDivExpErrorMsgtosimJac);
         symJac = addDivExpErrorMsgtosymJac(symJac);
@@ -8988,16 +9223,16 @@ algorithm
         elst1 = List.map1(elst1, addDivExpErrorMsgtoExp, DAE.emptyElementSource);
         discEqs1 =  List.map(discEqs1, addDivExpErrorMsgtoSimEqSystem);
       then
-        SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst, simJac, discEqs, symJac, sources, indexSys), SOME(SimCode.LINEARSYSTEM(index1, partOfMixed1, vars1, elst1, simJac1, discEqs1, symJac1, sources1, indexSys1)));
+        SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, tornSystem, vars, elst, simJac, discEqs, symJac, sources, indexSys, nUnknowns), SOME(SimCode.LINEARSYSTEM(index1, partOfMixed1, tornSystem1, vars1, elst1, simJac1, discEqs1, symJac1, sources1, indexSys1, nUnknowns1)));
 
-    case SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=discEqs, crefs=crefs, indexNonLinearSystem=indexSys, jacobianMatrix=symJac, homotopySupport=homotopySupport, mixedSystem=mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index=index1, eqs=discEqs1, crefs=crefs1, indexNonLinearSystem=indexSys1, jacobianMatrix=symJac1, homotopySupport=homotopySupport1, mixedSystem=mixedSystem1)))
+    case SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=discEqs, crefs=crefs, indexNonLinearSystem=indexSys, nUnknowns=nUnknowns, jacobianMatrix=symJac, homotopySupport=homotopySupport, mixedSystem=mixedSystem, tornSystem=tornSystem), SOME(SimCode.NONLINEARSYSTEM(index=index1, eqs=discEqs1, crefs=crefs1, indexNonLinearSystem=indexSys1, nUnknowns=nUnknowns1, jacobianMatrix=symJac1, homotopySupport=homotopySupport1, mixedSystem=mixedSystem1, tornSystem=tornSystem1)))
       equation
         discEqs =  List.map(discEqs, addDivExpErrorMsgtoSimEqSystem);
         symJac = addDivExpErrorMsgtosymJac(symJac);
         discEqs1 =  List.map(discEqs1, addDivExpErrorMsgtoSimEqSystem);
         symJac1 = addDivExpErrorMsgtosymJac(symJac1);
       then
-        SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, discEqs, crefs, indexSys, symJac, homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index1, discEqs1, crefs1, indexSys1, symJac1, homotopySupport1, mixedSystem1)));
+        SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, discEqs, crefs, indexSys, nUnknowns, symJac, homotopySupport, mixedSystem, tornSystem), SOME(SimCode.NONLINEARSYSTEM(index1, discEqs1, crefs1, indexSys1, nUnknowns1, symJac1, homotopySupport1, mixedSystem1, tornSystem1)));
 
     case SimCode.SES_MIXED(index, cont, vars, discEqs, indexSys)
       equation
@@ -9613,13 +9848,11 @@ algorithm (outRefs) := matchcontinue(inRefs, firstOrderInSec)
     list<tuple<DAE.ComponentRef, Integer>> rest;
     Integer idx;
     DAE.ComponentRef cr;
-    list<Boolean> bl;
 
   case({}, _) then {};
   case((cr, _)::rest, _)
     equation
-      bl = List.map1(firstOrderInSec, ComponentReference.crefEqual, cr);
-      true = Util.boolOrList(bl);
+      true = List.map1BoolOr(firstOrderInSec, ComponentReference.crefEqual, cr);
       rest = setFirstOrderInSecondOrderVarIndex(rest, firstOrderInSec);
     then
       (cr, 2)::rest;
@@ -10227,20 +10460,11 @@ protected function collectAllFiles
 protected
   SimCode.ModelInfo modelInfo;
   SimCode.Files files = {} "all the files from SourceInfo and DAE.ELementSource";
-  Absyn.Path name;
-  String description, directory;
-  SimCode.VarInfo varInfo;
-  SimCodeVar.SimVars vars;
-  list<SimCodeFunction.Function> functions;
-  list<String> labels;
-  Integer nClocks, nSubClocks;
-  Boolean hasLargeLinearEquationSystems;
 algorithm
   if not Config.acceptMetaModelicaGrammar() then
     modelInfo := outSimCode.modelInfo;
-    SimCode.MODELINFO(name, description, directory, varInfo, vars, functions, labels, nClocks, nSubClocks, hasLargeLinearEquationSystems) := modelInfo;
-    files := getFilesFromSimVars(vars, files);
-    files := getFilesFromFunctions(functions, files);
+    files := getFilesFromSimVars(modelInfo.vars, files);
+    files := getFilesFromFunctions(modelInfo.functions, files);
     files := getFilesFromSimEqSystems( outSimCode.allEquations :: outSimCode.startValueEquations :: outSimCode.nominalValueEquations
                                        :: outSimCode.minValueEquations :: outSimCode.maxValueEquations :: outSimCode.parameterEquations
                                        :: outSimCode.removedEquations :: outSimCode.algorithmAndEquationAsserts
@@ -10249,7 +10473,6 @@ algorithm
     files := getFilesFromExtObjInfo(outSimCode.extObjInfo, files);
     files := getFilesFromJacobianMatrixes(outSimCode.jacobianMatrixes, files);
     files := List.sort(files, greaterFileInfo);
-    modelInfo := SimCode.MODELINFO(name, description, directory, varInfo, vars, functions, labels, nClocks, nSubClocks, hasLargeLinearEquationSystems);
     outSimCode.modelInfo := modelInfo;
   end if;
 end collectAllFiles;
@@ -12030,6 +12253,7 @@ author:Waurich TUD 2014-05"
   output SimCodeVar.SimVar simVarOut = simVarIn;
 algorithm
   simVarOut.name := cref;
+  simVarOut.arrayCref := ComponentReference.getArrayCref(cref);
 end replaceSimVarName;
 
 public function replaceSimVarIndex "updates the index of simVarIn.
@@ -12105,7 +12329,7 @@ algorithm
     simEqSysOut := match(simEqSysIn,idx)
     local
       Boolean pom,changed,ic;
-      Integer idxLS,idxNLS,idxMX;
+      Integer idxLS,idxNLS,idxMX,nUnknowns;
       list<Boolean> bLst;
       DAE.ComponentRef cref;
       DAE.ElementSource source;
@@ -12122,7 +12346,7 @@ algorithm
       Option<SimCode.JacobianMatrix> jac;
       Option<SimCode.SimEqSystem> elseWhen;
       Boolean homotopySupport;
-      Boolean mixedSystem;
+      Boolean mixedSystem, tornSystem;
       list<BackendDAE.WhenOperator> whenStmtLst;
       BackendDAE.Constraints cons;
     case(SimCode.SES_RESIDUAL(exp=exp,source=source),_)
@@ -12151,13 +12375,13 @@ algorithm
     case(SimCode.SES_INVERSE_ALGORITHM(statements=stmts, knownOutputCrefs=crefs), _) equation
       simEqSys = SimCode.SES_INVERSE_ALGORITHM(idx, stmts, crefs);
     then simEqSys;
-    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(partOfMixed=pom,vars=simVars,beqs=expLst,sources=sources,simJac=simJac,residual=simEqSysLst,jacobianMatrix=jac,indexLinearSystem=idxLS)),_)
+    case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(partOfMixed=pom,tornSystem=tornSystem,vars=simVars,beqs=expLst,sources=sources,simJac=simJac,residual=simEqSysLst,jacobianMatrix=jac,indexLinearSystem=idxLS,nUnknowns=nUnknowns)),_)
       equation
-        simEqSys = SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(idx,pom,simVars,expLst,simJac,simEqSysLst,jac,sources,idxLS), NONE());
+        simEqSys = SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(idx,pom,tornSystem,simVars,expLst,simJac,simEqSysLst,jac,sources,idxLS,nUnknowns), NONE());
     then simEqSys;
-    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(eqs=simEqSysLst,crefs=crefs,indexNonLinearSystem=idxNLS,jacobianMatrix=jac,homotopySupport=homotopySupport,mixedSystem=mixedSystem)),_)
+    case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(eqs=simEqSysLst,crefs=crefs,indexNonLinearSystem=idxNLS,nUnknowns=nUnknowns,jacobianMatrix=jac,homotopySupport=homotopySupport,mixedSystem=mixedSystem, tornSystem=tornSystem)),_)
       equation
-        simEqSys = SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(idx,simEqSysLst,crefs,idxNLS,jac,homotopySupport,mixedSystem), NONE());
+        simEqSys = SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(idx,simEqSysLst,crefs,idxNLS,nUnknowns,jac,homotopySupport,mixedSystem,tornSystem), NONE());
     then simEqSys;
     case(SimCode.SES_MIXED(cont=simEqSys,discVars=simVars,discEqs=simEqSysLst,indexMixedSystem=idxMX),_)
       equation
@@ -12454,13 +12678,17 @@ algorithm
    noOut := noIn+1;
 end dumpVarMappingTuple;
 
-protected function createFMIModelStructure
+public function createFMIModelStructure
 " function detectes the model stucture for FMI 2.0
   by analyzing the symbolic jacobian matrixes and sparsity pattern"
   input BackendDAE.SymbolicJacobians inSymjacs;
   input SimCode.ModelInfo inModelInfo;
-  input SimCode.HashTableCrefToSimVar crefSimVarHT;
+  input Integer inUniqueEqIndex;
+  output list<SimCode.JacobianMatrix> symJacFMI = {};
   output Option<SimCode.FmiModelStructure> outFmiModelStructure;
+  output SimCode.ModelInfo outModelInfo = inModelInfo;
+  output list<SimCode.JacobianMatrix> symJacs = {};
+  output Integer uniqueEqIndex = inUniqueEqIndex;
 protected
    list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> spTA, spTB;
    list<tuple<Integer, list<Integer>>> sparseInts;
@@ -12469,67 +12697,63 @@ protected
    list<DAE.ComponentRef> diffCrefsA, diffedCrefsA, derdiffCrefsA;
    list<DAE.ComponentRef> diffCrefsB, diffedCrefsB;
    DoubleEndedList<SimCodeVar.SimVar> delst;
+   SimCode.VarInfo varInfo;
+   Option<BackendDAE.SymbolicJacobian> optcontPartDer;
+   BackendDAE.SparsePattern spPattern;
+   BackendDAE.SparseColoring spColors;
+   BackendDAE.SymbolicJacobians contPartDer;
+   SimCode.JacobianMatrix contSimJac;
+   Option<SimCode.JacobianMatrix> contPartSimDer;
+   list<SimCodeVar.SimVar> tempvars;
+   SimCodeVar.SimVars vars;
+   SimCode.HashTableCrefToSimVar crefSimVarHT;
 algorithm
   try
     //print("Start creating createFMIModelStructure\n");
     // combine the transposed sparse pattern of matrix A and B
-    // to obtain dependencies for the derivatives
-    SOME((_, (_, spTA, (diffCrefsA, diffedCrefsA),_), _)) := SymbolicJacobian.getJacobianMatrixbyName(inSymjacs, "A");
-    SOME((_, (_, spTB, (diffCrefsB, diffedCrefsB),_), _)) := SymbolicJacobian.getJacobianMatrixbyName(inSymjacs, "B");
+    // to obtain dependencies for the derivativesq
+    SOME((optcontPartDer, spPattern as (_, spTA, (diffCrefsA, diffedCrefsA),_), spColors)) := SymbolicJacobian.getJacobianMatrixbyName(inSymjacs, "FMIDER");
 
+    crefSimVarHT := createCrefToSimVarHT(inModelInfo);
     //print("-- Got matrixes\n");
-    spTA  := mergeSparsePatter(spTA, spTB, {});
-    (spTA, derdiffCrefsA) := translateSparsePatterCref2DerCref(spTA, {}, {});
+    (spTA, derdiffCrefsA) := translateSparsePatterCref2DerCref(spTA, crefSimVarHT, {}, {});
     //print("-- translateSparsePatterCref2DerCref matrixes AB\n");
 
     // collect all variable
-    varsA := getSimVars2Crefs(diffedCrefsB, crefSimVarHT);
-    varsB := getSimVars2Crefs(diffCrefsB, crefSimVarHT);
-    varsA := listAppend(varsB, varsA);
-    varsB := getSimVars2Crefs(diffedCrefsA, crefSimVarHT);
-    varsA := listAppend(varsB, varsA);
+    varsA := getSimVars2Crefs(diffedCrefsA, crefSimVarHT);
     varsB := getSimVars2Crefs(derdiffCrefsA, crefSimVarHT);
-    varsA := listAppend(varsB, varsA);
+    varsA := listAppend(varsA, varsB);
     varsB := getSimVars2Crefs(diffCrefsA, crefSimVarHT);
-    varsA := listAppend(varsB, varsA);
+    varsA := listAppend(varsA, varsB);
     //print("-- created vars for AB\n");
     sparseInts := sortSparsePattern(varsA, spTA, true);
     //print("-- sorted vars for AB\n");
 
     derivatives := translateSparsePatterInts2FMIUnknown(sparseInts, {});
 
-    //print("-- created derivatives \n");
-    // combine the transposed sparse pattern of matrix C and D
-    // to obtain dependencies for the outputs
-    SOME((_, (_, spTA, (diffCrefsA, diffedCrefsA),_), _)) := SymbolicJacobian.getJacobianMatrixbyName(inSymjacs, "C");
-    SOME((_, (_, spTB, (diffCrefsB, diffedCrefsB),_), _)) := SymbolicJacobian.getJacobianMatrixbyName(inSymjacs, "D");
-    //print("-- Got matrixes CD\n");
-    spTA  := mergeSparsePatter(spTA, spTB, {});
-    //print("-- merged matrixes CD\n");
+    (derivatives, outputs) := List.split(derivatives, inModelInfo.varInfo.numStateVars);
 
-    delst := DoubleEndedList.fromList(getSimVars2Crefs(diffedCrefsB, crefSimVarHT));
-    DoubleEndedList.push_list_front(delst, getSimVars2Crefs(diffCrefsB, crefSimVarHT));
-    DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffedCrefsA, crefSimVarHT));
-    DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffCrefsA, crefSimVarHT));
-    varsA := DoubleEndedList.toListAndClear(delst);
-
-    //print("-- created vars for CD\n");
-
-    sparseInts := sortSparsePattern(varsA, spTA, true);
-    //print("-- sorted vars for CD\n");
-
-    outputs := translateSparsePatterInts2FMIUnknown(sparseInts, {});
+    if not checkForEmptyBDAE(optcontPartDer) then
+      contPartDer := {(optcontPartDer,spPattern,spColors)};
+      ({contSimJac}, uniqueEqIndex) := createSymbolicJacobianssSimCode(contPartDer, crefSimVarHT, uniqueEqIndex, {"FMIDer"}, {});
+      // collect algebraic loops and symjacs for FMIDer
+      ({contSimJac}, outModelInfo, symJacs) := addAlgebraicLoopsModelInfoSymJacs({contSimJac}, inModelInfo);
+      contPartSimDer := SOME(contSimJac);
+      symJacFMI := {contSimJac};
+    else
+      contPartSimDer := NONE();
+    end if;
 
     //TODO: create DiscreteStates with dependencies, like derivatives
     clockedStates := List.filterOnTrue(inModelInfo.vars.algVars, isClockedStateSimVar);
     discreteStates := List.map1(clockedStates, createFmiUnknownFromSimVar, 2*listLength(derivatives)+1);
 
-    //print("-- finished createFMIModelStructure\n");
     outFmiModelStructure :=
       SOME(
         SimCode.FMIMODELSTRUCTURE(
           SimCode.FMIOUTPUTS(outputs),
           SimCode.FMIDERIVATIVES(derivatives),
+          contPartSimDer,
           SimCode.FMIDISCRETESTATES(discreteStates),
           SimCode.FMIINITIALUNKNOWNS({})));
 else
@@ -12586,26 +12810,31 @@ end translateSparsePatterInts2FMIUnknown;
 protected function translateSparsePatterCref2DerCref
 "function translates the first cref of sparse pattern to der(cref)"
   input list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> sparsePattern;
+  input SimCode.HashTableCrefToSimVar inSimVarHT;
   input list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> inAccum;
   input list<DAE.ComponentRef> inAccum2;
   output list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> outSparsePattern;
   output list<DAE.ComponentRef> outDerCrefs;
 algorithm
-  (outSparsePattern, outDerCrefs) := match(sparsePattern, inAccum, inAccum2)
+  (outSparsePattern, outDerCrefs) := match(sparsePattern)
     local
       DAE.ComponentRef cref;
       list<DAE.ComponentRef> crefs;
       list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> rest;
+      SimCodeVar.SimVar simVar;
 
-    case ({}, _, _) then (listReverse(inAccum), listReverse(inAccum2));
+    case ({}) then (listReverse(inAccum), listReverse(inAccum2));
 
-    case ( ((cref, crefs))::rest, _, _)
+    case ( ((cref, crefs))::rest)
       equation
-        cref = ComponentReference.crefPrefixDer(cref);
+        simVar = BaseHashTable.get(cref, inSimVarHT);
+        if BackendVariable.isVarKindState(simVar.varKind) then
+          cref = ComponentReference.crefPrefixDer(cref);
+        end if;
       then
-        translateSparsePatterCref2DerCref(rest, (cref, crefs)::inAccum, cref::inAccum2);
+        translateSparsePatterCref2DerCref(rest, inSimVarHT, (cref, crefs)::inAccum, cref::inAccum2);
 
-     end match;
+  end match;
 end translateSparsePatterCref2DerCref;
 
 protected function mergeSparsePatter
@@ -12870,7 +13099,7 @@ protected function createSimVarsForSensitivities
 "
   input list<SimCodeVar.SimVar> inStateSimVars;
   input list<SimCodeVar.SimVar> inParamSimVars;
-  input list<BackendDAE.Var> inPrimaryParameters;
+  input Integer nFixedParameters;
   output list<SimCodeVar.SimVar> outSimCodeVars;
   output Integer countSensitivityParams = 0;
 protected
@@ -12882,7 +13111,7 @@ protected
   list<SimCodeVar.SimVar> sensitivityParams = {};
 algorithm
   emptyVars := BackendVariable.emptyVars();
-  tmpVariables := BackendVariable.emptyVarsSized(listLength(inStateSimVars)*listLength(inPrimaryParameters));
+  tmpVariables := BackendVariable.emptyVarsSized(listLength(inStateSimVars)*nFixedParameters);
 
   for param in inParamSimVars loop
     // take for now only parameters that are changeable and topLevel
@@ -13088,19 +13317,59 @@ algorithm
     case (cref, SimCode.SIMCODE(crefToSimVarHT = crefToSimVarHT) )
       equation
         sv = BaseHashTable.get(cref, crefToSimVarHT);
+        sv = match sv.aliasvar
+          case SimCodeVar.NOALIAS() then sv;
+          case SimCodeVar.ALIAS(varName=cref) then cref2simvar(cref, simCode); /* Possibly not needed; can't really hurt that much though */
+          case SimCodeVar.NEGATEDALIAS() then sv;
+        end match;
       then sv;
 
     case (_, _)
       equation
         //print("cref2simvar: " + ComponentReference.printComponentRefStr(inCref) + " not found!\n");
         badcref = ComponentReference.makeCrefIdent("ERROR_cref2simvar_failed " + ComponentReference.printComponentRefStr(inCref), DAE.T_REAL_DEFAULT, {});
-        /* Todo: This also generates an error for example itearation variables, so i commented  out
-        "Template did not find the simulation variable for "+ ComponentReference.printComponentRefStr(cref) + ". ";
-        Error.addInternalError(errstr, sourceInfo());*/
-      then
-         SimCodeVar.SIMVAR(badcref, BackendDAE.VARIABLE(), "", "", "", -2, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.INTERNAL(), NONE(), {}, false, true, false, NONE());
+       then SimCodeVar.SIMVAR(badcref, BackendDAE.VARIABLE(), "", "", "", -2, NONE(), NONE(), NONE(), NONE(), false, DAE.T_REAL_DEFAULT, false, NONE(), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.INTERNAL(), NONE(), {}, false, true, false, NONE(), NONE());
   end matchcontinue;
 end cref2simvar;
+
+public function codegenExpSanityCheck "Handle some things that Susan cannot handle:
+* Expand simulation context arrays that contain variables stored in different locations...
+* We could move collapsing arrays here since it should be safer to do so when we can lookup which index a variable corresponds to...
+"
+  input output DAE.Exp e;
+  input SimCodeFunction.Context context;
+protected
+  list<SimCodeVar.SimVar> vars;
+  SimCode.SimCode simCode;
+  Integer index;
+algorithm
+  if match context
+    case SimCodeFunction.FUNCTION_CONTEXT() then true;
+    case SimCodeFunction.PARALLEL_FUNCTION_CONTEXT() then true;
+    else false; end match
+  then
+    return;
+  end if;
+  e := match e
+    case DAE.CREF(ty=DAE.T_ARRAY())
+      algorithm
+        simCode := getSimCode();
+        vars := list(cref2simvar(cr, simCode) for cr in ComponentReference.expandCref(e.componentRef, true));
+        if not listEmpty(vars) then
+          SimCodeVar.SIMVAR(index=index)::vars := vars;
+          for v in vars loop
+            // The array needs to be expanded because it's not stored in contiguous memory
+            if v.index <> index+1 then
+              e := Expression.expandCrefs(e);
+              break;
+            end if;
+            index := v.index;
+          end for;
+        end if;
+      then e;
+    else e;
+  end match;
+end codegenExpSanityCheck;
 
 public function isModelTooBigForCSharpInOneFile
 "Used by C# template to determine if the generated code should be split into several files
@@ -13198,6 +13467,176 @@ end fmuLoadResource;
   // print("Func:\n" + SCodeDump.unparseElementStr(f) + "\n");
   (outCache, outGraph, _) := InstFunction.implicitFunctionInstantiation(inCache, inGraph, InnerOuter.emptyInstHierarchy, DAE.NOMOD(), Prefix.NOPRE(), f, {});
 end addFMULoadResourceFunction;
+
+public function absoluteClockIdxForBaseClock
+  input Integer baseClockIdx; // one-based
+  input list<SimCode.ClockedPartition> allBaseClockPartitions;
+  output Integer absBaseClockIdx;
+protected
+  Integer i = 1;
+algorithm
+  absBaseClockIdx := 1;
+  while i < baseClockIdx loop
+    absBaseClockIdx := absBaseClockIdx + listLength(getSubPartition(listGet(allBaseClockPartitions,i)));
+    i := i+1;
+  end while;
+end absoluteClockIdxForBaseClock;
+
+public function getClockedPartitions
+  input SimCode.SimCode simcode;
+  output list<SimCode.ClockedPartition> clockedPartitions;
+algorithm
+   clockedPartitions := simcode.clockedPartitions;
+end getClockedPartitions;
+
+public function isScalarLiteralAssignment
+  input SimCode.SimEqSystem eq;
+  output Boolean b;
+algorithm
+  b := match eq
+    case SimCode.SES_SIMPLE_ASSIGN() then Expression.isSimpleLiteralValue(eq.exp);
+    else false;
+  end match;
+end isScalarLiteralAssignment;
+
+public function selectScalarLiteralAssignments
+  input output list<SimCode.SimEqSystem> eqs;
+algorithm
+  eqs := list(e for e guard isScalarLiteralAssignment(e) in eqs);
+end selectScalarLiteralAssignments;
+
+public function filterScalarLiteralAssignments
+  input output list<SimCode.SimEqSystem> eqs;
+algorithm
+  eqs := list(e for e guard not isScalarLiteralAssignment(e) in eqs);
+end filterScalarLiteralAssignments;
+
+public function sortSimpleAssignmentBasedOnLhs
+  input output list<SimCode.SimEqSystem> eqs;
+algorithm
+  eqs := List.sort(eqs, function lhsGreaterThan(simCode=getSimCode()));
+end sortSimpleAssignmentBasedOnLhs;
+
+protected function lhsGreaterThan
+  input SimCode.SimEqSystem eq1,eq2;
+  input SimCode.SimCode simCode;
+  output Boolean b;
+algorithm
+  b := match (eq1,eq2)
+    case (SimCode.SES_SIMPLE_ASSIGN(),SimCode.SES_SIMPLE_ASSIGN())
+      then simvarGraterThan(cref2simvar(eq1.cref, simCode), cref2simvar(eq2.cref, simCode));
+    else false;
+  end match;
+end lhsGreaterThan;
+
+protected function simvarGraterThan
+  input SimCodeVar.SimVar v1,v2;
+  output Boolean b;
+protected
+  Integer t1,t2,k1,k2;
+  // Sort according to type, varkind, index
+algorithm
+  k1 := valueConstructor(v1.varKind);
+  k2 := valueConstructor(v2.varKind);
+  t1 := valueConstructor(v1.type_);
+  t2 := valueConstructor(v2.type_);
+  b := if t1==t2 then
+    (if k1==k2 then v1.index > v2.index else k1>k2)
+    else t1>t2;
+end simvarGraterThan;
+
+public function getNumContinuousEquations
+    input list<SimCode.SimEqSystem> eqns;
+    input Integer numStates;
+    output Integer n;
+    protected
+    Integer numEqns =0;
+    algorithm
+    for eqn in eqns loop
+
+    numEqns := match(eqn)
+      local
+       SimCode.LinearSystem ls;
+       SimCode.NonlinearSystem nls;
+      case  SimCode.SES_LINEAR(lSystem = ls as SimCode.LINEARSYSTEM(__)) equation
+        numEqns = numEqns + listLength(ls.vars);
+        then numEqns;
+      case  SimCode.SES_NONLINEAR(nlSystem = nls as SimCode.NONLINEARSYSTEM(__)) equation
+       numEqns = numEqns + listLength(nls.crefs);
+       then numEqns;
+      else numEqns;
+      end match;
+    end for;
+    n:=numEqns+numStates;
+  end getNumContinuousEquations;
+
+
+public function sortCrefBasedOnSimCodeIndex
+  input output list<DAE.ComponentRef> crs;
+  input SimCode.SimCode simCode;
+algorithm
+  crs := List.sort(crs, function crefSimCodeIndexGreaterThan(simCode=simCode));
+end sortCrefBasedOnSimCodeIndex;
+
+protected function crefSimCodeIndexGreaterThan
+  input DAE.ComponentRef cr1, cr2;
+  input SimCode.SimCode simCode;
+  output Boolean b;
+protected
+  SimCodeVar.SimVar v1, v2;
+algorithm
+  v1 := cref2simvar(cr1, simCode);
+  v2 := cref2simvar(cr2, simCode);
+  b := simvarGraterThan(v1, v2);
+end crefSimCodeIndexGreaterThan;
+
+public function lookupVR
+  input DAE.ComponentRef cr;
+  input SimCode.SimCode simCode;
+  output Integer vr;
+algorithm
+  vr := AvlTreeCRToInt.get(simCode.valueReferences, cr);
+end lookupVR;
+
+protected function getValueReferenceMapping
+  input SimCode.ModelInfo modelInfo;
+  output AvlTreeCRToInt.Tree tree;
+protected
+  Integer i;
+  SimCodeVar.SimVars vars;
+algorithm
+  tree := AvlTreeCRToInt.EMPTY();
+  vars := modelInfo.vars;
+  (i,tree) := getValueReferenceMapping2(vars.stateVars, 0, tree);
+  (i,tree) := getValueReferenceMapping2(vars.derivativeVars, i, tree);
+  (i,tree) := getValueReferenceMapping2(vars.algVars, i, tree);
+  (i,tree) := getValueReferenceMapping2(vars.discreteAlgVars, i, tree);
+  (i,tree) := getValueReferenceMapping2(vars.paramVars, i, tree);
+  (i,tree) := getValueReferenceMapping2(vars.aliasVars, i, tree);
+
+  (i,tree) := getValueReferenceMapping2(vars.intAlgVars, 0, tree);
+  (i,tree) := getValueReferenceMapping2(vars.intParamVars, i, tree);
+  (i,tree) := getValueReferenceMapping2(vars.intAliasVars, i, tree);
+
+  (i,tree) := getValueReferenceMapping2(vars.boolAlgVars, 0, tree);
+  (i,tree) := getValueReferenceMapping2(vars.boolParamVars, i, tree);
+  (i,tree) := getValueReferenceMapping2(vars.boolAliasVars, i, tree);
+
+  (i,tree) := getValueReferenceMapping2(vars.stringAlgVars, 0, tree);
+  (i,tree) := getValueReferenceMapping2(vars.stringParamVars, i, tree);
+  (i,tree) := getValueReferenceMapping2(vars.stringAliasVars, i, tree);
+end getValueReferenceMapping;
+
+protected function getValueReferenceMapping2
+  input list<SimCodeVar.SimVar> vars;
+  input output Integer i;
+  input output AvlTreeCRToInt.Tree tree;
+algorithm
+  for v in vars loop
+    tree := AvlTreeCRToInt.add(tree, v.name, i);
+    i := i + 1;
+  end for;
+end getValueReferenceMapping2;
 
 annotation(__OpenModelica_Interface="backend");
 end SimCodeUtil;

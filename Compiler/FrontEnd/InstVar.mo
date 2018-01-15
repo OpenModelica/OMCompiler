@@ -811,23 +811,6 @@ algorithm
       Absyn.Path path;
       list<DAE.Var> vars;
 
-    /*
-    case (cache,env,ih,store,ci_state,mod,pre,n,cl,attr,pf,dims,idxs,inst_dims,impl,comment,info,graph,csets)
-      equation
-        true = SCode.isPartial(cl);
-
-        //Do not flatten because it is a function
-        dims_1 = InstUtil.instDimExpLst(dims, impl);
-
-        (cache,env_1,ih,ci_state,vars) = Inst.partialInstClassIn(cache, env, ih, mod, pre, ci_state, cl, SCode.PUBLIC(), inst_dims, 0);
-        dae = DAE.emptyDae;
-        (cache, path) = Inst.makeFullyQualified(cache, env, Absyn.IDENT(n));
-        ty = DAE.T_COMPLEX(ci_state, vars, NONE(), {path});
-        ty = InstUtil.makeArrayType(dims, ty);
-      then
-        (cache,env_1,ih,store,dae,csets,ty,graph);*/
-
-
     // Rules for instantation of function variables (e.g. input and output
 
     // Function variables with modifiers (outputs or local/protected variables)
@@ -1035,7 +1018,8 @@ algorithm
     case (_,_,_,_,_,DAE.NOMOD(),_,n,_,_,_,
       ((DAE.DIM_UNKNOWN()) :: _),_,_,_,_,info,_,_)
       equation
-        Error.addSourceMessage(Error.FAILURE_TO_DEDUCE_DIMS_NO_MOD,{n},info);
+        Error.addSourceMessage(Error.FAILURE_TO_DEDUCE_DIMS_NO_MOD,
+          {String(listLength(inSubscripts) + 1), n},info);
       then
         fail();
 
@@ -1345,19 +1329,26 @@ protected function stripRecordDefaultBindingsFromElement
   output DAE.Element outVar;
   output list<DAE.Element> outEqs;
 algorithm
-  (outVar, outEqs) := match(inVar, inEqs)
+  (outVar, outEqs) := match (inVar, inEqs)
     local
       DAE.ComponentRef var_cr, eq_cr;
       list<DAE.Element> rest_eqs;
 
     case (DAE.VAR(componentRef = var_cr),
           DAE.EQUATION(exp = DAE.CREF(componentRef = eq_cr)) :: rest_eqs)
-      equation
-        true = ComponentReference.crefEqual(var_cr, eq_cr);
+      guard
+        ComponentReference.crefEqual(var_cr, eq_cr)
         // The first equation assigns the variable. Remove the variable's
         // binding and discard the equation.
       then
         (DAEUtil.setElementVarBinding(inVar, NONE()), rest_eqs);
+
+    case (DAE.VAR(componentRef = var_cr),
+          DAE.COMPLEX_EQUATION(lhs = DAE.CREF(componentRef = eq_cr)) :: _)
+      guard
+        ComponentReference.crefPrefixOf(eq_cr, var_cr)
+      then
+        (DAEUtil.setElementVarBinding(inVar, NONE()), inEqs);
 
     else (inVar, inEqs);
   end match;

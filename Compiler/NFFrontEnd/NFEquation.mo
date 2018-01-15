@@ -29,19 +29,18 @@
  *
  */
 
-encapsulated package NFEquation
+encapsulated uniontype NFEquation
+  import Absyn;
+  import Expression = NFExpression;
+  import Type = NFType;
+  import NFInstNode.InstNode;
+  import DAE.ElementSource;
+  import ComponentRef = NFComponentRef;
 
-import Absyn;
-import NFExpression.Expression;
-import Type = NFType;
+protected
+  import Equation = NFEquation;
 
-public uniontype Equation
-  record UNTYPED_EQUALITY
-    Absyn.Exp lhs;
-    Absyn.Exp rhs;
-    SourceInfo info;
-  end UNTYPED_EQUALITY;
-
+public
   record EQUALITY
     Expression lhs "The left hand side expression.";
     Expression rhs "The right hand side expression.";
@@ -49,43 +48,30 @@ public uniontype Equation
     SourceInfo info;
   end EQUALITY;
 
-  record UNTYPED_CONNECT
-    Absyn.ComponentRef lhs;
-    Absyn.ComponentRef rhs;
+  record CREF_EQUALITY
+    ComponentRef lhs;
+    ComponentRef rhs;
+    ElementSource source;
+  end CREF_EQUALITY;
+
+  record ARRAY_EQUALITY
+    Expression lhs;
+    Expression rhs;
+    Type ty;
     SourceInfo info;
-  end UNTYPED_CONNECT;
+  end ARRAY_EQUALITY;
 
   record CONNECT
-    Expression lhs "The left hand side component.";
-    //NFConnect2.Face lhsFace "The face of the lhs component, inside or outside.";
-    Type lhsType     "The type of the lhs component.";
-    Expression rhs "The right hand side component.";
-    //NFConnect2.Face rhsFace "The face of the rhs component, inside or outside.";
-    Type rhsType     "The type of the rhs component.";
-    //Prefix prefix;
+    Expression lhs;
+    Expression rhs;
     SourceInfo info;
   end CONNECT;
 
-  record UNTYPED_FOR
-    String name;
-    Option<Absyn.Exp> range;
-    list<Equation> body;
-    SourceInfo info;
-  end UNTYPED_FOR;
-
   record FOR
-    String name           "The name of the iterator variable.";
-    Integer index         "The index of the iterator variable.";
-    Type indexType    "The type of the index/iterator variable.";
-    Option<Expression> range "The range expression to loop over.";
+    InstNode iterator;
     list<Equation> body   "The body of the for loop.";
     SourceInfo info;
   end FOR;
-
-  record UNTYPED_IF
-    list<tuple<Absyn.Exp, list<Equation>>> branches;
-    SourceInfo info;
-  end UNTYPED_IF;
 
   record IF
     list<tuple<Expression, list<Equation>>> branches
@@ -93,23 +79,11 @@ public uniontype Equation
     SourceInfo info;
   end IF;
 
-  record UNTYPED_WHEN
-    list<tuple<Absyn.Exp, list<Equation>>> branches;
-    SourceInfo info;
-  end UNTYPED_WHEN;
-
   record WHEN
     list<tuple<Expression, list<Equation>>> branches
       "List of branches, where each branch is a tuple of a condition and a body.";
     SourceInfo info;
   end WHEN;
-
-  record UNTYPED_ASSERT
-    Absyn.Exp condition;
-    Absyn.Exp message;
-    Absyn.Exp level;
-    SourceInfo info;
-  end UNTYPED_ASSERT;
 
   record ASSERT
     Expression condition "The assert condition.";
@@ -118,21 +92,10 @@ public uniontype Equation
     SourceInfo info;
   end ASSERT;
 
-  record UNTYPED_TERMINATE
-    Absyn.Exp message;
-    SourceInfo info;
-  end UNTYPED_TERMINATE;
-
   record TERMINATE
     Expression message "The message to display if the terminate triggers.";
     SourceInfo info;
   end TERMINATE;
-
-  record UNTYPED_REINIT
-    Absyn.ComponentRef cref;
-    Absyn.Exp reinitExp;
-    SourceInfo info;
-  end UNTYPED_REINIT;
 
   record REINIT
     Expression cref "The variable to reinitialize.";
@@ -140,16 +103,227 @@ public uniontype Equation
     SourceInfo info;
   end REINIT;
 
-  record UNTYPED_NORETCALL
-    Absyn.Exp exp;
-    SourceInfo info;
-  end UNTYPED_NORETCALL;
-
   record NORETCALL
     Expression exp;
     SourceInfo info;
   end NORETCALL;
-end Equation;
+
+  function mapExpList
+    input output list<Equation> eql;
+    input MapFn func;
+
+    partial function MapFn
+      input output Expression exp;
+    end MapFn;
+  algorithm
+    eql := list(mapExp(eq, func) for eq in eql);
+  end mapExpList;
+
+  function mapExp
+    input output Equation eq;
+    input MapFn func;
+
+    partial function MapFn
+      input output Expression exp;
+    end MapFn;
+  algorithm
+    eq := match eq
+      local
+        Expression e1, e2, e3;
+
+      case EQUALITY()
+        algorithm
+          e1 := func(eq.lhs);
+          e2 := func(eq.rhs);
+        then
+          if referenceEq(e1, eq.lhs) and referenceEq(e2, eq.rhs)
+            then eq else EQUALITY(e1, e2, eq.ty, eq.info);
+
+      case ARRAY_EQUALITY()
+        algorithm
+          e1 := func(eq.lhs);
+          e2 := func(eq.rhs);
+        then
+          if referenceEq(e1, eq.lhs) and referenceEq(e2, eq.rhs)
+            then eq else ARRAY_EQUALITY(e1, e2, eq.ty, eq.info);
+
+      case CONNECT()
+        algorithm
+          e1 := func(eq.lhs);
+          e2 := func(eq.rhs);
+        then
+          if referenceEq(e1, eq.lhs) and referenceEq(e2, eq.rhs)
+            then eq else CONNECT(e1, e2, eq.info);
+
+      case FOR()
+        algorithm
+          eq.body := list(mapExp(e, func) for e in eq.body);
+        then
+          eq;
+
+      case IF()
+        algorithm
+          eq.branches := list(mapExpBranch(b, func) for b in eq.branches);
+        then
+          eq;
+
+      case WHEN()
+        algorithm
+          eq.branches := list(mapExpBranch(b, func) for b in eq.branches);
+        then
+          eq;
+
+      case ASSERT()
+        algorithm
+          e1 := func(eq.condition);
+          e2 := func(eq.message);
+          e3 := func(eq.level);
+        then
+          if referenceEq(e1, eq.condition) and referenceEq(e2, eq.message) and
+            referenceEq(e3, eq.level) then eq else ASSERT(e1, e2, e3, eq.info);
+
+      case TERMINATE()
+        algorithm
+          e1 := func(eq.message);
+        then
+          if referenceEq(e1, eq.message) then eq else TERMINATE(e1, eq.info);
+
+      case REINIT()
+        algorithm
+          e1 := func(eq.cref);
+          e2 := func(eq.reinitExp);
+        then
+          if referenceEq(e1, eq.cref) and referenceEq(e2, eq.reinitExp) then
+            eq else REINIT(e1, e2, eq.info);
+
+      case NORETCALL()
+        algorithm
+          e1 := func(eq.exp);
+        then
+          if referenceEq(e1, eq.exp) then eq else NORETCALL(e1, eq.info);
+
+      else eq;
+    end match;
+  end mapExp;
+
+  function mapExpBranch
+    input output tuple<Expression, list<Equation>> branch;
+    input MapFn func;
+
+    partial function MapFn
+      input output Expression exp;
+    end MapFn;
+  protected
+    Expression cond;
+    list<Equation> eql;
+  algorithm
+    (cond, eql) := branch;
+    cond := func(cond);
+    eql := list(mapExp(e, func) for e in eql);
+    branch := (cond, eql);
+  end mapExpBranch;
+
+  function foldExpList<ArgT>
+    input list<Equation> eq;
+    input FoldFunc func;
+    input output ArgT arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    for e in eq loop
+      arg := foldExp(e, func, arg);
+    end for;
+  end foldExpList;
+
+  function foldExp<ArgT>
+    input Equation eq;
+    input FoldFunc func;
+    input output ArgT arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    () := match eq
+      case Equation.EQUALITY()
+        algorithm
+          arg := func(eq.lhs, arg);
+          arg := func(eq.rhs, arg);
+        then
+          ();
+
+      case Equation.ARRAY_EQUALITY()
+        algorithm
+          arg := func(eq.lhs, arg);
+          arg := func(eq.rhs, arg);
+        then
+          ();
+
+      case Equation.CONNECT()
+        algorithm
+          arg := func(eq.lhs, arg);
+          arg := func(eq.rhs, arg);
+        then
+          ();
+
+      case Equation.FOR()
+        algorithm
+          arg := foldExpList(eq.body, func, arg);
+        then
+          ();
+
+      case Equation.IF()
+        algorithm
+          for b in eq.branches loop
+            arg := func(Util.tuple21(b), arg);
+            arg := foldExpList(Util.tuple22(b), func, arg);
+          end for;
+        then
+          ();
+
+      case Equation.WHEN()
+        algorithm
+          for b in eq.branches loop
+            arg := func(Util.tuple21(b), arg);
+            arg := foldExpList(Util.tuple22(b), func, arg);
+          end for;
+        then
+          ();
+
+      case Equation.ASSERT()
+        algorithm
+          arg := func(eq.condition, arg);
+          arg := func(eq.message, arg);
+          arg := func(eq.level, arg);
+        then
+          ();
+
+      case Equation.TERMINATE()
+        algorithm
+          arg := func(eq.message, arg);
+        then
+          ();
+
+      case Equation.REINIT()
+        algorithm
+          arg := func(eq.cref, arg);
+          arg := func(eq.reinitExp, arg);
+        then
+          ();
+
+      case Equation.NORETCALL()
+        algorithm
+          arg := func(eq.exp, arg);
+        then
+          ();
+
+      else ();
+    end match;
+  end foldExp;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFEquation;

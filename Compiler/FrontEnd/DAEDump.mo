@@ -566,7 +566,6 @@ algorithm
   outString := matchcontinue (inVariableAttributesOption)
     local
       String quantity,unit_str,displayUnit_str,stateSel_str,min_str,max_str,nominal_str,initial_str,fixed_str,uncertainty_str,dist_str,res_1,res1,res,startOriginStr;
-      Boolean is_empty;
       Option<DAE.Exp> quant,unit,displayUnit,min,max,initialExp,nominal,fixed,startOrigin;
       Option<DAE.StateSelect> stateSel;
       Option<DAE.Uncertainty> uncertainty;
@@ -591,8 +590,7 @@ algorithm
         res_1 = Util.stringDelimitListNonEmptyElts(
           {quantity,unit_str,displayUnit_str,min_str,max_str,
           initial_str,fixed_str,nominal_str,stateSel_str,uncertainty_str,dist_str,startOriginStr}, ", ");
-        is_empty = Util.isEmptyString(res_1);
-        res = if is_empty then "" else stringAppendList({"(",res_1,")"});
+        res = if stringEmpty(res_1) then "" else stringAppendList({"(",res_1,")"});
       then
         res;
 
@@ -609,8 +607,7 @@ algorithm
         startOriginStr = getStartOrigin(startOrigin);
 
         res_1 = Util.stringDelimitListNonEmptyElts({quantity,min_str,max_str,initial_str,fixed_str,uncertainty_str,dist_str,startOriginStr}, ", ");
-        is_empty = Util.isEmptyString(res_1);
-        res = if is_empty then "" else stringAppendList({"(",res_1,")"});
+        res = if stringEmpty(res_1) then "" else stringAppendList({"(",res_1,")"});
       then
         res;
 
@@ -623,21 +620,20 @@ algorithm
         startOriginStr = getStartOrigin(startOrigin);
 
         res_1 = Util.stringDelimitListNonEmptyElts({quantity,initial_str,fixed_str,startOriginStr}, ", ");
-        is_empty = Util.isEmptyString(res_1);
-        res = if is_empty then "" else stringAppendList({"(",res_1,")"});
+        res = if stringEmpty(res_1) then "" else stringAppendList({"(",res_1,")"});
       then
         res;
 
-    case (SOME(DAE.VAR_ATTR_STRING(quant,initialExp,_,_,_,startOrigin)))
+    case (SOME(DAE.VAR_ATTR_STRING(quant,initialExp,fixed,_,_,_,startOrigin)))
       equation
         quantity = Dump.getOptionWithConcatStr(quant, ExpressionDump.printExpStr, "quantity = ");
         initial_str = Dump.getOptionWithConcatStr(initialExp, ExpressionDump.printExpStr, "start = ");
+        fixed_str = Dump.getOptionWithConcatStr(fixed, ExpressionDump.printExpStr, "fixed = ");
 
         startOriginStr = getStartOrigin(startOrigin);
 
-        res_1 = Util.stringDelimitListNonEmptyElts({quantity,initial_str,startOriginStr}, ", ");
-        is_empty = Util.isEmptyString(res_1);
-        res = if is_empty then "" else stringAppendList({"(",res_1,")"});
+        res_1 = Util.stringDelimitListNonEmptyElts({quantity,initial_str,fixed_str,startOriginStr}, ", ");
+        res = if stringEmpty(res_1) then "" else stringAppendList({"(",res_1,")"});
       then
         res;
 
@@ -652,8 +648,7 @@ algorithm
         startOriginStr = getStartOrigin(startOrigin);
 
         res_1 = Util.stringDelimitListNonEmptyElts({quantity,min_str,max_str,initial_str,fixed_str,startOriginStr}, ", ");
-        is_empty = Util.isEmptyString(res_1);
-        res = if is_empty then "" else stringAppendList({"(",res_1,")"});
+        res = if stringEmpty(res_1) then "" else stringAppendList({"(",res_1,")"});
       then
         res;
 
@@ -896,8 +891,10 @@ algorithm
       list<DAE.Element> xs1,xs2;
       list<list<DAE.Element>> trueBranches;
       list<DAE.Exp> conds;
-      String  s;
+      String  s,s1,s2,sourceStr;
       IOStream.IOStream str;
+      DAE.ElementSource src;
+      list<SCode.Comment> cmt;
 
     case (DAE.INITIALEQUATION(exp1 = e1,exp2 = e2))
       equation
@@ -951,6 +948,27 @@ algorithm
         Print.printBuf("  else\n");
         List.map_0(xs2,dumpInitialEquation);
         Print.printBuf("end if;\n");
+      then
+        ();
+
+    case (DAE.INITIAL_ASSERT(condition=e1,message = e2,source = src))
+      equation
+        cmt = ElementSource.getCommentsFromSource(src);
+        sourceStr = cmtListToString(cmt);
+        s1 = ExpressionDump.printExpStr(e1);
+        s2 = ExpressionDump.printExpStr(e2);
+        s = stringAppendList({"  assert(",s1, ",",s2,") ", sourceStr, ";\n"});
+        Print.printBuf(s);
+      then
+        ();
+
+    case (DAE.INITIAL_TERMINATE(message=e1,source = src))
+      equation
+        cmt = ElementSource.getCommentsFromSource(src);
+        sourceStr = cmtListToString(cmt);
+        s1 = ExpressionDump.printExpStr(e1);
+        s = stringAppendList({"  terminate(",s1,") ", sourceStr, ";\n"});
+        Print.printBuf(s);
       then
         ();
 
@@ -1769,11 +1787,11 @@ algorithm
   end match;
 end ppStmtList;
 
-protected function ppStmtListStr "
+public function ppStmtListStr "
   Helper function to pp_stmt_str
 "
   input list<DAE.Statement> inAlgorithmStatementLst;
-  input Integer inInteger;
+  input Integer inInteger=0;
   output String outString;
 algorithm
   outString:=
@@ -2156,9 +2174,25 @@ algorithm
         Print.printBuf(")");
       then
         ();
+    case DAE.INITIAL_ASSERT(condition = e1,message = e2)
+      equation
+        Print.printBuf("INITIAL_ASSERT(");
+        ExpressionDump.printExp(e1);
+        Print.printBuf(",");
+        ExpressionDump.printExp(e2);
+        Print.printBuf(")");
+      then
+        ();
     case DAE.TERMINATE(message = e1)
       equation
         Print.printBuf("TERMINATE(");
+        ExpressionDump.printExp(e1);
+        Print.printBuf(")");
+      then
+        ();
+    case DAE.INITIAL_TERMINATE(message = e1)
+      equation
+        Print.printBuf("INITIAL_TERMINATE(");
         ExpressionDump.printExp(e1);
         Print.printBuf(")");
       then
@@ -2935,17 +2969,6 @@ algorithm
       then
         str;
 
-    case ((DAE.ASSERT(condition=e1, message = e2, level = e3, source = src) :: xs), str)
-      equation
-        sourceStr = getSourceInformationStr(src);
-        s1 = ExpressionDump.printExpStr(e1);
-        s2 = ExpressionDump.printExpStr(e2);
-        s3 = ExpressionDump.printExpStr(e3);
-        str = IOStream.appendList(str, {"  assert(",s1,",",s2,",",s3,")",sourceStr,";\n"});
-        str = dumpEquationsStream(xs, str);
-      then
-        str;
-
     case (DAE.TERMINATE(message=e1, source = src) :: xs, str)
       equation
         sourceStr = getSourceInformationStr(src);
@@ -3075,13 +3098,14 @@ protected function dumpInitialEquationsStream "Dump initial equations to a strea
 algorithm
   outStream := matchcontinue (inElementLst, inStream)
     local
-      String s1,s2;
+      String s1,s2,sourceStr;
       DAE.Exp e1,e2,e;
       list<DAE.Element> xs,xs1,xs2;
       list<list<DAE.Element>> trueBranches;
       DAE.ComponentRef c;
       IOStream.IOStream str;
       list<DAE.Exp> conds;
+      DAE.ElementSource src;
 
     case ({}, str) then str;
 
@@ -3140,6 +3164,25 @@ algorithm
         s1 = ExpressionDump.printExpStr(e);
         str = IOStream.appendList(str, {"  ",s1, ";\n"});
         str = dumpInitialEquationsStream(xs, str);
+      then
+        str;
+
+    case ((DAE.INITIAL_ASSERT(condition=e1, message = e2, level = DAE.ENUM_LITERAL(index=1), source = src) :: xs), str)
+      equation
+        sourceStr = getSourceInformationStr(src);
+        s1 = ExpressionDump.printExpStr(e1);
+        s2 = ExpressionDump.printExpStr(e2);
+        str = IOStream.appendList(str, {"  assert(",s1,",",s2,")", sourceStr, ";\n"});
+        str = dumpEquationsStream(xs, str);
+      then
+        str;
+
+    case (DAE.INITIAL_TERMINATE(message=e1, source = src) :: xs, str)
+      equation
+        sourceStr = getSourceInformationStr(src);
+        s1 = ExpressionDump.printExpStr(e1);
+        str = IOStream.appendList(str, {"  terminate(",s1,")", sourceStr, ";\n"});
+        str = dumpEquationsStream(xs, str);
       then
         str;
 
@@ -3568,6 +3611,18 @@ algorithm
   end match;
 end unparseVarDirection;
 
+function unparseVarInnerOuter
+  input DAE.VarInnerOuter io;
+  output String str;
+algorithm
+  str := match io
+    case DAE.VarInnerOuter.INNER() then "inner";
+    case DAE.VarInnerOuter.OUTER() then "outer";
+    case DAE.VarInnerOuter.INNER_OUTER() then "inner outer";
+    else "";
+  end match;
+end unparseVarInnerOuter;
+
 public function getSourceInformationStr
 "@author: adrpo
  display the source information as string"
@@ -3682,16 +3737,17 @@ public function clockKindString
 algorithm
   sOut := match(cK)
     local
+      DAE.Exp e1,e2;
   case(DAE.INFERRED_CLOCK())
     then "Inferred Clock";
-  case(DAE.INTEGER_CLOCK())
-    then "Integer Clock";
-  case(DAE.REAL_CLOCK())
-    then "Real Clock";
-  case(DAE.BOOLEAN_CLOCK())
-    then "Boolean Clock";
-  case(DAE.SOLVER_CLOCK())
-    then "Solver Clock";
+  case(DAE.INTEGER_CLOCK(intervalCounter=e1, resolution=e2))
+    then "Integer Clock("+ExpressionDump.printExpStr(e1)+"; "+ExpressionDump.printExpStr(e2)+")";
+  case(DAE.REAL_CLOCK(interval=e1))
+    then "Real Clock("+ExpressionDump.printExpStr(e1)+")";
+  case(DAE.BOOLEAN_CLOCK(condition=e1, startInterval=e2))
+    then "Boolean Clock("+ExpressionDump.printExpStr(e1)+"; "+ExpressionDump.printExpStr(e2)+")";
+  case(DAE.SOLVER_CLOCK(c=e1, solverMethod=e2))
+    then "Solver Clock("+ExpressionDump.printExpStr(e1)+"; "+ExpressionDump.printExpStr(e2)+")";
   end match;
 end clockKindString;
 
@@ -3719,7 +3775,7 @@ algorithm
       then
         str;
 
-    case (DAE.DEFINE(componentRef = c,exp = _,source = src))
+    case (DAE.DEFINE(componentRef = c,source = src))
       equation
         cmt = ElementSource.getCommentsFromSource(src);
         sourceStr = cmtListToString(cmt);
@@ -3728,7 +3784,7 @@ algorithm
       then
         str;
 
-    case (DAE.INITIALDEFINE(componentRef = c,exp = _,source = src))
+    case (DAE.INITIALDEFINE(componentRef = c,source = src))
       equation
         cmt = ElementSource.getCommentsFromSource(src);
         sourceStr = cmtListToString(cmt);
@@ -3876,12 +3932,31 @@ algorithm
       then
         str;
 
+    case (DAE.INITIAL_ASSERT(condition=e1,message = e2,source = src))
+      equation
+        cmt = ElementSource.getCommentsFromSource(src);
+        sourceStr = cmtListToString(cmt);
+        s1 = ExpressionDump.printExpStr(e1);
+        s2 = ExpressionDump.printExpStr(e2);
+        str = stringAppendList({"  /* initial */ assert(",s1, ",",s2,") ", sourceStr, ";\n"});
+      then
+        str;
+
     case (DAE.TERMINATE(message=e1,source = src))
       equation
         cmt = ElementSource.getCommentsFromSource(src);
         sourceStr = cmtListToString(cmt);
         s1 = ExpressionDump.printExpStr(e1);
         str = stringAppendList({"  terminate(",s1,") ", sourceStr, ";\n"});
+      then
+        str;
+
+    case (DAE.INITIAL_TERMINATE(message=e1,source = src))
+      equation
+        cmt = ElementSource.getCommentsFromSource(src);
+        sourceStr = cmtListToString(cmt);
+        s1 = ExpressionDump.printExpStr(e1);
+        str = stringAppendList({"  /* initial */ terminate(",s1,") ", sourceStr, ";\n"});
       then
         str;
 

@@ -44,6 +44,7 @@ public import HashTable2;
 public import HashTable3;
 
 protected import Absyn;
+protected import BackendDAETransform;
 protected import BaseHashTable;
 protected import BaseHashSet;
 protected import BackendEquation;
@@ -129,13 +130,11 @@ the extendhashtable is not updated"
   end FuncTypeExp_ExpToBoolean;
 protected
   DAE.Exp dst;
-  HashTable2.HashTable ht,ht_1,eht,eht_1;
+  HashTable2.HashTable ht,ht_1;
   HashTable3.HashTable invHt,invHt_1;
-  list<DAE.Ident> iv;
   String s;
-  Option<HashTable2.HashTable> derConst;
 algorithm
-  REPLACEMENTS(ht,invHt,eht,iv,derConst) := repl;
+  REPLACEMENTS(ht,invHt,_,_,_) := repl;
   if not BaseHashTable.hasKey(inSrc,ht) then
     return;
   end if;
@@ -1509,8 +1508,9 @@ public function skipPreOperator "The variable/exp in the pre operator should not
   output Boolean outBoolean;
 algorithm
   outBoolean := match (inExp)
-    case (DAE.CALL(path = Absyn.IDENT(name = "pre"))) then false;
-    case (DAE.CALL(path = Absyn.IDENT(name = "previous"))) then false;
+    local String idn;
+    case (DAE.CALL(path = Absyn.IDENT(name = idn)))
+      guard idn=="pre" or idn=="previous" then false;
     else true;
   end match;
 end skipPreOperator;
@@ -1523,14 +1523,11 @@ algorithm
   outBoolean := match (inExp)
     local
       DAE.ComponentRef cr;
-    case DAE.CALL(path = Absyn.IDENT(name = "pre"),expLst = {DAE.CREF(componentRef=cr)}) then selfGeneratedVar(cr);
-    case DAE.CALL(path = Absyn.IDENT(name = "previous"),expLst = {DAE.CREF(componentRef=cr)}) then selfGeneratedVar(cr);
-    case DAE.CALL(path = Absyn.IDENT(name = "change"),expLst = {DAE.CREF(componentRef=cr)}) then selfGeneratedVar(cr);
-    case DAE.CALL(path = Absyn.IDENT(name = "edge"),expLst = {DAE.CREF(componentRef=cr)}) then selfGeneratedVar(cr);
-    case DAE.CALL(path = Absyn.IDENT(name = "pre")) then false;
-    case DAE.CALL(path = Absyn.IDENT(name = "previous")) then false;
-    case DAE.CALL(path = Absyn.IDENT(name = "change")) then false;
-    case DAE.CALL(path = Absyn.IDENT(name = "edge")) then false;
+      String idn;
+    case DAE.CALL(path = Absyn.IDENT(name = idn),expLst = {DAE.CREF(componentRef=cr)})
+      guard idn=="pre" or idn=="previous" or idn=="change" or idn=="edge" then selfGeneratedVar(cr);
+    case DAE.CALL(path = Absyn.IDENT(name = idn))
+      guard idn=="pre" or idn=="previous" or idn=="change" or idn=="edge" then false;
     else true;
   end match;
 end skipPreChangeEdgeOperator;
@@ -1540,9 +1537,8 @@ protected function selfGeneratedVar
   output Boolean b;
 algorithm
   b := match(inCref)
-    case DAE.CREF_QUAL(ident = "$ZERO") then true;
-    case DAE.CREF_QUAL(ident = "$_DER") then true;
-    case DAE.CREF_QUAL(ident = "$pDER") then true;
+    local String idn;
+    case DAE.CREF_QUAL(ident = idn) guard idn=="$ZERO" or idn=="$_DER" or idn=="$pDER" then true;
     // keep same a while untill we know which are needed
     //case DAE.CREF_QUAL(ident = "$DER") then true;
     else false;
@@ -1620,20 +1616,15 @@ public function replaceEquations
     output Boolean outBoolean;
   end FuncTypeExp_ExpToBoolean;
 algorithm
-  (outEqns,replacementPerformed) := matchcontinue(inEqns,repl,inFuncTypeExpExpToBooleanOption)
-    local
-      list<BackendDAE.Equation> eqns;
-    case(_,_,_)
-      equation
-        // Do not do empty replacements; it just takes time ;)
-        false = isReplacementEmpty(repl);
-        (eqns,replacementPerformed) = replaceEquations2(inEqns,repl,inFuncTypeExpExpToBooleanOption,{},false);
-      then
-        (eqns,replacementPerformed);
-    else
-      then
-        (inEqns,false);
-  end matchcontinue;
+  if isReplacementEmpty(repl) then
+    outEqns := inEqns;
+    replacementPerformed := false;
+  else
+    (outEqns,replacementPerformed) := replaceEquations2(inEqns,repl,inFuncTypeExpExpToBooleanOption,{},false);
+    if replacementPerformed and false /* Seems to break some modules */ then
+      (outEqns,_) := BackendDAETransform.traverseBackendDAEExpsEqnLstWithSymbolicOperation(outEqns,BackendDAETransform.collapseArrayCrefExp,0/*dummy*/);
+    end if;
+  end if;
 end replaceEquations;
 
 protected function replaceEquations2
@@ -1733,9 +1724,9 @@ algorithm
       then
         (BackendDAE.EQUATION(e1_2,e2_2,source,eqAttr)::inAcc,true);
 
-    case (BackendDAE.ALGORITHM(size=size, alg=alg as DAE.ALGORITHM_STMTS(statementLst=stmts), source=source, expand=crefExpand, attr=eqAttr), repl, _, _, _)
+    case (BackendDAE.ALGORITHM(size=size, alg=DAE.ALGORITHM_STMTS(statementLst=stmts), source=source, expand=crefExpand, attr=eqAttr), repl, _, _, _)
       equation
-        (crefs,_) = Expression.extractUniqueCrefsFromStatmentS(stmts);
+        crefs = Expression.getLhsCrefsFromStatements(stmts);
         // if there is no need for expanding the original equation, the replaced one shouldn't either
         hasArrayCref = List.exist(crefs,ComponentReference.isArrayElement);
         crefExpand = if hasArrayCref then crefExpand else DAE.NOT_EXPAND();
@@ -2673,13 +2664,14 @@ algorithm
     startOrigin = replaceOptionExp(startOrigin,repl);
   then DAE.VAR_ATTR_BOOL(quantity,start,fixed,equationBound,isProtected,finalPrefix,startOrigin);
 
-  case(DAE.VAR_ATTR_STRING(quantity,start,equationBound,isProtected,finalPrefix,startOrigin),_)
+  case(DAE.VAR_ATTR_STRING(quantity,start,fixed,equationBound,isProtected,finalPrefix,startOrigin),_)
     equation
     quantity = replaceOptionExp(quantity,repl);
     start = replaceOptionExp(start,repl);
+    fixed = replaceOptionExp(fixed,repl);
     equationBound = replaceOptionExp(equationBound,repl);
     startOrigin = replaceOptionExp(startOrigin,repl);
-  then DAE.VAR_ATTR_STRING(quantity,start,equationBound,isProtected,finalPrefix,startOrigin);
+  then DAE.VAR_ATTR_STRING(quantity,start,fixed,equationBound,isProtected,finalPrefix,startOrigin);
 
   case(DAE.VAR_ATTR_ENUMERATION(quantity,min,max,start,fixed,equationBound,isProtected,finalPrefix,startOrigin),_)
     equation

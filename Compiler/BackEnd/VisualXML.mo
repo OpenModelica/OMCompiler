@@ -173,7 +173,7 @@ algorithm
     if Expression.isConst(e) then
       eOut := e;
     elseif Expression.isCref(e) then
-      eOut := getConstCrefBinding(cr,vars);
+      eOut := getConstCrefBinding(Expression.expCref(e),vars);
     else
       Error.addInternalError("VisualXMl.getConstCrefBinding failed for "+ExpressionDump.printExpStr(e)+"\n", sourceInfo());
     end if;
@@ -241,7 +241,7 @@ algorithm
   case(BackendDAE.VAR(bindExp=NONE(), values=SOME(_)),(idx,ass1,eqs))
     equation
       true = (BackendVariable.isProtectedVar(varIn) and isVisualizationVar(varIn));
-      eq = BackendEquation.equationNth1(eqs,arrayGet(ass1,idx));
+      eq = BackendEquation.get(eqs,arrayGet(ass1,idx));
       BackendDAE.EQUATION(exp=exp1, scalar=exp2) = eq;
       (exp1,_) =  ExpressionSolve.solve(exp1,exp2,BackendVariable.varExp(varIn));
       var = BackendVariable.setBindExp(varIn,SOME(exp1));
@@ -506,15 +506,7 @@ algorithm
       end if;
     then (SHAPE(ident, shapeType, T, r, r_shape, lengthDir, widthDir, length, width, height, extra, color, exp));
 
-  else
-    algorithm
-      BackendDAE.VAR(bindExp=bind) := var;
-      if isSome(bind) then
-        _ := if not Expression.isConstValue(Util.getOption(bind)) and storeProtectedCrefs then BackendVariable.varExp(var) else Util.getOption(bind);
-      else _ := DAE.SCONST("NO_BINDING");
-      end if;
-       //print("whats this? :"+ComponentReference.printComponentRefStr(cref)+" with binding: "+ExpressionDump.printExpStr(exp)+"\n");
-    then visIn;
+  else visIn;
   end matchcontinue;
 end fillShapeObject;
 

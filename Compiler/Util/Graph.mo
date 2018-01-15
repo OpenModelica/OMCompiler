@@ -718,7 +718,7 @@ algorithm
         indexes = List.map3(nodes, findIndexofNodeInGraph, inGraph, inEqualFunc, 1);
         indexes = List.select1(indexes, arrayElemetGtZero, inColored);
         indexesColor = List.map1(indexes, getArrayElem, inColored);
-        List.map2_0(indexesColor, arrayUpdateListAppend, forbiddenColor, inNode);
+        List.map2_0(indexesColor, arrayUpdateListAppend, forbiddenColor, SOME({inNode}));
         forbiddenColor1 = addForbiddenColors(inNode, rest, inColored, forbiddenColor, inGraph, inEqualFunc, inPrintFunc);
       then forbiddenColor1;
       else
@@ -740,17 +740,17 @@ end getArrayElem;
 protected function arrayUpdateListAppend
   input Integer inIndex;
   input array<Option<list<NodeType>>> inArray;
-  input NodeType inNode;
+  input Option<list<NodeType>> inNode;
   replaceable type NodeType subtypeof Any;
 protected
   list<NodeType> arrayElem;
 algorithm
-  _ := matchcontinue(inIndex, inArray, inNode)
+  _ := matchcontinue(inIndex, inArray)
     local
       list<NodeType> arrElem;
-    case (_, _, _)
+    case (_, _)
       equation
-        arrayUpdate(inArray, inIndex, SOME({inNode}));
+        arrayUpdate(inArray, inIndex, inNode);
       then ();
     else
       equation
@@ -949,14 +949,14 @@ forbiddenColors[color[x]] <- ui
 color[ui ] <- min{c > 0 : forbiddenColors[c] = ui }
 "
   input list<tuple<Integer, list<Integer>>> inGraphT;
-  input array<Option<list<Integer>>> inforbiddenColor;
+  input array<Integer> inforbiddenColor;
   input list<Integer> inColors;
   input array<tuple<Integer, list<Integer>>> inGraph;
   input array<Integer> inColored;
 protected
   Integer node, color;
   list<Integer>  nodes;
-  array<Option<list<Integer>>> forbiddenColor;
+  array<Integer> forbiddenColor;
   Integer color;
   list<tuple<Integer, list<Integer>>> restGraph;
 algorithm
@@ -964,7 +964,7 @@ algorithm
     for tpl in inGraphT loop
       (node,nodes) := tpl;
       addForbiddenColorsInt(node, nodes, inColored, inforbiddenColor, inGraph);
-      color := arrayFindMinColorIndexInt(inforbiddenColor, node, 1);
+      color := arrayFindMinColorIndexInt(inforbiddenColor, node);
       arrayUpdate(inColored, node, color);
     end for;
   else
@@ -976,7 +976,7 @@ protected function addForbiddenColorsInt
   input Integer inNode;
   input list<Integer> nodes;
   input array<Integer> inColored;
-  input array<Option<list<Integer>>> forbiddenColor;
+  input array<Integer> forbiddenColor;
   input array<tuple<Integer, list<Integer>>> inGraph;
 protected
   list<Integer> indexes;
@@ -995,7 +995,7 @@ end addForbiddenColorsInt;
 protected function updateForbiddenColorArrayInt
   input list<Integer> inIndexes;
   input array<Integer> inColored;
-  input array<Option<list<Integer>>> inForbiddenColor;
+  input array<Integer> inForbiddenColor;
   input Integer inNode;
 protected
   Integer colorIndex;
@@ -1003,41 +1003,23 @@ algorithm
   for index in inIndexes loop
     colorIndex := arrayGet(inColored, index);
     if colorIndex > 0 then
-      arrayUpdate(inForbiddenColor, colorIndex, SOME({inNode}));
+      arrayUpdate(inForbiddenColor, colorIndex, inNode);
     end if;
   end for;
 end updateForbiddenColorArrayInt;
 
 protected function arrayFindMinColorIndexInt
-  input array<Option<list<Integer>>> inForbiddenColor;
+  input array<Integer> inForbiddenColor;
   input Integer inNode;
-  input Integer inIndex;
-  output Integer outColor;
+  output Integer outColor = 1;
 algorithm
-  outColor := matchcontinue(inForbiddenColor, inNode, inIndex)
-  local
-    list<Integer> nodes;
-    case (_, _, _)
-      equation
-        NONE() = arrayGet(inForbiddenColor, inIndex);
-        //print("Found color on index : " + intString(inIndex) + "\n");
-      then inIndex;
-    case (_, _, _)
-      equation
-        SOME(nodes) = arrayGet(inForbiddenColor, inIndex);
-        //inPrintFunc(nodes,"FobiddenColors:" );
-        failure(_ = List.getMemberOnTrue(inNode, nodes, intEq));
-        //print("Found color on index : " + intString(inIndex) + "\n");
-      then inIndex;
-    case (_, _, _)
-      equation
-        SOME(nodes) = arrayGet(inForbiddenColor, inIndex);
-        //inPrintFunc(nodes,"FobiddenColors:" );
-        List.getMemberOnTrue(inNode, nodes, intEq);
-        //print("Not found color on index : " + intString(inIndex) + "\n");
-      then
-        arrayFindMinColorIndexInt(inForbiddenColor, inNode, inIndex+1);
-  end matchcontinue;
+  while true loop
+    if arrayGet(inForbiddenColor, outColor) <> inNode then
+      return;
+    else
+      outColor := outColor + 1;
+    end if;
+  end while;
 end arrayFindMinColorIndexInt;
 
 public function filterGraph

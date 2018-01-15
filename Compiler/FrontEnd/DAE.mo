@@ -320,10 +320,22 @@ public uniontype Element
     ElementSource source "the origin of the component/equation/algorithm" ;
   end ASSERT;
 
+  record INITIAL_ASSERT " The Modelica builtin assert"
+    Exp condition;
+    Exp message;
+    Exp level;
+    ElementSource source "the origin of the component/equation/algorithm" ;
+  end INITIAL_ASSERT;
+
   record TERMINATE " The Modelica builtin terminate(msg)"
     Exp message;
     ElementSource source "the origin of the component/equation/algorithm" ;
   end TERMINATE;
+
+  record INITIAL_TERMINATE " The Modelica builtin terminate(msg)"
+    Exp message;
+    ElementSource source "the origin of the component/equation/algorithm" ;
+  end INITIAL_TERMINATE;
 
   record REINIT " reinit operator for reinitialization of states"
     ComponentRef componentRef;
@@ -491,6 +503,7 @@ uniontype VariableAttributes
   record VAR_ATTR_STRING
     Option<Exp> quantity "quantity";
     Option<Exp> start "start value";
+    Option<Exp> fixed "new in Modelica 3.4; fixed - true: default for parameter/constant, false - default for other variables";
     Option<Exp> equationBound;
     Option<Boolean> isProtected;
     Option<Boolean> finalPrefix;
@@ -1505,13 +1518,6 @@ uniontype Exp "Expressions
     Pattern pattern;
   end PATTERN;
 
-  record SUM //i.e. accumulated sum over a range of array vars
-    Type ty;
-    Exp iterator;
-    Exp startIt;
-    Exp endIt;
-    Exp body;
-  end SUM;
   /* --- */
 
 end Exp;

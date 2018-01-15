@@ -223,6 +223,7 @@ typedef struct STATIC_REAL_DATA
   VAR_INFO info;
   REAL_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
+  modelica_boolean time_unvarying;     /* true if the value is only computed once during initialization */
 }STATIC_REAL_DATA;
 
 typedef struct STATIC_INTEGER_DATA
@@ -230,6 +231,7 @@ typedef struct STATIC_INTEGER_DATA
   VAR_INFO info;
   INTEGER_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
+  modelica_boolean time_unvarying;     /* true if the value is only computed once during initialization */
 }STATIC_INTEGER_DATA;
 
 typedef struct STATIC_BOOLEAN_DATA
@@ -237,6 +239,7 @@ typedef struct STATIC_BOOLEAN_DATA
   VAR_INFO info;
   BOOLEAN_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
+  modelica_boolean time_unvarying;     /* true if the value is only computed once during initialization */
 }STATIC_BOOLEAN_DATA;
 
 typedef struct STATIC_STRING_DATA
@@ -244,6 +247,7 @@ typedef struct STATIC_STRING_DATA
   VAR_INFO info;
   STRING_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
+  modelica_boolean time_unvarying;     /* true if the value is only computed once during initialization */
 }STATIC_STRING_DATA;
 
 #if !defined(OMC_NUM_NONLINEAR_SYSTEMS) || OMC_NUM_NONLINEAR_SYSTEMS>0
@@ -294,9 +298,12 @@ typedef struct NONLINEAR_SYSTEM_DATA
   /* statistics */
   unsigned long numberOfCall;          /* number of solving calls of this system */
   unsigned long numberOfFEval;         /* number of function evaluations of this system */
+  unsigned long numberOfJEval;         /* number of jacobian evaluations of this system */
   unsigned long numberOfIterations;    /* number of iteration of non-linear solvers of this system */
   double totalTime;                    /* save the totalTime */
   rtclock_t totalTimeClock;            /* time clock for the totalTime  */
+  double jacobianTime;                 /* save the time to calculate jacobians */
+  rtclock_t jacobianTimeClock;         /* time clock for the jacobianTime  */
   void* csvData;                       /* information to save csv data */
 } NONLINEAR_SYSTEM_DATA;
 #else
@@ -332,7 +339,7 @@ typedef struct LINEAR_SYSTEM_DATA
   modelica_integer size;
   modelica_integer equationIndex;       /* index for EQUATION_INFO */
 
-  void *solverData;
+  void *solverData[2]; /* [1] is the totalPivot solver; [0] holds other solvers ; both are used for the default solver */
   modelica_real *x;                     /* solution vector x */
   modelica_real *A;                     /* matrix A */
   modelica_real *b;                     /* vector b */
@@ -345,8 +352,10 @@ typedef struct LINEAR_SYSTEM_DATA
 
   /* statistics */
   unsigned long numberOfCall;           /* number of solving calls of this system */
+  unsigned long numberOfJEval;          /* number of jacobian evaluations of this system */
   double totalTime;                     /* save the totalTime */
   rtclock_t totalTimeClock;             /* time clock for the totalTime  */
+  double jacobianTime;                  /* save the time to calculate jacobians */
 }LINEAR_SYSTEM_DATA;
 #else
 typedef void* LINEAR_SYSTEM_DATA;
@@ -586,6 +595,7 @@ typedef struct SIMULATION_INFO
   int jacobianEvals;                   /* number of different columns to evaluate functionODE */
   int currentJacobianEval;             /* current column to evaluate functionODE for Jacobian*/
 
+  int homotopySteps;                   /* the number of homotopy lambda steps during initialization, =0 no homotopy was used */
   double lambda;                       /* homotopy parameter E [0, 1.0] */
 
   /* indicators for simulations state */

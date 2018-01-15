@@ -104,11 +104,7 @@ algorithm
       BaseHashTable.dumpHashTable(HtCr2U1);
     end if;
     ((HtCr2U2, HtS2U, HtU2S)) := algo(paraList, eqList, HtCr2U2, HtS2U, HtU2S);
-    if Flags.isSet(Flags.DUMP_UNIT) then
-      BaseHashTable.dumpHashTable(HtCr2U2);
-      print("######## UnitCheck COMPLETED ########\n");
-    end if;
-    notification(HtCr2U1, HtCr2U2, HtU2S);
+
     varList := List.map2(varList, returnVar, HtCr2U2, HtU2S);
     paraList := List.map2(paraList, returnVar, HtCr2U2, HtU2S);
     aliasList := List.map2(aliasList, returnVar, HtCr2U2, HtU2S);
@@ -116,6 +112,12 @@ algorithm
     orderedVars := BackendVariable.listVar(varList);
     globalKnownVars := BackendVariable.listVar(paraList);
     aliasVars := BackendVariable.listVar(aliasList);
+
+    if Flags.isSet(Flags.DUMP_UNIT) then
+      BaseHashTable.dumpHashTable(HtCr2U2);
+      print("######## UnitCheck COMPLETED ########\n");
+    end if;
+    notification(HtCr2U1, HtCr2U2, HtU2S);
 
     syst := BackendDAEUtil.setEqSystVars(syst, orderedVars);
     shared := BackendDAEUtil.setSharedGlobalKnownVars(shared, globalKnownVars);
@@ -178,10 +180,14 @@ algorithm
 
     else equation
       cr = BackendVariable.varCref(inVar);
-      ut = BaseHashTable.get(cr, inHtCr2U);
-      if Unit.isUnit(ut) then
-        s = Unit.unitString(ut, inHtU2S);
-        var = BackendVariable.setUnit(inVar, DAE.SCONST(s));
+      if BaseHashTable.hasKey(cr, inHtCr2U) then
+        ut = BaseHashTable.get(cr, inHtCr2U);
+        if Unit.isUnit(ut) then
+          s = Unit.unitString(ut, inHtU2S);
+          var = BackendVariable.setUnit(inVar, DAE.SCONST(s));
+        else
+          var = inVar;
+        end if;
       else
         var = inVar;
       end if;
@@ -289,6 +295,7 @@ algorithm
       HashTableUnitToString.HashTable HtU2S;
       list<list<tuple<DAE.Exp, Unit.Unit>>> expList;
       DAE.ComponentRef cr;
+      list<BackendDAE.WhenOperator> whenStmtLst;
 
     case (BackendDAE.EQUATION(exp=lhs, scalar=rhs), HtCr2U, HtS2U, HtU2S) equation
       temp = DAE.BINARY(rhs, DAE.SUB(DAE.T_REAL_DEFAULT), lhs);
@@ -328,9 +335,21 @@ algorithm
       //Error.addCompilerWarning("ALGORITHM, these types of equations are not yet supported\n");
     then (inHtCr2U, inHtS2U, inHtU2S, {});
 
-    case (BackendDAE.WHEN_EQUATION(), _, _, _) equation
-      //Error.addCompilerWarning("WHEN_EQUATION, these types of equations are not yet supported\n");
-    then (inHtCr2U, inHtS2U, inHtU2S, {});
+    case (BackendDAE.WHEN_EQUATION(whenEquation=BackendDAE.WHEN_STMTS(whenStmtLst=whenStmtLst)), HtCr2U, HtS2U, HtU2S) algorithm
+      for whenStmt in whenStmtLst loop
+        _ := match whenStmt
+          case BackendDAE.ASSIGN(left=lhs, right=rhs) equation
+            temp = DAE.BINARY(rhs, DAE.SUB(DAE.T_REAL_DEFAULT), lhs);
+            if Flags.isSet(Flags.DUMP_EQ_UNIT_STRUCT) then
+              ExpressionDump.dumpExp(temp);
+            end if;
+            (_, (HtCr2U, HtS2U, HtU2S), expList)=insertUnitInEquation(temp, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
+          then ();
+
+          else then ();
+        end match;
+      end for;
+    then (HtCr2U, HtS2U, HtU2S, expList);
 
     case (BackendDAE.COMPLEX_EQUATION(left=lhs, right=rhs), HtCr2U, HtS2U, HtU2S) equation
       temp = DAE.BINARY(rhs, DAE.SUB(DAE.T_REAL_DEFAULT), lhs);
@@ -721,6 +740,11 @@ algorithm
       (_, (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
     then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), expListList);
 
+    //PRE
+    case (DAE.CALL(path = Absyn.IDENT(name = "pre"), expLst = {exp1}), (HtCr2U, HtS2U, HtU2S), _) equation
+      (ut, (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), inUt);
+    then (ut, (HtCr2U, HtS2U, HtU2S), expListList);
+
     //DER
     case (DAE.CALL(path = Absyn.IDENT(name = "der"), expLst = {exp1}), (HtCr2U, HtS2U, HtU2S), Unit.UNIT()) equation
       (Unit.MASTER(lcr), (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
@@ -766,22 +790,24 @@ algorithm
     then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), expListList);
 
     //IFEXP
-    case (DAE.IFEXP(exp1, exp2, exp3), (HtCr2U, HtS2U, HtU2S), _) equation
-      (_, (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
+    case (DAE.IFEXP(_, exp2, exp3), (HtCr2U, HtS2U, HtU2S), _) equation
+      //(_, (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
       (ut, (HtCr2U, HtS2U, HtU2S), expListList2) = insertUnitInEquation(exp2, (HtCr2U, HtS2U, HtU2S), inUt);
       (ut2, (HtCr2U, HtS2U, HtU2S), expListList3) = insertUnitInEquation(exp3, (HtCr2U, HtS2U, HtU2S), ut);
       (true, ut, HtCr2U) = UnitTypesEqual(ut, ut2, HtCr2U);
-      expListList = listAppend(expListList, expListList2);
-      expListList = listAppend(expListList, expListList3);
+      //expListList = listAppend(expListList, expListList2);
+      //expListList = listAppend(expListList, expListList3);
+      expListList = listAppend(expListList2, expListList3);
     then (ut, (HtCr2U, HtS2U, HtU2S), expListList);
 
-    case (DAE.IFEXP(exp1, exp2, exp3), (HtCr2U, HtS2U, HtU2S), _) equation
-      (_, (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
+    case (DAE.IFEXP(_, exp2, exp3), (HtCr2U, HtS2U, HtU2S), _) equation
+      //(_, (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), Unit.MASTER({}));
       (ut, (HtCr2U, HtS2U, HtU2S), expListList2) = insertUnitInEquation(exp2, (HtCr2U, HtS2U, HtU2S), inUt);
       (ut2, (HtCr2U, HtS2U, HtU2S), expListList3) = insertUnitInEquation(exp3, (HtCr2U, HtS2U, HtU2S), ut);
       (false, _, _) = UnitTypesEqual(ut, ut2, HtCr2U);
-      expListList = listAppend(expListList, expListList2);
-      expListList = listAppend(expListList, expListList3);
+      //expListList = listAppend(expListList, expListList2);
+      //expListList = listAppend(expListList, expListList3);
+      expListList = listAppend(expListList2, expListList3);
       expListList = {(exp2, ut), (exp3, ut2)}::expListList;
     then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), expListList);
 
@@ -801,26 +827,6 @@ algorithm
       expListList = {(exp1, ut), (exp2, ut2)}::expListList;
     then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), expListList);
 
-    //all other BINARIES
-    case (DAE.BINARY(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), {});
-
-    //LBINARY
-    case (DAE.LBINARY(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), {});
-
-    //LUNARY
-    case (DAE.LUNARY(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), {});
-
-    //MATRIX
-    case (DAE.MATRIX(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), {});
-
-    //ARRAY
-    case (DAE.ARRAY(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S), {});
-
     //CALL
     case (DAE.CALL(expLst=ExpList), (HtCr2U, HtS2U, HtU2S), _) equation
       (HtCr2U, HtS2U, HtU2S, expListList) = foldCallArg(ExpList, HtCr2U, HtS2U, HtU2S);
@@ -830,22 +836,6 @@ algorithm
     case (DAE.UNARY(DAE.UMINUS(), exp1), (HtCr2U, HtS2U, HtU2S), _) equation
       (ut, (HtCr2U, HtS2U, HtU2S), expListList) = insertUnitInEquation(exp1, (HtCr2U, HtS2U, HtU2S), inUt);
     then (ut, (HtCr2U, HtS2U, HtU2S), expListList);
-
-    //ICONST
-    case (DAE.ICONST(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S) , {});
-
-    //BCONST
-    case (DAE.BCONST(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S) , {});
-
-    //SCONST
-    case (DAE.SCONST(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S) , {});
-
-    //RCONST
-    case (DAE.RCONST(), (HtCr2U, HtS2U, HtU2S), _)
-    then (Unit.MASTER({}), (HtCr2U, HtS2U, HtU2S) , {});
 
     //"time"
     case (DAE.CREF(componentRef=cr), (HtCr2U, HtS2U, HtU2S), _) equation
@@ -860,14 +850,9 @@ algorithm
       ut = BaseHashTable.get(cr, HtCr2U);
     then (ut, inTpl, {});
 
-    //NO UNIT IN EQUATION
-    case (DAE.CREF(), _, _)
-    then (Unit.MASTER({}), inTpl, {});
-
     // all unhandled expressions, e.g. DAE.CAST, DAE.TUPLE, ...
     else
       //Error.addInternalError("./Compiler/BackEnd/UnitCheck.mo: function insertUnitInEquation failed for " + ExpressionDump.printExpStr(inEq), sourceInfo());
-    //then fail();
     then (Unit.MASTER({}), inTpl, {});
   end matchcontinue;
 end insertUnitInEquation;

@@ -1215,22 +1215,10 @@ match eq
 case SES_SIMPLE_ASSIGN(__) then
   let &preExp = buffer ""
   let expPart = daeExp(exp, context, &preExp, simCode) //was daeExpToReal
-  //a hack - start values should be never on the right side of an equation,
-  //specially in FunInitialEquations()
-  let codeTxt =
-    <<
-    <%preExp%>
-    <%cref(cref, simCode)%> = <%expPart%>;
-    >>
-  match exp
-  case CALL(path=IDENT(name="$_start"), expLst={arg as CREF(__)}) then
-    <<
-    //### useless start value assignment ??
-    //<%codeTxt%>
-    //###
-    >>
-  else
-    codeTxt
+  <<
+  <%preExp%>
+  <%cref(cref, simCode)%> = <%expPart%>;
+  >>
 case SES_ARRAY_CALL_ASSIGN(__) then "SES_ARRAY_CALL_ASSIGN"
 case SES_ALGORITHM(__) then
   (statements |> stmt =>
@@ -1599,23 +1587,6 @@ template old2Cref(ComponentRef cr, SimCode simCode) ::=
 '/*old2(<%crefStr(cr, simCode)%>)*/old2<%representationCref(cr, simCode)%>'
 end old2Cref;
 ***/
-
-//this one should be used only in InitialResidual( ..., double[][] startValues)
-template startCref(ComponentRef cr, SimCode simCode) ::=
-//'/*start(<%crefStr(cr, simCode)%>)*/start<%representationCref(cr, simCode)%>'
-
-    match cref2simvar(cr, simCode)
-    case sv as SIMVAR(__) then
-      let fviIndex =
-        match varKind
-        case STATE(__)     then "State"
-        case STATE_DER(__) then "StateDer"
-        case VARIABLE(__)  then "Algebraic"
-        case PARAM(__)     then "Parameter"
-        else /*error(sourceInfo(),*/ "UNEXPECTED_variable_varKind_in_startCref_template" //)
-      'startValues[(int)SimVarType.<%fviIndex%>][<%sv.index%>]'
-end startCref;
-
 
 //TODO: a HACK ? ... used in mixed system only
 template crefToReal(ComponentRef cr, SimCode simCode) ::=
@@ -2654,9 +2625,6 @@ template daeExpCall(Exp inExp, Context context, Text &preExp, SimCode simCode) :
   case CALL(path=IDENT(name="Integer"), expLst={toBeCasted}) then
     let castedVar = daeExp(toBeCasted, context, &preExp, simCode)
     '((int)<%castedVar%>)'
-
-  case CALL(path=IDENT(name="$_start"), expLst={arg as CREF(__)}) then
-    startCref(arg.componentRef, simCode)
 
   //'(/*edge(h[<%idx%>])*/H[<%idx%>]!=0.0 && preH[<%idx%>]==0.0)'
   case CALL(path=IDENT(name="edge"), expLst={arg as CREF(__)}) then

@@ -29,44 +29,28 @@
  *
  */
 
-encapsulated package NFExpression
-
-import DAE;
-import NFInstNode.InstNode;
-import NFPrefix.Prefix;
-import Operator = NFOperator;
-import Subscript = NFSubscript;
-import Dimension = NFDimension;
-import Type = NFType;
-
+encapsulated uniontype NFExpression
 protected
-import Util;
-import Absyn;
-import List;
+  import Util;
+  import Absyn;
+  import List;
+
+  import Expression = NFExpression;
+  import Function = NFFunction;
+  import RangeIterator = NFRangeIterator;
+  import NFPrefixes.Variability;
 
 public
-uniontype CallAttributes
-  record CALL_ATTR
-    Type ty "The type of the return value, if several return values this is undefined";
-    Boolean tuple_ "tuple" ;
-    Boolean builtin "builtin Function call" ;
-    Boolean isImpure "if the function has prefix *impure* is true, else false";
-    Boolean isFunctionPointerCall;
-    DAE.InlineType inlineType;
-    DAE.TailCall tailCall "Input variables of the function if the call is tail-recursive";
-  end CALL_ATTR;
-end CallAttributes;
+  import Absyn.Path;
+  import DAE;
+  import NFInstNode.InstNode;
+  import Operator = NFOperator;
+  import Subscript = NFSubscript;
+  import Dimension = NFDimension;
+  import Type = NFType;
+  import ComponentRef = NFComponentRef;
+  import NFCall.Call;
 
-public constant CallAttributes callAttrBuiltinBool = CALL_ATTR(Type.BOOLEAN(),false,true,false,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-public constant CallAttributes callAttrBuiltinInteger = CALL_ATTR(Type.INTEGER(),false,true,false,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-public constant CallAttributes callAttrBuiltinReal = CALL_ATTR(Type.REAL(),false,true,false,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-public constant CallAttributes callAttrBuiltinString = CALL_ATTR(Type.STRING(),false,true,false,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-public constant CallAttributes callAttrBuiltinOther = CALL_ATTR(Type.UNKNOWN(),false,true,false,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-public constant CallAttributes callAttrBuiltinImpureBool = CALL_ATTR(Type.BOOLEAN(),false,true,true,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-public constant CallAttributes callAttrBuiltinImpureInteger = CALL_ATTR(Type.INTEGER(),false,true,true,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-public constant CallAttributes callAttrBuiltinImpureReal = CALL_ATTR(Type.REAL(),false,true,true,false,DAE.NO_INLINE(),DAE.NO_TAIL());
-
-uniontype Expression
   record INTEGER
     Integer value;
   end INTEGER;
@@ -90,9 +74,13 @@ uniontype Expression
   end ENUM_LITERAL;
 
   record CREF
-    InstNode component;
-    Prefix prefix;
+    Type ty;
+    ComponentRef cref;
   end CREF;
+
+  record TYPENAME "Represents a type used as a range, e.g. Boolean."
+    Type ty;
+  end TYPENAME;
 
   record ARRAY
     Type ty;
@@ -106,23 +94,28 @@ uniontype Expression
     Expression stop;
   end RANGE;
 
+  record TUPLE
+    Type ty;
+    list<Expression> elements;
+  end TUPLE;
+
   record RECORD
-    Absyn.Path path; // Maybe not needed since the type contains the name. Prefix?
+    Path path; // Maybe not needed since the type contains the name. Prefix?
     Type ty;
     list<Expression> elements;
   end RECORD;
 
   record CALL
-    Absyn.Path path;
-    Expression cref "a pointer to the class of the function and the prefix, Expression.CREF";
-    list<Expression> arguments;
-    CallAttributes attr;
+    Call call;
   end CALL;
 
   record SIZE
     Expression exp;
     Option<Expression> dimIndex;
   end SIZE;
+
+  record END
+  end END;
 
   record BINARY "Binary operations, e.g. a+4"
     Expression exp1;
@@ -168,6 +161,32 @@ uniontype Expression
     Type ty;
   end UNBOX;
 
+  record SUBSCRIPTED_EXP
+    Expression exp;
+    list<Expression> subscripts;
+    Type ty;
+  end SUBSCRIPTED_EXP;
+
+  record TUPLE_ELEMENT
+    Expression tupleExp;
+    Integer index;
+    Type ty;
+  end TUPLE_ELEMENT;
+
+  record BOX "MetaModelica boxed value"
+    Expression exp;
+  end BOX;
+
+  function isCref
+    input Expression exp;
+    output Boolean isTrue;
+  algorithm
+    isTrue := match exp
+      case CREF() then true;
+      else false;
+    end match;
+  end isCref;
+
   function isTrue
     input Expression exp;
     output Boolean isTrue;
@@ -177,6 +196,16 @@ uniontype Expression
       else false;
     end match;
   end isTrue;
+
+  function isFalse
+    input Expression exp;
+    output Boolean isTrue;
+  algorithm
+    isTrue := match exp
+      case BOOLEAN(false) then true;
+      else false;
+    end match;
+  end isFalse;
 
   function isEqual
     "Returns true if the two expressions are equal, otherwise false."
@@ -213,13 +242,14 @@ uniontype Expression
         Real r;
         String s;
         Boolean b;
-        InstNode c;
+        ComponentRef cr;
         Type ty;
         list<Expression> expl;
         Expression e1, e2, e3;
         Option<Expression> oe;
-        Absyn.Path p;
+        Path p;
         Operator op;
+        Call c;
 
       case INTEGER()
         algorithm
@@ -247,11 +277,15 @@ uniontype Expression
 
       case CREF()
         algorithm
-          CREF(component = c) := exp2;
-          b := referenceEq(InstNode.component(c), InstNode.component(exp1.component));
-          // TODO: Check prefix too.
+          CREF(cref = cr) := exp2;
         then
-          if b then 0 else 1;
+          ComponentRef.compare(exp1.cref, cr);
+
+      case TYPENAME()
+        algorithm
+          TYPENAME(ty = ty) := exp2;
+        then
+          valueCompare(exp1.ty, ty);
 
       case ARRAY()
         algorithm
@@ -273,12 +307,17 @@ uniontype Expression
         then
           comp;
 
+      case TUPLE()
+        algorithm
+          TUPLE(elements = expl) := exp2;
+        then
+          compareList(exp1.elements, expl);
+
       case CALL()
         algorithm
-          CALL(path = p, arguments = expl) := exp2;
-          comp := Absyn.pathCompare(exp1.path, p);
+          CALL(call = c) := exp2;
         then
-          if comp == 0 then compareList(exp1.arguments, expl) else comp;
+          Call.compare(exp1.call, c);
 
       case SIZE()
         algorithm
@@ -286,6 +325,8 @@ uniontype Expression
           comp := compareOpt(exp1.dimIndex, oe);
         then
           if comp == 0 then compare(exp1.exp, e1) else comp;
+
+      case END() then 0;
 
       case BINARY()
         algorithm
@@ -368,9 +409,31 @@ uniontype Expression
         then
           compare(exp1.exp, e1);
 
+      case SUBSCRIPTED_EXP()
+        algorithm
+          SUBSCRIPTED_EXP(exp = e1, subscripts = expl) := exp2;
+          comp := compare(exp1.exp, e1);
+
+          if comp == 0 then
+            comp := compareList(exp1.subscripts, expl);
+          end if;
+        then
+          comp;
+
+      case TUPLE_ELEMENT()
+        algorithm
+          TUPLE_ELEMENT(tupleExp = e1, index = i) := exp2;
+          comp := Util.intCompare(exp1.index, i);
+
+          if comp == 0 then
+            comp := compare(exp1.tupleExp, e1);
+          end if;
+        then
+          comp;
+
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown expression.");
+          Error.assertion(false, getInstanceName() + " got unknown expression.", sourceInfo());
         then
           fail();
 
@@ -397,25 +460,21 @@ uniontype Expression
     input list<Expression> expl2;
     output Integer comp;
   protected
-    Integer len1, len2;
     Expression e2;
     list<Expression> rest_expl2 = expl2;
-    Integer len1, len2;
   algorithm
     // Check that the lists have the same length, otherwise they can't be equal.
-    len1 := listLength(expl1);
-    len2 := listLength(expl2);
-    comp := Util.intCompare(len1, len2);
+    comp := Util.intCompare(listLength(expl1), listLength(expl2));
     if comp <> 0 then
       return;
     end if;
 
     for e1 in expl1 loop
       e2 :: rest_expl2 := rest_expl2;
-
-      // Return false if the expressions are not equal.
       comp := compare(e1, e2);
-      if 0 <> comp then
+
+      // Return if the expressions are not equal.
+      if comp <> 0 then
         return;
       end if;
     end for;
@@ -432,10 +491,26 @@ uniontype Expression
       case REAL() then Type.REAL();
       case STRING() then Type.STRING();
       case BOOLEAN() then Type.BOOLEAN();
-      case CAST(ty, _)
-        algorithm
-          ty := if listMember(ty, {Type.INTEGER(), Type.REAL(), Type.STRING(), Type.BOOLEAN()}) then ty else Type.UNKNOWN();
-        then ty;
+      case ENUM_LITERAL() then exp.ty;
+      case CREF() then exp.ty;
+      case ARRAY() then exp.ty;
+      case RANGE() then exp.ty;
+      case TUPLE() then exp.ty;
+      case RECORD() then exp.ty;
+      case CALL() then Call.typeOf(exp.call);
+      case SIZE(dimIndex = SOME(_)) then Type.INTEGER();
+      case SIZE() then typeOf(exp.exp);
+      case END() then Type.INTEGER();
+      case BINARY() then Operator.typeOf(exp.operator);
+      case UNARY() then Operator.typeOf(exp.operator);
+      case LBINARY() then Operator.typeOf(exp.operator);
+      case LUNARY() then Operator.typeOf(exp.operator);
+      case RELATION() then Operator.typeOf(exp.operator);
+      case IF() then typeOf(exp.trueBranch);
+      case CAST() then exp.ty;
+      case UNBOX() then exp.ty;
+      case SUBSCRIPTED_EXP() then exp.ty;
+      case TUPLE_ELEMENT() then exp.ty;
       else Type.UNKNOWN();
     end match;
   end typeOf;
@@ -461,9 +536,15 @@ uniontype Expression
         then
           ARRAY(t, el);
 
-      case (_, Type.REAL())
+      case (UNARY(), _)
+        then UNARY(exp.operator, typeCastElements(exp.exp, ty));
+
+      else
+        algorithm
+          t := typeOf(exp);
+          t := Type.setArrayElementType(t, ty);
         then
-          CAST(Type.REAL(), exp);
+          CAST(t, exp);
 
     end match;
   end typeCastElements;
@@ -492,7 +573,7 @@ uniontype Expression
 
         else
           algorithm
-            assert(false, getInstanceName() + " got unknown subscript " + anyString(sub));
+            Error.assertion(false, getInstanceName() + " got unknown subscript " + anyString(sub), sourceInfo());
           then
             fail();
 
@@ -507,16 +588,20 @@ uniontype Expression
   algorithm
     element := match array
       local
-        Prefix pre;
+        ComponentRef cref;
 
       case ARRAY() then listGet(array.elements, index);
 
-      case CREF(prefix = pre)
+      case CREF()
         algorithm
-          pre := Prefix.addSubscript(Subscript.INDEX(INTEGER(index)), pre);
+          cref := ComponentRef.addSubscript(Subscript.INDEX(INTEGER(index)), array.cref);
         then
-          CREF(array.component, pre);
+          CREF(Type.unliftArray(array.ty), cref);
 
+      case SUBSCRIPTED_EXP()
+        then SUBSCRIPTED_EXP(array.exp, listAppend(array.subscripts, {INTEGER(index)}), Type.unliftArray(array.ty));
+
+      else SUBSCRIPTED_EXP(array, {INTEGER(index)}, Type.unliftArray(typeOf(array)));
     end match;
   end arrayElement;
 
@@ -542,15 +627,14 @@ uniontype Expression
     list<list<Expression>> partexps;
     Integer dimsize;
   algorithm
-
-    assert(listLength(inDims) > 0, "Empty dimension list given in arrayFromList.");
+    Error.assertion(not listEmpty(inDims), "Empty dimension list given in arrayFromList.", sourceInfo());
 
     ldim::restdims := inDims;
     dimsize := Dimension.size(ldim);
     ty := Type.liftArrayLeft(elemTy, ldim);
 
-    if listLength(inDims) == 1 then
-      assert(dimsize == listLength(inExps), "Length mismatch in arrayFromList.");
+    if List.hasOneElement(inDims) then
+      Error.assertion(dimsize == listLength(inExps), "Length mismatch in arrayFromList.", sourceInfo());
       outExp := ARRAY(ty,inExps);
       return;
     end if;
@@ -566,6 +650,28 @@ uniontype Expression
     outExp := arrayFromList(newlst, ty, restdims);
   end arrayFromList_impl;
 
+  function makeEnumLiteral
+    input Type enumType;
+    input Integer index;
+    output Expression literal;
+  protected
+    list<String> literals;
+  algorithm
+    Type.ENUMERATION(literals = literals) := enumType;
+    literal := ENUM_LITERAL(enumType, listGet(literals, index), index);
+  end makeEnumLiteral;
+
+  function makeEnumLiterals
+    input Type enumType;
+    output list<Expression> literals;
+  protected
+    list<String> lits;
+  algorithm
+    Type.ENUMERATION(literals = lits) := enumType;
+    literals := list(ENUM_LITERAL(enumType, l, i)
+      threaded for l in lits, i in 1:listLength(lits));
+  end makeEnumLiterals;
+
   function toInteger
     input Expression exp;
     output Integer i;
@@ -577,54 +683,127 @@ uniontype Expression
     end match;
   end toInteger;
 
+  function toStringTyped
+    input Expression exp;
+    output String str;
+  algorithm
+    str := "/*" + Type.toString(typeOf(exp)) + "*/ " + toString(exp);
+  end toStringTyped;
+
   function toString
     input Expression exp;
     output String str;
   protected
-    Expression e;
     Type t;
   algorithm
     str := match exp
-      case INTEGER() then String(exp.value);
-      case REAL() then String(exp.value);
-      case STRING() then exp.value;
-      case BOOLEAN() then String(exp.value);
+      case INTEGER() then intString(exp.value);
+      case REAL() then realString(exp.value);
+      case STRING() then "\"" + exp.value + "\"";
+      case BOOLEAN() then boolString(exp.value);
 
       case ENUM_LITERAL(ty = t as Type.ENUMERATION())
         then Absyn.pathString(t.typePath) + "." + exp.name;
 
-      case CREF() then Prefix.toString(exp.prefix);
-      case ARRAY() then "{" + stringDelimitList(List.map(exp.elements, toString), ", ") + "}";
+      case CREF() then ComponentRef.toString(exp.cref);
+      case TYPENAME() then Type.typenameString(Type.arrayElementType(exp.ty));
+      case ARRAY() then "{" + stringDelimitList(list(toString(e) for e in exp.elements), ", ") + "}";
 
-      case RANGE() then toString(exp.start) +
+      case RANGE() then operandString(exp.start, exp, false) +
                         (
                         if isSome(exp.step)
-                        then ":" + toString(Util.getOption(exp.step))
+                        then ":" + operandString(Util.getOption(exp.step), exp, false)
                         else ""
-                        ) + ":" + toString(exp.stop);
-      case CALL() then Absyn.pathString(exp.path) + "(" + stringDelimitList(List.map(exp.arguments, toString), ", ") + ")";
+                        ) + ":" + operandString(exp.stop, exp, false);
+
+      case TUPLE() then "(" + stringDelimitList(list(toString(e) for e in exp.elements), ", ") + ")";
+      case CALL() then Call.toString(exp.call);
       case SIZE() then "size(" + toString(exp.exp) +
                         (
                         if isSome(exp.dimIndex)
                         then ", " + toString(Util.getOption(exp.dimIndex))
                         else ""
                         ) + ")";
-      case BINARY() then "(" + toString(exp.exp1) + Operator.symbol(exp.operator) + toString(exp.exp2) + ")";
-      case UNARY() then "(" + Operator.symbol(exp.operator) + " " + toString(exp.exp) + ")";
-      case LBINARY() then "(" + toString(exp.exp1) + Operator.symbol(exp.operator) + toString(exp.exp2) + ")";
-      case LUNARY() then "(" + Operator.symbol(exp.operator) + " " + toString(exp.exp) + ")";
+      case END() then "end";
 
-      case RELATION() then "(" + toString(exp.exp1) + Operator.symbol(exp.operator) + toString(exp.exp2) + ")";
+      case BINARY() then operandString(exp.exp1, exp, true) +
+                         Operator.symbol(exp.operator) +
+                         operandString(exp.exp2, exp, false);
+
+      case UNARY() then Operator.symbol(exp.operator) +
+                        operandString(exp.exp, exp, false);
+
+      case LBINARY() then operandString(exp.exp1, exp, true) +
+                          Operator.symbol(exp.operator) +
+                          operandString(exp.exp2, exp, false);
+
+      case LUNARY() then Operator.symbol(exp.operator) + " " +
+                         operandString(exp.exp, exp, false);
+
+      case RELATION() then operandString(exp.exp1, exp, true) +
+                           Operator.symbol(exp.operator) +
+                           operandString(exp.exp2, exp, false);
+
       case IF() then "if" + toString(exp.condition) + " then " + toString(exp.trueBranch) + " else " + toString(exp.falseBranch);
 
       case UNBOX() then "UNBOX(" + toString(exp.exp) + ")";
-
       case CAST() then "CAST(" + Type.toString(exp.ty) + ", " + toString(exp.exp) + ")";
+      case SUBSCRIPTED_EXP() then toString(exp.exp) + "[" + stringDelimitList(list(toString(e) for e in exp.subscripts), ", ") + "]";
+      case TUPLE_ELEMENT() then toString(exp.tupleExp) + "[" + intString(exp.index) + "]";
 
-
-      else "NFExpression.toString: IMPLEMENT ME";
+      else anyString(exp);
     end match;
   end toString;
+
+  function operandString
+    "Helper function to toString, prints an operator and adds parentheses as needed."
+    input Expression operand;
+    input Expression operator;
+    input Boolean lhs;
+    output String str;
+  protected
+    Integer operand_prio, operator_prio;
+  algorithm
+    str := toString(operand);
+
+    operand_prio := priority(operand, lhs);
+    if operand_prio <> 4 then
+      operator_prio := priority(operator, lhs);
+
+      if operand_prio > operator_prio or
+         not lhs and operand_prio == operator_prio and not isAssociativeExp(operand) then
+        str := "(" + str + ")";
+      end if;
+    end if;
+  end operandString;
+
+  function priority
+    input Expression exp;
+    input Boolean lhs;
+    output Integer priority;
+  algorithm
+    priority := match exp
+      case BINARY() then Operator.priority(exp.operator, lhs);
+      case UNARY() then 4;
+      case LBINARY() then Operator.priority(exp.operator, lhs);
+      case LUNARY() then 7;
+      case RELATION() then 6;
+      case RANGE() then 10;
+      case IF() then 11;
+      else 0;
+    end match;
+  end priority;
+
+  function isAssociativeExp
+    input Expression exp;
+    output Boolean isAssociative;
+  algorithm
+    isAssociative := match exp
+      case BINARY() then Operator.isAssociative(exp.operator);
+      case LBINARY() then true;
+      else false;
+    end match;
+  end isAssociativeExp;
 
   function toDAE
     input Expression exp;
@@ -633,7 +812,6 @@ uniontype Expression
     dexp := match exp
       local
         Type ty;
-        InstNode clsnode;
 
       case INTEGER() then DAE.ICONST(exp.value);
       case REAL() then DAE.RCONST(exp.value);
@@ -643,7 +821,10 @@ uniontype Expression
         then DAE.ENUM_LITERAL(Absyn.suffixPath(ty.typePath, exp.name), exp.index);
 
       case CREF()
-        then DAE.CREF(Prefix.toCref(exp.prefix), DAE.T_UNKNOWN_DEFAULT);
+        then DAE.CREF(ComponentRef.toDAE(exp.cref), Type.toDAE(exp.ty));
+
+      // TYPENAME() doesn't have a DAE representation, and shouldn't need to be
+      // converted anyway.
 
       case ARRAY()
         then DAE.ARRAY(Type.toDAE(exp.ty), Type.isScalarArray(exp.ty),
@@ -651,7 +832,6 @@ uniontype Expression
 
       case RECORD()
         then DAE.RECORD(exp.path, list(toDAE(e) for e in exp.elements), {}, Type.toDAE(exp.ty));
-
 
       case RANGE()
         then DAE.RANGE(
@@ -662,14 +842,16 @@ uniontype Expression
                else NONE(),
                toDAE(exp.stop));
 
-      case CALL()
-        then DAE.CALL(exp.path, List.map(exp.arguments, toDAE), toDAECallAtributes(exp.attr));
+      case TUPLE() then DAE.TUPLE(list(toDAE(e) for e in exp.elements));
+      case CALL() then Call.toDAE(exp.call);
 
       case SIZE()
         then DAE.SIZE(toDAE(exp.exp),
                if isSome(exp.dimIndex)
                then SOME(toDAE(Util.getOption(exp.dimIndex)))
                else NONE());
+
+      // END() doesn't have a DAE representation.
 
       case BINARY()
         then DAE.BINARY(toDAE(exp.exp1), Operator.toDAE(exp.operator), toDAE(exp.exp2));
@@ -691,60 +873,1362 @@ uniontype Expression
 
       case CAST() then DAE.CAST(Type.toDAE(exp.ty), toDAE(exp.exp));
 
+      case BOX()
+        then DAE.BOX(toDAE(exp.exp));
+
       case UNBOX()
         then DAE.UNBOX(toDAE(exp.exp), Type.toDAE(exp.ty));
 
+      case SUBSCRIPTED_EXP()
+        then DAE.ASUB(toDAE(exp.exp), list(toDAE(s) for s in exp.subscripts));
+
+      case TUPLE_ELEMENT()
+        then DAE.TSUB(toDAE(exp.tupleExp), exp.index, Type.toDAE(exp.ty));
+
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown expression");
+          Error.assertion(false, getInstanceName() + " got unknown expression '" + toString(exp) + "'", sourceInfo());
         then
           fail();
 
     end match;
   end toDAE;
 
-  function toDAECallAtributes
-    input CallAttributes attr;
-    output DAE.CallAttributes fattr;
+  function dimensionCount
+    input Expression exp;
+    output Integer dimCount;
+  algorithm
+    dimCount := match exp
+      case ARRAY(ty = Type.UNKNOWN())
+        then 1 + dimensionCount(listHead(exp.elements));
+      case ARRAY() then Type.dimensionCount(exp.ty);
+      case RANGE() then Type.dimensionCount(exp.ty);
+      case SIZE(dimIndex = NONE()) then dimensionCount(exp.exp);
+      case CAST() then dimensionCount(exp.exp);
+      case SUBSCRIPTED_EXP() then Type.dimensionCount(exp.ty);
+      case TUPLE_ELEMENT() then Type.dimensionCount(exp.ty);
+      // TODO: Add more expressions.
+      else 0;
+    end match;
+  end dimensionCount;
+
+  function map
+    input Expression exp;
+    input MapFunc func;
+    output Expression outExp;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    outExp := match exp
+      local
+        Expression e1, e2, e3, e4;
+
+      case CREF() then CREF(exp.ty, mapCref(exp.cref, func));
+      case ARRAY() then ARRAY(exp.ty, list(map(e, func) for e in exp.elements));
+
+      case RANGE(step = SOME(e2))
+        algorithm
+          e1 := map(exp.start, func);
+          e4 := map(e2, func);
+          e3 := map(exp.stop, func);
+        then
+          if referenceEq(exp.start, e1) and referenceEq(e2, e4) and
+            referenceEq(exp.stop, e3) then exp else RANGE(exp.ty, e1, SOME(e4), e3);
+
+      case RANGE()
+        algorithm
+          e1 := map(exp.start, func);
+          e3 := map(exp.stop, func);
+        then
+          if referenceEq(exp.start, e1) and referenceEq(exp.stop, e3)
+            then exp else RANGE(exp.ty, e1, NONE(), e3);
+
+      case TUPLE() then TUPLE(exp.ty, list(map(e, func) for e in exp.elements));
+
+      case RECORD()
+        then RECORD(exp.path, exp.ty, list(map(e, func) for e in exp.elements));
+
+      case CALL() then CALL(mapCall(exp.call, func));
+
+      case SIZE(dimIndex = SOME(e2))
+        algorithm
+          e1 := map(exp.exp, func);
+          e3 := map(e2, func);
+        then
+          if referenceEq(exp.exp, e1) and referenceEq(e2, e3) then exp else SIZE(e1, SOME(e3));
+
+      case SIZE()
+        algorithm
+          e1 := map(exp.exp, func);
+        then
+          if referenceEq(exp.exp, e1) then exp else SIZE(e1, NONE());
+
+      case BINARY()
+        algorithm
+          e1 := map(exp.exp1, func);
+          e2 := map(exp.exp2, func);
+        then
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2)
+            then exp else BINARY(e1, exp.operator, e2);
+
+      case UNARY()
+        algorithm
+          e1 := map(exp.exp, func);
+        then
+          if referenceEq(exp.exp, e1) then exp else UNARY(exp.operator, e1);
+
+      case LBINARY()
+        algorithm
+          e1 := map(exp.exp1, func);
+          e2 := map(exp.exp2, func);
+        then
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2)
+            then exp else LBINARY(e1, exp.operator, e2);
+
+      case LUNARY()
+        algorithm
+          e1 := map(exp.exp, func);
+        then
+          if referenceEq(exp.exp, e1) then exp else LUNARY(exp.operator, e1);
+
+      case RELATION()
+        algorithm
+          e1 := map(exp.exp1, func);
+          e2 := map(exp.exp2, func);
+        then
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2)
+            then exp else RELATION(e1, exp.operator, e2);
+
+      case IF()
+        algorithm
+          e1 := map(exp.condition, func);
+          e2 := map(exp.trueBranch, func);
+          e3 := map(exp.falseBranch, func);
+        then
+          if referenceEq(exp.condition, e1) and referenceEq(exp.trueBranch, e2) and
+             referenceEq(exp.falseBranch, e3) then exp else IF(e1, e2, e3);
+
+      case CAST()
+        algorithm
+          e1 := map(exp.exp, func);
+        then
+          if referenceEq(exp.exp, e1) then exp else CAST(exp.ty, e1);
+
+      case UNBOX()
+        algorithm
+          e1 := map(exp.exp, func);
+        then
+          if referenceEq(exp.exp, e1) then exp else UNBOX(e1, exp.ty);
+
+      case SUBSCRIPTED_EXP()
+        then SUBSCRIPTED_EXP(map(exp.exp, func), list(map(e, func) for e in exp.subscripts), exp.ty);
+
+      case TUPLE_ELEMENT()
+        algorithm
+          e1 := map(exp.tupleExp, func);
+        then
+          if referenceEq(exp.tupleExp, e1) then exp else TUPLE_ELEMENT(e1, exp.index, exp.ty);
+
+      else exp;
+    end match;
+
+    outExp := func(outExp);
+  end map;
+
+  function mapOpt
+    input Option<Expression> exp;
+    input MapFunc func;
+    output Option<Expression> outExp;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
   protected
-    Type ty "The type of the return value, if several return values this is undefined";
-    Boolean tuple_ "tuple";
-    Boolean builtin "builtin Function call";
-    Boolean isImpure "if the function has prefix *impure* is true, else false";
-    Boolean isFunctionPointerCall;
-    DAE.InlineType inlineType;
-    DAE.TailCall tailCall "Input variables of the function if the call is tail-recursive";
+    Expression e;
   algorithm
-    CALL_ATTR(ty, tuple_, builtin, isImpure, isFunctionPointerCall, inlineType, tailCall) := attr;
-    fattr := DAE.CALL_ATTR(Type.toDAE(ty), tuple_, builtin, isImpure, isFunctionPointerCall, inlineType, tailCall);
-  end toDAECallAtributes;
+    if isSome(exp) then
+      SOME(e) := exp;
+      outExp := SOME(map(e, func));
+    end if;
+  end mapOpt;
 
-  function makeBuiltinCall
-    "Create a CALL with the given data for a call to a builtin function."
-    input String name;
-    input Expression cref "pointer to class and prefix";
-    input list<Expression> args;
-    input Type result_type;
-    input Boolean isImpure;
-    output Expression call;
-    annotation(__OpenModelica_EarlyInline = true);
-  algorithm
-    call := Expression.CALL(Absyn.IDENT(name), cref, args,
-      CallAttributes.CALL_ATTR(result_type, false, true, isImpure, false, DAE.NO_INLINE(), DAE.NO_TAIL()));
-  end makeBuiltinCall;
+  function mapCall
+    input Call call;
+    input MapFunc func;
+    output Call outCall;
 
-  function makePureBuiltinCall
-    "Create a CALL with the given data for a call to a builtin function."
-    input String name;
-    input Expression cref "pointer to class and prefix";
-    input list<Expression> args;
-    input Type result_type;
-    output Expression call;
-    annotation(__OpenModelica_EarlyInline = true);
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
   algorithm
-    call := makeBuiltinCall(name, cref, args, result_type, false);
-  end makePureBuiltinCall;
-end Expression;
+    outCall := match call
+      local
+        list<Expression> args;
+        list<Function.NamedArg> nargs;
+        list<Function.TypedArg> targs;
+        list<Function.TypedNamedArg> tnargs;
+        String s;
+        Expression e;
+        Type t;
+        Variability v;
+
+      case Call.UNTYPED_CALL()
+        algorithm
+          args := list(map(arg, func) for arg in call.arguments);
+          nargs := {};
+
+          for arg in call.named_args loop
+            (s, e) := arg;
+            e := map(e, func);
+            nargs := (s, e) :: nargs;
+          end for;
+        then
+          Call.UNTYPED_CALL(call.ref, call.matchingFuncs, args, listReverse(nargs));
+
+      case Call.ARG_TYPED_CALL()
+        algorithm
+          targs := {};
+          tnargs := {};
+
+          for arg in call.arguments loop
+            (e, t, v) := arg;
+            e := map(e, func);
+            targs := (e, t, v) :: targs;
+          end for;
+
+          for arg in call.named_args loop
+            (s, e, t, v) := arg;
+            e := map(e, func);
+            tnargs := (s, e, t, v) :: tnargs;
+          end for;
+        then
+          Call.ARG_TYPED_CALL(call.ref, listReverse(targs), listReverse(tnargs));
+
+      case Call.TYPED_CALL()
+        algorithm
+          args := list(map(arg, func) for arg in call.arguments);
+        then
+          Call.TYPED_CALL(call.fn, call.ty, args, call.attributes);
+
+      case Call.UNTYPED_MAP_CALL()
+        algorithm
+          e := map(call.exp, func);
+        then
+          Call.UNTYPED_MAP_CALL(call.ref, e, call.iters);
+
+      case Call.TYPED_MAP_CALL()
+        algorithm
+          e := map(call.exp, func);
+        then
+          Call.TYPED_MAP_CALL(call.fn, call.ty, e, call.iters);
+
+    end match;
+  end mapCall;
+
+  function mapCref
+    input ComponentRef cref;
+    input MapFunc func;
+    output ComponentRef outCref;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    outCref := match cref
+      local
+        list<Subscript> subs;
+        ComponentRef rest;
+
+      case ComponentRef.CREF()
+        algorithm
+          subs := list(mapSubscript(s, func) for s in cref.subscripts);
+          rest := mapCref(cref.restCref, func);
+        then
+          ComponentRef.CREF(cref.node, subs, cref.ty, cref.origin, rest);
+
+      else cref;
+    end match;
+  end mapCref;
+
+  function mapSubscript
+    input Subscript subscript;
+    input MapFunc func;
+    output Subscript outSubscript;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    outSubscript := match subscript
+      case Subscript.UNTYPED() then Subscript.UNTYPED(map(subscript.exp, func));
+      case Subscript.INDEX() then Subscript.INDEX(map(subscript.index, func));
+      case Subscript.SLICE() then Subscript.SLICE(map(subscript.slice, func));
+      else subscript;
+    end match;
+  end mapSubscript;
+
+  function mapShallow
+    input output Expression exp;
+    input MapFunc func;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    () := match exp
+      local
+        Expression e1, e2, e3, e4;
+
+      case CREF()
+        algorithm
+          exp.cref := mapCrefShallow(exp.cref, func);
+        then
+          ();
+
+      case ARRAY()
+        algorithm
+          exp.elements := list(func(e) for e in exp.elements);
+        then
+          ();
+
+      case RANGE(step = SOME(e2))
+        algorithm
+          e1 := func(exp.start);
+          e4 := func(e2);
+          e3 := func(exp.stop);
+
+          if referenceEq(exp.start, e1) and referenceEq(e2, e4) and referenceEq(exp.stop, e3) then
+            exp := RANGE(exp.ty, e1, SOME(e4), e3);
+          end if;
+        then
+          ();
+
+      case RANGE()
+        algorithm
+          e1 := func(exp.start);
+          e3 := func(exp.stop);
+
+          if referenceEq(exp.start, e1) and referenceEq(exp.stop, e3) then
+            exp := RANGE(exp.ty, e1, NONE(), e3);
+          end if;
+        then
+          ();
+
+      case TUPLE()
+        algorithm
+          exp.elements := list(func(e) for e in exp.elements);
+        then
+          ();
+
+      case RECORD()
+        algorithm
+          exp.elements := list(func(e) for e in exp.elements);
+        then
+          ();
+
+      case CALL()
+        algorithm
+          exp.call := mapCallShallow(exp.call, func);
+        then
+          ();
+
+      case SIZE(dimIndex = SOME(e2))
+        algorithm
+          e1 := func(exp.exp);
+          e3 := func(e2);
+
+          if referenceEq(exp.exp, e1) and referenceEq(e2, e3) then
+            exp := SIZE(e1, SOME(e3));
+          end if;
+        then
+          ();
+
+      case SIZE()
+        algorithm
+          e1 := func(exp.exp);
+
+          if referenceEq(exp.exp, e1) then
+            exp := SIZE(e1, NONE());
+          end if;
+        then
+          ();
+
+      case BINARY()
+        algorithm
+          e1 := func(exp.exp1);
+          e2 := func(exp.exp2);
+
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2) then
+            exp := BINARY(e1, exp.operator, e2);
+          end if;
+        then
+          ();
+
+      case UNARY()
+        algorithm
+          e1 := func(exp.exp);
+
+          if referenceEq(exp.exp, e1) then
+            exp := UNARY(exp.operator, e1);
+          end if;
+        then
+          ();
+
+      case LBINARY()
+        algorithm
+          e1 := func(exp.exp1);
+          e2 := func(exp.exp2);
+
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2) then
+            exp := LBINARY(e1, exp.operator, e2);
+          end if;
+        then
+          ();
+
+      case LUNARY()
+        algorithm
+          e1 := func(exp.exp);
+
+          if referenceEq(exp.exp, e1) then
+            exp := LUNARY(exp.operator, e1);
+          end if;
+        then
+          ();
+
+      case RELATION()
+        algorithm
+          e1 := func(exp.exp1);
+          e2 := func(exp.exp2);
+
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2) then
+            exp := RELATION(e1, exp.operator, e2);
+          end if;
+        then
+          ();
+
+      case IF()
+        algorithm
+          e1 := func(exp.condition);
+          e2 := func(exp.trueBranch);
+          e3 := func(exp.falseBranch);
+
+          if referenceEq(exp.condition, e1) and referenceEq(exp.trueBranch, e2) and
+             referenceEq(exp.falseBranch, e3) then
+            exp := IF(e1, e2, e3);
+          end if;
+        then
+          ();
+
+      case CAST()
+        algorithm
+          e1 := func(exp.exp);
+
+          if referenceEq(exp.exp, e1) then
+            exp := CAST(exp.ty, e1);
+          end if;
+        then
+          ();
+
+      case UNBOX()
+        algorithm
+          e1 := func(exp.exp);
+
+          if referenceEq(exp.exp, e1) then
+            exp := UNBOX(e1, exp.ty);
+          end if;
+        then
+          ();
+
+      case SUBSCRIPTED_EXP()
+        algorithm
+          exp.exp := func(exp.exp);
+          exp.subscripts := list(func(e) for e in exp.subscripts);
+        then
+          ();
+
+      case TUPLE_ELEMENT()
+        algorithm
+          e1 := func(exp.tupleExp);
+
+          if referenceEq(exp.tupleExp, e1) then
+            exp := TUPLE_ELEMENT(e1, exp.index, exp.ty);
+          end if;
+        then
+          ();
+
+      else ();
+    end match;
+  end mapShallow;
+
+  function mapCrefShallow
+    input ComponentRef cref;
+    input MapFunc func;
+    output ComponentRef outCref;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    outCref := match cref
+      local
+        list<Subscript> subs;
+        ComponentRef rest;
+
+      case ComponentRef.CREF()
+        algorithm
+          subs := list(mapSubscriptShallow(s, func) for s in cref.subscripts);
+          rest := mapCref(cref.restCref, func);
+        then
+          ComponentRef.CREF(cref.node, subs, cref.ty, cref.origin, rest);
+
+      else cref;
+    end match;
+  end mapCrefShallow;
+
+  function mapSubscriptShallow
+    input Subscript subscript;
+    input MapFunc func;
+    output Subscript outSubscript;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    outSubscript := match subscript
+      case Subscript.UNTYPED() then Subscript.UNTYPED(func(subscript.exp));
+      case Subscript.INDEX() then Subscript.INDEX(func(subscript.index));
+      case Subscript.SLICE() then Subscript.SLICE(func(subscript.slice));
+      else subscript;
+    end match;
+  end mapSubscriptShallow;
+
+  function mapCallShallow
+    input Call call;
+    input MapFunc func;
+    output Call outCall;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    outCall := match call
+      local
+        list<Expression> args;
+        list<Function.NamedArg> nargs;
+        list<Function.TypedArg> targs;
+        list<Function.TypedNamedArg> tnargs;
+        String s;
+        Expression e;
+        Type t;
+        Variability v;
+
+      case Call.UNTYPED_CALL()
+        algorithm
+          args := list(func(arg) for arg in call.arguments);
+          nargs := {};
+
+          for arg in call.named_args loop
+            (s, e) := arg;
+            e := func(e);
+            nargs := (s, e) :: nargs;
+          end for;
+        then
+          Call.UNTYPED_CALL(call.ref, call.matchingFuncs, args, listReverse(nargs));
+
+      case Call.ARG_TYPED_CALL()
+        algorithm
+          targs := {};
+          tnargs := {};
+
+          for arg in call.arguments loop
+            (e, t, v) := arg;
+            e := func(e);
+            targs := (e, t, v) :: targs;
+          end for;
+
+          for arg in call.named_args loop
+            (s, e, t, v) := arg;
+            e := func(e);
+            tnargs := (s, e, t, v) :: tnargs;
+          end for;
+        then
+          Call.ARG_TYPED_CALL(call.ref, listReverse(targs), listReverse(tnargs));
+
+      case Call.TYPED_CALL()
+        algorithm
+          args := list(func(arg) for arg in call.arguments);
+        then
+          Call.TYPED_CALL(call.fn, call.ty, args, call.attributes);
+
+      case Call.UNTYPED_MAP_CALL()
+        algorithm
+          e := func(call.exp);
+        then
+          Call.UNTYPED_MAP_CALL(call.ref, e, call.iters);
+
+      case Call.TYPED_MAP_CALL()
+        algorithm
+          e := func(call.exp);
+        then
+          Call.TYPED_MAP_CALL(call.fn, call.ty, e, call.iters);
+
+    end match;
+  end mapCallShallow;
+
+  function foldList<ArgT>
+    input list<Expression> expl;
+    input FoldFunc func;
+    input ArgT arg;
+    output ArgT result = arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    for e in expl loop
+      result := fold(e, func, result);
+    end for;
+  end foldList;
+
+  function fold<ArgT>
+    input Expression exp;
+    input FoldFunc func;
+    input ArgT arg;
+    output ArgT result;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    result := match exp
+      local
+        Expression e;
+
+      case CREF() then foldCref(exp.cref, func, arg);
+      case ARRAY() then foldList(exp.elements, func, arg);
+
+      case RANGE(step = SOME(e))
+        algorithm
+          result := fold(exp.start, func, arg);
+          result := fold(e, func, result);
+        then
+          fold(exp.stop, func, result);
+
+      case RANGE()
+        algorithm
+          result := fold(exp.start, func, arg);
+        then
+          fold(exp.stop, func, result);
+
+      case TUPLE() then foldList(exp.elements, func, arg);
+      case RECORD() then foldList(exp.elements, func, arg);
+      case CALL() then foldCall(exp.call, func, arg);
+
+      case SIZE(dimIndex = SOME(e))
+        algorithm
+          result := fold(exp.exp, func, arg);
+        then
+          fold(e, func, result);
+
+      case SIZE() then fold(exp.exp, func, arg);
+
+      case BINARY()
+        algorithm
+          result := fold(exp.exp1, func, arg);
+        then
+          fold(exp.exp2, func, result);
+
+      case UNARY() then fold(exp.exp, func, arg);
+
+      case LBINARY()
+        algorithm
+          result := fold(exp.exp1, func, arg);
+        then
+          fold(exp.exp2, func, result);
+
+      case LUNARY() then fold(exp.exp, func, arg);
+
+      case RELATION()
+        algorithm
+          result := fold(exp.exp1, func, arg);
+        then
+          fold(exp.exp2, func, result);
+
+      case IF()
+        algorithm
+          result := fold(exp.condition, func, arg);
+          result := fold(exp.trueBranch, func, result);
+        then
+          fold(exp.falseBranch, func, result);
+
+      case CAST() then fold(exp.exp, func, arg);
+      case UNBOX() then fold(exp.exp, func, arg);
+
+      case SUBSCRIPTED_EXP()
+        algorithm
+          result := fold(exp.exp, func, arg);
+        then
+          foldList(exp.subscripts, func, result);
+
+      case TUPLE_ELEMENT() then fold(exp.tupleExp, func, arg);
+
+      else arg;
+    end match;
+
+    result := func(exp, result);
+  end fold;
+
+  function foldCall<ArgT>
+    input Call call;
+    input FoldFunc func;
+    input output ArgT arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    () := match call
+      local
+        Expression e;
+
+      case Call.UNTYPED_CALL()
+        algorithm
+          arg := foldList(call.arguments, func, arg);
+
+          for arg in call.named_args loop
+            (_, e) := arg;
+            arg := fold(e, func, arg);
+          end for;
+        then
+          ();
+
+      case Call.ARG_TYPED_CALL()
+        algorithm
+          for arg in call.arguments loop
+            (e, _, _) := arg;
+            arg := fold(e, func, arg);
+          end for;
+
+          for arg in call.named_args loop
+            (_, e, _, _) := arg;
+            arg := fold(e, func, arg);
+          end for;
+        then
+          ();
+
+      case Call.TYPED_CALL()
+        algorithm
+          arg := foldList(call.arguments, func, arg);
+        then
+          ();
+
+      case Call.UNTYPED_MAP_CALL()
+        algorithm
+          arg := fold(call.exp, func, arg);
+        then
+          ();
+
+      case Call.TYPED_MAP_CALL()
+        algorithm
+          arg := fold(call.exp, func, arg);
+        then
+          ();
+
+    end match;
+  end foldCall;
+
+  function foldCref<ArgT>
+    input ComponentRef cref;
+    input FoldFunc func;
+    input output ArgT arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    () := match cref
+      case ComponentRef.CREF()
+        algorithm
+          arg := List.fold(cref.subscripts, function foldSubscript(func = func), arg);
+          arg := foldCref(cref.restCref, func, arg);
+        then
+          ();
+
+      else ();
+    end match;
+  end foldCref;
+
+  function foldSubscript<ArgT>
+    input Subscript subscript;
+    input FoldFunc func;
+    input ArgT arg;
+    output ArgT result;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    result := match subscript
+      case Subscript.UNTYPED() then fold(subscript.exp, func, arg);
+      case Subscript.INDEX() then fold(subscript.index, func, arg);
+      case Subscript.SLICE() then fold(subscript.slice, func, arg);
+    end match;
+  end foldSubscript;
+
+  function mapFold<ArgT>
+    input Expression exp;
+    input MapFunc func;
+          output Expression outExp;
+    input output ArgT arg;
+
+    partial function MapFunc
+      input output Expression e;
+      input output ArgT arg;
+    end MapFunc;
+  algorithm
+    outExp := match exp
+      local
+        Expression e1, e2, e3, e4;
+        ComponentRef cr;
+        list<Expression> expl;
+        Call call;
+
+      case CREF()
+        algorithm
+          (cr, arg) := mapFoldCref(exp.cref, func, arg);
+       then
+          if referenceEq(exp.cref, cr) then exp else CREF(exp.ty, cr);
+
+      case ARRAY()
+        algorithm
+          (expl, arg) := List.map1Fold(exp.elements, mapFold, func, arg);
+        then
+          ARRAY(exp.ty, expl);
+
+      case RANGE(step = SOME(e2))
+        algorithm
+          (e1, arg) := mapFold(exp.start, func, arg);
+          (e4, arg) := mapFold(e2, func, arg);
+          (e3, arg) := mapFold(exp.stop, func, arg);
+        then
+          if referenceEq(exp.start, e1) and referenceEq(e2, e4) and
+            referenceEq(exp.stop, e3) then exp else RANGE(exp.ty, e1, SOME(e4), e3);
+
+      case RANGE()
+        algorithm
+          (e1, arg) := mapFold(exp.start, func, arg);
+          (e3, arg) := mapFold(exp.stop, func, arg);
+        then
+          if referenceEq(exp.start, e1) and referenceEq(exp.stop, e3)
+            then exp else RANGE(exp.ty, e1, NONE(), e3);
+
+      case TUPLE()
+        algorithm
+          (expl, arg) := List.map1Fold(exp.elements, mapFold, func, arg);
+        then
+          TUPLE(exp.ty, expl);
+
+      case RECORD()
+        algorithm
+          (expl, arg) := List.map1Fold(exp.elements, mapFold, func, arg);
+        then
+          RECORD(exp.path, exp.ty, expl);
+
+      case CALL()
+        algorithm
+          (call, arg) := mapFoldCall(exp.call, func, arg);
+        then
+          if referenceEq(exp.call, call) then exp else CALL(call);
+
+      case SIZE(dimIndex = SOME(e2))
+        algorithm
+          (e1, arg) := mapFold(exp.exp, func, arg);
+          (e3, arg) := mapFold(e2, func, arg);
+        then
+          if referenceEq(exp.exp, e1) and referenceEq(e2, e3) then exp else SIZE(e1, SOME(e3));
+
+      case SIZE()
+        algorithm
+          (e1, arg) := mapFold(exp.exp, func, arg);
+        then
+          if referenceEq(exp.exp, e1) then exp else SIZE(e1, NONE());
+
+      case BINARY()
+        algorithm
+          (e1, arg) := mapFold(exp.exp1, func, arg);
+          (e2, arg) := mapFold(exp.exp2, func, arg);
+        then
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2)
+            then exp else BINARY(e1, exp.operator, e2);
+
+      case UNARY()
+        algorithm
+          (e1, arg) := mapFold(exp.exp, func, arg);
+        then
+          if referenceEq(exp.exp, e1) then exp else UNARY(exp.operator, e1);
+
+      case LBINARY()
+        algorithm
+          (e1, arg) := mapFold(exp.exp1, func, arg);
+          (e2, arg) := mapFold(exp.exp2, func, arg);
+        then
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2)
+            then exp else LBINARY(e1, exp.operator, e2);
+
+      case LUNARY()
+        algorithm
+          (e1, arg) := mapFold(exp.exp, func, arg);
+        then
+          if referenceEq(exp.exp, e1) then exp else LUNARY(exp.operator, e1);
+
+      case RELATION()
+        algorithm
+          (e1, arg) := mapFold(exp.exp1, func, arg);
+          (e2, arg) := mapFold(exp.exp2, func, arg);
+        then
+          if referenceEq(exp.exp1, e1) and referenceEq(exp.exp2, e2)
+            then exp else RELATION(e1, exp.operator, e2);
+
+      case IF()
+        algorithm
+          (e1, arg) := mapFold(exp.condition, func, arg);
+          (e2, arg) := mapFold(exp.trueBranch, func, arg);
+          (e3, arg) := mapFold(exp.falseBranch, func, arg);
+        then
+          if referenceEq(exp.condition, e1) and referenceEq(exp.trueBranch, e2) and
+             referenceEq(exp.falseBranch, e3) then exp else IF(e1, e2, e3);
+
+      case CAST()
+        algorithm
+          (e1, arg) := mapFold(exp.exp, func, arg);
+        then
+          if referenceEq(exp.exp, e1) then exp else CAST(exp.ty, e1);
+
+      case UNBOX()
+        algorithm
+          (e1, arg) := mapFold(exp.exp, func, arg);
+        then
+          if referenceEq(exp.exp, e1) then exp else UNBOX(e1, exp.ty);
+
+      case SUBSCRIPTED_EXP()
+        algorithm
+          (e1, arg) := mapFold(exp.exp, func, arg);
+          (expl, arg) := List.map1Fold(exp.subscripts, mapFold, func, arg);
+        then
+          SUBSCRIPTED_EXP(e1, expl, exp.ty);
+
+      case TUPLE_ELEMENT()
+        algorithm
+          (e1, arg) := mapFold(exp.tupleExp, func, arg);
+        then
+          if referenceEq(exp.tupleExp, e1) then exp else TUPLE_ELEMENT(e1, exp.index, exp.ty);
+
+      else exp;
+    end match;
+
+    (outExp, arg) := func(outExp, arg);
+  end mapFold;
+
+  function mapFoldOpt<ArgT>
+    input Option<Expression> exp;
+    input MapFunc func;
+          output Option<Expression> outExp;
+    input output ArgT arg;
+
+    partial function MapFunc
+      input output Expression e;
+      input output ArgT arg;
+    end MapFunc;
+  protected
+    Expression e;
+  algorithm
+    if isSome(exp) then
+      SOME(e) := exp;
+      (e, arg) := mapFold(e, func, arg);
+      outExp := SOME(e);
+    end if;
+  end mapFoldOpt;
+
+  function mapFoldCall<ArgT>
+    input Call call;
+    input MapFunc func;
+          output Call outCall;
+    input output ArgT foldArg;
+
+    partial function MapFunc
+      input output Expression e;
+      input output ArgT arg;
+    end MapFunc;
+  algorithm
+    outCall := match call
+      local
+        list<Expression> args;
+        list<Function.NamedArg> nargs;
+        list<Function.TypedArg> targs;
+        list<Function.TypedNamedArg> tnargs;
+        String s;
+        Expression e;
+        Type t;
+        Variability v;
+
+      case Call.UNTYPED_CALL()
+        algorithm
+          (args, foldArg) := List.map1Fold(call.arguments, mapFold, func, foldArg);
+          nargs := {};
+
+          for arg in call.named_args loop
+            (s, e) := arg;
+            (e, foldArg) := mapFold(e, func, foldArg);
+            nargs := (s, e) :: nargs;
+          end for;
+        then
+          Call.UNTYPED_CALL(call.ref, call.matchingFuncs, args, listReverse(nargs));
+
+      case Call.ARG_TYPED_CALL()
+        algorithm
+          targs := {};
+          tnargs := {};
+
+          for arg in call.arguments loop
+            (e, t, v) := arg;
+            (e, foldArg) := mapFold(e, func, foldArg);
+            targs := (e, t, v) :: targs;
+          end for;
+
+          for arg in call.named_args loop
+            (s, e, t, v) := arg;
+            (e, foldArg) := mapFold(e, func, foldArg);
+            tnargs := (s, e, t, v) :: tnargs;
+          end for;
+        then
+          Call.ARG_TYPED_CALL(call.ref, listReverse(targs), listReverse(tnargs));
+
+      case Call.TYPED_CALL()
+        algorithm
+          (args, foldArg) := List.map1Fold(call.arguments, mapFold, func, foldArg);
+        then
+          Call.TYPED_CALL(call.fn, call.ty, args, call.attributes);
+
+      case Call.UNTYPED_MAP_CALL()
+        algorithm
+          (e, foldArg) := mapFold(call.exp, func, foldArg);
+        then
+          Call.UNTYPED_MAP_CALL(call.ref, e, call.iters);
+
+      case Call.TYPED_MAP_CALL()
+        algorithm
+          (e, foldArg) := mapFold(call.exp, func, foldArg);
+        then
+          Call.TYPED_MAP_CALL(call.fn, call.ty, e, call.iters);
+
+    end match;
+  end mapFoldCall;
+
+  function mapFoldCref<ArgT>
+    input ComponentRef cref;
+    input MapFunc func;
+          output ComponentRef outCref;
+    input output ArgT arg;
+
+    partial function MapFunc
+      input output Expression e;
+      input output ArgT arg;
+    end MapFunc;
+  algorithm
+    outCref := match cref
+      local
+        list<Subscript> subs;
+        ComponentRef rest;
+
+      case ComponentRef.CREF()
+        algorithm
+          (subs, arg) := List.map1Fold(cref.subscripts, mapFoldSubscript, func, arg);
+          (rest, arg) := mapFoldCref(cref.restCref, func, arg);
+        then
+          ComponentRef.CREF(cref.node, subs, cref.ty, cref.origin, rest);
+
+      else cref;
+    end match;
+  end mapFoldCref;
+
+  function mapFoldSubscript<ArgT>
+    input Subscript subscript;
+    input MapFunc func;
+          output Subscript outSubscript;
+    input output ArgT arg;
+
+    partial function MapFunc
+      input output Expression e;
+      input output ArgT arg;
+    end MapFunc;
+  algorithm
+    outSubscript := match subscript
+      local
+        Expression exp;
+
+      case Subscript.UNTYPED()
+        algorithm
+          (exp, arg) := mapFold(subscript.exp, func, arg);
+        then
+          if referenceEq(subscript.exp, exp) then subscript else Subscript.UNTYPED(exp);
+
+      case Subscript.INDEX()
+        algorithm
+          (exp, arg) := mapFold(subscript.index, func, arg);
+        then
+          if referenceEq(subscript.index, exp) then subscript else Subscript.INDEX(exp);
+
+      case Subscript.SLICE()
+        algorithm
+          (exp, arg) := mapFold(subscript.slice, func, arg);
+        then
+          if referenceEq(subscript.slice, exp) then subscript else Subscript.SLICE(exp);
+
+      else subscript;
+    end match;
+  end mapFoldSubscript;
+
+  function expand
+    input output Expression exp;
+  algorithm
+    exp := match exp
+      local
+        RangeIterator range_iter;
+        list<Expression> expl;
+
+      case CREF(ty = Type.ARRAY()) then expandCref(exp);
+
+      case ARRAY(ty = Type.ARRAY(elementType = Type.ARRAY()))
+        algorithm
+          exp.elements := list(expand(e) for e in exp.elements);
+        then
+          exp;
+
+      case RANGE()
+        algorithm
+          range_iter := RangeIterator.fromExp(exp);
+        then
+          ARRAY(exp.ty, RangeIterator.toList(range_iter));
+
+      else exp;
+    end match;
+  end expand;
+
+  function expandCref
+    input Expression crefExp;
+    output Expression arrayExp;
+  protected
+    list<list<list<Subscript>>> subs;
+  algorithm
+    arrayExp := match crefExp
+      case CREF(cref = ComponentRef.CREF())
+        algorithm
+          subs := expandCref2(crefExp.cref);
+        then
+          expandCref3(subs, crefExp.cref, Type.arrayElementType(crefExp.ty));
+
+      else crefExp;
+    end match;
+  end expandCref;
+
+  function expandCref2
+    input ComponentRef cref;
+    input output list<list<list<Subscript>>> subs = {};
+  protected
+    list<list<Subscript>> cr_subs = {};
+  algorithm
+    subs := match cref
+      case ComponentRef.CREF()
+        algorithm
+          for dim in listReverse(Type.arrayDims(cref.ty)) loop
+            cr_subs := RangeIterator.map(RangeIterator.fromDim(dim), Subscript.makeIndex) :: cr_subs;
+          end for;
+        then
+          expandCref2(cref.restCref, cr_subs :: subs);
+
+      else subs;
+    end match;
+  end expandCref2;
+
+  function expandCref3
+    input list<list<list<Subscript>>> subs;
+    input ComponentRef cref;
+    input Type crefType;
+    input list<list<Subscript>> accum = {};
+    output Expression arrayExp;
+  algorithm
+    arrayExp := match subs
+      case {} then CREF(crefType, ComponentRef.fillSubscripts(accum, cref));
+      else expandCref4(listHead(subs), {}, accum, listRest(subs), cref, crefType);
+    end match;
+  end expandCref3;
+
+  function expandCref4
+    input list<list<Subscript>> subs;
+    input list<Subscript> comb = {};
+    input list<list<Subscript>> accum = {};
+    input list<list<list<Subscript>>> restSubs;
+    input ComponentRef cref;
+    input Type crefType;
+    output Expression arrayExp;
+  protected
+    list<Expression> expl = {};
+    Type arr_ty;
+  algorithm
+    arrayExp := match subs
+      case {} then expandCref3(restSubs, cref, crefType, listReverse(comb) :: accum);
+      else
+        algorithm
+          expl := list(expandCref4(listRest(subs), sub :: comb, accum, restSubs, cref, crefType)
+            for sub in listHead(subs));
+          arr_ty := Type.liftArrayLeft(Expression.typeOf(listHead(expl)), Dimension.fromExpList(expl));
+        then
+          ARRAY(arr_ty, expl);
+    end match;
+  end expandCref4;
+
+  function arrayFirstScalar
+    "Returns the first scalar element of an array. Fails if the array is empty."
+    input Expression arrayExp;
+    output Expression exp;
+  algorithm
+    exp := match arrayExp
+      case ARRAY() then arrayFirstScalar(listHead(arrayExp.elements));
+      else arrayExp;
+    end match;
+  end arrayFirstScalar;
+
+  function arrayAllEqual
+    "Checks if all scalar elements in an array are equal to each other."
+    input Expression arrayExp;
+    output Boolean allEqual;
+  algorithm
+    allEqual := matchcontinue arrayExp
+      case ARRAY()
+        then arrayAllEqual2(arrayExp, arrayFirstScalar(arrayExp));
+      else true;
+    end matchcontinue;
+  end arrayAllEqual;
+
+  function arrayAllEqual2
+    input Expression arrayExp;
+    input Expression element;
+    output Boolean allEqual;
+  algorithm
+    allEqual := match arrayExp
+      case ARRAY(elements = ARRAY() :: _)
+        then List.map1BoolAnd(arrayExp.elements, arrayAllEqual2, element);
+      case ARRAY()
+        then List.map1BoolAnd(arrayExp.elements, isEqual, element);
+      else true;
+    end match;
+  end arrayAllEqual2;
+
+  function fromCref
+    input ComponentRef cref;
+    output Expression exp;
+  algorithm
+    exp := Expression.CREF(ComponentRef.getType(cref), cref);
+  end fromCref;
+
+  function toCref
+    input Expression exp;
+    output ComponentRef cref;
+  algorithm
+    Expression.CREF(cref = cref) := exp;
+  end toCref;
+
+  function isZero
+    input Expression exp;
+    output Boolean isZero;
+  algorithm
+    isZero := match exp
+      case INTEGER() then exp.value == 0;
+      case REAL() then exp.value == 0.0;
+      case CAST() then isZero(exp.exp);
+      case UNARY() then isZero(exp.exp);
+      else false;
+    end match;
+  end isZero;
+
+  function isScalarConst
+    input Expression exp;
+    output Boolean isScalar;
+  algorithm
+    isScalar := match exp
+      case INTEGER() then true;
+      case REAL() then true;
+      case STRING() then true;
+      case BOOLEAN() then true;
+      case ENUM_LITERAL() then true;
+      else false;
+    end match;
+  end isScalarConst;
+
+  function fillType
+    input Type ty;
+    input Expression fillExp;
+    output Expression exp = fillExp;
+  protected
+    list<Dimension> dims = Type.arrayDims(ty);
+    list<Expression> expl;
+    Type arr_ty = Type.arrayElementType(ty);
+  algorithm
+    for dim in listReverse(dims) loop
+      expl := {};
+      for i in 1:Dimension.size(dim) loop
+        expl := exp :: expl;
+      end for;
+
+      arr_ty := Type.liftArrayLeft(arr_ty, dim);
+      exp := Expression.ARRAY(arr_ty, expl);
+    end for;
+  end fillType;
+
+  function makeZero
+    input Type ty;
+    output Expression zeroExp;
+  algorithm
+    zeroExp := match ty
+      case Type.REAL() then REAL(0.0);
+      case Type.INTEGER() then INTEGER(0);
+    end match;
+  end makeZero;
+
+  function unbox
+    input Expression boxedExp;
+    output Expression exp;
+  algorithm
+    exp := match boxedExp
+      case Expression.BOX() then boxedExp.exp;
+      else boxedExp;
+    end match;
+  end unbox;
+
+  function negate
+    input output Expression exp;
+  algorithm
+    exp := match exp
+      case INTEGER() then INTEGER(-exp.value);
+      case REAL() then REAL(-exp.value);
+      case CAST() then CAST(exp.ty, negate(exp.exp));
+      else UNARY(Operator.UMINUS(typeOf(exp)), exp);
+    end match;
+  end negate;
+
+  function arrayElements
+    input Expression array;
+    output list<Expression> elements;
+  algorithm
+    Expression.ARRAY(elements = elements) := array;
+  end arrayElements;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFExpression;

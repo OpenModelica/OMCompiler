@@ -39,25 +39,28 @@ public import BackendDAE;
 public import DAE;
 public import GraphML;
 
-protected import Array;
-protected import BackendDAEOptimize;
-protected import BackendDAEUtil;
-protected import BackendDump;
-protected import BackendEquation;
-protected import BackendVariable;
-protected import ComponentReference;
-protected import DAEDump;
-protected import Error;
-protected import Expression;
-protected import Flags;
-protected import HpcOmBenchmark;
-protected import HpcOmScheduler;
-protected import List;
-protected import SimCodeUtil;
-protected import SimCodeVar;
-protected import SCode;
-protected import System;
-protected import Util;
+protected
+import AdjacencyMatrix;
+import Array;
+import BackendDAEOptimize;
+import BackendDAEUtil;
+import BackendDump;
+import BackendEquation;
+import BackendVariable;
+import ComponentReference;
+import DAEDump;
+import Error;
+import ExpandableArray;
+import Expression;
+import Flags;
+import HpcOmBenchmark;
+import HpcOmScheduler;
+import List;
+import SCode;
+import SimCodeUtil;
+import SimCodeVar;
+import System;
+import Util;
 
 
 //----------------------------
@@ -140,7 +143,7 @@ public function createTaskGraph0 "author: marcusw, waurich
 protected
   BackendDAE.StrongComponents comps;
   BackendDAE.Variables vars;
-  Integer numberOfEqs;
+  BackendDAE.EquationArray orderedEqs;
   DAE.FunctionTree sharedFuncs;
   TaskGraphMeta iGraphData;
   TaskGraphMeta tmpGraphData;
@@ -156,7 +159,7 @@ protected
   array<String> compNames;
   array<String> compDescs;
   list<Integer> eventEqLst, eventVarLst, rootVars;
-  Integer numberOfVars, numberOfEqs;
+  Integer numberOfVars;
   array<ComponentInfo> compInformations;
 
   Integer eqSysIdx;
@@ -166,14 +169,14 @@ protected
   BackendDAE.Matching matching;
   BackendDAE.IncidenceMatrix incidenceMatrix;
 algorithm
-  BackendDAE.EQSYSTEM(matching=matching, orderedVars=vars, orderedEqs=BackendDAE.EQUATION_ARRAY(numberOfElement=numberOfEqs)) := iSyst;
+  BackendDAE.EQSYSTEM(matching=matching, orderedVars=vars, orderedEqs=orderedEqs) := iSyst;
   comps := BackendDAEUtil.getCompsOfMatching(matching);
   BackendDAE.SHARED(functionTree=sharedFuncs) := iShared;
   (iGraph,iGraphData,eqSysIdx) := iGraphInfo;
 
   (_,incidenceMatrix,_) := BackendDAEUtil.getIncidenceMatrix(iSyst, BackendDAE.NORMAL(), SOME(sharedFuncs));
   numberOfVars := BackendVariable.varsSize(vars);
-  (tmpGraph,tmpGraphData) := getEmptyTaskGraph(listLength(comps), numberOfVars, numberOfEqs);
+  (tmpGraph,tmpGraphData) := getEmptyTaskGraph(listLength(comps), numberOfVars, ExpandableArray.getNumberOfElements(orderedEqs));
   TASKGRAPHMETA(inComps=inComps, compNames=compNames, exeCosts=exeCosts, commCosts=commCosts, nodeMark=nodeMark, varCompMapping=varCompMapping, eqCompMapping=eqCompMapping, compParamMapping=compParamMapping, compInformations=compInformations) := tmpGraphData;
   //print("createTaskGraph0 try to get varCompMapping\n");
   (varCompMapping,eqCompMapping) := getVarEqCompMapping(comps, eqSysIdx, 0, 0, varCompMapping, eqCompMapping);
@@ -798,16 +801,16 @@ protected function getEventNodeEqs "author: Waurich TUD 2013-06
 protected
   BackendDAE.StrongComponents comps;
   BackendDAE.Matching matching;
+  BackendDAE.EquationArray orderedEqs;
   list<Integer> eventEqs;
   list<Integer> eventEqsIn;
-  Integer numOfEqs;
   Integer offset;
 algorithm
-  BackendDAE.EQSYSTEM(orderedEqs = BackendDAE.EQUATION_ARRAY(numberOfElement=numOfEqs),matching=matching) := systIn;
+  BackendDAE.EQSYSTEM(orderedEqs=orderedEqs,matching=matching) := systIn;
   comps := BackendDAEUtil.getCompsOfMatching(matching);
   (eventEqsIn,offset) := eventInfoIn;
   eventEqs := getEventNodeEqs1(comps,offset,{});
-  offset := offset+numOfEqs;
+  offset := offset+ExpandableArray.getNumberOfElements(orderedEqs);
   eventEqs := listAppend(eventEqs,eventEqsIn);
   eventInfoOut := (eventEqs,offset);
 end getEventNodeEqs;
@@ -1291,7 +1294,7 @@ protected
 algorithm
   for eqIdx in iEqnIdc loop
     incidenceVars := listAppend(arrayGet(iIncidenceMatrix,eqIdx), incidenceVars);
-    eqs := BackendEquation.equationNth1(iOrderedEquations, eqIdx)::eqs;
+    eqs := BackendEquation.get(iOrderedEquations, eqIdx)::eqs;
   end for;
   oIncidenceVars := List.map(incidenceVars, getVarTuple);
 
@@ -1671,7 +1674,7 @@ algorithm
       equation
         // remove the algebraic branches
         sizeDAE = arrayLength(graphIn);
-        graphT = BackendDAEUtil.transposeMatrix(graphIn,sizeDAE);
+        graphT = AdjacencyMatrix.transposeAdjacencyMatrix(graphIn,sizeDAE);
         odeNodes = listAppend(exceptNodes,getAllSuccessors(exceptNodes,graphT));//the ODE-System
         (_,odeNodes,_) = List.intersection1OnTrue(odeNodes,whenNodes,intEq);
         (odeNodes,_,_) = List.intersection1OnTrue(List.intRange(sizeDAE),odeNodes,intEq);
@@ -2033,7 +2036,7 @@ protected
   TaskGraph taskGraphT;
 algorithm
   size := arrayLength(iTaskGraph);
-  taskGraphT := BackendDAEUtil.transposeMatrix(iTaskGraph,size);
+  taskGraphT := AdjacencyMatrix.transposeAdjacencyMatrix(iTaskGraph,size);
   rootsOut := getLeafNodes(taskGraphT);  // gets the leaf nodes of the transposed graph
 end getRootNodes;
 
@@ -2235,7 +2238,7 @@ algorithm
   whenNodeMarks := arrayCreate(arrayLength(iTaskGraph), false);
   sccNodeMapping := getSccNodeMapping(iNumberOfSccs, iTaskGraphMeta);
   iTaskGraphCopy := arrayCopy(iTaskGraph);
-  iTaskGraphTCopy := BackendDAEUtil.transposeMatrix(iTaskGraph,arrayLength(iTaskGraph));
+  iTaskGraphTCopy := AdjacencyMatrix.transposeAdjacencyMatrix(iTaskGraph,arrayLength(iTaskGraph));
 
   //Mark all nodes that are part of the zero funcs system
   for eqIdx in iZeroCrossingEquationIdc loop
@@ -2550,16 +2553,17 @@ protected
   BackendDAE.StrongComponents comps;
   BackendDAE.Variables orderedVars;
   BackendDAE.Matching matching;
+  BackendDAE.EquationArray orderedEqs;
   list<Integer> eventEqs;
   list<Integer> eventEqsIn;
   Integer numOfEqs;
   Integer offset;
 algorithm
-  BackendDAE.EQSYSTEM(orderedEqs = BackendDAE.EQUATION_ARRAY(numberOfElement=numOfEqs),orderedVars=orderedVars,matching=matching) := systIn;
+  BackendDAE.EQSYSTEM(orderedEqs=orderedEqs,orderedVars=orderedVars,matching=matching) := systIn;
   comps := BackendDAEUtil.getCompsOfMatching(matching);
   (eventEqsIn,offset) := eventInfoIn;
   eventEqs := getDiscreteNodesEqs1(comps,offset,orderedVars,{});
-  offset := offset+numOfEqs;
+  offset := offset+ExpandableArray.getNumberOfElements(orderedEqs);
   eventEqs := listAppend(eventEqs,eventEqsIn);
   eventInfoOut := (eventEqs,offset);
 end getDiscreteNodesEqs;
@@ -2883,6 +2887,7 @@ algorithm
     nodeLabels := if visualizeTaskStartAndFinishTime then listAppend(nodeLabels, {GraphML.NODELABEL_CORNER(taskStartTimeString, SOME(GraphML.COLOR_CYAN), GraphML.FONTBOLD(), "nw"), GraphML.NODELABEL_CORNER(taskFinishTimeString, SOME(GraphML.COLOR_PINK), GraphML.FONTBOLD(), "sw")}) else nodeLabels;
     (tmpGraph,(_,_)) := GraphML.addNode("Node" + intString(nodeIdx),
                                       GraphML.COLOR_ORANGE,
+                                      GraphML.BORDERWIDTH_STANDARD,
                                       nodeLabels,
                                       GraphML.RECTANGLE(),
                                       SOME(nodeDesc),
@@ -3370,7 +3375,7 @@ algorithm
     case(_,_,_)
       equation
         numProc = Flags.getConfigInt(Flags.NUM_PROC);
-        taskGraphT = BackendDAEUtil.transposeMatrix(iTaskGraph,arrayLength(iTaskGraph));
+        taskGraphT = AdjacencyMatrix.transposeAdjacencyMatrix(iTaskGraph,arrayLength(iTaskGraph));
         //get the single nodes, sort them according to their exeCosts in decreasing order
         (_,singleNodes) = List.filterOnTrueSync(arrayList(iTaskGraph),listEmpty,List.intRange(arrayLength(iTaskGraph)));  //nodes without successor
         (_,singleNodes1) = List.filterOnTrueSync(arrayList(taskGraphT),listEmpty,List.intRange(arrayLength(taskGraphT))); //nodes without predecessor
@@ -4091,7 +4096,7 @@ protected
   TaskGraph graphTmp;
 algorithm
   //This function contracts all nodes into the startNode
-  graphInT := BackendDAEUtil.transposeMatrix(graphIn,arrayLength(graphIn));
+  graphInT := AdjacencyMatrix.transposeAdjacencyMatrix(graphIn,arrayLength(graphIn));
   //print("HpcOmTaskGraph.contractNodesInGraph1 contractNodes: " + stringDelimitList(List.map(contractNodes,intString),",") + "\n");
   //print("HpcOmTaskGraph.contractNodesInGraph1 startNode: " + intString(List.last(contractNodes)) + "\n");
   startNode := List.last(contractNodes);
@@ -4461,7 +4466,7 @@ protected function getParentNodes "author: Waurich TUD 2013-07
 protected
   TaskGraph graphInT;
 algorithm
-  graphInT := BackendDAEUtil.transposeMatrix(graphIn,arrayLength(graphIn));
+  graphInT := AdjacencyMatrix.transposeAdjacencyMatrix(graphIn,arrayLength(graphIn));
   parentNodes := arrayGet(graphInT, nodeIdx);
 end getParentNodes;
 
@@ -6289,26 +6294,34 @@ protected function getNodeForVarIdx"traverse the whole varCompMapping from eqSys
   input Integer varIdx;
   input Integer eqSysIdx;
   input array<tuple<Integer,Integer,Integer>> varCompMapping;
-  input Integer tryThisIndex;
-  output Integer nodeIdxOut;
+  input Integer inTryThisIndex;
+  output Integer node;
+protected
+  Integer offset,eqSys,tryThisIndex=inTryThisIndex,n=0,arrayLengthVarCompMapping;
+  Boolean eqSysNeq;
 algorithm
-  nodeIdxOut := matchcontinue(varIdx,eqSysIdx,varCompMapping,tryThisIndex)
-    local
-      Integer offset,eqSys,node;
-      Boolean eqSysNeq;
-    case(_,_,_,_)
-      equation
-        ((node,eqSys,offset)) = arrayGet(varCompMapping,tryThisIndex);
-        eqSysNeq = intNe(eqSys,eqSysIdx);
-        node = if eqSysNeq then getNodeForVarIdx(varIdx,eqSysIdx,varCompMapping,offset+2) else node+varIdx-1;
-      then node;
-    case(-1,-1,_,_)
-      then -1;
+  arrayLengthVarCompMapping := arrayLength(varCompMapping);
+  while true loop
+    if tryThisIndex >= 1 and tryThisIndex <= arrayLengthVarCompMapping then
+      ((node,eqSys,offset)) := arrayGet(varCompMapping,tryThisIndex);
+      if eqSys == eqSysIdx then
+        node := node+varIdx-1;
+      return;
+      else
+        tryThisIndex := offset+2;
+      end if;
+    elseif varIdx==-1 and eqSysIdx==-1 then
+      node := -1;
+      return;
     else
-      equation
-        print("HpcOmTaskGraph.getNodeForVarIdx failed\n");
-      then -1;
-  end matchcontinue;
+      print("HpcOmTaskGraph.getNodeForVarIdx failed\n");
+    end if;
+    n := n+1;
+    if n>arrayLengthVarCompMapping then
+      Error.addInternalError(getInstanceName() + " failed (there is a loop somewhere)", sourceInfo());
+      fail();
+    end if;
+  end while;
 end getNodeForVarIdx;
 
 
@@ -6345,7 +6358,7 @@ algorithm
    print("stateTasks "+intLstString(stateTasks)+"\n");
 
   //traverse levels top down and colour according to the states
-  odeGraphT := BackendDAEUtil.transposeMatrix(odeGraph,arrayLength(odeGraph));
+  odeGraphT := AdjacencyMatrix.transposeAdjacencyMatrix(odeGraph,arrayLength(odeGraph));
   stateTaskAssign := multirate_assignTasksToStates(tasksPerLevel,stateTasks,odeGraphT);
   dumpStateAssign(stateTaskAssign);
 
@@ -6621,7 +6634,7 @@ algorithm
     act := act+1;
   end for;
   print("\n");
-  for part in List.intRange(numPartitions) loop
+  for part in 1:numPartitions loop
     //print("activators: "+intLstString(listGet(activatorsForPartitions,part))+"\t\t\t\tnodes: \t"+intLstString(listGet(partitions,part))+"\n\n");
     print("activators: "+intLstString(listGet(activatorsForPartitions,part))+"\t\t\t\tderStateTasks: "+intLstString(List.map1(listGet(activatorsForPartitions,part),List.getIndexFirst,stateToActivators))+"\t\t\t\tnodes: \t"+intLstString(listGet(partitions,part))+"\n");
   end for;

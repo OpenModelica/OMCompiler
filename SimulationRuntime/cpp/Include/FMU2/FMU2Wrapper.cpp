@@ -114,11 +114,12 @@ FMU2Wrapper::FMU2Wrapper(fmi2String instanceName, fmi2String GUID,
   _GUID = GUID;
 
   // setup logger
-  _logCategories = loggingOn? 0xFFFF: 0x0000;
-  LogSettings logSettings = _global_settings.getLogSettings();
-  logSettings.setAll(loggingOn? LL_DEBUG: LL_ERROR);
-  FMU2Logger::initialize(this, logSettings, loggingOn);
-  _logger = Logger::getInstance();
+  _logger = NULL;
+  _logCategories = 0x0000;
+  if (loggingOn) {
+    // only instantiate logger if requested as it is not thread save
+    setDebugLogging(loggingOn, 0, NULL);
+  }
 
   // setup model
   _model = createSystemFMU(&_global_settings);
@@ -144,7 +145,15 @@ fmi2Status FMU2Wrapper::setDebugLogging(fmi2Boolean loggingOn,
                                         const fmi2String categories[])
 {
   fmi2Status ret = fmi2OK;
-  _logger->setEnabled(loggingOn);
+
+  if (_logger == NULL) {
+    LogSettings logSettings = _global_settings.getLogSettings();
+    FMU2Logger::initialize(this, logSettings, loggingOn);
+    _logger = Logger::getInstance();
+  }
+  else {
+    _logger->setEnabled(loggingOn);
+  }
   if (nCategories == 0) {
     _logCategories = loggingOn? 0xFFFF: 0x0000;
     _logger->setAll(loggingOn? LL_DEBUG: LL_ERROR);
@@ -211,6 +220,7 @@ fmi2Status FMU2Wrapper::exitInitializationMode()
     updateModel();
   _model->saveAll();
   _model->setInitial(false);
+  _model->initTimeEventData();
   return fmi2OK;
 }
 
@@ -264,6 +274,7 @@ fmi2Status FMU2Wrapper::getDerivatives(fmi2Real derivatives[], size_t nx)
 {
   if (_need_update)
     updateModel();
+  _model->computeTimeEventConditions(_model->getTime());
   _model->getRHS(derivatives);
   return fmi2OK;
 }
@@ -321,7 +332,7 @@ fmi2Status FMU2Wrapper::setString(const fmi2ValueReference vr[], size_t nvr,
 
 fmi2Status FMU2Wrapper::setClock(const fmi2Integer clockIndex[],
                                  size_t nClockIndex, const fmi2Boolean tick[],
-                                 const fmi2Boolean subactive[])
+                                 const fmi2Boolean *subactive)
 {
   for (int i = 0; i < nClockIndex; i++) {
     _clockTick[clockIndex[i] - 1] = tick[i];
@@ -342,6 +353,7 @@ fmi2Status FMU2Wrapper::setInterval(const fmi2Integer clockIndex[],
   double *clockInterval = _model->clockInterval();
   for (int i = 0; i < nClockIndex; i++) {
     clockInterval[clockIndex[i] - 1] = interval[i];
+    _model->setIntervalInTimEventData((clockIndex[i] - 1), interval[i]);
   }
   _need_update = true;
   return fmi2OK;
@@ -444,13 +456,17 @@ fmi2Status FMU2Wrapper::newDiscreteStates(fmi2EventInfo *eventInfo)
     events[i] = f[i] >= 0;
   // Handle Zero Crossings if nessesary
   bool state_vars_reinitialized = _model->handleSystemEvents(events);
+  //time events
+  eventInfo->nextEventTime = _model->computeNextTimeEvents(_model->getTime());
+  if ((eventInfo->nextEventTime != 0.0) && (eventInfo->nextEventTime != std::numeric_limits<double>::max()))
+    eventInfo->nextEventTimeDefined = fmi2True;
+  else
+    eventInfo->nextEventTimeDefined = fmi2False;
   // everything is done
   eventInfo->newDiscreteStatesNeeded = fmi2False;
   eventInfo->terminateSimulation = fmi2False;
   eventInfo->nominalsOfContinuousStatesChanged = state_vars_reinitialized;
   eventInfo->valuesOfContinuousStatesChanged = state_vars_reinitialized;
-  eventInfo->nextEventTimeDefined = fmi2False;
-  //eventInfo->nextEventTime = _time;
   return fmi2OK;
 }
 
@@ -458,6 +474,21 @@ fmi2Status FMU2Wrapper::getNominalsOfContinuousStates(fmi2Real x_nominal[], size
 {
   for (int i = 0; i < nx; i++)
     x_nominal[i] = 1.0;  // TODO
+  return fmi2OK;
+}
+
+fmi2Status FMU2Wrapper::getDirectionalDerivative(const fmi2ValueReference vrUnknown[],
+                                                 size_t nUnknown,
+                                                 const fmi2ValueReference vrKnown[],
+                                                 size_t nKnown,
+                                                 const fmi2Real dvKnown[],
+                                                 fmi2Real dvUnknown[])
+{
+  if (_need_update)
+    updateModel();
+  _model->getDirectionalDerivative(vrUnknown, nUnknown,
+                                   vrKnown, nKnown, dvKnown,
+                                   dvUnknown);
   return fmi2OK;
 }
 

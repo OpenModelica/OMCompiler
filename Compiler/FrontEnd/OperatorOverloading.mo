@@ -1183,33 +1183,33 @@ function makeEnumOperator
   input DAE.Type inType2;
   output tuple<DAE.Operator, list<DAE.Type>, DAE.Type> outOp;
 algorithm
-  outOp := matchcontinue(inOp, inType1, inType2)
+  outOp := matchcontinue(inType1, inType2)
     local
       DAE.Type op_ty;
       DAE.Operator op;
 
-    case (_, DAE.T_ENUMERATION(), DAE.T_ENUMERATION())
-      equation
-        op_ty = Types.simplifyType(inType1);
-        op = Expression.setOpType(inOp, op_ty);
-      then ((op, {inType1, inType2}, DAE.T_BOOL_DEFAULT));
-
-    case (_, DAE.T_ENUMERATION(), _)
-      equation
-        op_ty = Types.simplifyType(inType1);
-        op = Expression.setOpType(inOp, op_ty);
-      then
-        ((op, {inType1, inType1}, DAE.T_BOOL_DEFAULT));
-
-    case (_, _, DAE.T_ENUMERATION())
+    case (DAE.T_ENUMERATION(), DAE.T_ENUMERATION())
       equation
         op_ty = Types.simplifyType(inType1);
         op = Expression.setOpType(inOp, op_ty);
       then
         ((op, {inType1, inType2}, DAE.T_BOOL_DEFAULT));
 
-    else
-      then ((inOp, {DAE.T_ENUMERATION_DEFAULT, DAE.T_ENUMERATION_DEFAULT}, DAE.T_BOOL_DEFAULT));
+    case (DAE.T_ENUMERATION(), _)
+      equation
+        op_ty = Types.simplifyType(inType1);
+        op = Expression.setOpType(inOp, op_ty);
+      then
+        ((op, {inType1, inType1}, DAE.T_BOOL_DEFAULT));
+
+    case (_, DAE.T_ENUMERATION())
+      equation
+        op_ty = Types.simplifyType(inType2);
+        op = Expression.setOpType(inOp, op_ty);
+      then
+        ((op, {inType2, inType2}, DAE.T_BOOL_DEFAULT));
+
+    else ((inOp, {DAE.T_ENUMERATION_DEFAULT, DAE.T_ENUMERATION_DEFAULT}, DAE.T_BOOL_DEFAULT));
   end matchcontinue;
 end makeEnumOperator;
 
@@ -1498,7 +1498,7 @@ algorithm
     case (DAE.T_FUNCTION(funcArg={_}),_) then false; // Unary functions are legal even if we are not interested in them
     case (DAE.T_FUNCTION(funcArg=DAE.FUNCARG(defaultBinding=NONE())::DAE.FUNCARG(defaultBinding=NONE())::rest),_)
       equation
-        isBinaryFunc = Util.boolAndList(List.mapMap(rest, Types.funcArgDefaultBinding, isSome));
+        isBinaryFunc = List.mapMapBoolAnd(rest, Types.funcArgDefaultBinding, isSome);
         // Error.assertionOrAddSourceMessage(isBinaryFunc, Error.COMPILER_WARNING, {"TODO: Better warning for: " + Types.unparseType(ty) + ", expected arguments 3..n to have default values"}, info);
       then isBinaryFunc; // Unary functions are legal even if we are not interested in them
     else
@@ -1517,7 +1517,7 @@ algorithm
       list<DAE.FuncArg> rest;
     case DAE.T_FUNCTION(funcArg=DAE.FUNCARG(defaultBinding=NONE())::rest)
       equation
-        isBinaryFunc = Util.boolAndList(List.mapMap(rest, Types.funcArgDefaultBinding, isSome));
+        isBinaryFunc = List.mapMapBoolAnd(rest, Types.funcArgDefaultBinding, isSome);
       then isBinaryFunc;
     else false;
   end match;
@@ -2121,8 +2121,8 @@ algorithm
         args = List.map(args, List.rest);
         tys2 = List.mapMap(args, listHead, Types.funcArgType);
         // We only look for constructors that are not of the initial type. Filter duplicates.
-        tys1 = List.setDifference(List.union(tys1,tys1),{inType1});
-        tys2 = List.setDifference(List.union(tys2,tys2),{inType2});
+        tys1 = List.setDifference(List.union(tys1,{}),{inType1});
+        tys2 = List.setDifference(List.union(tys2,{}),{inType2});
         // Get the constructors
         (cache,tys1) = getOperatorFuncsOrEmpty(inCache,env,tys1,"'constructor'",info,{});
         (cache,tys2) = getOperatorFuncsOrEmpty(cache,env,tys2,"'constructor'",info,{});

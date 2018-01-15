@@ -135,12 +135,6 @@ int (*function_storeDelayed)(DATA *data, threadData_t*);
  */
 int (*updateBoundVariableAttributes)(DATA *data, threadData_t*);
 
-/*! \var useHomotopy
- *
- * is 1 if homotopy(...) is used during initialization, otherwise 0
- */
-const int useHomotopy;
-
 /*! \fn functionInitialEquations
  *
  * function for calculate initial values from the initial equations and initial algorithms
@@ -148,6 +142,15 @@ const int useHomotopy;
  *  \param [ref] [data]
  */
 int (*functionInitialEquations)(DATA *data, threadData_t*);
+
+/*! \var useHomotopy
+ *
+ * 0: local homotopy approach (equidistant lambda steps)
+ * 1: global homotopy approach (equidistant lambda steps)
+ * 2: new global homotopy approach (adaptive lambda steps)
+ * 3: new local homotopy approach (adaptive lambda steps)
+ */
+const int useHomotopy;
 
 /*! \fn functionInitialEquations_lambda0
  *
@@ -206,14 +209,6 @@ int (*function_ZeroCrossings)(DATA *data, threadData_t*, double* gout);
  *                              function or without
  */
 int (*function_updateRelations)(DATA *data, threadData_t*, int evalZeroCross);
-
-/*! \fn checkForDiscreteChanges
- *
- *  This function checks if any discrete variable changed
- *
- *  \param [ref] [data]
- */
-int (*checkForDiscreteChanges)(DATA *data, threadData_t*);
 
 /*! \var zeroCrossingDescription
  *
@@ -325,21 +320,24 @@ void (*function_updateSynchronous)(DATA *data, threadData_t *threadData, long i)
 int (*function_equationsSynchronous)(DATA *data, threadData_t *threadData, long i);
 
 /*
+ * return input names
+ */
+int (*inputNames)(DATA* modelData, char ** names);
+
+/*
  * FMU's do not need the XML-file; they use this callback instead.
  */
 void (*read_input_fmu)(MODEL_DATA* modelData, SIMULATION_INFO* simulationData);
 
 /*
- * return input names
+ * FMU continuous partial derivative functions
  */
-int (*inputNames)(DATA* modelData, char ** names);
-#ifdef FMU_EXPERIMENTAL
-/* functionODEPartial contains those equations that are needed
- * to calculate the state derivative i-th */
-void (*functionODEPartial)(DATA *data, threadData_t*, int i);
-void (*functionFMIJacobian)(DATA *data, threadData_t*, const unsigned *unknown, int nUnk, const unsigned *ders, int nKnown, double *dvKnown, double *out);
-#endif
+int (*initialPartialFMIDER)(void* data, threadData_t *threadData);
+int (*functionJacFMIDER_column)(void* data, threadData_t *threadData);
+const int INDEX_JAC_FMIDER;
+
 };
+
 
 #ifdef __cplusplus
 }

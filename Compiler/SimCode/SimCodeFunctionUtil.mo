@@ -1331,6 +1331,7 @@ algorithm
     case DAE.META_TUPLE(expl) equation List.map_0(expl, isLiteralExp); then ();
     case DAE.METARECORDCALL(args=expl) equation List.map_0(expl, isLiteralExp); then ();
     case DAE.SHARED_LITERAL() then ();
+    case DAE.CALL(path=Absyn.IDENT("listArrayLiteral"), expLst=expl) algorithm List.map_0(expl, isLiteralExp); then ();
     else fail();
   end match;
 end isLiteralExp;
@@ -1791,8 +1792,11 @@ protected function lookForExtFunctionLibrary
   input Option<String> resources;
   input Absyn.Path path;
   input SourceInfo info;
+protected
+  list<String> dirs2;
 algorithm
-  if not max(System.regularFileExists(d+"/"+n) for d in dirs, n in names) then
+  dirs2 := "/usr/lib/"+System.getTriple()::"/lib/"+System.getTriple()::"/usr/lib/"::"/lib/"::dirs; // We could also try to look in ldconfig, etc for system libraries
+  if not max(System.regularFileExists(d+"/"+n) for d in dirs2, n in names) then
     _ := match resources
       local
         String resourcesStr, tmpdir, cmd, pwd, contents, found;
@@ -1819,10 +1823,10 @@ algorithm
                   Error.addSourceMessage(Error.COMPILER_WARNING, {"Failed to run "+cmd+": " + contents}, info);
                 else
                   Error.addSourceMessage(Error.COMPILER_NOTIFICATION, {"Succeeded with compilation and installation of the library using:\ncommand: "+cmd+"\n" + contents}, info);
-                  if not max(System.regularFileExists(d+"/"+n) for d in dirs, n in names) then
+                  if not max(System.regularFileExists(d+"/"+n) for d in dirs2, n in names) then
                     Error.addSourceMessage(Error.EXT_LIBRARY_NOT_FOUND_DESPITE_COMPILATION_SUCCESS, {cmd, System.pwd()}, info);
                   else
-                    found := listHead(list(x for x guard System.regularFileExists(x) in List.flatten(list(d+"/"+n for d in dirs, n in names))));
+                    found := listHead(list(x for x guard System.regularFileExists(x) in List.flatten(list(d+"/"+n for d in dirs2, n in names))));
                     Error.addSourceMessage(Error.COMPILER_NOTIFICATION, {"Compiled "+found+" by running build project " + resourcesStr + "/BuildProjects/" + dir}, info);
                     didFind := true;
                   end if;
@@ -1841,10 +1845,10 @@ algorithm
         then ();
       else ();
     end match;
-    if not max(System.regularFileExists(d+"/"+n) for d in dirs, n in names) then
+    if not max(System.regularFileExists(d+"/"+n) for d in dirs2, n in names) then
       // suppress this warning if we're running the testsuite
       if not Config.getRunningTestsuite() then
-        Error.addSourceMessage(Error.EXT_LIBRARY_NOT_FOUND, {name, sum("\n  " + d + "/" + n for d in dirs, n in names)}, info);
+        Error.addSourceMessage(Error.EXT_LIBRARY_NOT_FOUND, {name, sum("\n  " + d + "/" + n for d in dirs2, n in names)}, info);
       end if;
     end if;
   end if;
@@ -2098,6 +2102,7 @@ algorithm
   (strs,names) := matchcontinue exp
     local
       String str, fopenmp;
+      list<String> strs1, strs2, names1, names2;
 
     // Lapack is always included
     case Absyn.STRING("lapack") then ({},{});
@@ -2113,6 +2118,12 @@ algorithm
     case Absyn.STRING("rt") guard System.os()=="Windows_NT"
       equation
         Error.addCompilerNotification("rt library is not needed under Windows. It is not linked from the external library resource directory.\n");
+      then  ({},{});
+
+   //do not link Ws2_32.dll for Modelica Device Drivers as it is not needed under windows
+    case Absyn.STRING("Ws2_32") guard System.os()=="Windows_NT"
+      equation
+        Error.addCompilerNotification("Ws2_32 library is not needed under Windows. It is not linked from the external library resource directory.\n");
       then  ({},{});
 
     //user32 is already linked under windows
@@ -2158,8 +2169,11 @@ algorithm
 
     case Absyn.STRING(str)
       algorithm
-        if System.os()=="Windows_NT" and str=="ModelicaStandardTables" then
-          (strs,names) := getLibraryStringInGccFormat(Absyn.STRING("ModelicaMatIO"));
+        if str=="ModelicaStandardTables" then
+          (strs1,names1) := getLibraryStringInGccFormat(Absyn.STRING("ModelicaIO"));
+          (strs2,names2) := getLibraryStringInGccFormat(Absyn.STRING("ModelicaMatIO"));
+          strs := listAppend(strs1, strs2);
+          names := listAppend(names1, names2);
         else
           strs := {};
           names := {};
@@ -2609,6 +2623,8 @@ algorithm
   idxstrlst := List.map(List.intRange(nrdims),intString);
   outdef := stringDelimitList(List.threadMap(List.fill("i_", nrdims), idxstrlst, stringAppend), ",");
 end generateSubPalceholders;
+
+
 
 annotation(__OpenModelica_Interface="backendInterface");
 end SimCodeFunctionUtil;

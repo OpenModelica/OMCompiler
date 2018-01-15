@@ -40,36 +40,38 @@ public import GlobalScript;
 public import HashTable;
 public import Values;
 
-protected import Algorithm;
-protected import BackendDAECreate;
-protected import BackendDAEEXT;
-protected import BackendDAEUtil;
-protected import BackendEquation;
-protected import BackendVariable;
-protected import BaseHashSet;
-protected import BaseHashTable;
-protected import ClassInf;
-protected import ClockIndexes;
-protected import ComponentReference;
-protected import DAEUtil;
-protected import Error;
-protected import Expression;
-protected import ExpressionSimplify;
-protected import ExpressionSolve;
-protected import Flags;
-protected import HashSet;
-protected import HashTable2;
-protected import InnerOuter;
-protected import Inst;
-protected import List;
-protected import Matching;
-protected import MathematicaDump;
-protected import Print;
-protected import SCode;
-protected import SCodeUtil;
-protected import Sorting;
-protected import System;
-protected import Util;
+protected
+import AdjacencyMatrix;
+import Algorithm;
+import BackendDAECreate;
+import BackendDAEEXT;
+import BackendDAEUtil;
+import BackendEquation;
+import BackendVariable;
+import BaseHashSet;
+import BaseHashTable;
+import ClassInf;
+import ClockIndexes;
+import ComponentReference;
+import DAEUtil;
+import Error;
+import Expression;
+import ExpressionSimplify;
+import ExpressionSolve;
+import Flags;
+import HashSet;
+import HashTable2;
+import InnerOuter;
+import Inst;
+import List;
+import Matching;
+import MathematicaDump;
+import Print;
+import SCode;
+import SCodeUtil;
+import Sorting;
+import System;
+import Util;
 
 protected type ExtIncidenceMatrixRow = tuple<Integer,list<Integer>>;
 protected type ExtIncidenceMatrix = list<ExtIncidenceMatrixRow>;
@@ -174,7 +176,7 @@ algorithm
 
               printSep(getMathematicaText("== Initial system =="));
         //      printSep(getMathematicaText("Equations (Function calls represent more than one equation"));
-        //      printSep(equationsToMathematicaGrid(List.intRange(BackendDAEUtil.equationSize(allEqs)),allEqs,allVars,globalKnownVars,mapIncRowEqn));
+        //      printSep(equationsToMathematicaGrid(List.intRange(BackendEquation.equationArraySize(allEqs)),allEqs,allVars,globalKnownVars,mapIncRowEqn));
 
         //      printSep(getMathematicaText("All variables"));
         //      printSep(variablesToMathematicaGrid(List.intRange(BackendVariable.varsSize(allVars)),allVars));
@@ -188,7 +190,7 @@ algorithm
 
               printSep(getMathematicaText("After Symbolic Elimination"));
               printSep(getMathematicaText("Equations (Function calls represent more than one equation)"));
-              printSep(equationsToMathematicaGrid(List.intRange(BackendDAEUtil.equationSize(allEqs)),allEqs,allVars,globalKnownVars,mapIncRowEqn));
+              printSep(equationsToMathematicaGrid(List.intRange(BackendEquation.equationArraySize(allEqs)),allEqs,allVars,globalKnownVars,mapIncRowEqn));
               printSep(getMathematicaText("Variables"));
               printSep(variablesToMathematicaGrid(List.intRange(BackendVariable.varsSize(allVars)),allVars));
 
@@ -258,8 +260,8 @@ algorithm
         setS = List.map1r(setS, listGet, arrayList(mapIncRowEqn));
         setS = List.unique(setS);
 
-        setC_eq = List.map1r(setC, BackendEquation.equationNth1, allEqs);
-        setS_eq = List.map1r(setS, BackendEquation.equationNth1, allEqs);
+        setC_eq = List.map1r(setC, BackendEquation.get, allEqs);
+        setS_eq = List.map1r(setS, BackendEquation.get, allEqs);
 
        //eqnLst = BackendEquation.equationList(eqns);
 
@@ -381,7 +383,7 @@ protected function equationsToMathematicaGrid
   list<Integer> eqns;
 algorithm
   eqns:=List.unique(List.map1r(equIndices, listGet, arrayList(mapIncRowEqn)));
-  eqList:=List.map1r(eqns, BackendEquation.equationNth1, allEqs);
+  eqList:=List.map1r(eqns, BackendEquation.get, allEqs);
   eqsString:=List.map1(eqList, MathematicaDump.printMmaEqnStr, (variables, knownVariables));
   out:="Grid[{"+numerateListIndex(eqsString, eqns)+"}, Frame -> All]";
 end equationsToMathematicaGrid;
@@ -439,7 +441,7 @@ out:=matchcontinue(equations,allEqs,variables,knownVariables,mapIncRowEqn)
     then s::r;
   case(eqn::eqn_t,_,_,_,_)
     equation
-      e = BackendEquation.equationNth1(allEqs,eqn);
+      e = BackendEquation.get(allEqs,eqn);
       r = getEquationStringOrNothing(eqn_t,allEqs,variables,knownVariables,mapIncRowEqn);
       s = MathematicaDump.printMmaEqnStr(e,(variables,knownVariables));
     then s::r;
@@ -805,7 +807,7 @@ algorithm
         //printIntList(arrayList(ass1));
         //printIntList(arrayList(ass2));
 
-        mt = BackendDAEUtil.transposeMatrix(mx,nxVarMap);
+        mt = AdjacencyMatrix.transposeAdjacencyMatrix(mx,nxVarMap);
 
         comps = getComponentsWrapper(mx,mt,ass1,ass2);
         //print("Removing equations larget than "+intString(listLength(xEqMap))+"\n");
@@ -2152,7 +2154,8 @@ protected
   DAE.VarDirection dir;
   DAE.VarParallelism prl;
   DAE.Type tp;
-  Option<DAE.Exp> bind ;
+  Option<DAE.Exp> bind;
+  Option<DAE.Exp> tplExp;
   DAE.InstDims ad;
   DAE.ElementSource source;
   Option<DAE.VariableAttributes> attr;
@@ -2162,8 +2165,8 @@ protected
   DAE.ConnectorType ct;
   DAE.VarInnerOuter io;
 algorithm
-  BackendDAE.VAR(name,kind,dir,prl,tp,bind,ad,source,attr,ts,hideResult,cmt,ct,io,_) := inVar;
-  outVar := BackendDAE.VAR(cr,kind,dir,prl,tp,bind,ad,source,attr,ts,hideResult,cmt,ct,io,false);
+  BackendDAE.VAR(name,kind,dir,prl,tp,bind,tplExp,ad,source,attr,ts,hideResult,cmt,ct,io,_) := inVar;
+  outVar := BackendDAE.VAR(cr,kind,dir,prl,tp,bind,tplExp,ad,source,attr,ts,hideResult,cmt,ct,io,false);
 end setVarCref;
 
 public function setVarBindingOpt "author: PA
@@ -2177,7 +2180,8 @@ protected
   DAE.VarDirection dir;
   DAE.VarParallelism prl;
   BackendDAE.Type tp;
-  Option<DAE.Exp> bind ;
+  Option<DAE.Exp> bind;
+  Option<DAE.Exp> tplExp;
   DAE.InstDims ad;
   DAE.ElementSource source;
   Option<DAE.VariableAttributes> attr;
@@ -2187,8 +2191,8 @@ protected
   DAE.ConnectorType ct;
   DAE.VarInnerOuter innerOuter;
 algorithm
-  BackendDAE.VAR(name,kind,dir,prl,tp,bind,ad,source,attr,ts,hideResult,cmt,ct,innerOuter,_) := inVar;
-  outVar := BackendDAE.VAR(name,kind,dir,prl,tp,bindExp,ad,source,attr,ts,hideResult,cmt,ct,innerOuter,false);
+  BackendDAE.VAR(name,kind,dir,prl,tp,bind,tplExp,ad,source,attr,ts,hideResult,cmt,ct,innerOuter,_) := inVar;
+  outVar := BackendDAE.VAR(name,kind,dir,prl,tp,bindExp,tplExp,ad,source,attr,ts,hideResult,cmt,ct,innerOuter,false);
 end setVarBindingOpt;
 
 public function moveVariables "

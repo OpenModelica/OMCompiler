@@ -374,12 +374,15 @@ static void read_var_info(omc_ScalarVariable *v, VAR_INFO *info)
 
 static void read_var_attribute_real(omc_ScalarVariable *v, REAL_ATTRIBUTE *attribute)
 {
+  const char *unit = NULL;
   read_value_real(findHashStringStringEmpty(v,"start"), &(attribute->start), 0.0);
   read_value_bool(findHashStringString(v,"fixed"), (modelica_boolean*)&(attribute->fixed));
   read_value_bool(findHashStringString(v,"useNominal"), (modelica_boolean*)&(attribute->useNominal));
   read_value_real(findHashStringStringEmpty(v,"nominal"), &(attribute->nominal), 1.0);
   read_value_real(findHashStringStringEmpty(v,"min"), &(attribute->min), REAL_MIN);
   read_value_real(findHashStringStringEmpty(v,"max"), &(attribute->max), REAL_MAX);
+  read_value_string(findHashStringStringEmpty(v,"unit"), &unit);
+  attribute->unit = mmc_mk_scon_persist(unit);
 
   infoStreamPrint(LOG_DEBUG, 0, "Real %s(start=%g, fixed=%s, %snominal=%g%s, min=%g, max=%g)", findHashStringString(v,"name"), attribute->start, (attribute->fixed)?"true":"false", (attribute->useNominal)?"":"{", attribute->nominal, attribute->useNominal?"":"}", attribute->min, attribute->max);
 }
@@ -438,8 +441,12 @@ void read_input_xml(MODEL_DATA* modelData,
   if(NULL == modelData->initXMLData)
   {
     /* read the filename from the command line (if any) */
-    if(omc_flag[FLAG_F]) {
+    if (omc_flag[FLAG_F]) {
       filename = omc_flagValue[FLAG_F];
+    } else if (omc_flag[FLAG_INPUT_PATH]) { /* read the input path from the command line (if any) */
+      if (0 > GC_asprintf((char**)&filename, "%s/%s_init.xml", omc_flagValue[FLAG_INPUT_PATH], modelData->modelFilePrefix)) {
+        throwStreamPrint(NULL, "simulation_input_xml.c: Error: can not allocate memory.");
+      }
     } else {
       /* no file given on the command line? use the default
        * model_name defined in generated code for model.*/
@@ -664,8 +671,19 @@ void read_input_xml(MODEL_DATA* modelData,
     }
     infoStreamPrint(LOG_DEBUG, 0, "read for %s negated %d from setup file", modelData->realAlias[i].info.name, modelData->realAlias[i].negate);
 
-    /* filter internal variables */
-    if(modelData->realAlias[i].info.name[0] == '$') {
+    if(modelData->realAlias[i].info.name[0] == '$')
+    {
+      /* filter internal variables */
+      modelData->realAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_EMIT_PROTECTED] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.rAli,i), "isProtected"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.rAli,i), "hideResult"), "true"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering protected variable %s", modelData->realAlias[i].info.name);
+      modelData->realAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_IGNORE_HIDERESULT] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.rAli,i), "hideResult"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.rAli,i), "isProtected"), "false"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering variable %s due to HideResult annotation", modelData->realAlias[i].info.name);
       modelData->realAlias[i].filterOutput = 1;
     }
 
@@ -711,7 +729,18 @@ void read_input_xml(MODEL_DATA* modelData,
     infoStreamPrint(LOG_DEBUG, 0, "read for %s negated %d from setup file",modelData->integerAlias[i].info.name,modelData->integerAlias[i].negate);
 
     /* filter internal variables */
-    if(modelData->integerAlias[i].info.name[0] == '$') {
+    if(modelData->integerAlias[i].info.name[0] == '$')
+    {
+      modelData->integerAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_EMIT_PROTECTED] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.iAli,i), "isProtected"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.iAli,i), "hideResult"), "true"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering protected variable %s", modelData->integerAlias[i].info.name);
+      modelData->integerAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_IGNORE_HIDERESULT] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.iAli,i), "hideResult"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.iAli,i), "isProtected"), "false"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering variable %s due to HideResult annotation", modelData->integerAlias[i].info.name);
       modelData->integerAlias[i].filterOutput = 1;
     }
     read_value_string(findHashStringString(*findHashLongVar(mi.iAli,i),"aliasVariable"), &aliasTmp);
@@ -753,8 +782,19 @@ void read_input_xml(MODEL_DATA* modelData,
 
     infoStreamPrint(LOG_DEBUG, 0, "read for %s negated %d from setup file", modelData->booleanAlias[i].info.name, modelData->booleanAlias[i].negate);
 
-    /* filter internal variables */
-    if(modelData->booleanAlias[i].info.name[0] == '$') {
+    if(modelData->booleanAlias[i].info.name[0] == '$')
+    {
+      /* filter internal variables */
+      modelData->booleanAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_EMIT_PROTECTED] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.bAli,i), "isProtected"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.bAli,i), "hideResult"), "true"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering protected variable %s", modelData->booleanAlias[i].info.name);
+      modelData->booleanAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_IGNORE_HIDERESULT] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.bAli,i), "hideResult"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.bAli,i), "isProtected"), "false"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering variable %s due to HideResult annotation", modelData->booleanAlias[i].info.name);
       modelData->booleanAlias[i].filterOutput = 1;
     }
     read_value_string(findHashStringString(*findHashLongVar(mi.bAli,i),"aliasVariable"), &aliasTmp);
@@ -795,8 +835,19 @@ void read_input_xml(MODEL_DATA* modelData,
     }
     infoStreamPrint(LOG_DEBUG, 0, "read for %s negated %d from setup file", modelData->stringAlias[i].info.name, modelData->stringAlias[i].negate);
 
-    /* filter internal variables */
-    if(modelData->stringAlias[i].info.name[0] == '$') {
+    if(modelData->stringAlias[i].info.name[0] == '$')
+    {
+      /* filter internal variables */
+      modelData->stringAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_EMIT_PROTECTED] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.sAli,i), "isProtected"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.sAli,i), "hideResult"), "true"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering protected variable %s", modelData->stringAlias[i].info.name);
+      modelData->stringAlias[i].filterOutput = 1;
+    }
+    else if (!omc_flag[FLAG_IGNORE_HIDERESULT] && 0 == strcmp(findHashStringString(*findHashLongVar(mi.sAli,i), "hideResult"), "true") && 0 == strcmp(findHashStringString(*findHashLongVar(mi.sAli,i), "isProtected"), "false"))
+    {
+      infoStreamPrint(LOG_DEBUG, 0, "filtering variable %s due to HideResult annotation", modelData->stringAlias[i].info.name);
       modelData->stringAlias[i].filterOutput = 1;
     }
 
@@ -985,8 +1036,6 @@ void doOverride(omc_ModelInput *mi, MODEL_DATA *modelData, const char *override,
       addHashStringString(&mOverrides, p, value);
       addHashStringLong(&mOverridesUses, p, OMC_OVERRIDE_UNUSED);
 
-      infoStreamPrint(LOG_SOLVER, 0, "override %s = %s", p, value);
-
       // move to next
       p = strtok(NULL, "!");
     }
@@ -1000,10 +1049,13 @@ void doOverride(omc_ModelInput *mi, MODEL_DATA *modelData, const char *override,
       }
     }
 
-    #define CHECK_OVERRIDE(v) \
+    #define CHECK_OVERRIDE(v,b) \
       if (findHashStringStringNull(mOverrides, findHashStringString(*findHashLongVar(mi->v,i),"name"))) { \
         if (0 == strcmp(findHashStringString(*findHashLongVar(mi->v,i), "isValueChangeable"), "true")){ \
-        addHashStringString(findHashLongVar(mi->v,i), "start", getOverrideValue(mOverrides, &mOverridesUses, findHashStringString(*findHashLongVar(mi->v,i),"name"))); \
+          infoStreamPrint(LOG_SOLVER, 0, "override %s = %s", findHashStringString(*findHashLongVar(mi->v,i),"name"), getOverrideValue(mOverrides, &mOverridesUses, findHashStringString(*findHashLongVar(mi->v,i),"name"))); \
+          if (b && fabs(atof(getOverrideValue(mOverrides, &mOverridesUses, findHashStringString(*findHashLongVar(mi->v,i),"name")))) < 1e-6) \
+            warningStreamPrint(LOG_STDOUT, 0, "You are overriding %s with a small value or zero.\nThis could lead to numerically dirty solutions or divisions by zero if not tearingStrictness=veryStrict.", findHashStringString(*findHashLongVar(mi->v,i),"name")); \
+          addHashStringString(findHashLongVar(mi->v,i), "start", getOverrideValue(mOverrides, &mOverridesUses, findHashStringString(*findHashLongVar(mi->v,i),"name"))); \
         } \
         else{ \
           addHashStringLong(&mOverridesUses, findHashStringString(*findHashLongVar(mi->v,i),"name"), OMC_OVERRIDE_USED); \
@@ -1013,48 +1065,48 @@ void doOverride(omc_ModelInput *mi, MODEL_DATA *modelData, const char *override,
 
     // override all found!
     for(i=0; i<modelData->nStates; i++) {
-      CHECK_OVERRIDE(rSta);
-      CHECK_OVERRIDE(rDer);
+      CHECK_OVERRIDE(rSta,0);
+      CHECK_OVERRIDE(rDer,0);
     }
     for(i=0; i<(modelData->nVariablesReal - 2*modelData->nStates); i++) {
-      CHECK_OVERRIDE(rAlg);
+      CHECK_OVERRIDE(rAlg,0);
     }
     for(i=0; i<modelData->nVariablesInteger; i++) {
-      CHECK_OVERRIDE(iAlg);
+      CHECK_OVERRIDE(iAlg,0);
     }
     for(i=0; i<modelData->nVariablesBoolean; i++) {
-      CHECK_OVERRIDE(bAlg);
+      CHECK_OVERRIDE(bAlg,0);
     }
     for(i=0; i<modelData->nVariablesString; i++) {
-      CHECK_OVERRIDE(sAlg);
+      CHECK_OVERRIDE(sAlg,0);
     }
     for(i=0; i<modelData->nParametersReal; i++) {
       // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(rPar);
+      CHECK_OVERRIDE(rPar,1);
     }
     for(i=0; i<modelData->nParametersInteger; i++) {
       // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(iPar);
+      CHECK_OVERRIDE(iPar,1);
     }
     for(i=0; i<modelData->nParametersBoolean; i++) {
       // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(bPar);
+      CHECK_OVERRIDE(bPar,0);
     }
     for(i=0; i<modelData->nParametersString; i++) {
       // TODO: only allow to override primary parameters
-      CHECK_OVERRIDE(sPar);
+      CHECK_OVERRIDE(sPar,0);
     }
     for(i=0; i<modelData->nAliasReal; i++) {
-      CHECK_OVERRIDE(rAli);
+      CHECK_OVERRIDE(rAli,0);
     }
     for(i=0; i<modelData->nAliasInteger; i++) {
-      CHECK_OVERRIDE(iAli);
+      CHECK_OVERRIDE(iAli,0);
     }
     for(i=0; i<modelData->nAliasBoolean; i++) {
-      CHECK_OVERRIDE(bAli);
+      CHECK_OVERRIDE(bAli,0);
     }
     for(i=0; i<modelData->nAliasString; i++) {
-      CHECK_OVERRIDE(sAli);
+      CHECK_OVERRIDE(sAli,0);
     }
 
     // give a warning if an override is not used #3204

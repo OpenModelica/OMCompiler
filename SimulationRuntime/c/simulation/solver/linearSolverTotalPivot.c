@@ -281,7 +281,7 @@ int allocateTotalPivotData(int size, void** voiddata)
   data->indRow =(int*) calloc(size,sizeof(int));
   data->indCol =(int*) calloc(size+1,sizeof(int));
 
-  *voiddata = (void*)data;
+  voiddata[1] = (void*)data;
   return 0;
 }
 
@@ -291,7 +291,7 @@ int allocateTotalPivotData(int size, void** voiddata)
  */
 int freeTotalPivotData(void** voiddata)
 {
-  DATA_TOTALPIVOT* data = (DATA_TOTALPIVOT*) *voiddata;
+  DATA_TOTALPIVOT* data = (DATA_TOTALPIVOT*) voiddata[1];
 
   /* memory for linear system */
   free(data->Ab);
@@ -301,6 +301,9 @@ int freeTotalPivotData(void** voiddata)
    /* used for pivot strategy */
   free(data->indRow);
   free(data->indCol);
+
+  free(voiddata[1]);
+  voiddata[1] = 0;
 
   return 0;
 }
@@ -383,7 +386,7 @@ int solveTotalPivot(DATA *data, threadData_t *threadData, int sysNumber)
   void *dataAndThreadData[2] = {data, threadData};
   int i, j;
   LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
-  DATA_TOTALPIVOT* solverData = (DATA_TOTALPIVOT*)systemData->solverData;
+  DATA_TOTALPIVOT* solverData = (DATA_TOTALPIVOT*) systemData->solverData[1];
   int n = systemData->size, status;
   double fdeps = 1e-8;
   double xTol = 1e-8;
@@ -395,6 +398,7 @@ int solveTotalPivot(DATA *data, threadData_t *threadData, int sysNumber)
    * We want to look it up among all equations. */
   /* int eqSystemNumber = systemData->equationIndex; */
   int success = 1;
+  double tmpJacEvalTime;
 
   infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with Total Pivot Solver",
          eqSystemNumber, (int) systemData->size,
@@ -429,12 +433,14 @@ int solveTotalPivot(DATA *data, threadData_t *threadData, int sysNumber)
     /* calculate vector b (rhs) -> -b is last column of matrix Ab */
     wrapper_fvec_totalpivot(systemData->x, solverData->Ab + n*n, dataAndThreadData, sysNumber);
   }
-  infoStreamPrint(LOG_LS, 0, "###  %f  time to set Matrix A and vector b.", rt_ext_tp_tock(&(solverData->timeClock)));
+  tmpJacEvalTime = rt_ext_tp_tock(&(solverData->timeClock));
+  systemData->jacobianTime += tmpJacEvalTime;
+  infoStreamPrint(LOG_LS_V, 0, "###  %f  time to set Matrix A and vector b.", tmpJacEvalTime);
   debugMatrixDoubleLS(LOG_LS_V,"LGS: matrix Ab",solverData->Ab, n, n+1);
 
   rt_ext_tp_tick(&(solverData->timeClock));
   status = solveSystemWithTotalPivotSearchLS(n, solverData->x, solverData->Ab, solverData->indRow, solverData->indCol, &rank);
-  infoStreamPrint(LOG_LS, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
+  infoStreamPrint(LOG_LS_V, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
 
   if (status != 0)
   {

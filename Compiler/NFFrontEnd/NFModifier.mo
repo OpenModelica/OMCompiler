@@ -30,9 +30,9 @@
  */
 
 
-encapsulated package NFMod
-" file:        NFMod.mo
-  package:     NFMod
+encapsulated package NFModifier
+" file:        NFModifier.mo
+  package:     NFModifier
   description: Modification handling for NFInst.
 
 
@@ -50,13 +50,14 @@ import SCode;
 protected
 import Error;
 import List;
+import SCodeDump;
 
 constant Modifier EMPTY_MOD = NOMOD();
 
 public
 encapsulated package ModTable
   import BaseAvlTree;
-  import NFMod.Modifier;
+  import NFModifier.Modifier;
   extends BaseAvlTree(redeclare type Key = String,
                       redeclare type Value = Modifier);
 
@@ -81,26 +82,26 @@ public
 uniontype ModifierScope
   "Structure that represents where a modifier comes from."
 
-  record COMPONENT_SCOPE
+  record COMPONENT
     String name;
-  end COMPONENT_SCOPE;
+  end COMPONENT;
 
-  record CLASS_SCOPE
+  record CLASS
     String name;
-  end CLASS_SCOPE;
+  end CLASS;
 
-  record EXTENDS_SCOPE
+  record EXTENDS
     Absyn.Path path;
-  end EXTENDS_SCOPE;
+  end EXTENDS;
 
   function name
     input ModifierScope scope;
     output String name;
   algorithm
     name := match scope
-      case COMPONENT_SCOPE() then scope.name;
-      case CLASS_SCOPE() then scope.name;
-      case EXTENDS_SCOPE() then Absyn.pathString(scope.path);
+      case COMPONENT() then scope.name;
+      case CLASS() then scope.name;
+      case EXTENDS() then Absyn.pathString(scope.path);
     end match;
   end name;
 
@@ -109,11 +110,23 @@ uniontype ModifierScope
     output String string;
   algorithm
     string := match scope
-      case COMPONENT_SCOPE() then "component " + scope.name;
-      case CLASS_SCOPE() then "class " + scope.name;
-      case EXTENDS_SCOPE() then "extends " + Absyn.pathString(scope.path);
+      case COMPONENT() then "component " + scope.name;
+      case CLASS() then "class " + scope.name;
+      case EXTENDS() then "extends " + Absyn.pathString(scope.path);
     end match;
   end toString;
+
+  function toElementType
+    input ModifierScope scope;
+    output ElementType origin;
+    import NFBindingOrigin.ElementType;
+  algorithm
+    origin := match scope
+      case COMPONENT() then ElementType.COMPONENT;
+      case CLASS() then ElementType.CLASS;
+      case EXTENDS() then ElementType.EXTENDS;
+    end match;
+  end toElementType;
 end ModifierScope;
 
 uniontype Modifier
@@ -130,6 +143,7 @@ uniontype Modifier
     SCode.Final finalPrefix;
     SCode.Each eachPrefix;
     InstNode element;
+    Modifier mod;
   end REDECLARE;
 
   record NOMOD end NOMOD;
@@ -139,6 +153,7 @@ public
     input SCode.Mod mod;
     input String name;
     input ModifierScope modScope;
+    input Integer level;
     input InstNode scope;
     output Modifier newMod;
   algorithm
@@ -147,23 +162,88 @@ public
         list<tuple<String, Modifier>> submod_lst;
         ModTable.Tree submod_table;
         Binding binding;
+        SCode.Element elem;
+        SCode.Mod smod;
+        Integer lvl;
+        Boolean is_each;
 
       case SCode.NOMOD() then NOMOD();
 
       case SCode.MOD()
         algorithm
-          binding := Binding.fromAbsyn(mod.binding, mod.eachPrefix, 0, scope, mod.info);
-          submod_lst := list((m.ident, createSubMod(m, modScope, scope)) for m in mod.subModLst);
+          is_each := SCode.eachBool(mod.eachPrefix);
+          binding := Binding.fromAbsyn(mod.binding, is_each, level,
+             scope, mod.info, ModifierScope.toElementType(modScope));
+          lvl := if is_each then level + 1 else level;
+          submod_lst := list((m.ident, createSubMod(m, modScope, lvl, scope)) for m in mod.subModLst);
           submod_table := ModTable.fromList(submod_lst,
             function mergeLocal(scope = modScope, prefix = {}));
         then
           MODIFIER(name, mod.finalPrefix, mod.eachPrefix, binding, submod_table, mod.info);
 
-      case SCode.REDECL()
-        then REDECLARE(mod.finalPrefix, mod.eachPrefix, InstNode.new(mod.element, scope));
+      case SCode.REDECL(element = elem)
+        algorithm
+          (elem, smod) := stripSCodeMod(elem);
+        then
+          REDECLARE(mod.finalPrefix, mod.eachPrefix, InstNode.new(elem, scope),
+            create(smod, name, modScope, level, scope));
 
     end match;
   end create;
+
+  function stripSCodeMod
+    input output SCode.Element elem;
+          output SCode.Mod mod;
+  algorithm
+    mod := match elem
+      local
+        SCode.ClassDef cdef;
+
+    case SCode.Element.CLASS(classDef = cdef as SCode.ClassDef.DERIVED(modifications = mod))
+      algorithm
+        if not SCode.isEmptyMod(mod) then
+          cdef.modifications := SCode.Mod.NOMOD();
+          elem.classDef := cdef;
+        end if;
+      then
+        mod;
+
+    case SCode.Element.COMPONENT(modifications = mod)
+      algorithm
+        if not SCode.isEmptyMod(mod) then
+          elem.modifications := SCode.Mod.NOMOD();
+        end if;
+      then
+        mod;
+
+    end match;
+  end stripSCodeMod;
+
+  function fromElement
+    input SCode.Element element;
+    input Integer level;
+    input InstNode scope;
+    output Modifier mod;
+  algorithm
+    mod := match element
+      local
+        SCode.ClassDef def;
+
+      case SCode.EXTENDS()
+        then create(element.modifications, "", ModifierScope.EXTENDS(element.baseClassPath), level, scope);
+
+      case SCode.COMPONENT()
+        then create(element.modifications, element.name, ModifierScope.COMPONENT(element.name), level, scope);
+
+      case SCode.CLASS(classDef = def as SCode.DERIVED())
+        then create(def.modifications, element.name, ModifierScope.CLASS(element.name), level, scope);
+
+      case SCode.CLASS(classDef = def as SCode.CLASS_EXTENDS())
+        then create(def.modifications, element.name, ModifierScope.CLASS(element.name), level, scope);
+
+      else NOMOD();
+    end match;
+  end fromElement;
 
   function lookupModifier
     input String modName;
@@ -223,6 +303,7 @@ public
   function merge
     input Modifier outerMod;
     input Modifier innerMod;
+    input String name = "";
     output Modifier mergedMod;
   algorithm
     mergedMod := match(outerMod, innerMod)
@@ -244,6 +325,18 @@ public
           submods := ModTable.join(innerMod.subModifiers, outerMod.subModifiers, merge);
         then
           MODIFIER(outerMod.name, outerMod.finalPrefix, outerMod.eachPrefix, binding, submods, outerMod.info);
+
+      case (REDECLARE(), MODIFIER())
+        algorithm
+          outerMod.mod := merge(outerMod.mod, innerMod);
+        then
+          outerMod;
+
+      case (MODIFIER(), REDECLARE())
+        algorithm
+          innerMod.mod := merge(outerMod, innerMod.mod);
+        then
+          innerMod;
 
       case (REDECLARE(), _) then outerMod;
       case (_, REDECLARE()) then innerMod;
@@ -278,55 +371,15 @@ public
     end match;
   end toList;
 
-  function propagate
-    "Saves information about how a modifier has been propagated. Since arrays are
-     not expanded during the instantiation we need to know where a binding comes
-     from, e.g:
-
-       model A
-         Real x;
-       end A;
-
-       model B
-         A a[3](x = {1, 2, 3});
-       end B;
-
-       model C
-         B b[2];
-       end C;
-
-     This results in a component b[2].a[3].x = {1, 2, 3}. Since x is a scalar we
-     need to add dimensions to it (or remove from the binding) when doing type
-     checking, so that it matches the binding. To do this we need to now how many
-     dimensions the binding has been propagated through. In this case it's been
-     propagated from B.a to A.x, and since B.a has one dimension we should add
-     that dimension to A.x to make it match the binding. The number of dimensions
-     that a binding is propagated through is therefore saved in a binding. A
-     binding can also have the 'each' prefix, meaning that the binding should be
-     applied as it is. In that case we set the dimension counter to -1 and don't
-     increment it when the binding is propagated.
-
-     This function simply goes through a modifier recursively and increments the
-     dimension counter by the number of dimensions that an element has."
-    input output Modifier modifier;
-    input Integer dimensions;
+  function isEach
+    input Modifier mod;
+    output Boolean isEach;
   algorithm
-    if dimensions == 0 then
-      return;
-    end if;
-
-    _ := match modifier
-      case MODIFIER()
-        algorithm
-          modifier.binding := propagateBinding(modifier.binding, dimensions);
-          modifier.subModifiers := ModTable.map(modifier.subModifiers,
-            function propagateSubMod(dimensions = dimensions));
-        then
-          ();
-
-      else ();
+    isEach := match mod
+      case MODIFIER(eachPrefix = SCode.EACH()) then true;
+      else false;
     end match;
-  end propagate;
+  end isEach;
 
   function checkEach
     input Modifier mod;
@@ -356,7 +409,7 @@ public
           Error.addSourceMessage(Error.EACH_ON_NON_ARRAY,
             {elementName}, mod.info);
         then
-          fail();
+          ();
 
       else ();
     end match;
@@ -364,12 +417,13 @@ public
 
   function toString
     input Modifier mod;
+    input Boolean printName = true;
     output String string;
   algorithm
     string := match mod
       local
         list<Modifier> submods;
-        String subs_str;
+        String subs_str, binding_str, binding_sep;
 
       case NOMOD() then "";
       case MODIFIER()
@@ -377,13 +431,19 @@ public
           submods := ModTable.listValues(mod.subModifiers);
           if not listEmpty(submods) then
             subs_str := "(" + stringDelimitList(list(toString(s) for s in submods), ", ") + ")";
+            binding_sep := " = ";
           else
             subs_str := "";
+            binding_sep := if printName then " = " else "= ";
           end if;
-        then
-          mod.name + subs_str + Binding.toString(mod.binding, " = ");
 
-      case REDECLARE() then "redeclare";
+          binding_str := Binding.toString(mod.binding, binding_sep);
+        then
+          if printName then mod.name + subs_str + binding_str else subs_str + binding_str;
+
+      case REDECLARE()
+        then SCodeDump.unparseElementStr(InstNode.definition(mod.element));
+
     end match;
   end toString;
 
@@ -391,8 +451,9 @@ protected
   function createSubMod
     input SCode.SubMod subMod;
     input ModifierScope modScope;
+    input Integer level;
     input InstNode scope;
-    output Modifier mod = create(subMod.mod, subMod.ident, modScope, scope);
+    output Modifier mod = create(subMod.mod, subMod.ident, modScope, level, scope);
   end createSubMod;
 
   function checkFinalOverride
@@ -408,8 +469,8 @@ protected
       case SCode.FINAL()
         algorithm
           Error.addMultiSourceMessage(Error.FINAL_COMPONENT_OVERRIDE,
-          {name, Binding.toString(outerBinding)},
-          {outerInfo, innerInfo});
+            {name, Binding.toString(outerBinding)},
+            {outerInfo, innerInfo});
         then
           fail();
 
@@ -423,6 +484,7 @@ protected
      element, otherwise it's an error."
     input Modifier mod1;
     input Modifier mod2;
+    input String name = "";
     input ModifierScope scope;
     input list<String> prefix = {};
     output Modifier mod;
@@ -458,34 +520,7 @@ protected
 
     end match;
   end mergeLocal;
-
-  function propagateSubMod
-    input String name;
-    input output Modifier modifier;
-    input Integer dimensions;
-  algorithm
-    modifier := propagate(modifier, dimensions);
-  end propagateSubMod;
-
-  function propagateBinding
-    input output Binding binding;
-    input Integer dimensions;
-  algorithm
-    _ := match binding
-      // Special case for the each prefix, don't do anything.
-      case Binding.RAW_BINDING(propagatedDims = -1) then ();
-
-      // A normal binding, increment with the dimension count.
-      case Binding.RAW_BINDING()
-        algorithm
-          binding.propagatedDims := binding.propagatedDims + dimensions;
-        then
-          ();
-
-      else ();
-    end match;
-  end propagateBinding;
 end Modifier;
 
 annotation(__OpenModelica_Interface="frontend");
-end NFMod;
+end NFModifier;

@@ -187,7 +187,6 @@ uniontype ClassDef
   end PARTS;
 
   record CLASS_EXTENDS "an extended class definition plus the additional parts"
-    Ident                      baseClassName       "the name of the base class we have to extend";
     Mod                        modifications       "the modifications that need to be applied to the base class";
     ClassDef                   composition         "the new composition";
   end CLASS_EXTENDS;
@@ -321,8 +320,8 @@ uniontype EEquation
   end EQ_TERMINATE;
 
   record EQ_REINIT "a reinit equation"
-    Absyn.ComponentRef cref      "the variable to initialize";
-    Absyn.Exp          expReinit "the new value" ;
+    Absyn.Exp cref      "the variable to initialize";
+    Absyn.Exp expReinit "the new value" ;
     Comment comment;
     SourceInfo info;
   end EQ_REINIT;
@@ -413,7 +412,7 @@ public uniontype Statement "The Statement type describes one algorithm statement
   end ALG_TERMINATE;
 
   record ALG_REINIT
-    Absyn.ComponentRef cref;
+    Absyn.Exp cref;
     Absyn.Exp newValue;
     Comment comment;
     SourceInfo info;
@@ -1265,7 +1264,6 @@ protected function classDefEqual
        Mod mod1,mod2;
        list<Enum> elst1,elst2;
        list<Ident> ilst1,ilst2;
-       String bcName1, bcName2;
        list<Absyn.NamedArg> clsttrs1,clsttrs2;
 
      case(PARTS(elts1,eqns1,ieqns1,algs1,ialgs1,_,_,_),
@@ -1293,15 +1291,14 @@ protected function classDefEqual
        then
          true;
 
-     case (CLASS_EXTENDS(bcName1,mod1,PARTS(elts1,eqns1,ieqns1,algs1,ialgs1,_,_,_)),
-           CLASS_EXTENDS(bcName2,mod2,PARTS(elts2,eqns2,ieqns2,algs2,ialgs2,_,_,_)))
+     case (CLASS_EXTENDS(mod1,PARTS(elts1,eqns1,ieqns1,algs1,ialgs1,_,_,_)),
+           CLASS_EXTENDS(mod2,PARTS(elts2,eqns2,ieqns2,algs2,ialgs2,_,_,_)))
        equation
          List.threadMapAllValue(elts1,elts2,elementEqual,true);
          List.threadMapAllValue(eqns1,eqns2,equationEqual,true);
          List.threadMapAllValue(ieqns1,ieqns2,equationEqual,true);
          List.threadMapAllValue(algs1,algs2,algorithmEqual,true);
          List.threadMapAllValue(ialgs1,ialgs2,algorithmEqual,true);
-         true = stringEq(bcName1,bcName2);
          true = modEqual(mod1,mod2);
        then
          true;
@@ -1521,10 +1518,10 @@ algorithm
       then
         true;
 
-    case (EQ_REINIT(cref = cr1, expReinit = e1),EQ_REINIT(cref = cr2, expReinit = e2))
+    case (EQ_REINIT(), EQ_REINIT())
       equation
-        true = Absyn.expEqual(e1,e2);
-        true = Absyn.crefEqual(cr1,cr2);
+        true = Absyn.expEqual(eq1.cref, eq2.cref);
+        true = Absyn.expEqual(eq1.expReinit, eq2.expReinit);
       then
         true;
 
@@ -2058,7 +2055,7 @@ algorithm
 
     case ALG_REINIT()
       then Absyn.ALGORITHMITEM(Absyn.ALG_NORETCALL(Absyn.CREF_IDENT("reinit", {}),
-        Absyn.FUNCTIONARGS({Absyn.CREF(stmt.cref), stmt.newValue}, {})), NONE(), stmt.info);
+        Absyn.FUNCTIONARGS({stmt.cref, stmt.newValue}, {})), NONE(), stmt.info);
 
     case ALG_NORETCALL(Absyn.CALL(function_=functionCall,functionArgs=functionArgs),_,info)
     then Absyn.ALGORITHMITEM(Absyn.ALG_NORETCALL(functionCall,functionArgs),NONE(),info);
@@ -2289,7 +2286,7 @@ algorithm
 
     case EQ_REINIT()
       algorithm
-        outArg := inFunc(Absyn.CREF(inEquation.cref), outArg);
+        outArg := inFunc(inEquation.cref, outArg);
         outArg := inFunc(inEquation.expReinit, outArg);
       then
         outArg;
@@ -2386,7 +2383,7 @@ algorithm
 
     case ALG_REINIT()
       algorithm
-        outArg := inFunc(Absyn.CREF(inStatement.cref), outArg);
+        outArg := inFunc(inStatement.cref, outArg);
       then
         inFunc(inStatement.newValue, outArg);
 
@@ -2638,12 +2635,12 @@ algorithm
       then
         (EQ_TERMINATE(e1, comment, info), arg);
 
-    case (EQ_REINIT(cr1, e1, comment, info), traverser, _)
+    case (EQ_REINIT(e1, e2, comment, info), traverser, _)
       equation
-        (cr1, arg) = traverseComponentRefExps(cr1, traverser, inArg);
-        (e1, arg) = traverser(e1, arg);
+        (e1, arg) = traverser(e1, inArg);
+        (e2, arg) = traverser(e2, arg);
       then
-        (EQ_REINIT(cr1, e1, comment, info), arg);
+        (EQ_REINIT(e1, e2, comment, info), arg);
 
     case (EQ_NORETCALL(e1, comment, info), traverser, arg)
       equation
@@ -3093,10 +3090,10 @@ algorithm
 
     case (ALG_REINIT(), traverser, arg)
       algorithm
-        (Absyn.CREF(cref), arg) := traverser(Absyn.CREF(inStatement.cref), arg);
+        (e1, arg) := traverser(inStatement.cref, arg);
         (e2, arg) := traverser(inStatement.newValue, arg);
       then
-        (ALG_REINIT(cref, e2, inStatement.comment, inStatement.info), arg);
+        (ALG_REINIT(e1, e2, inStatement.comment, inStatement.info), arg);
 
     case (ALG_NORETCALL(e1, comment, info), traverser, arg)
       equation
@@ -3874,6 +3871,24 @@ algorithm
   end match;
 end isNotBuiltinClass;
 
+public function getElementNamedAnnotation
+  "Returns the annotation with the given name in the element, or fails if no
+   such annotation could be found."
+  input Element element;
+  input String name;
+  output Absyn.Exp exp;
+protected
+  Annotation ann;
+algorithm
+  ann := match element
+    case EXTENDS(ann = SOME(ann)) then ann;
+    case CLASS(cmt = COMMENT(annotation_ = SOME(ann))) then ann;
+    case COMPONENT(comment = COMMENT(annotation_ = SOME(ann))) then ann;
+  end match;
+
+  exp := getNamedAnnotation(ann, name);
+end getElementNamedAnnotation;
+
 public function getNamedAnnotation
   "Checks if the given annotation contains an entry with the given name with the
    value true."
@@ -4353,74 +4368,43 @@ public function replaceElementsInClassDef
  if derived a SOME(element) is returned,
  otherwise the modified class def and NONE()"
   input Program inProgram;
-  input ClassDef inClassDef;
+  input output ClassDef classDef;
   input Program inElements;
-  output ClassDef outClassDef;
-  output Option<Element> outElementOpt;
+        output Option<Element> outElementOpt;
 algorithm
-  (outClassDef, outElementOpt) := matchcontinue(inProgram, inClassDef, inElements)
+  outElementOpt := match classDef
     local
-      Program els;
       Element e;
       Absyn.Path p;
-      Absyn.Ident i;
-      list<Element> elementLst "the list of elements";
-      list<Equation> normalEquationLst "the list of equations";
-      list<Equation> initialEquationLst "the list of initial equations";
-      list<AlgorithmSection> normalAlgorithmLst "the list of algorithms";
-      list<AlgorithmSection> initialAlgorithmLst "the list of initial algorithms";
-      list<ConstraintSection> constraintLst "the list of constraints";
-      list<Absyn.NamedArg> clsattrs "the list of class attributes. Currently for Optimica extensions";
-      Option<ExternalDecl> externalDecl "used by external functions";
-      list<Annotation> annotationLst "the list of annotations found in between class elements, equations and algorithms";
-      Ident baseClassName "the name of the base class we have to extend";
-      Mod modifications "the modifications that need to be applied to the base class";
       ClassDef composition;
 
     // a derived class
-    case (_, DERIVED(typeSpec = Absyn.TPATH(path = p)), _)
-      equation
-        e = getElementWithPath(inProgram, p);
-        e = replaceElementsInElement(inProgram, e, inElements);
+    case DERIVED(typeSpec = Absyn.TPATH(path = p))
+      algorithm
+        e := getElementWithPath(inProgram, p);
+        e := replaceElementsInElement(inProgram, e, inElements);
       then
-        (inClassDef, SOME(e));
+        SOME(e);
 
     // a parts
-    case (_,
-          PARTS(
-            _,
-            normalEquationLst,
-            initialEquationLst,
-            normalAlgorithmLst,
-            initialAlgorithmLst,
-            constraintLst,
-            clsattrs,
-            externalDecl),
-          _)
+    case PARTS()
+      algorithm
+        classDef.elementLst := inElements;
       then
-        (PARTS(inElements,
-               normalEquationLst,
-               initialEquationLst,
-               normalAlgorithmLst,
-               initialAlgorithmLst,
-               constraintLst,
-               clsattrs,
-               externalDecl), NONE());
-
-    // a class extends, non derived
-    case (_, CLASS_EXTENDS(baseClassName, modifications, composition), _)
-      equation
-        (composition, NONE()) = replaceElementsInClassDef(inProgram, composition, inElements);
-      then
-        (CLASS_EXTENDS(baseClassName, modifications, composition), NONE());
+        NONE();
 
     // a class extends
-    case (_, CLASS_EXTENDS(_, _, composition), _)
-      equation
-        (composition, SOME(e)) = replaceElementsInClassDef(inProgram, composition, inElements);
+    case CLASS_EXTENDS(composition = composition)
+      algorithm
+        (composition, outElementOpt) := replaceElementsInClassDef(inProgram, composition, inElements);
+
+        if isNone(outElementOpt) then
+          classDef.composition := composition;
+        end if;
       then
-        (inClassDef, SOME(e));
-  end matchcontinue;
+        outElementOpt;
+
+  end match;
 end replaceElementsInClassDef;
 
 protected function getElementWithId
@@ -4613,6 +4597,16 @@ algorithm
     else false;
   end match;
 end isDerivedClass;
+
+public function isClassExtends
+  input Element cls;
+  output Boolean isCE;
+algorithm
+  isCE := match cls
+    case CLASS(classDef = CLASS_EXTENDS()) then true;
+    else false;
+  end match;
+end isClassExtends;
 
 public function setDerivedTypeSpec
 "@auhtor: adrpo
@@ -4925,7 +4919,7 @@ algorithm
       Attributes attr;
 
     case (DERIVED(ty, _, attr), _) then DERIVED(ty, inMod, attr);
-    case (CLASS_EXTENDS(bc, _, cdef), _) then CLASS_EXTENDS(bc, inMod, cdef);
+    case (CLASS_EXTENDS(_, cdef), _) then CLASS_EXTENDS(inMod, cdef);
 
   end match;
 end setClassDefMod;
@@ -5758,6 +5752,16 @@ algorithm
     else false;
   end match;
 end isArrayComponent;
+
+public function isEmptyMod
+  input Mod mod;
+  output Boolean isEmpty;
+algorithm
+  isEmpty := match mod
+    case Mod.NOMOD() then true;
+    else false;
+  end match;
+end isEmptyMod;
 
 annotation(__OpenModelica_Interface="frontend");
 end SCode;

@@ -34,6 +34,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "util/simulation_options.h"
 #include "util/omc_error.h"
 #include "nonlinearSystem.h"
 #include "nonlinearValuesList.h"
@@ -44,6 +45,7 @@
 #include "newtonIteration.h"
 #endif
 #include "nonlinearSolverHomotopy.h"
+#include "simulation/options.h"
 #include "simulation/simulation_info_json.h"
 #include "simulation/simulation_runtime.h"
 #include "simulation/solver/model_help.h"
@@ -52,6 +54,8 @@
 #include "meta/meta_modelica.h"
 
 int check_nonlinear_solution(DATA *data, int printFailingSystems, int sysNumber);
+
+extern int init_lambda_steps;
 
 struct dataNewtonAndHybrid
 {
@@ -344,6 +348,18 @@ int initializeNonlinearSystems(DATA *data, threadData_t *threadData)
   struct dataNewtonAndHybrid *mixedSolverData;
 
   infoStreamPrint(LOG_NLS, 1, "initialize non-linear system solvers");
+  infoStreamPrint(LOG_NLS, 0, "%ld non-linear systems", data->modelData->nNonLinearSystems);
+  if (data->simulationInfo->nlsLinearSolver == NLS_LS_DEFAULT) {
+#if !defined(OMC_MINIMAL_RUNTIME)
+    if (data->simulationInfo->nlsMethod == NLS_KINSOL) {
+      data->simulationInfo->nlsLinearSolver = NLS_LS_KLU;
+    } else {
+      data->simulationInfo->nlsLinearSolver = NLS_LS_LAPACK;
+    }
+#else
+    data->simulationInfo->nlsLinearSolver = NLS_LS_LAPACK;
+#endif
+  }
 
   for(i=0; i<data->modelData->nNonLinearSystems; ++i)
   {
@@ -410,35 +426,41 @@ int initializeNonlinearSystems(DATA *data, threadData_t *threadData)
 #endif
 
     /* allocate solver data */
-    switch(data->simulationInfo->nlsMethod)
-    {
+    if(data->callback->useHomotopy == 2 && nonlinsys[i].homotopySupport)
+      allocateHomotopyData(size-1, &nonlinsys[i].solverData);
+    else{
+      switch(data->simulationInfo->nlsMethod)
+      {
 #if !defined(OMC_MINIMAL_RUNTIME)
-    case NLS_HYBRID:
-      allocateHybrdData(size, &nonlinsys[i].solverData);
-      break;
-    case NLS_KINSOL:
-      nlsKinsolAllocate(size, &nonlinsys[i], data->simulationInfo->nlsLinearSolver);
-      break;
-    case NLS_NEWTON:
-      allocateNewtonData(size, &nonlinsys[i].solverData);
-      break;
+      case NLS_HYBRID:
+        allocateHybrdData(size, &nonlinsys[i].solverData);
+        break;
+      case NLS_KINSOL:
+        nlsKinsolAllocate(size, &nonlinsys[i], data->simulationInfo->nlsLinearSolver);
+        break;
+      case NLS_NEWTON:
+        allocateNewtonData(size, &nonlinsys[i].solverData);
+        break;
 #endif
-    case NLS_HOMOTOPY:
-      allocateHomotopyData(size, &nonlinsys[i].solverData);
-      break;
+      case NLS_HOMOTOPY:
+        allocateHomotopyData(size, &nonlinsys[i].solverData);
+        break;
 #if !defined(OMC_MINIMAL_RUNTIME)
-    case NLS_MIXED:
-      mixedSolverData = (struct dataNewtonAndHybrid*) malloc(sizeof(struct dataNewtonAndHybrid));
-      allocateHomotopyData(size, &(mixedSolverData->newtonData));
+      case NLS_MIXED:
+        if (data->callback->useHomotopy == 3 && nonlinsys[i].homotopySupport)
+          size--;
+        mixedSolverData = (struct dataNewtonAndHybrid*) malloc(sizeof(struct dataNewtonAndHybrid));
+        allocateHomotopyData(size, &(mixedSolverData->newtonData));
 
-      allocateHybrdData(size, &(mixedSolverData->hybridData));
+        allocateHybrdData(size, &(mixedSolverData->hybridData));
 
-      nonlinsys[i].solverData = (void*) mixedSolverData;
+        nonlinsys[i].solverData = (void*) mixedSolverData;
 
-      break;
+        break;
 #endif
-    default:
-      throwStreamPrint(threadData, "unrecognized nonlinear solver");
+      default:
+        throwStreamPrint(threadData, "unrecognized nonlinear solver");
+      }
     }
   }
 
@@ -510,33 +532,37 @@ int freeNonlinearSystems(DATA *data, threadData_t *threadData)
     }
 #endif
     /* free solver data */
-    switch(data->simulationInfo->nlsMethod)
-    {
-#if !defined(OMC_MINIMAL_RUNTIME)
-    case NLS_HYBRID:
-      freeHybrdData(&nonlinsys[i].solverData);
-      free(nonlinsys[i].solverData);
-      break;
-    case NLS_KINSOL:
-      nlsKinsolFree(&nonlinsys[i].solverData);
-      break;
-    case NLS_NEWTON:
-      freeNewtonData(&nonlinsys[i].solverData);
-      free(nonlinsys[i].solverData);
-      break;
-#endif
-    case NLS_HOMOTOPY:
+    if(data->callback->useHomotopy == 2 && nonlinsys[i].homotopySupport)
       freeHomotopyData(&nonlinsys[i].solverData);
-      break;
+    else{
+      switch(data->simulationInfo->nlsMethod)
+      {
 #if !defined(OMC_MINIMAL_RUNTIME)
-    case NLS_MIXED:
-      freeHomotopyData(&((struct dataNewtonAndHybrid*) nonlinsys[i].solverData)->newtonData);
-      freeHybrdData(&((struct dataNewtonAndHybrid*) nonlinsys[i].solverData)->hybridData);
-      free(nonlinsys[i].solverData);
-      break;
+      case NLS_HYBRID:
+        freeHybrdData(&nonlinsys[i].solverData);
+        free(nonlinsys[i].solverData);
+        break;
+      case NLS_KINSOL:
+        nlsKinsolFree(&nonlinsys[i].solverData);
+        break;
+      case NLS_NEWTON:
+        freeNewtonData(&nonlinsys[i].solverData);
+        free(nonlinsys[i].solverData);
+        break;
 #endif
-    default:
-      throwStreamPrint(threadData, "unrecognized nonlinear solver");
+      case NLS_HOMOTOPY:
+        freeHomotopyData(&nonlinsys[i].solverData);
+        break;
+#if !defined(OMC_MINIMAL_RUNTIME)
+      case NLS_MIXED:
+        freeHomotopyData(&((struct dataNewtonAndHybrid*) nonlinsys[i].solverData)->newtonData);
+        freeHybrdData(&((struct dataNewtonAndHybrid*) nonlinsys[i].solverData)->hybridData);
+        free(nonlinsys[i].solverData);
+        break;
+#endif
+      default:
+        throwStreamPrint(threadData, "unrecognized nonlinear solver");
+      }
     }
   }
 
@@ -560,6 +586,8 @@ void printNonLinearSystemSolvingStatistics(DATA *data, int sysNumber, int logLev
   infoStreamPrint(logLevel, 0, " number of calls                : %ld", nonlinsys[sysNumber].numberOfCall);
   infoStreamPrint(logLevel, 0, " number of iterations           : %ld", nonlinsys[sysNumber].numberOfIterations);
   infoStreamPrint(logLevel, 0, " number of function evaluations : %ld", nonlinsys[sysNumber].numberOfFEval);
+  infoStreamPrint(logLevel, 0, " number of jacobian evaluations : %ld", nonlinsys[sysNumber].numberOfJEval);
+  infoStreamPrint(logLevel, 0, " time of jacobian evaluations   : %f", nonlinsys[sysNumber].jacobianTime);
   infoStreamPrint(logLevel, 0, " average time per call          : %f", nonlinsys[sysNumber].totalTime/nonlinsys[sysNumber].numberOfCall);
   infoStreamPrint(logLevel, 0, " total time                     : %f", nonlinsys[sysNumber].totalTime);
   messageClose(logLevel);
@@ -688,56 +716,12 @@ int updateInnerEquation(void **dataIn, int sysNumber, int discrete)
 }
 
 
-/*! \fn solve non-linear systems
- *
- *  \param [in]  [data]
- *  \param [in]  [sysNumber] index of corresponding non-linear system
- *
- *  \author wbraun
- */
-int solve_nonlinear_system(DATA *data, threadData_t *threadData, int sysNumber)
+int solveNLS(DATA *data, threadData_t *threadData, int sysNumber)
 {
-  void *dataAndThreadData[2] = {data, threadData};
-  int success = 0, saveJumpState, constraintsSatisfied = 1;
+  int success = 0, constraintsSatisfied = 1;
   NONLINEAR_SYSTEM_DATA* nonlinsys = &(data->simulationInfo->nonlinearSystemData[sysNumber]);
   int casualTearingSet = nonlinsys->strictTearingFunctionCall != NULL;
   struct dataNewtonAndHybrid *mixedSolverData;
-
-  data->simulationInfo->currentNonlinearSystemIndex = sysNumber;
-
-  /* enable to avoid division by zero */
-  data->simulationInfo->noThrowDivZero = 1;
-  ((DATA*)data)->simulationInfo->solveContinuous = 1;
-
-  /* performance measurement */
-  rt_ext_tp_tick(&nonlinsys->totalTimeClock);
-
-  /* grab the initial guess */
-  infoStreamPrint(LOG_NLS_EXTRAPOLATE, 1, "############ Start new iteration for system %ld at time %g ############", nonlinsys->equationIndex, data->localData[0]->timeValue);
-  /* if last solving is too long ago use just old values  */
-  if (fabs(data->localData[0]->timeValue - nonlinsys->lastTimeSolved) < 5*data->simulationInfo->stepSize || casualTearingSet)
-  {
-    getInitialGuess(nonlinsys, data->localData[0]->timeValue);
-  }
-  else
-  {
-    nonlinsys->getIterationVars(data, nonlinsys->nlsx);
-    memcpy(nonlinsys->nlsx, nonlinsys->nlsxOld, nonlinsys->size*(sizeof(double)));
-  }
-  /* update non continuous */
-  if (data->simulationInfo->discreteCall)
-  {
-    constraintsSatisfied = updateInnerEquation(dataAndThreadData, sysNumber, 1);
-  }
-
-  /* try */
-#ifndef OMC_EMCC
-  MMC_TRY_INTERNAL(simulationJumpBuffer)
-#endif
-
-  /* handle asserts */
-  saveJumpState = threadData->currentErrorStage;
-  threadData->currentErrorStage = ERROR_NONLINEARSOLVER;
 
   /* use the selected solver for solving nonlinear system */
   switch(data->simulationInfo->nlsMethod)
@@ -794,8 +778,168 @@ int solve_nonlinear_system(DATA *data, threadData_t *threadData, int sysNumber)
   default:
     throwStreamPrint(threadData, "unrecognized nonlinear solver");
   }
-  /* set result */
-  nonlinsys->solved = success;
+
+  return success;
+}
+
+/*! \fn solve non-linear systems
+ *
+ *  \param [in]  [data]
+ *  \param [in]  [threadData]
+ *  \param [in]  [sysNumber] index of corresponding non-linear system
+ */
+int solve_nonlinear_system(DATA *data, threadData_t *threadData, int sysNumber)
+{
+  void *dataAndThreadData[2] = {data, threadData};
+  int success = 0, saveJumpState, constraintsSatisfied = 1;
+  NONLINEAR_SYSTEM_DATA* nonlinsys = &(data->simulationInfo->nonlinearSystemData[sysNumber]);
+  int casualTearingSet = nonlinsys->strictTearingFunctionCall != NULL;
+  int step;
+  int equidistantHomotopy = 0;
+  int solveWithHomotopySolver = 0;
+  int j;
+  struct dataNewtonAndHybrid *mixedSolverData;
+  char buffer[4096];
+  FILE *pFile = NULL;
+
+  data->simulationInfo->currentNonlinearSystemIndex = sysNumber;
+
+  /* enable to avoid division by zero */
+  data->simulationInfo->noThrowDivZero = 1;
+  ((DATA*)data)->simulationInfo->solveContinuous = 1;
+
+  /* performance measurement */
+  rt_ext_tp_tick(&nonlinsys->totalTimeClock);
+
+  /* grab the initial guess */
+  infoStreamPrint(LOG_NLS_EXTRAPOLATE, 1, "############ Start new iteration for nonlinear system %ld at time %g ############", nonlinsys->equationIndex, data->localData[0]->timeValue);
+  /* if last solving is too long ago use just old values  */
+  if (fabs(data->localData[0]->timeValue - nonlinsys->lastTimeSolved) < 5*data->simulationInfo->stepSize || casualTearingSet)
+  {
+    getInitialGuess(nonlinsys, data->localData[0]->timeValue);
+  }
+  else
+  {
+    nonlinsys->getIterationVars(data, nonlinsys->nlsx);
+    memcpy(nonlinsys->nlsx, nonlinsys->nlsxOld, nonlinsys->size*(sizeof(double)));
+  }
+  /* update non continuous */
+  if (data->simulationInfo->discreteCall)
+  {
+    constraintsSatisfied = updateInnerEquation(dataAndThreadData, sysNumber, 1);
+  }
+
+  /* try */
+#ifndef OMC_EMCC
+  MMC_TRY_INTERNAL(simulationJumpBuffer)
+#endif
+
+  /* handle asserts */
+  saveJumpState = threadData->currentErrorStage;
+  threadData->currentErrorStage = ERROR_NONLINEARSOLVER;
+
+  equidistantHomotopy = data->simulationInfo->initial
+                        && nonlinsys->homotopySupport
+                        && (data->callback->useHomotopy == 0 && init_lambda_steps > 1);
+
+  solveWithHomotopySolver = data->simulationInfo->initial
+                            && nonlinsys->homotopySupport
+                            && (data->callback->useHomotopy == 2 || data->callback->useHomotopy == 3);
+
+  nonlinsys->solved = 0;
+  /* If the adaptive local/global homotopy approach is activated and the component contains the homotopy operator
+     use the HOMOTOPY SOLVER, otherwise use the selected solver */
+  if (solveWithHomotopySolver) {
+    data->simulationInfo->lambda = 0.0;
+    if (data->callback->useHomotopy == 3) {
+      // First solve the lambda0-system separately
+      infoStreamPrint(LOG_INIT, 0, "Local homotopy with adaptive step size started for nonlinear system %d.", sysNumber);
+      infoStreamPrint(LOG_INIT, 1, "homotopy process\n---------------------------");
+      infoStreamPrint(LOG_INIT, 0, "solve lambda0-system");
+      nonlinsys->homotopySupport = 0;
+      nonlinsys->solved = solveNLS(data, threadData, sysNumber);
+      nonlinsys->homotopySupport = 1;
+      infoStreamPrint(LOG_INIT, 0, "solving lambda0-system done\n---------------------------");
+      infoStreamPrint(LOG_INIT, 0, "run along the homotopy path and solve the actual system");
+      messageClose(LOG_INIT);
+    }
+    /* SOLVE! */
+    if (data->callback->useHomotopy == 2 || nonlinsys->solved) {
+      if (data->callback->useHomotopy == 3) {
+        mixedSolverData = nonlinsys->solverData;
+        nonlinsys->solverData = mixedSolverData->newtonData;
+      }
+      nonlinsys->solved = solveHomotopy(data, threadData, sysNumber);
+      if (data->callback->useHomotopy == 3) {
+        nonlinsys->solverData = mixedSolverData;
+      }
+    }
+  }
+  else {
+    if (!(equidistantHomotopy && omc_flag[FLAG_HOMOTOPY_ON_FIRST_TRY])) {
+      if (equidistantHomotopy)
+        infoStreamPrint(LOG_INIT, 0, "Try to solve nonlinear initial system %d without homotopy first.", sysNumber);
+
+      data->simulationInfo->lambda = 1.0;
+      /* SOLVE! */
+      nonlinsys->solved = solveNLS(data, threadData, sysNumber);
+    }
+  }
+
+  /* If equidistant local homotopy is activated and trying without homotopy failed or is not wanted,
+     use EQUIDISTANT LOCAL HOMOTOPY */
+  if (!nonlinsys->solved && equidistantHomotopy) {
+    if (!omc_flag[FLAG_HOMOTOPY_ON_FIRST_TRY])
+      warningStreamPrint(LOG_ASSERT, 0, "Failed to solve initial system %d without homotopy method. The local homotopy method with equidistant step size is used now.", sysNumber);
+    else
+      infoStreamPrint(LOG_INIT, 0, "Local homotopy with equidistant step size started for nonlinear system %d.", sysNumber);
+#if !defined(OMC_NO_FILESYSTEM)
+    const char sep[] = ",";
+    if(ACTIVE_STREAM(LOG_INIT))
+    {
+      sprintf(buffer, "%s_nonlinsys%d_equidistant_local_homotopy.csv", data->modelData->modelFilePrefix, sysNumber);
+      infoStreamPrint(LOG_INIT, 0, "The homotopy path of system %d will be exported to %s.", sysNumber, buffer);
+      pFile = fopen(buffer, "wt");
+      fprintf(pFile, "\"sep=%s\"\n%s", sep, "\"lambda\"");
+      for(j=0; j<nonlinsys->size; ++j)
+        fprintf(pFile, "%s\"%s\"", sep, modelInfoGetEquation(&data->modelData->modelDataXml, nonlinsys->equationIndex).vars[j]);
+      fprintf(pFile, "\n");
+    }
+#endif
+
+    for(step=0; step<init_lambda_steps; ++step)
+    {
+      data->simulationInfo->lambda = ((double)step)/(init_lambda_steps-1);
+
+      if (data->simulationInfo->lambda > 1.0) {
+        data->simulationInfo->lambda = 1.0;
+      }
+
+      infoStreamPrint(LOG_INIT, 0, "[system %d] homotopy parameter lambda = %g", sysNumber, data->simulationInfo->lambda);
+      /* SOLVE! */
+      nonlinsys->solved = solveNLS(data, threadData, sysNumber);
+      if (!nonlinsys->solved) break;
+
+#if !defined(OMC_NO_FILESYSTEM)
+      if(ACTIVE_STREAM(LOG_INIT))
+      {
+        infoStreamPrint(LOG_INIT, 0, "[system %d] homotopy parameter lambda = %g done\n---------------------------", sysNumber, data->simulationInfo->lambda);
+        fprintf(pFile, "%.16g", data->simulationInfo->lambda);
+        for(j=0; j<nonlinsys->size; ++j)
+          fprintf(pFile, "%s%.16g", sep, nonlinsys->nlsx[j]);
+        fprintf(pFile, "\n");
+      }
+#endif
+    }
+
+#if !defined(OMC_NO_FILESYSTEM)
+    if(ACTIVE_STREAM(LOG_INIT))
+    {
+      fclose(pFile);
+    }
+#endif
+    data->simulationInfo->homotopySteps += init_lambda_steps;
+  }
 
   /* handle asserts */
   threadData->currentErrorStage = saveJumpState;
@@ -884,10 +1028,10 @@ int check_nonlinear_solution(DATA *data, int printFailingSystems, int sysNumber)
   {
     int index = nonlinsys[i].equationIndex, indexes[2] = {1,index};
     if (!printFailingSystems) return 1;
-    warningStreamPrintWithEquationIndexes(LOG_NLS, 1, indexes, "nonlinear system %d fails: at t=%g", index, data->localData[0]->timeValue);
+    warningStreamPrintWithEquationIndexes(LOG_NLS, 0, indexes, "nonlinear system %d fails: at t=%g", index, data->localData[0]->timeValue);
     if(data->simulationInfo->initial)
     {
-      warningStreamPrint(LOG_NLS_V, 0, "proper start-values for some of the following iteration variables might help");
+      warningStreamPrint(LOG_INIT, 1, "proper start-values for some of the following iteration variables might help");
     }
     for(j=0; j<modelInfoGetEquation(&data->modelData->modelDataXml, (nonlinsys[i]).equationIndex).numVar; ++j) {
       int done=0;
@@ -898,7 +1042,7 @@ int check_nonlinear_solution(DATA *data, int printFailingSystems, int sysNumber)
         if (!strcmp(mData->realVarsData[k].info.name, modelInfoGetEquation(&data->modelData->modelDataXml, (nonlinsys[i]).equationIndex).vars[j]))
         {
         done = 1;
-        warningStreamPrint(LOG_NLS_V, 0, "[%ld] Real %s(start=%g, nominal=%g)", j+1,
+        warningStreamPrint(LOG_INIT, 0, "[%ld] Real %s(start=%g, nominal=%g)", j+1,
                                      mData->realVarsData[k].info.name,
                                      mData->realVarsData[k].attribute.start,
                                      mData->realVarsData[k].attribute.nominal);
@@ -906,10 +1050,10 @@ int check_nonlinear_solution(DATA *data, int printFailingSystems, int sysNumber)
       }
       if (!done)
       {
-        warningStreamPrint(LOG_NLS_V, 0, "[%ld] Real %s(start=?, nominal=?)", j+1, modelInfoGetEquation(&data->modelData->modelDataXml, (nonlinsys[i]).equationIndex).vars[j]);
+        warningStreamPrint(LOG_INIT, 0, "[%ld] Real %s(start=?, nominal=?)", j+1, modelInfoGetEquation(&data->modelData->modelDataXml, (nonlinsys[i]).equationIndex).vars[j]);
       }
     }
-    messageCloseWarning(LOG_NLS);
+    messageCloseWarning(LOG_INIT);
     return 1;
   }
   if(nonlinsys[i].solved == 2)

@@ -36,6 +36,8 @@ protected
 
 public
   import Type = NFType;
+  import Absyn;
+  import DAE;
 
   record ADD
     Type ty;
@@ -178,6 +180,39 @@ public
     end match;
   end compare;
 
+  function fromAbsyn
+    input Absyn.Operator inOperator;
+    output Operator outOperator;
+  algorithm
+    outOperator := match(inOperator)
+      case Absyn.ADD() then Operator.ADD(Type.UNKNOWN());
+      case Absyn.SUB() then Operator.SUB(Type.UNKNOWN());
+      case Absyn.MUL() then Operator.MUL(Type.UNKNOWN());
+      case Absyn.DIV() then Operator.DIV(Type.UNKNOWN());
+      case Absyn.POW() then Operator.POW(Type.UNKNOWN());
+      case Absyn.UPLUS() then Operator.ADD(Type.UNKNOWN());
+      case Absyn.UMINUS() then Operator.UMINUS(Type.UNKNOWN());
+      case Absyn.ADD_EW() then Operator.ADD_ARR(Type.UNKNOWN());
+      case Absyn.SUB_EW() then Operator.SUB_ARR(Type.UNKNOWN());
+      case Absyn.MUL_EW() then Operator.MUL_ARR(Type.UNKNOWN());
+      case Absyn.DIV_EW() then Operator.DIV_ARR(Type.UNKNOWN());
+      case Absyn.POW_EW() then Operator.POW_ARR2(Type.UNKNOWN());
+      case Absyn.UPLUS_EW() then Operator.ADD(Type.UNKNOWN());
+      case Absyn.UMINUS_EW() then Operator.UMINUS(Type.UNKNOWN());
+      // logical have boolean type
+      case Absyn.AND() then Operator.AND(Type.BOOLEAN());
+      case Absyn.OR() then Operator.OR(Type.BOOLEAN());
+      case Absyn.NOT() then Operator.NOT(Type.BOOLEAN());
+      // relational have boolean type too
+      case Absyn.LESS() then Operator.LESS(Type.BOOLEAN());
+      case Absyn.LESSEQ() then Operator.LESSEQ(Type.BOOLEAN());
+      case Absyn.GREATER() then Operator.GREATER(Type.BOOLEAN());
+      case Absyn.GREATEREQ() then Operator.GREATEREQ(Type.BOOLEAN());
+      case Absyn.EQUAL() then Operator.EQUAL(Type.BOOLEAN());
+      case Absyn.NEQUAL() then Operator.NEQUAL(Type.BOOLEAN());
+    end match;
+  end fromAbsyn;
+
   function toDAE
     input Operator op;
     output DAE.Operator daeOp;
@@ -217,7 +252,7 @@ public
       case USERDEFINED() then DAE.USERDEFINED(op.fqName);
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown type.");
+          Error.assertion(false, getInstanceName() + " got unknown type.", sourceInfo());
         then
           fail();
     end match;
@@ -262,7 +297,7 @@ public
       case USERDEFINED() then Type.UNKNOWN();
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown type.");
+          Error.assertion(false, getInstanceName() + " got unknown type.", sourceInfo());
         then
           fail();
     end match;
@@ -308,7 +343,7 @@ public
       case USERDEFINED() then op;
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown type.");
+          Error.assertion(false, getInstanceName() + " got unknown type.", sourceInfo());
         then
           fail();
     end match;
@@ -368,7 +403,7 @@ public
       case USERDEFINED()        then "Userdefined:" + Absyn.pathString(op.fqName);
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown type.");
+          Error.assertion(false, getInstanceName() + " got unknown type.", sourceInfo());
         then
           fail();
     end match;
@@ -381,6 +416,52 @@ public
   algorithm
     symbol(op);
   end toString;
+
+  function priority
+    input Operator op;
+    input Boolean lhs;
+    output Integer priority;
+  algorithm
+    priority := match op
+      case ADD() then if lhs then 5 else 6;
+      case SUB() then 5;
+      case MUL() then 2;
+      case DIV() then 2;
+      case POW() then 1;
+      case ADD_ARR() then if lhs then 5 else 6;
+      case SUB_ARR() then 5;
+      case MUL_ARR() then if lhs then 2 else 3;
+      case DIV_ARR() then 2;
+      case MUL_ARRAY_SCALAR() then if lhs then 2 else 3;
+      case ADD_ARRAY_SCALAR() then if lhs then 5 else 6;
+      case SUB_SCALAR_ARRAY() then 5;
+      case MUL_SCALAR_PRODUCT() then if lhs then 2 else 3;
+      case MUL_MATRIX_PRODUCT() then if lhs then 2 else 3;
+      case DIV_ARRAY_SCALAR() then 2;
+      case DIV_SCALAR_ARRAY() then 2;
+      case POW_ARRAY_SCALAR() then 1;
+      case POW_SCALAR_ARRAY() then 1;
+      case POW_ARR() then 1;
+      case POW_ARR2() then 1;
+      case AND() then 8;
+      case OR() then 9;
+      else 0;
+    end match;
+  end priority;
+
+  function isAssociative
+    input Operator op;
+    output Boolean isAssociative;
+  algorithm
+    isAssociative := match op
+      case ADD() then true;
+      case ADD_ARR() then true;
+      case ADD_ARRAY_SCALAR() then true;
+      case MUL_ARR() then true;
+      case MUL_ARRAY_SCALAR() then true;
+      else false;
+    end match;
+  end isAssociative;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFOperator;

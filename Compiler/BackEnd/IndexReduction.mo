@@ -41,37 +41,39 @@ encapsulated package IndexReduction
 public import BackendDAE;
 public import DAE;
 
-protected import Array;
-protected import Absyn;
-protected import BackendDAEEXT;
-protected import BackendDump;
-protected import BackendEquation;
-protected import BackendInline;
-protected import BackendDAEUtil;
-protected import BackendVariable;
-protected import BackendVarTransform;
-protected import BaseHashTable;
-protected import ComponentReference;
-protected import Differentiate;
-protected import ElementSource;
-protected import Error;
-protected import ErrorExt;
-protected import Expression;
-protected import ExpressionDump;
-protected import ExpressionSimplify;
-protected import Flags;
-protected import HashTable2;
-protected import HashTable3;
-protected import HashTableCG;
-protected import HashTableCrIntToExp;
-protected import Inline;
-protected import InlineArrayEquations;
-protected import List;
-protected import Matching;
-protected import SCode;
-protected import Sorting;
-protected import System;
-protected import Util;
+protected
+import Absyn;
+import AdjacencyMatrix;
+import Array;
+import BackendDAEEXT;
+import BackendDAEUtil;
+import BackendDump;
+import BackendEquation;
+import BackendInline;
+import BackendVariable;
+import BackendVarTransform;
+import BaseHashTable;
+import ComponentReference;
+import Differentiate;
+import ElementSource;
+import Error;
+import ErrorExt;
+import Expression;
+import ExpressionDump;
+import ExpressionSimplify;
+import Flags;
+import HashTable2;
+import HashTable3;
+import HashTableCG;
+import HashTableCrIntToExp;
+import Inline;
+import InlineArrayEquations;
+import List;
+import Matching;
+import SCode;
+import Sorting;
+import System;
+import Util;
 
 
 // =============================================================================
@@ -487,7 +489,6 @@ algorithm
       list<Integer> unassignedEqns,eqnsLst,varlst,discEqns;
       list<BackendDAE.Var> vlst;
       Boolean b,ba;
-      list<Boolean> blst;
 /*    case((unassignedEqns,eqnsLst))
       equation
         vindx = ass2[eindx];
@@ -504,9 +505,8 @@ algorithm
         varlst = m[eindx];
         varlst = List.map(varlst,intAbs);
         vlst = List.map1r(varlst,BackendVariable.getVarAt,vars);
-        blst = List.map(vlst,BackendVariable.isVarDiscrete);
-        // if there is a continues variable than b is false
-        b = Util.boolAndList(blst);
+        // if there is a continues variable then b is false
+        b = List.mapBoolAnd(vlst,BackendVariable.isVarDiscrete);
         eqnsLst = List.consOnTrue(not b, eindx, eqnsLst);
         unassignedEqns = List.consOnTrue(ba and not b, eindx, unassignedEqns);
         discEqns = List.consOnTrue(b, eindx, discEqns);
@@ -616,9 +616,9 @@ algorithm
     // all equations are differentiated
     syst := inSystem;
     BackendDAE.EQSYSTEM(orderedVars=v, orderedEqs=eqns, m=SOME(m), mT=SOME(mt)) := syst;
-    numEqs := BackendDAEUtil.equationArraySize(eqns);
+    numEqs := BackendEquation.getNumberOfEquations(eqns);
     (v1,eqns_1,changedVars,outOrgEqnsLst) := replaceDifferentiatedEqns(inEqnsTpl,v,eqns,mt,imapIncRowEqn,{},inOrgEqnsLst);
-    numEqs1 := BackendDAEUtil.equationArraySize(eqns_1);
+    numEqs1 := BackendEquation.getNumberOfEquations(eqns_1);
     eqnslst := if intGt(numEqs1,numEqs) then List.intRange2(numEqs+1,numEqs1) else {};
     // set the assignments for the changed vars and for the assigned equations to -1
     assEqs := List.map1r(changedVars,arrayGet,inAss1);
@@ -732,7 +732,7 @@ protected
   BackendDAE.Equation eqn;
   Option<BackendDAE.Equation> diffEqn;
 algorithm
-  eqn := BackendEquation.equationNth1(eqns, eqIdx);
+  eqn := BackendEquation.get(eqns, eqIdx);
 
   if BackendEquation.isDifferentiated(eqn) then
     if Flags.isSet(Flags.BLT_DUMP) then
@@ -1111,7 +1111,7 @@ protected
 algorithm
   (eqns, changedEqns, repl) := inTpl;
   // get the equation
-  eqn := BackendEquation.equationNth1(eqns, e);
+  eqn := BackendEquation.get(eqns, e);
   // reaplace final vars
   (eqn, (_, b, repl)) := BackendEquation.traverseExpsOfEquation(eqn, replaceFinalVarsEqn, (vars, false, repl));
   // if replaced set eqn
@@ -1226,7 +1226,7 @@ algorithm
   if Flags.isSet(Flags.BLT_DUMP) then
     BackendDump.dumpStateOrder(so);
   end if;
-  outArg := (so,arrayCreate(BackendDAEUtil.equationArraySize(eqns),{}),mapEqnIncRow,mapIncRowEqn,BackendDAEUtil.equationArraySize(eqns));
+  outArg := (so,arrayCreate(BackendEquation.getNumberOfEquations(eqns),{}),mapEqnIncRow,mapIncRowEqn,BackendEquation.getNumberOfEquations(eqns));
 end getStructurallySingularSystemHandlerArg;
 
 // =============================================================================
@@ -1589,6 +1589,7 @@ protected
 
  DAE.Exp expcrA,mulAstates,mulAdstates,expset,expderset,expsetstart;
  list<DAE.Exp> expcrstates,expcrdstates,expcrset,expcrdset,expcrstatesstart;
+ list<DAE.ComponentRef> crstates;
  DAE.Operator op;
  BackendDAE.Equation eqn,deqn;
  list<BackendDAE.Equation> cEqnsLst,oEqnLst;
@@ -1607,8 +1608,9 @@ algorithm
     // add Equations
     // set.x = set.A*set.statecandidates
     // der(set.x) = set.A*der(set.candidates)
-    expcrstates := List.map(stateCandidates,BackendVariable.varExp);
-    expcrstatesstart := List.map(expcrstates,makeStartExp);
+    expcrstates := List.map(stateCandidates, BackendVariable.varExp);
+    crstates := List.map(stateCandidates, BackendVariable.varCref);
+    expcrstatesstart := List.map(crstates, makeStartExp);
     expcrdstates := List.map(expcrstates,makeder);
     expcrset := List.map(crset,Expression.crefExp);
     expcrdset := List.map(expcrset,makeder);
@@ -1636,8 +1638,8 @@ algorithm
     // add set states
     oVars := BackendVariable.addVars(setVars,oVars);
     // add equations
-    oEqns := BackendEquation.addEquation(eqn, oEqns);
-    oEqns := BackendEquation.addEquation(deqn, oEqns);
+    oEqns := BackendEquation.add(eqn, oEqns);
+    oEqns := BackendEquation.add(deqn, oEqns);
     // set varkind to dummy_state
     stateCandidates := List.map1(stateCandidates,BackendVariable.setVarKind,BackendDAE.DUMMY_STATE());
     otherVars := List.map1(otherVars,BackendVariable.setVarKind,BackendDAE.DUMMY_STATE());
@@ -1648,15 +1650,14 @@ algorithm
 end generateStateSets;
 
 protected function makeStartExp
-"generate the expression: $_start(inExp)"
-  input DAE.Exp inExp;
+"generate the expression: $START.inCref"
+  input DAE.ComponentRef inCref;
   output DAE.Exp outExp;
 algorithm
-  outExp := Expression.makePureBuiltinCall("$_start", {inExp}, Expression.typeof(inExp));
+  outExp := Expression.crefExp(ComponentReference.crefPrefixStart(inCref));
 end makeStartExp;
 
 protected function setStartExp
-"generate the expression: $_start(inExp)"
   input BackendDAE.Var inVar;
   input DAE.Exp startExp;
   input Integer size;
@@ -1819,7 +1820,7 @@ algorithm
         (eqnslst1,_) = BackendEquation.traverseExpsOfEquationList(eqnslst1, Expression.traverseSubexpressionsHelper, (replaceDummyDerivativesExp, ht));
         // remove stateSelect=StateSelect.always vars
         varlst = list(var for var guard notVarStateSelectAlways(var, level) in hov);
-        neqns = BackendEquation.equationLstSize(eqnslst);
+        neqns = BackendEquation.equationLstSizeKeepAlgorithmAsOne(eqnslst); //vwaurich: algorithms are handled as single equations, like a function call
         nfreeStates = listLength(varlst);
         // do state selection of that level
         (dummyVars,stateSets) = selectStatesWork1(nfreeStates,varlst,neqns,eqnslst,level,inSystem,inShared,so,iMapEqnIncRow,iMapIncRowEqn,hov,{},{});
@@ -2017,7 +2018,7 @@ algorithm
         syst = BackendDAEUtil.createEqSystem(hovvars, eqns1);
         (me,meT,_,_) =  BackendDAEUtil.getAdjacencyMatrixEnhancedScalar(syst,inShared,false);
         m1 = incidenceMatrixfromEnhanced2(me,hovvars);
-        mT1 = BackendDAEUtil.transposeMatrix(m1,nfreeStates);
+        mT1 = AdjacencyMatrix.transposeAdjacencyMatrix(m1,nfreeStates);
         //  BackendDump.printEqSystem(syst);
         hovvars = sortStateCandidatesVars(hovvars,BackendVariable.daeVars(inSystem),SOME(mT1));
         if Flags.isSet(Flags.BLT_DUMP) then
@@ -2027,8 +2028,8 @@ algorithm
         end if;
         // generate incidence matrix from system and equations of that level and the states of that level
         nv = BackendVariable.varsSize(vars);
-        ne = BackendDAEUtil.equationSize(eqns);
-        neqnarr = BackendDAEUtil.equationArraySize(eqns);
+        ne = BackendEquation.equationArraySize(eqns);
+        neqnarr = BackendEquation.getNumberOfEquations(eqns);
         ne1 = ne + neqns;
         indexmap = arrayCreate(nfreeStates  + nv,-1);
         invindexmap = arrayCreate(nfreeStates,-1);
@@ -2057,18 +2058,18 @@ algorithm
         comps = List.select1(comps, selectBlock, ne);
         //  BackendDump.dumpComponentsOLD(comps);
         //  eqns1 = BackendEquation.listEquation(BackendEquation.equationList(eqns));
-        //  eqns1 = BackendEquation.addEquations(eqnslst, eqns1);
+        //  eqns1 = BackendEquation.addList(eqnslst, eqns1);
         //  List.map3_0(comps, dumpBlock, mapIncRowEqn, nv, BackendDAE.EQSYSTEM(vars,eqns1,SOME(m1),NONE(),BackendDAE.MATCHING(invindexmap,vec2,{}),{}) );
         // traverse the blocks and collect the additional equations and vars
         ilst = List.fold1(comps,getCompsExtraEquations,ne,{});
         ilst = List.map1r(ilst,arrayGet,iMapIncRowEqn);
         ilst = List.uniqueIntN(ilst, ne);
-        eqnslst1 = BackendEquation.getEqns(ilst,eqns);
+        eqnslst1 = BackendEquation.getList(ilst,eqns);
         ilst = List.fold2(comps,getCompsExtraVars,nv,vec2,{});
         vlst = List.map1r(ilst,BackendVariable.getVarAt,vars);
         // generate system
         eqns = BackendEquation.listEquation(eqnslst);
-        eqns = BackendEquation.addEquations(eqnslst1, eqns);
+        eqns = BackendEquation.addList(eqnslst1, eqns);
         vars = BackendVariable.listVar1(vlst);
         vars = BackendVariable.addVars(BackendVariable.varList(hovvars), vars);
         syst = BackendDAEUtil.createEqSystem(vars, eqns);
@@ -2081,8 +2082,8 @@ algorithm
         // get indicenceMatrix from Enhanced
         m = incidenceMatrixfromEnhanced2(me,vars);
         nv = BackendVariable.varsSize(vars);
-        ne = BackendDAEUtil.equationSize(eqns);
-        mT = BackendDAEUtil.transposeMatrix(m,nv);
+        ne = BackendEquation.equationArraySize(eqns);
+        mT = AdjacencyMatrix.transposeAdjacencyMatrix(m,nv);
         // match the variables not the equations, to have prevered states unmatched
         Matching.matchingExternalsetIncidenceMatrix(ne,nv,mT);
         BackendDAEEXT.matching(ne,nv,3,-1,1.0,1);
@@ -2519,10 +2520,10 @@ algorithm
         assigend1 := List.map1r(unassigned,arrayGet,inMapIncRowEqn);
         n := arrayLength(inMapIncRowEqn);
         assigend1 := List.uniqueIntN(assigend1,n);
-        //  print("BackendEquation.getEqns " + stringDelimitList(List.map(assigend1,intString),", ") + "\n");
-        eqnlst := BackendEquation.getEqns(assigend1, eqns1);
-        //  print("BackendEquation.equationRemove " + stringDelimitList(List.map(assigend1,intString),", ") + "\n");
-        eqns1 := List.fold(assigend1,BackendEquation.equationRemove,eqns1);
+        //  print("BackendEquation.getList " + stringDelimitList(List.map(assigend1,intString),", ") + "\n");
+        eqnlst := BackendEquation.getList(assigend1, eqns1);
+        //  print("BackendEquation.delete " + stringDelimitList(List.map(assigend1,intString),", ") + "\n");
+        eqns1 := List.fold(assigend1,BackendEquation.delete,eqns1);
         nassigned := listLength(assigned);
         flag := arrayCreate(inEqnsSize,true);
         (eqnlst,varlst,ass1,ass2,eqns1) := getSetSystem(assigned,inMapEqnIncRow,inMapIncRowEqn,vec1,iVars,eqns1,flag,nassigned,eqnlst,varlst,ass1,ass2);
@@ -2541,7 +2542,7 @@ algorithm
         nassigned := nassigned+1;
         range := List.intRange2(nassigned,nunassigned);
         nv := BackendVariable.varsSize(vars);
-        ne := BackendDAEUtil.equationSize(eqns);
+        ne := BackendEquation.equationArraySize(eqns);
         (varlst,oStateSets) := selectDummyDerivatives2new(dstates1,states1,range,assigend1,vars,nv,eqns,ne,mapIncRowEqn1,level,oStateSets);
         dummyStates := List.map(varlst,BackendVariable.varCref);
         outDummyStates := listAppend(outDummyStates,dummyStates);
@@ -2596,9 +2597,9 @@ algorithm
       guard flag[e] and intGt(vec1[e],0)
       equation
         e1 = inMapIncRowEqn[e];
-        // print("BackendEquation.equationNth1 " + intString(e1) + "\n");
-        eqn = BackendEquation.equationNth1(iEqnsArr,e1);
-        eqnarr = BackendEquation.equationRemove(e1,iEqnsArr);
+        // print("BackendEquation.get " + intString(e1) + "\n");
+        eqn = BackendEquation.get(iEqnsArr,e1);
+        eqnarr = BackendEquation.delete(e1,iEqnsArr);
         eqns = inMapEqnIncRow[e1];
         _ = List.fold1r(eqns,arrayUpdate,false,flag);
         vindx = List.map1r(eqns,arrayGet,vec1);
@@ -3098,10 +3099,10 @@ algorithm
         // collect information for stateset
         statecandidates = List.map1r(List.map(states,Util.tuple22),BackendVariable.getVarAt,vars);
         unassignedEqns1 = List.uniqueIntN(List.map1r(unassignedEqns,arrayGet,mapIncRowEqn), eqnsSize);
-        eqnlst = BackendEquation.getEqns(unassignedEqns1, eqns);
+        eqnlst = BackendEquation.getList(unassignedEqns1, eqns);
         ovarlst = List.map1r(List.map(dstates,Util.tuple22),BackendVariable.getVarAt,vars);
         assignedEqns1 = List.uniqueIntN(List.map1r(assignedEqns,arrayGet,mapIncRowEqn), eqnsSize);
-        oeqnlst = BackendEquation.getEqns(assignedEqns1, eqns);
+        oeqnlst = BackendEquation.getList(assignedEqns1, eqns);
         // add dummy states
         varlst = List.map1r(List.map(states,Util.tuple22),BackendVariable.getVarAt,vars);
       then
@@ -3296,7 +3297,7 @@ algorithm
         dattr = BackendVariable.getVariableAttributefromType(tp);
         odattr = DAEUtil.setFixedAttr(SOME(dattr), SOME(DAE.BCONST(false)));
         //kind = if_(intGt(n,1),BackendDAE.DUMMY_DER(),BackendDAE.STATE(1,NONE()));
-        var = BackendDAE.VAR(cr,BackendDAE.STATE(1,NONE()),dir,prl,tp,NONE(),dim,source,odattr,ts,hideResult,comment,ct,io,false);
+        var = BackendDAE.VAR(cr,BackendDAE.STATE(1,NONE()),dir,prl,tp,NONE(),NONE(),dim,source,odattr,ts,hideResult,comment,ct,io,false);
       then (var,ht);
    // state
     case (BackendDAE.VAR(varKind=BackendDAE.STATE(index=diffcount,derName=derName)),_,_)
@@ -3442,7 +3443,7 @@ algorithm
         dattr = BackendVariable.getVariableAttributefromType(tp);
         odattr = DAEUtil.setFixedAttr(SOME(dattr), SOME(DAE.BCONST(false)));
         kind = if intGt(diffCount,0) then BackendDAE.STATE(diffCount,NONE()) else BackendDAE.DUMMY_DER();
-        var = BackendDAE.VAR(name,kind,dir,prl,tp,NONE(),dim,source,odattr,ts,hideResult,comment,ct,io,false);
+        var = BackendDAE.VAR(name,kind,dir,prl,tp,NONE(),NONE(),dim,source,odattr,ts,hideResult,comment,ct,io,false);
         (vlst,ht,n) = makeHigherStatesRepl1(diffCount-1,diffedCount+1,iOrigName,name,inVar,vars,var::iVarLst,ht,iN+1);
       then (vlst,ht,n);
     // finished
@@ -3496,6 +3497,7 @@ algorithm
       DAE.VarParallelism prl;
       DAE.Type tp;
       Option<DAE.Exp> bind;
+      Option<DAE.Exp> tplExp;
       DAE.InstDims dim;
       DAE.ElementSource source;
       Option<DAE.VariableAttributes> attr;
@@ -3526,22 +3528,22 @@ algorithm
         var = BackendVariable.setVarKind(var, BackendDAE.STATE(1,NONE()));
       then (var,(vars,so,varlst,ht));
     // state, replaceable with known derivative
-    case (var as BackendDAE.VAR(name,BackendDAE.STATE(derName=SOME(_)),dir,prl,tp,bind,dim,source,attr,ts,hideResult,comment,ct,io),(vars,so,varlst,ht))
+    case (var as BackendDAE.VAR(name,BackendDAE.STATE(derName=SOME(_)),dir,prl,tp,bind,tplExp,dim,source,attr,ts,hideResult,comment,ct,io),(vars,so,varlst,ht))
       equation
         // add replacement for each derivative
         (varlst,ht) = makeAllDummyVarandDummyDerivativeRepl1(1,1,name,name,var,vars,so,varlst,ht);
         cr = ComponentReference.crefPrefixDer(name);
         source = ElementSource.addSymbolicTransformation(source,DAE.NEW_DUMMY_DER(cr,{}));
-      then (BackendDAE.VAR(name,BackendDAE.DUMMY_STATE(),dir,prl,tp,bind,dim,source,attr,ts,hideResult,comment,ct,io,false),(vars,so,varlst,ht));
+      then (BackendDAE.VAR(name,BackendDAE.DUMMY_STATE(),dir,prl,tp,bind,tplExp,dim,source,attr,ts,hideResult,comment,ct,io,false),(vars,so,varlst,ht));
     // state replacable without unknown derivative
-    case (var as BackendDAE.VAR(name,BackendDAE.STATE(index=diffcount,derName=NONE()),dir,prl,tp,bind,dim,source,attr,ts,hideResult,comment,ct,io),(vars,so,varlst,ht))
+    case (var as BackendDAE.VAR(name,BackendDAE.STATE(index=diffcount,derName=NONE()),dir,prl,tp,bind,tplExp,dim,source,attr,ts,hideResult,comment,ct,io),(vars,so,varlst,ht))
       equation
         // add replacement for each derivative
         (varlst,ht) = makeAllDummyVarandDummyDerivativeRepl1(diffcount,1,name,name,var,vars,so,varlst,ht);
         // dummy_der name vor Source information
         cr = ComponentReference.crefPrefixDer(name);
         source = ElementSource.addSymbolicTransformation(source,DAE.NEW_DUMMY_DER(cr,{}));
-      then (BackendDAE.VAR(name,BackendDAE.DUMMY_STATE(),dir,prl,tp,bind,dim,source,attr,ts,hideResult,comment,ct,io,false),(vars,so,varlst,ht));
+      then (BackendDAE.VAR(name,BackendDAE.DUMMY_STATE(),dir,prl,tp,bind,tplExp,dim,source,attr,ts,hideResult,comment,ct,io,false),(vars,so,varlst,ht));
     else (inVar,inTpl);
   end matchcontinue;
 end makeAllDummyVarandDummyDerivativeRepl;
@@ -3607,7 +3609,7 @@ algorithm
         /* Dummy variables are algebraic variables without start value, min/max, .., hence fixed = false */
         dattr = BackendVariable.getVariableAttributefromType(tp);
         odattr = DAEUtil.setFixedAttr(SOME(dattr), SOME(DAE.BCONST(false)));
-        var = BackendDAE.VAR(name,BackendDAE.DUMMY_DER(),dir,prl,tp,NONE(),dim,source,odattr,ts,hideResult,comment,ct,io, false);
+        var = BackendDAE.VAR(name,BackendDAE.DUMMY_DER(),dir,prl,tp,NONE(),NONE(),dim,source,odattr,ts,hideResult,comment,ct,io, false);
         (vlst,ht) = makeAllDummyVarandDummyDerivativeRepl1(diffCount-1,diffedCount+1,iOrigName,name,inVar,vars,so,var::iVarLst,ht);
       then (vlst,ht);
     else
@@ -3689,9 +3691,9 @@ algorithm
         /* Dummy variables are algebraic variables, hence fixed = false */
         dattr = BackendVariable.getVariableAttributefromType(tp);
         odattr = DAEUtil.setFixedAttr(SOME(dattr), SOME(DAE.BCONST(false)));
-        dummy_derstate = BackendDAE.VAR(dummyderName,BackendDAE.DUMMY_DER(),dir,prl,tp,NONE(),dim,source,odattr,ts,hideResult,comment,ct,io, false);
+        dummy_derstate = BackendDAE.VAR(dummyderName,BackendDAE.DUMMY_DER(),dir,prl,tp,NONE(),NONE(),dim,source,odattr,ts,hideResult,comment,ct,io, false);
         kind = if intEq(dn,0) then BackendDAE.DUMMY_STATE() else BackendDAE.DUMMY_DER();
-        dummy_state = BackendDAE.VAR(name,kind,dir,prl,tp,NONE(),dim,source,odattr,ts,hideResult,comment,ct,io, false);
+        dummy_state = BackendDAE.VAR(name,kind,dir,prl,tp,NONE(),NONE(),dim,source,odattr,ts,hideResult,comment,ct,io, false);
         dummy_state = if intEq(dn,0) then inVar else dummy_state;
         dummy_state = BackendVariable.setVarKind(dummy_state, kind);
         vars = BackendVariable.addVar(dummy_derstate, vars);
@@ -3860,7 +3862,7 @@ algorithm
   m := incidenceMatrixfromEnhanced2(me, vars);
   // match the equations, umatched are constrained equations
   nv := BackendVariable.varsSize(vars);
-  ne := BackendDAEUtil.equationSize(eqns);
+  ne := BackendEquation.equationArraySize(eqns);
   vec1 := arrayCreate(nv,-1);
   vec2 := arrayCreate(ne,-1);
   Matching.matchingExternalsetIncidenceMatrix(nv,ne,m);
@@ -3870,10 +3872,10 @@ algorithm
   assigned := Matching.getAssigned(ne, vec2, {});
   unassigned := List.map1r(unassigned,arrayGet,mapIncRowEqn);
   unassigned := List.uniqueIntN(unassigned, ne);
-  outCEqnsLst := BackendEquation.getEqns(unassigned, eqns);
+  outCEqnsLst := BackendEquation.getList(unassigned, eqns);
   assigned := List.map1r(assigned,arrayGet,mapIncRowEqn);
   assigned := List.uniqueIntN(assigned, ne);
-  outOEqnsLst := BackendEquation.getEqns(assigned, eqns);
+  outOEqnsLst := BackendEquation.getList(assigned, eqns);
 end splitEqnsinConstraintAndOther;
 
 protected function changeDerVariablesToStatesFinder
@@ -3973,6 +3975,7 @@ algorithm
       DAE.VarParallelism prl;
       BackendDAE.Type tp;
       Option<DAE.Exp> bind;
+      Option<DAE.Exp> tplExp;
       list<DAE.Dimension> dim;
       DAE.ElementSource source;
       Option<DAE.VariableAttributes> attr;
@@ -3995,6 +3998,7 @@ algorithm
               varParallelism = prl,
               varType = tp,
               bindExp = bind,
+              tplExp = tplExp,
               arryDim = dim,
               source = source,
               values = attr,
@@ -4006,7 +4010,7 @@ algorithm
     equation
       b = intGt(counter,diffcounter);
       diffcounter = if b then counter else diffcounter;
-      var = BackendDAE.VAR(cr, BackendDAE.STATE(diffcounter,dcr), dir, prl, tp, bind, dim, source, attr, ts, hideResult, comment, ct,io, false);
+      var = BackendDAE.VAR(cr, BackendDAE.STATE(diffcounter,dcr), dir, prl, tp, bind, tplExp, dim, source, attr, ts, hideResult, comment, ct,io, false);
       vars = if b then BackendVariable.addVar(var, inVars) else inVars;
       changedVars = List.consOnTrue(b,i,iChangedVars);
       (vars,ilst) = increaseDifferentiation(vlst,ilst,counter,vars,changedVars);

@@ -34,7 +34,6 @@ AC_SUBST(RT_LDFLAGS_GENERATED_CODE_SIM)
 AC_SUBST(RT_LDFLAGS_GENERATED_CODE_SOURCE_FMU)
 AC_SUBST(RT_LDFLAGS_SHARED)
 AC_SUBST(OMCRUNTIME_SHARED_LDFLAGS)
-AC_SUBST(WITH_SUNDIALS)
 AC_SUBST(SUNDIALS_LDFLAGS)
 AC_SUBST(SUNDIALS_TARGET)
 AC_SUBST(IPOPT_LDFLAGS)
@@ -69,6 +68,7 @@ AC_SUBST(WITH_FMIL)
 AC_SUBST(NO_FMIL)
 AC_SUBST(FMILIB_SHARED)
 AC_SUBST(LIBCMINPACKLIB)
+AC_SUBST(LIBZMQLIB)
 AC_SUBST(CMINPACKLIB_SHARED)
 AC_SUBST(SHREXT)
 AC_SUBST(LINK)
@@ -164,8 +164,6 @@ AC_ARG_WITH(msys, [  --with-msys[=no]              Point to an msys installation
     CPPFLAGS="$CPPFLAGS -I$withval/$MINGWNUM/include -I$withval/$MINGWNUM/include/tre"
     LDFLAGS="$LDFLAGS -L$withval/$MINGWNUM/lib"
     echo "Got: $CPPFLAGS"
-  ],
-  [
   ]
 )
 
@@ -519,29 +517,9 @@ fi
 
 OMC_AC_LAPACK(RequireFound)
 
-AC_CHECK_HEADERS(idas/idas.h idas/idas.h idas/idas_dense.h kinsol/kinsol.h kinsol/kinsol_dense.h nvector/nvector_serial.h sundials/sundials_types.h sundials/sundials_math.h,[],[NO_SUNDIALS="yes"])
 SUNDIALS_LDFLAGS="-lsundials_idas -lsundials_kinsol -lsundials_nvecserial $LD_LAPACK"
-LIBS="$SUNDIALS_LDFLAGS -lm"
-AC_MSG_CHECKING([Sundials linking])
-AC_LINK_IFELSE([AC_LANG_CALL([], [KINInit])],
-  [AC_MSG_RESULT([ok])],
-  [LIBS="-lsundials_kinsol -lsundials_nvecserial -llapack -lblas -lm";
-  AC_LINK_IFELSE([AC_LANG_CALL([], [KINInit])],
-  [AC_MSG_RESULT([ok])],[AC_MSG_RESULT([failed to link KINInit]); NO_SUNDIALS="yes"])])
-
-if ! test "$NO_SUNDIALS" = "yes"; then
-  FINAL_MESSAGES="$FINAL_MESSAGES\nSimulations may use sundials suite: Yes"
-  WITH_SUNDIALS="#define WITH_SUNDIALS"
-  SUNDIALS_TARGET="sundials"
-else
-  FINAL_MESSAGES="$FINAL_MESSAGES\nSimulations may use sundials suite: No"
-  WITH_SUNDIALS="/* Without Sundials */"
-# We need -llapack regardless if we use Sundials or not
-  SUNDIALS_LDFLAGS="$LD_LAPACK"
-  SUNDIALS_TARGET=""
-fi
-
-LIBS=""
+FINAL_MESSAGES="$FINAL_MESSAGES\nSimulations may use sundials suite: Yes"
+SUNDIALS_TARGET="sundials"
 
 AC_CHECK_HEADERS(locale.h libintl.h,[
 AC_MSG_CHECKING([gettext linking])
@@ -578,7 +556,7 @@ AC_CHECK_HEADERS(hwloc.h,
 LIBS=""
 AC_CHECK_HEADERS(uuid/uuid.h,
   [AC_CHECK_LIB(uuid,uuid_unparse,
-    [WITH_UUID="#define WITH_LIBUUID 1";OMC_LIBS="$OMC_LIBS -luuid"],
+    [WITH_UUID="#define WITH_LIBUUID 1";OMC_LIBS="$OMC_LIBS -luuid";LIBUUID="-luuid"],
     [WITH_UUID="/* Without libuuid */"])],
   [WITH_UUID="/* Without libuuid */"]
 )
@@ -627,7 +605,7 @@ AC_CHECK_HEADER([CL/cl.h],[OPENCL="Yes"],[
 ])
 FINAL_MESSAGES="$FINAL_MESSAGES\nParModelica: $OPENCL"
 
-AC_SUBST(CMAKE_LDFLAGS)
+AC_SUBST(CMAKE_LDFLAGS_UNDEFINED_LOOKUP)
 AC_SUBST(CMAKE_EXTRA_DEFINES)
 AC_SUBST(DLLEXT)
 AC_SUBST(UMFPACK_SHARED)
@@ -643,6 +621,7 @@ if test "$DARWIN" = "1"; then
   LIBFMILIB=libfmilib_shared.dylib
   FMILIB_SHARED=ON
   LIBCMINPACKLIB=libcminpack.dylib
+  LIBZMQLIB=libzmq.dylib
   CMINPACKLIB_SHARED=ON
   RT_LDFLAGS_SIM="$LDFLAGS $RT_LDFLAGS -lexpat -lomcgc -lpthread -lm $LIBDL -lstdc++"
   RT_LDFLAGS_SIM_OPTIONAL="$SUNDIALS_LDFLAGS $IPOPT_LDFLAGS $UMFPACK_LDFLAGS -llis -lcdaskr -lcminpack -liconv"
@@ -653,7 +632,7 @@ if test "$DARWIN" = "1"; then
   RT_LDFLAGS_GENERATED_CODE_SIM="$LDFLAGS -lSimulationRuntimeC $LD_LAPACK -lm -lomcgc"
   RT_LDFLAGS_GENERATED_CODE_SOURCE_FMU="$LDFLAGS $LD_LAPACK -lm$LD_NOUNDEFINED"
   RT_LDFLAGS_SHARED=
-  OMCRUNTIME_SHARED_LDFLAGS="$RT_LDFLAGS -Wl,-undefined -Wl,dynamic_lookup $LIBLPSOLVE55"
+  OMCRUNTIME_SHARED_LDFLAGS="$RT_LDFLAGS -Wl,-undefined -Wl,dynamic_lookup $LIBLPSOLVE55 -lzmq $LIBUUID"
   LINK="cp -fr"
   RPATH="-Wl,-rpath,'@loader_path/../lib/$host_short/omc/'"
   RPATH_QMAKE="-Wl,-rpath,'@loader_path/../../../../lib/$host_short/omc',-rpath,'@loader_path/../../../../lib/',-rpath,'$PREFIX/lib/$host_short/omc',-rpath,'$PREFIX/lib/'"
@@ -663,7 +642,7 @@ if test "$DARWIN" = "1"; then
   AR_SH="sh -x ar.sh"
   OMC_LIBS="$OMC_LIBS -Wl,-undefined -Wl,dynamic_lookup"
   BOOTSTRAP_STATIC=""
-  CMAKE_LDFLAGS="-Wl,-undefined -Wl,dynamic_lookup"
+  CMAKE_LDFLAGS_UNDEFINED_LOOKUP="-Wl,-undefined -Wl,dynamic_lookup"
   UMFPACK_SHARED=ON
   CONFIG_OS=OSX
 elif echo "$host" | grep -iq "mingw"; then
@@ -678,6 +657,7 @@ elif echo "$host" | grep -iq "mingw"; then
   LIBFMILIB=libfmilib.a
   FMILIB_SHARED=OFF
   LIBCMINPACKLIB=libcminpack.a
+  LIBZMQLIB=libzmq.a
   CMINPACKLIB_SHARED=OFF
   RT_LDFLAGS_SIM="$LDFLAGS $RT_LDFLAGS -lstdc++ -lomcgc -lexpat -lm"
   RT_LDFLAGS_SIM_OPTIONAL="$SUNDIALS_LDFLAGS $IPOPT_LDFLAGS $UMFPACK_LDFLAGS -llis -lcminpack"
@@ -711,6 +691,7 @@ else
   LIBFMILIB=libfmilib_shared.so
   FMILIB_SHARED=ON
   LIBCMINPACKLIB=libcminpack.so
+  LIBZMQLIB=libzmq.so
   CMINPACKLIB_SHARED=ON
   # For static runtime on Linux:
   # -Wl,-whole-archive -lSimulationRuntimeC -Wl,-no-whole-archive
@@ -725,7 +706,7 @@ else
   LINK="cp -frl"
   LDFLAGS="$LDFLAGS -Wl,-rpath-link,$OMBUILDDIR/lib/$host_short/omc"
   RT_LDFLAGS_SHARED="-Wl,-rpath-link,$OMBUILDDIR/lib/$host_short/omc"
-  OMCRUNTIME_SHARED_LDFLAGS="$RT_LDFLAGS -Wl,-undefined -Wl,dynamic_lookup $LIBLPSOLVE55"
+  OMCRUNTIME_SHARED_LDFLAGS="$RT_LDFLAGS $LIBLPSOLVE55 -lzmq $LIBUUID"
   RPATH="-Wl,-z,origin -Wl,-rpath,'\$\$ORIGIN/../lib/$host_short/omc' -Wl,-rpath,'\$\$ORIGIN'"
   RPATH_QMAKE="-Wl,-z,origin -Wl,-rpath,\\'\\\$\$ORIGIN/../lib/$host_short/omc\\' -Wl,-rpath,\\'\\\$\$ORIGIN\\'"
   OS_TARGET="linux"

@@ -70,7 +70,7 @@
 #include "simulation_input_xml.h"
 #include "simulation/results/simulation_result_plt.h"
 #include "simulation/results/simulation_result_csv.h"
-#include "simulation/results/simulation_result_mat.h"
+#include "simulation/results/simulation_result_mat4.h"
 #include "simulation/results/simulation_result_wall.h"
 #include "simulation/results/simulation_result_ia.h"
 #include "simulation/solver/solver_main.h"
@@ -104,7 +104,7 @@ int sim_noemit = 0;           /* Flag for not emitting data */
 const std::string *init_method = NULL; /* method for  initialization. */
 
 static int callSolver(DATA* simData, threadData_t *threadData, string init_initMethod, string init_file,
-      double init_time, int lambda_steps, string outputVariablesAtEnd, int cpuTime, const char *argv_0);
+      double init_time, string outputVariablesAtEnd, int cpuTime, const char *argv_0);
 
 /*! \fn void setGlobalVerboseLevel(int argc, char**argv)
  *
@@ -126,6 +126,7 @@ void setGlobalVerboseLevel(int argc, char**argv)
     /* default activated */
     useStream[LOG_STDOUT] = 1;
     useStream[LOG_ASSERT] = 1;
+    useStream[LOG_SUCCESS] = 1;
     return; // no lv flag given.
   }
 
@@ -159,6 +160,11 @@ void setGlobalVerboseLevel(int argc, char**argv)
         if(flag == string(LOG_STREAM_NAME[i]))
         {
           useStream[i] = 1;
+          error = 0;
+        }
+        else if(flag == string("-") + string(LOG_STREAM_NAME[i]))
+        {
+          useStream[i] = 0;
           error = 0;
         }
       }
@@ -218,114 +224,26 @@ void setGlobalVerboseLevel(int argc, char**argv)
   delete flags;
 }
 
-static int getNonlinearSolverMethod()
+static void readFlag(int *flag, int max, const char *value, const char *flagName, const char **names, const char **desc)
 {
   int i;
-  const char *cflags = omc_flagValue[FLAG_NLS];
-  const string *method = cflags ? new string(cflags) : NULL;
+  if (!value) {
+    return; /* keep the default value */
+  }
 
-  if(!method)
-    return NLS_MIXED; /* default method */
+  for (i=1; i<max; ++i) {
+    if (0 == strcmp(value, names[i])) {
+      *flag = i;
+      return;
+    }
+  }
 
-  for(i=1; i<NLS_MAX; ++i)
-    if(*method == NLS_NAME[i])
-      return i;
-
-  warningStreamPrint(LOG_STDOUT, 1, "unrecognized option -nls=%s, current options are:", method->c_str());
-  for(i=1; i<NLS_MAX; ++i)
-    warningStreamPrint(LOG_STDOUT, 0, "%-18s [%s]", NLS_NAME[i], NLS_DESC[i]);
+  warningStreamPrint(LOG_STDOUT, 1, "unrecognized option %s=%s, current options are:", flagName, value);
+  for (i=1; i<max; ++i) {
+    warningStreamPrint(LOG_STDOUT, 0, "%-18s [%s]", names[i], desc[i]);
+  }
   messageClose(LOG_STDOUT);
   throwStreamPrint(NULL,"see last warning");
-
-  return NLS_NONE;
-}
-
-static int getlinearSolverMethod()
-{
-  int i;
-  const char *cflags = omc_flagValue[FLAG_LS];
-  const string *method = cflags ? new string(cflags) : NULL;
-
-  if(!method)
-    return LS_DEFAULT; /* default method */
-
-  for(i=1; i<LS_MAX; ++i)
-    if(*method == LS_NAME[i])
-      return i;
-
-  warningStreamPrint(LOG_STDOUT, 1, "unrecognized option -ls=%s, current options are:", method->c_str());
-  for(i=1; i<LS_MAX; ++i)
-    warningStreamPrint(LOG_STDOUT, 0, "%-18s [%s]", LS_NAME[i], LS_DESC[i]);
-  messageClose(LOG_STDOUT);
-  throwStreamPrint(NULL,"see last warning");
-
-  return LS_NONE;
-}
-
-static int getlinearSparseSolverMethod()
-{
-  int i;
-  const char *cflags = omc_flagValue[FLAG_LSS];
-  const string *method = cflags ? new string(cflags) : NULL;
-
-  if(!method)
-    return LSS_KLU; /* default method */
-
-  for(i=1; i<LSS_MAX; ++i)
-    if(*method == LSS_NAME[i])
-      return i;
-
-  warningStreamPrint(LOG_STDOUT, 1, "unrecognized option -lss=%s, current options are:", method->c_str());
-  for(i=1; i<LSS_MAX; ++i)
-    warningStreamPrint(LOG_STDOUT, 0, "%-18s [%s]", LSS_NAME[i], LSS_DESC[i]);
-  messageClose(LOG_STDOUT);
-  throwStreamPrint(NULL,"see last warning");
-
-  return LSS_NONE;
-}
-
-static int getNewtonStrategy()
-{
-  int i;
-  const char *cflags = omc_flagValue[FLAG_NEWTON_STRATEGY];
-  const string *method = cflags ? new string(cflags) : NULL;
-
-  if(!method)
-    return NEWTON_DAMPED2; /* default method */
-
-  for(i=1; i<NEWTON_MAX; ++i)
-    if(*method == NEWTONSTRATEGY_NAME[i])
-      return i;
-
-  warningStreamPrint(LOG_STDOUT, 1, "unrecognized option -nls=%s, current options are:", method->c_str());
-  for(i=1; i<NEWTON_MAX; ++i)
-    warningStreamPrint(LOG_STDOUT, 0, "%-18s [%s]", NEWTONSTRATEGY_NAME[i], NEWTONSTRATEGY_DESC[i]);
-  messageClose(LOG_STDOUT);
-  throwStreamPrint(NULL,"see last warning");
-
-  return NEWTON_NONE;
-}
-
-static int getNlsLSSolver()
-{
-  int i;
-  const char *cflags = omc_flagValue[FLAG_NLS_LS];
-  const string *method = cflags ? new string(cflags) : NULL;
-
-  if(!method)
-    return NLS_LS_LAPACK; /* default method */
-
-  for(i=1; i<NLS_LS_MAX; ++i)
-    if(*method == NLS_LS_METHOD[i])
-      return i;
-
-  warningStreamPrint(LOG_STDOUT, 1, "unrecognized option -nls=%s, current options are:", method->c_str());
-  for(i=1; i<NLS_LS_MAX; ++i)
-    warningStreamPrint(LOG_STDOUT, 0, "%-18s [%s]", NLS_LS_METHOD[i], NLS_LS_METHOD_DESC[i]);
-  messageClose(LOG_STDOUT);
-  throwStreamPrint(NULL,"see last warning");
-
-  return NLS_LS_UNKNOWN;
 }
 
 static double getFlagReal(enum _FLAG flag, double res)
@@ -539,11 +457,16 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
   // Create a result file
   const char *result_file = omc_flagValue[FLAG_R];
   string result_file_cstr;
-  if(!result_file) {
+  if (result_file) {
+    data->modelData->resultFileName = GC_strdup(result_file);
+  } else if (omc_flag[FLAG_OUTPUT_PATH]) { /* read the output path from the command line (if any) */
+    if (0 > GC_asprintf((char**)&result_file, "%s/%s_res.%s", omc_flagValue[FLAG_OUTPUT_PATH], data->modelData->modelFilePrefix, data->simulationInfo->outputFormat)) {
+      throwStreamPrint(NULL, "simulation_runtime.c: Error: can not allocate memory.");
+    }
+    data->modelData->resultFileName = GC_strdup(result_file);
+  } else {
     result_file_cstr = string(data->modelData->modelFilePrefix) + string("_res.") + data->simulationInfo->outputFormat;
     data->modelData->resultFileName = GC_strdup(result_file_cstr.c_str());
-  } else {
-    data->modelData->resultFileName = GC_strdup(result_file);
   }
 
   string init_initMethod = "";
@@ -551,7 +474,6 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
   string init_time_string = "";
   double init_time = 0.0;
   string init_lambda_steps_string = "";
-  int init_lambda_steps = 1;
   string outputVariablesAtEnd = "";
   int cpuTime = omc_flag[FLAG_CPU];
 
@@ -581,16 +503,16 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
     outputVariablesAtEnd = omc_flagValue[FLAG_OUTPUT];
   }
 
-  retVal = callSolver(data, threadData, init_initMethod, init_file, init_time, init_lambda_steps, outputVariablesAtEnd, cpuTime, argv[0]);
+  retVal = callSolver(data, threadData, init_initMethod, init_file, init_time, outputVariablesAtEnd, cpuTime, argv[0]);
 
   if (omc_flag[FLAG_ALARM]) {
     alarm(0);
   }
 
   if(0 == retVal && create_linearmodel) {
-    rt_tick(SIM_TIMER_LINEARIZE);
+    rt_tick(SIM_TIMER_JACOBIAN);
     retVal = linearize(data, threadData);
-    rt_accumulate(SIM_TIMER_LINEARIZE);
+    rt_accumulate(SIM_TIMER_JACOBIAN);
     infoStreamPrint(LOG_STDOUT, 0, "Linear model is created!");
   }
 
@@ -599,16 +521,19 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
    * So before doing the profiling reset the measure_time_flag to measure_time_flag_previous state.
    */
   measure_time_flag = measure_time_flag_previous;
-
-  if(0 == retVal && measure_time_flag) {
+  string output_path = "";
+  if (0 == retVal && measure_time_flag) {
+    if (omc_flag[FLAG_OUTPUT_PATH]) { /* read the output path from the command line (if any) */
+      output_path = string(omc_flagValue[FLAG_INPUT_PATH]) + string("/");
+    }
     const string jsonInfo = string(data->modelData->modelFilePrefix) + "_prof.json";
     const string modelInfo = string(data->modelData->modelFilePrefix) + "_prof.xml";
     const string plotFile = string(data->modelData->modelFilePrefix) + "_prof.plt";
     rt_accumulate(SIM_TIMER_TOTAL);
     const char* plotFormat = omc_flagValue[FLAG_MEASURETIMEPLOTFORMAT];
-    retVal = printModelInfo(data, threadData, modelInfo.c_str(), plotFile.c_str(), plotFormat ? plotFormat : "svg",
+    retVal = printModelInfo(data, threadData, output_path.c_str(), modelInfo.c_str(), plotFile.c_str(), plotFormat ? plotFormat : "svg",
         data->simulationInfo->solverMethod, data->simulationInfo->outputFormat, data->modelData->resultFileName) && retVal;
-    retVal = printModelInfoJSON(data, threadData, jsonInfo.c_str(), data->modelData->resultFileName) && retVal;
+    retVal = printModelInfoJSON(data, threadData, output_path.c_str(), jsonInfo.c_str(), data->modelData->resultFileName) && retVal;
   }
 
   TRACE_POP
@@ -638,10 +563,10 @@ int initializeResultData(DATA* simData, threadData_t *threadData, int cpuTime)
     /* sim_result.writeParameterData = omc_csv_writeParameterData; */
     sim_result.free = omc_csv_free;
   } else if(0 == strcmp("mat", simData->simulationInfo->outputFormat)) {
-    sim_result.init = mat4_init;
-    sim_result.emit = mat4_emit;
-    sim_result.writeParameterData = mat4_writeParameterData;
-    sim_result.free = mat4_free;
+    sim_result.init = mat4_init4;
+    sim_result.emit = mat4_emit4;
+    sim_result.writeParameterData = mat4_writeParameterData4;
+    sim_result.free = mat4_free4;
     resultFormatHasCheapAliasesAndParameters = 1;
 #if !defined(OMC_MINIMAL_RUNTIME)
   } else if(0 == strcmp("wall", simData->simulationInfo->outputFormat)) {
@@ -682,7 +607,7 @@ int initializeResultData(DATA* simData, threadData_t *threadData, int cpuTime)
  * "rungekutta" calls a fourth-order Runge-Kutta Solver
  */
 static int callSolver(DATA* simData, threadData_t *threadData, string init_initMethod, string init_file,
-      double init_time, int lambda_steps, string outputVariablesAtEnd, int cpuTime, const char *argv_0)
+      double init_time, string outputVariablesAtEnd, int cpuTime, const char *argv_0)
 {
   TRACE_PUSH
   int retVal = -1;
@@ -736,7 +661,7 @@ static int callSolver(DATA* simData, threadData_t *threadData, string init_initM
                         simData->simulationInfo->numSteps, simData->simulationInfo->tolerance, 3);
     } else /* standard solver interface */
 #endif
-      retVal = solver_main(simData, threadData, init_initMethod.c_str(), init_file.c_str(), init_time, lambda_steps, solverID, outVars, argv_0);
+      retVal = solver_main(simData, threadData, init_initMethod.c_str(), init_file.c_str(), init_time, solverID, outVars, argv_0);
   }
 
   MMC_CATCH_INTERNAL(mmc_jumper)
@@ -830,12 +755,73 @@ int initRuntimeAndSimulation(int argc, char**argv, DATA *data, threadData_t *thr
     EXIT(1);
   }
 
-  data->simulationInfo->nlsMethod = getNonlinearSolverMethod();
-  data->simulationInfo->lsMethod = getlinearSolverMethod();
-  data->simulationInfo->lssMethod = getlinearSparseSolverMethod();
-  data->simulationInfo->newtonStrategy = getNewtonStrategy();
+  readFlag(&data->simulationInfo->nlsMethod, NLS_MAX, omc_flagValue[FLAG_NLS], "-nls", NLS_NAME, NLS_DESC);
+  readFlag(&data->simulationInfo-> lsMethod,  LS_MAX, omc_flagValue[FLAG_LS ],  "-ls",  LS_NAME,  LS_DESC);
+  readFlag(&data->simulationInfo->lssMethod, LSS_MAX, omc_flagValue[FLAG_LSS], "-lss", LSS_NAME, LSS_DESC);
+  readFlag(&homBacktraceStrategy, HOM_BACK_STRAT_MAX, omc_flagValue[FLAG_HOMOTOPY_BACKTRACE_STRATEGY], "-homBacktraceStrategy", HOM_BACK_STRAT_NAME, HOM_BACK_STRAT_DESC);
+  readFlag(&data->simulationInfo->newtonStrategy, NEWTON_MAX, omc_flagValue[FLAG_NEWTON_STRATEGY], "-newton", NEWTONSTRATEGY_NAME, NEWTONSTRATEGY_DESC);
   data->simulationInfo->nlsCsvInfomation = omc_flag[FLAG_NLS_INFO];
-  data->simulationInfo->nlsLinearSolver = getNlsLSSolver();
+  readFlag(&data->simulationInfo->nlsLinearSolver, NLS_LS_MAX, omc_flagValue[FLAG_NLS_LS], "-nlsLS", NLS_LS_METHOD, NLS_LS_METHOD_DESC);
+
+  if(omc_flag[FLAG_HOMOTOPY_ADAPT_BEND]) {
+    homAdaptBend = atof(omc_flagValue[FLAG_HOMOTOPY_ADAPT_BEND]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homAdaptBend changed to %f", homAdaptBend);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_H_EPS]) {
+    homHEps = atof(omc_flagValue[FLAG_HOMOTOPY_H_EPS]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homHEps changed to %f", homHEps);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_MAX_LAMBDA_STEPS]) {
+    homMaxLambdaSteps = atoi(omc_flagValue[FLAG_HOMOTOPY_MAX_LAMBDA_STEPS]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homMaxLambdaSteps changed to %d", homMaxLambdaSteps);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_MAX_NEWTON_STEPS]) {
+    homMaxNewtonSteps = atoi(omc_flagValue[FLAG_HOMOTOPY_MAX_NEWTON_STEPS]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homMaxNewtonSteps changed to %d", homMaxNewtonSteps);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_MAX_TRIES]) {
+    homMaxTries = atoi(omc_flagValue[FLAG_HOMOTOPY_MAX_TRIES]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homMaxTries changed to %d", homMaxTries);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_DEC_FACTOR]) {
+    homTauDecreasingFactor = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_DEC_FACTOR]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauDecreasingFactor changed to %f", homTauDecreasingFactor);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_DEC_FACTOR_PRED]) {
+    homTauDecreasingFactorPredictor = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_DEC_FACTOR_PRED]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauDecreasingFactorPredictor changed to %f", homTauDecreasingFactorPredictor);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_INC_FACTOR]) {
+    homTauIncreasingFactor = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_INC_FACTOR]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauIncreasingFactor changed to %f", homTauIncreasingFactor);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_INC_THRESHOLD]) {
+    homTauIncreasingThreshold = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_INC_THRESHOLD]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauIncreasingThreshold changed to %f", homTauIncreasingThreshold);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_MAX]) {
+    homTauMax = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_MAX]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauMax changed to %f", homTauMax);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_MIN]) {
+    homTauMin = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_MIN]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauMin changed to %f", homTauMin);
+  }
+
+  if(omc_flag[FLAG_HOMOTOPY_TAU_START]) {
+    homTauStart = atof(omc_flagValue[FLAG_HOMOTOPY_TAU_START]);
+    infoStreamPrint(LOG_STDOUT, 0, "homotopy parameter homTauStart changed to %f", homTauStart);
+  }
 
   if(omc_flag[FLAG_LSS_MAX_DENSITY]) {
     linearSparseSolverMaxDensity = atof(omc_flagValue[FLAG_LSS_MAX_DENSITY]);
@@ -861,6 +847,16 @@ int initRuntimeAndSimulation(int argc, char**argv, DATA *data, threadData_t *thr
   if(omc_flag[FLAG_NEWTON_FTOL]) {
     newtonFTol = atof(omc_flagValue[FLAG_NEWTON_FTOL]);
     infoStreamPrint(LOG_STDOUT, 0, "Tolerance for accepting accuracy in Newton solver changed to %g", newtonFTol);
+  }
+
+  if(omc_flag[FLAG_NEWTON_MAX_STEP_FACTOR]) {
+    maxStepFactor = atof(omc_flagValue[FLAG_NEWTON_MAX_STEP_FACTOR]);
+    infoStreamPrint(LOG_STDOUT, 0, "Maximum step size factor for a Newton step changed to %g", newtonFTol);
+  }
+
+  if(omc_flag[FLAG_STEADY_STATE_TOL]) {
+    steadyStateTol = atof(omc_flagValue[FLAG_STEADY_STATE_TOL]);
+    infoStreamPrint(LOG_STDOUT, 0, "Tolerance for steady state detection changed to %g", steadyStateTol);
   }
 
   rt_tick(SIM_TIMER_INIT_XML);

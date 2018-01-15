@@ -54,9 +54,9 @@ extern int dgesv_(int *n, int *nrhs, double *a, int *lda,
  */
 int allocateLapackData(int size, void** voiddata)
 {
-  DATA_LAPACK* data = (DATA_LAPACK*) malloc(sizeof(DATA_LAPACK));
+  DATA_LAPACK* data = (DATA_LAPACK*) calloc(1, sizeof(DATA_LAPACK));
 
-  data->ipiv = (int*) malloc(size*sizeof(int));
+  data->ipiv = (int*) calloc(size, sizeof(int));
   assertStreamPrint(NULL, 0 != data->ipiv, "Could not allocate data for linear solver lapack.");
   data->nrhs = 1;
   data->info = 0;
@@ -83,6 +83,9 @@ int freeLapackData(void **voiddata)
   _omc_destroyVector(data->x);
   _omc_destroyVector(data->b);
   _omc_destroyMatrix(data->A);
+
+  free(data);
+  voiddata[0] = 0;
 
   return 0;
 }
@@ -160,7 +163,7 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber)
   void *dataAndThreadData[2] = {data, threadData};
   int i, iflag = 1;
   LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
-  DATA_LAPACK* solverData = (DATA_LAPACK*)systemData->solverData;
+  DATA_LAPACK* solverData = (DATA_LAPACK*)systemData->solverData[0];
 
   int success = 1;
 
@@ -169,6 +172,7 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber)
   int eqSystemNumber = systemData->equationIndex;
   int indexes[2] = {1,eqSystemNumber};
   _omc_scalar residualNorm = 0;
+  double tmpJacEvalTime;
 
   infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with Lapack Solver",
          eqSystemNumber, (int) systemData->size,
@@ -205,7 +209,9 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber)
     _omc_copyVector(solverData->work, solverData->x);
     wrapper_fvec_lapack(solverData->work, solverData->b, &iflag, dataAndThreadData, sysNumber);
   }
-  infoStreamPrint(LOG_LS, 0, "###  %f  time to set Matrix A and vector b.", rt_ext_tp_tock(&(solverData->timeClock)));
+  tmpJacEvalTime = rt_ext_tp_tock(&(solverData->timeClock));
+  systemData->jacobianTime += tmpJacEvalTime;
+  infoStreamPrint(LOG_LS_V, 0, "###  %f  time to set Matrix A and vector b.", tmpJacEvalTime);
 
   /* Log A*x=b */
   if(ACTIVE_STREAM(LOG_LS_V)){
@@ -226,7 +232,7 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber)
          (int*) &systemData->size,
          &solverData->info);
 
-  infoStreamPrint(LOG_LS, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
+  infoStreamPrint(LOG_LS_V, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
 
   if(solverData->info < 0)
   {

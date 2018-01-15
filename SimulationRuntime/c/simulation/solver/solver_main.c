@@ -418,18 +418,17 @@ int freeSolverData(DATA* data, SOLVER_INFO* solverInfo)
 
 
 /*! \fn initializeModel(DATA* data, const char* init_initMethod,
- *   const char* init_file, double init_time, int lambda_steps)
+ *   const char* init_file, double init_time)
  *
  *  \param [ref] [data]
  *  \param [in]  [pInitMethod] user defined initialization method
  *  \param [in]  [pInitFile] extra argument for initialization-method "file"
  *  \param [in]  [initTime] extra argument for initialization-method "file"
- *  \param [in]  [lambda_steps] ???
  *
  *  This function starts the initialization process of the model .
  */
 int initializeModel(DATA* data, threadData_t *threadData, const char* init_initMethod,
-    const char* init_file, double init_time, int lambda_steps)
+    const char* init_file, double init_time)
 {
   TRACE_PUSH
   int retValue = 0;
@@ -453,8 +452,6 @@ int initializeModel(DATA* data, threadData_t *threadData, const char* init_initM
 
   data->localData[0]->timeValue = simInfo->startTime;
 
-
-
   threadData->currentErrorStage = ERROR_SIMULATION;
   /* try */
   {
@@ -462,11 +459,18 @@ int initializeModel(DATA* data, threadData_t *threadData, const char* init_initM
 #if !defined(OMC_EMCC)
     MMC_TRY_INTERNAL(simulationJumpBuffer)
 #endif
-    if(initialization(data, threadData, init_initMethod, init_file, init_time, lambda_steps))
+    if(initialization(data, threadData, init_initMethod, init_file, init_time))
     {
       warningStreamPrint(LOG_STDOUT, 0, "Error in initialization. Storing results and exiting.\nUse -lv=LOG_INIT -w for more information.");
       simInfo->stopTime = simInfo->startTime;
       retValue = -1;
+    }
+    if (!retValue)
+    {
+      if (data->simulationInfo->homotopySteps == 0)
+        infoStreamPrint(LOG_SUCCESS, 0, "The initialization finished successfully without homotopy method.");
+      else
+        infoStreamPrint(LOG_SUCCESS, 0, "The initialization finished successfully with %d homotopy steps.", data->simulationInfo->homotopySteps);
     }
 
     success = 1;
@@ -581,6 +585,7 @@ int finishSimulation(DATA* data, threadData_t *threadData, SOLVER_INFO* solverIn
       infoStreamPrint(LOG_STATS, 0, "%5d evaluations of jacobian", solverInfo->solverStats[2]);
       infoStreamPrint(LOG_STATS, 0, "%5d error test failures", solverInfo->solverStats[3]);
       infoStreamPrint(LOG_STATS, 0, "%5d convergence test failures", solverInfo->solverStats[4]);
+      infoStreamPrint(LOG_STATS, 0, "%gs time of jacobian evaluation", rt_accumulated(SIM_TIMER_JACOBIAN));
       messageClose(LOG_STATS);
     }
 
@@ -624,14 +629,13 @@ int finishSimulation(DATA* data, threadData_t *threadData, SOLVER_INFO* solverIn
  *  \param [in]  [pOptiMethod] user defined optimization method
  *  \param [in]  [pInitFile] extra argument for initialization-method "file"
  *  \param [in]  [initTime] extra argument for initialization-method "file"
- *  \param [in]  [lambda_steps] ???
  *  \param [in]  [solverID] selects the ode solver
  *  \param [in]  [outputVariablesAtEnd] ???
  *
  *  This is the main function of the solver, it performs the simulation.
  */
 int solver_main(DATA* data, threadData_t *threadData, const char* init_initMethod, const char* init_file,
-    double init_time, int lambda_steps, int solverID, const char* outputVariablesAtEnd, const char *argv_0)
+    double init_time, int solverID, const char* outputVariablesAtEnd, const char *argv_0)
 {
   TRACE_PUSH
 
@@ -686,7 +690,7 @@ int solver_main(DATA* data, threadData_t *threadData, const char* init_initMetho
 
   omc_alloc_interface.collect_a_little();
   /* initialize all parts of the model */
-  retVal = initializeModel(data, threadData, init_initMethod, init_file, init_time, lambda_steps);
+  retVal = initializeModel(data, threadData, init_initMethod, init_file, init_time);
   omc_alloc_interface.collect_a_little();
 
   if(0 == retVal) {
@@ -697,7 +701,23 @@ int solver_main(DATA* data, threadData_t *threadData, const char* init_initMetho
 #if !defined(OMC_MINIMAL_RUNTIME)
   dllHandle = embedded_server_load_functions(omc_flagValue[FLAG_EMBEDDED_SERVER]);
   omc_real_time_sync_init(threadData, data);
-  data->embeddedServerState = embedded_server_init(data, data->localData[0]->timeValue, solverInfo.currentStepSize, argv_0, omc_real_time_sync_update);
+  int port = 4841;
+  /* If an embedded server is specified */
+  if (dllHandle != NULL) {
+    if (omc_flag[FLAG_EMBEDDED_SERVER_PORT]) {
+      port = atoi(omc_flagValue[FLAG_EMBEDDED_SERVER_PORT]);
+      /* In case of a bad conversion, don't spawn a server on port 0...*/
+      if (port == 0) {
+        port = 4841;
+      }
+    }
+  }
+  data->embeddedServerState = embedded_server_init(data, data->localData[0]->timeValue, solverInfo.currentStepSize, argv_0, omc_real_time_sync_update, port);
+  /* If an embedded server is specified */
+  if (dllHandle != NULL) {
+    infoStreamPrint(LOG_STDOUT, 0, "The embedded server is initialized.");
+  }
+  wait_for_step(data->embeddedServerState);
 #endif
   if(0 == retVal) {
     retVal = -1;
@@ -776,6 +796,9 @@ int solver_main(DATA* data, threadData_t *threadData, const char* init_initMetho
   {
     freeSolverData(data, &solverInfo);
   }
+
+  if (!retVal)
+    infoStreamPrint(LOG_SUCCESS, 0, "The simulation finished successfully.");
 
   TRACE_POP
   return retVal;

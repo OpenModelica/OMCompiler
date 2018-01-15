@@ -86,7 +86,7 @@ public function hashComponentRef "new hashing that properly deals with subscript
   input DAE.ComponentRef cr;
   output Integer hash;
 algorithm
-hash := matchcontinue(cr)
+hash := match(cr)
   local
     DAE.Ident id;
     DAE.Type tp;
@@ -103,7 +103,7 @@ hash := matchcontinue(cr)
   case(DAE.CREF_ITER(id,_,tp,subs))
   then stringHashDjb2(id)+ hashSubscripts(tp,subs);
   else 0;
-end matchcontinue;
+end match;
 end hashComponentRef;
 
 protected protected function hashSubscripts "help function, hashing subscripts making sure [1,2] and [2,1] doesn't match to the same number"
@@ -801,6 +801,14 @@ algorithm
   comp := CompareWithGenericSubscript.compare(cr1,cr2);
 end crefCompareGeneric;
 
+public function crefCompareIntSubscript "A sorting function for crefs"
+  input DAE.ComponentRef cr1;
+  input DAE.ComponentRef cr2;
+  output Integer comp;
+algorithm
+  comp := CompareWithIntSubscript.compare(cr1,cr2);
+end crefCompareIntSubscript;
+
 public function crefCompareGenericNotAlphabetic "A sorting function for crefs"
   input DAE.ComponentRef cr1;
   input DAE.ComponentRef cr2;
@@ -849,10 +857,10 @@ protected function crefLexicalCompareSubsAtEnd2
   Helper function for crefLexicalCompareubsAtEnd
   compares subs. However only if the crefs with out subs are equal.
   (i.e. identsCompared is 0)
-  otheriwse just returns"
+  otherwise just returns"
   input list<Integer> inSubs1;
   input list<Integer> inSubs2;
-  output Integer res;
+  output Integer res = 0;
 protected
   list<Integer> rest=inSubs2;
 algorithm
@@ -1258,10 +1266,20 @@ public function isPreCref
   output Boolean b;
 algorithm
   b := match(cr)
-    case(DAE.CREF_QUAL(ident = "$PRE")) then true;
+    case(DAE.CREF_QUAL(ident=DAE.preNamePrefix)) then true;
     else false;
   end match;
 end isPreCref;
+
+public function isStartCref
+  input DAE.ComponentRef cr;
+  output Boolean b;
+algorithm
+  b := match(cr)
+    case(DAE.CREF_QUAL(ident=DAE.startNamePrefix)) then true;
+    else false;
+  end match;
+end isStartCref;
 
 public function popPreCref
   input DAE.ComponentRef inCR;
@@ -1840,7 +1858,7 @@ end crefDims;
 
 public function crefSubs "
 function: crefSubs
-  Return the all subscripts of a ComponentRef"
+  Return all subscripts of a ComponentRef"
   input DAE.ComponentRef inComponentRef;
   output list<DAE.Subscript> outSubscriptLst;
 algorithm
@@ -2059,6 +2077,15 @@ public function crefPrefixPrevious "public function crefPrefixPrevious
 algorithm
   outCref := makeCrefQual(DAE.previousNamePrefix, DAE.T_UNKNOWN_DEFAULT, {}, inCref);
 end crefPrefixPrevious;
+
+public function crefRemovePrePrefix
+  input output DAE.ComponentRef cref;
+algorithm
+  cref := match cref
+    case DAE.CREF_QUAL(ident=DAE.preNamePrefix) then cref.componentRef;
+    else cref;
+  end match;
+end crefRemovePrePrefix;
 
 public function crefPrefixStart "public function crefPrefixStart
   Appends $START to a cref, so a => $START.a"

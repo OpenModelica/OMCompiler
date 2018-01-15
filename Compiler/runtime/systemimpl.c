@@ -355,7 +355,7 @@ static char* SystemImpl__readFile(const char* filename)
   }
 
   /* adrpo: if size is larger than the max string, return a different string */
-#ifndef _LP64
+#if !(defined(_LP64) || defined(_LLP64) || defined(_WIN64) || defined(__MINGW64__))
   if (statstr.st_size > (pow((double)2, (double)22) * 4)) {
     const char *c_tokens[1]={filename};
     c_add_message(NULL,85, /* ERROR_OPENING_FILE */
@@ -417,6 +417,9 @@ int SystemImpl__writeFile(const char* filename, const char* data)
 #endif
   FILE * file = NULL;
   int len = strlen(data); /* MMC_HDRSTRLEN(MMC_GETHDR(rmlA1)); */
+#if defined(__APPLE_CC__)||defined(__MINGW32__)||defined(__MINGW64__)
+  unlink(filename);
+#endif
   /* adrpo: 2010-09-22 open the file in BINARY mode as otherwise \r\n becomes \r\r\n! */
   file = fopen(filename,fileOpenMode);
   if (file == NULL) {
@@ -1115,7 +1118,7 @@ extern int SystemImpl__removeDirectory(const char *path)
   return retval==0;
 }
 
-extern char* SystemImpl__readFileNoNumeric(const char* filename)
+extern const char* SystemImpl__readFileNoNumeric(const char* filename)
 {
   char* buf, *bufRes;
   int res,numCount;
@@ -2226,7 +2229,7 @@ extern int SystemImpl__reopenStandardStream(int id,const char *filename)
   return 1;
 }
 
-char* SystemImpl__iconv__ascii(const char * str)
+const char* SystemImpl__iconv__ascii(const char * str)
 {
   char *buf = 0;
   size_t sz;
@@ -2244,7 +2247,7 @@ static int isUtf8Encoding(const char *str)
   return strcasecmp(str, "UTF-8") || strcasecmp(str, "UTF8");
 }
 
-extern char* SystemImpl__iconv(const char * str, const char *from, const char *to, int printError)
+extern const char* SystemImpl__iconv(const char * str, const char *from, const char *to, int printError)
 {
   char *in_str,*res=NULL;
   size_t sz,out_sz,buflen;
@@ -2254,31 +2257,31 @@ extern char* SystemImpl__iconv(const char * str, const char *from, const char *t
   sz = strlen(str);
   if (isUtf8Encoding(from) && isUtf8Encoding(to))
   {
-    is_utf8(str, sz, &res, &count);
+    is_utf8((unsigned char*)str, sz, &res, &count);
     if (res==NULL) {
       /* Converting from UTF-8 to UTF-8 and the sequence is already UTF-8... */
       return str;
     }
     /* Converting from UTF-8, but is not valid UTF-8. Just quit early. */
     if (printError) {
-      char *ignore = SystemImpl__iconv__ascii(str);
+      const char *ignore = SystemImpl__iconv__ascii(str);
       const char *tokens[4] = {res,from,to,ignore};
       c_add_message(NULL,-1,ErrorType_scripting,ErrorLevel_error,gettext("iconv(\"%s\",to=\"%s\",from=\"%s\") failed: %s"),tokens,4);
-      omc_alloc_interface.free_uncollectable(ignore);
+      omc_alloc_interface.free_uncollectable((char*)ignore);
     }
-    return (char*) "";
+    return (const char*) "";
   }
   buflen = sz*4;
   /* fprintf(stderr,"iconv(%s,to=%s,%s) of size %d, buflen %d\n",str,to,from,sz,buflen); */
   ic = iconv_open(to, from);
   if (ic == (iconv_t) -1) {
     if (printError) {
-      char *ignore = SystemImpl__iconv__ascii(str);
+      const char *ignore = SystemImpl__iconv__ascii(str);
       const char *tokens[4] = {strerror(errno),from,to,ignore};
       c_add_message(NULL,-1,ErrorType_scripting,ErrorLevel_error,gettext("iconv(\"%s\",to=\"%s\",from=\"%s\") failed: %s"),tokens,4);
-      omc_alloc_interface.free_uncollectable(ignore);
+      omc_alloc_interface.free_uncollectable((char*)ignore);
     }
-    return (char*) "";
+    return (const char*) "";
   }
   buf = (char*) omc_alloc_interface.malloc_atomic(buflen);
   if (0 == buf) {
@@ -2286,7 +2289,7 @@ extern char* SystemImpl__iconv(const char * str, const char *from, const char *t
       /* Make the error message small so we perhaps have a chance to recover */
       c_add_message(NULL,-1,ErrorType_scripting,ErrorLevel_error,gettext("iconv() ran out of memory"),NULL,0);
     }
-    return (char*) "";
+    return (const char*) "";
   }
   *buf = 0;
   in_str = (char*) str;
@@ -2296,24 +2299,24 @@ extern char* SystemImpl__iconv(const char * str, const char *from, const char *t
   iconv_close(ic);
   if (count == -1) {
     if (printError) {
-      char *ignore = SystemImpl__iconv__ascii(str);
+      const char *ignore = SystemImpl__iconv__ascii(str);
       const char *tokens[4] = {strerror(errno),from,to,ignore};
       c_add_message(NULL,-1,ErrorType_scripting,ErrorLevel_error,gettext("iconv(\"%s\",to=\"%s\",from=\"%s\") failed: %s"),tokens,4);
-      omc_alloc_interface.free_uncollectable(ignore);
+      omc_alloc_interface.free_uncollectable((char*)ignore);
     }
     omc_alloc_interface.free_uncollectable(buf);
-    return (char*) "";
+    return (const char*) "";
   }
   buf[(buflen-1)-out_sz] = 0;
   if (strlen(buf) != (buflen-1)-out_sz) {
     if (printError) c_add_message(NULL,-1,ErrorType_scripting,ErrorLevel_error,gettext("iconv(to=%s) failed because the character set output null bytes in the middle of the string."),&to,1);
     omc_alloc_interface.free_uncollectable(buf);
-    return (char*) "";
+    return (const char*) "";
   }
   if (!strcmp(from, to) && !strcmp(str, buf))
   {
     omc_alloc_interface.free_uncollectable(buf);
-    return (char*)str;
+    return (const char*)str;
   }
   return buf;
 }
@@ -2640,9 +2643,12 @@ int System_getTerminalWidth(void)
 
 #include "simulation_options.h"
 
+#define SB_SIZE 8192*2
+#define SB_SIZE_MINUS_ONE (SB_SIZE-1)
+
 char* System_getSimulationHelpTextSphinx(int detailed, int sphinx)
 {
-  static char buf[8192];
+  static char buf[SB_SIZE];
   int i,j;
   const char **desc = detailed ? FLAG_DETAILED_DESC : FLAG_DESC;
   char *cur = buf;
@@ -2650,13 +2656,13 @@ char* System_getSimulationHelpTextSphinx(int detailed, int sphinx)
   for(i=1; i<FLAG_MAX; ++i)
   {
     if (sphinx) {
-      cur += snprintf(cur, 8191-(buf-cur), "\n.. _simflag-%s :\n\n", FLAG_NAME[i]);
+      cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), "\n.. _simflag-%s :\n\n", FLAG_NAME[i]);
     }
     if (FLAG_TYPE[i] == FLAG_TYPE_FLAG) {
       if (sphinx) {
-        cur += snprintf(cur, 8191-(buf-cur), ":ref:`-%s <simflag-%s>`\n%s\n", FLAG_NAME[i], FLAG_NAME[i], desc[i]);
+        cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), ":ref:`-%s <simflag-%s>`\n%s\n", FLAG_NAME[i], FLAG_NAME[i], desc[i]);
       } else {
-        cur += snprintf(cur, 8191-(buf-cur), "<-%s>\n%s\n", FLAG_NAME[i], desc[i]);
+        cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), "<-%s>\n%s\n", FLAG_NAME[i], desc[i]);
       }
     } else if (FLAG_TYPE[i] == FLAG_TYPE_OPTION) {
       int numExtraFlags=0;
@@ -2664,9 +2670,9 @@ char* System_getSimulationHelpTextSphinx(int detailed, int sphinx)
       const char **flagName;
       const char **flagDesc;
       if (sphinx) {
-        cur += snprintf(cur, 8191-(buf-cur), ":ref:`-%s=value <simflag-%s>` *or* -%s value \n%s\n", FLAG_NAME[i], FLAG_NAME[i], FLAG_NAME[i], desc[i]);
+        cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), ":ref:`-%s=value <simflag-%s>` *or* -%s value \n%s\n", FLAG_NAME[i], FLAG_NAME[i], FLAG_NAME[i], desc[i]);
       } else {
-        cur += snprintf(cur, 8191-(buf-cur), "<-%s=value> or <-%s value>\n%s\n", FLAG_NAME[i], FLAG_NAME[i], desc[i]);
+        cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), "<-%s=value> or <-%s value>\n%s\n", FLAG_NAME[i], FLAG_NAME[i], desc[i]);
       }
 
       switch(i) {
@@ -2709,20 +2715,20 @@ char* System_getSimulationHelpTextSphinx(int detailed, int sphinx)
       }
 
       if (numExtraFlags) {
-        cur += snprintf(cur, 8191-(buf-cur), "\n");
+        cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), "\n");
         if (flagName) {
           for (j=firstExtraFlag; j<numExtraFlags; j++) {
-            cur += snprintf(cur, 8191-(buf-cur), "  * %s (%s)\n", flagName[j], flagDesc[j]);
+            cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), "  * %s (%s)\n", flagName[j], flagDesc[j]);
           }
         } else {
           for (j=firstExtraFlag; j<numExtraFlags; j++) {
-            cur += snprintf(cur, 8191-(buf-cur), "  * %s\n", flagDesc[j]);
+            cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), "  * %s\n", flagDesc[j]);
           }
         }
       }
 
     } else {
-      cur += snprintf(cur, 8191-(buf-cur), "[unknown flag-type] <-%s>\n", FLAG_NAME[i]);
+      cur += snprintf(cur, SB_SIZE_MINUS_ONE-(buf-cur), "[unknown flag-type] <-%s>\n", FLAG_NAME[i]);
     }
   }
   *cur = 0;
@@ -2787,7 +2793,7 @@ int SystemImpl__fileIsNewerThan(const char *file1, const char *file2)
 
 void SystemImpl__initGarbageCollector(void)
 {
-  static init=0;
+  static int init=0;
   if (!init) {
     GC_init();
     GC_register_displacement(0);
@@ -2939,6 +2945,9 @@ int SystemImpl__covertTextFileToCLiteral(const char *textFile, const char *outFi
     goto done;
   }
   errno = 0;
+#if defined(__APPLE_CC__)||defined(__MINGW32__)||defined(__MINGW64__)
+  unlink(outFile);
+#endif
   fout = fopen(outFile, "w");
   if (!fout) {
     const char *c_token[1]={strerror(errno)};
@@ -3045,10 +3054,10 @@ done:
 
 void SystemImpl__dladdr(void *symbol, const char **file, const char **name)
 {
-#if defined(__MINGW32__) || defined(_MSC_VER)
+#if defined(_MSC_VER)
   *file = "dladdr failed";
   *name = "not available on Windows";
-#else
+#else /* mingw & Linux */
   Dl_info info;
   void *ptr = (MMC_FETCH(MMC_OFFSET(MMC_UNTAGPTR(symbol), 1)));
   if (0 == dladdr(ptr, &info)) {

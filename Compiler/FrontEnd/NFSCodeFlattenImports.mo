@@ -127,7 +127,6 @@ algorithm
       SCode.Mod mods;
       SCode.Attributes attr;
       Env env;
-      SCode.Ident bc;
       SCode.ClassDef cdef;
 
     case (SCode.PARTS(el, neql, ieql, nal, ial, nco, clats, extdecl), _, _)
@@ -145,12 +144,12 @@ algorithm
       then
         (SCode.PARTS(el, neql, ieql, nal, ial, nco, clats, extdecl), env);
 
-    case (SCode.CLASS_EXTENDS(bc, mods, cdef), _, _)
+    case (SCode.CLASS_EXTENDS(mods, cdef), _, _)
       equation
         (cdef, env) = flattenClassDef(cdef, inEnv, inInfo);
         mods = flattenModifier(mods, env, inInfo);
       then
-        (SCode.CLASS_EXTENDS(bc, mods, cdef), env);
+        (SCode.CLASS_EXTENDS(mods, cdef), env);
 
     case (SCode.DERIVED(ty, mods, attr), env, _)
       equation
@@ -347,7 +346,7 @@ algorithm
       SourceInfo info;
       Absyn.ComponentRef cref;
       SCode.Comment cmt;
-      Absyn.Exp exp;
+      Absyn.Exp crefExp, exp;
 
     case ((equ as SCode.EQ_FOR(index = iter_name, info = info), env))
       equation
@@ -356,11 +355,11 @@ algorithm
       then
         ((equ, env));
 
-    case ((SCode.EQ_REINIT(cref = cref, expReinit = exp, comment = cmt,
+    case ((SCode.EQ_REINIT(cref = crefExp as Absyn.CREF(componentRef = cref), expReinit = exp, comment = cmt,
         info = info), env))
       equation
         cref = NFSCodeLookup.lookupComponentRef(cref, env, info);
-        equ = SCode.EQ_REINIT(cref, exp, cmt, info);
+        equ = SCode.EQ_REINIT(crefExp, exp, cmt, info);
         (equ, _) = SCode.traverseEEquationExps(equ, traverseExp, (env, info));
       then
         ((equ, env));
@@ -633,6 +632,7 @@ algorithm
       Absyn.ForIterators iters;
       SourceInfo info;
       tuple<Env, SourceInfo> tup;
+      Absyn.ReductionIterType iterType;
 
     case (Absyn.CREF(componentRef = cref), tup as (env, info))
       equation
@@ -640,11 +640,13 @@ algorithm
       then
         (Absyn.CREF(cref), tup);
 
-    case (Absyn.CALL(functionArgs = Absyn.FOR_ITER_FARG(iterators = iters)), (env, info))
+    case (Absyn.CALL(function_ = cref, functionArgs = Absyn.FOR_ITER_FARG(exp = exp, iterType = iterType, iterators = iters)), (env, info))
       equation
+        cref = NFSCodeLookup.lookupComponentRef(cref, env, info);
         env = NFSCodeEnv.extendEnvWithIterators(iters, System.tmpTickIndex(NFSCodeEnv.tmpTickIndex), env);
+        exp = flattenExp(exp, env, info);
       then
-        (inExp, (env, info));
+        (Absyn.CALL(cref, Absyn.FOR_ITER_FARG(exp, iterType, iters)), (env, info));
 
     case (Absyn.CALL(function_ = Absyn.CREF_IDENT(name = "SOME")), _)
       then (inExp,inTuple);

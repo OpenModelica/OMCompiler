@@ -439,7 +439,6 @@ algorithm
       list<SCode.Enum> lst_1;
       list<Absyn.EnumLiteral> lst;
       SCode.Comment scodeCmt;
-      String name;
       Absyn.Path path;
       list<Absyn.Path> pathLst;
       list<String> typeVars;
@@ -501,7 +500,7 @@ algorithm
       then
         (SCode.OVERLOAD(pathLst),scodeCmt);
 
-    case (Absyn.CLASS_EXTENDS(baseClassName = name,modifications = cmod,ann=ann,comment = cmtString,parts = parts),_)
+    case (Absyn.CLASS_EXTENDS(modifications = cmod,ann=ann,comment = cmtString,parts = parts),_)
       equation
         // fprintln(Flags.TRANSLATE "translating model extends " + name + " ... end " + name + ";");
         els = translateClassdefElements(parts);
@@ -515,7 +514,7 @@ algorithm
         decl = translateClassdefExternaldecls(parts);
         decl = translateAlternativeExternalAnnotation(decl,scodeCmt);
       then
-        (SCode.CLASS_EXTENDS(name,mod,SCode.PARTS(els,eqs,initeqs,als,initals,cos,{},decl)),scodeCmt);
+        (SCode.CLASS_EXTENDS(mod,SCode.PARTS(els,eqs,initeqs,als,initals,cos,{},decl)),scodeCmt);
 
     case (Absyn.PDER(functionName = path,vars = vars, comment=cmt),_)
       equation
@@ -885,9 +884,8 @@ algorithm
       then SCode.ALG_TERMINATE(e1, comment, info);
 
     case Absyn.ALG_NORETCALL(functionCall = Absyn.CREF_IDENT(name = "reinit"),
-        functionArgs = Absyn.FUNCTIONARGS(args = {Absyn.CREF(componentRef = cr), e2},
-        argNames = {}))
-      then SCode.ALG_REINIT(cr, e2, comment, info);
+        functionArgs = Absyn.FUNCTIONARGS(args = {e1, e2}, argNames = {}))
+      then SCode.ALG_REINIT(e1, e2, comment, info);
 
     case Absyn.ALG_NORETCALL()
       algorithm
@@ -1007,8 +1005,9 @@ algorithm
     case Absyn.ANNOTATION(elementArgs = args)
       equation
         m = translateMod(SOME(Absyn.CLASSMOD(args,Absyn.NOMOD())), SCode.NOT_FINAL(), SCode.NOT_EACH(), Absyn.dummyInfo);
+
       then
-        SOME(SCode.ANNOTATION(m));
+        if SCode.isEmptyMod(m) then NONE() else SOME(SCode.ANNOTATION(m));
 
   end match;
 end translateAnnotation;
@@ -1677,9 +1676,9 @@ algorithm
 
     // reinit(cref, exp)
     case Absyn.EQ_NORETCALL(functionName = Absyn.CREF_IDENT(name = "reinit"),
-        functionArgs = Absyn.FUNCTIONARGS(args = {Absyn.CREF(componentRef = cr), e2},
+        functionArgs = Absyn.FUNCTIONARGS(args = {e1, e2},
         argNames = {}))
-      then SCode.EQ_REINIT(cr, e2, inComment, inInfo);
+      then SCode.EQ_REINIT(e1, e2, inComment, inInfo);
 
     // Other nonreturning calls. assert, terminate and reinit with the wrong
     // number of arguments is also turned into a noretcall, since it's
@@ -1777,100 +1776,46 @@ algorithm
   end match;
 end translateMod;
 
-//public function translateMod
-//"Builds an SCode.Mod from an Absyn.Modification."
-//  input Option<Absyn.Modification> inAbsynModificationOption;
-//  input SCode.Final inFinalPrefix;
-//  input SCode.Each inEachPrefix;
-//  input SourceInfo inInfo;
-//  output SCode.Mod outMod;
-//algorithm
-//  outMod := match (inAbsynModificationOption,inFinalPrefix,inEachPrefix,inInfo)
-//    local
-//      Absyn.Exp e;
-//      SCode.Final finalPrefix;
-//      SCode.Each eachPrefix;
-//      list<SCode.SubMod> subs;
-//      list<Absyn.ElementArg> l;
-//
-//    case (NONE(), SCode.FINAL(), _, _)
-//      then SCode.MOD(inFinalPrefix, inEachPrefix, {}, NONE(), inInfo);
-//    case (NONE(),_,_,_) then SCode.NOMOD();
-//    case (SOME(Absyn.CLASSMOD({},(Absyn.EQMOD(exp=e)))),finalPrefix,eachPrefix,_)
-//      then SCode.MOD(finalPrefix,eachPrefix,{},SOME(e), inInfo);
-//    case (SOME(Absyn.CLASSMOD({},(Absyn.NOMOD()))),finalPrefix,eachPrefix,_)
-//      then SCode.MOD(finalPrefix,eachPrefix,{},NONE(), inInfo);
-//    case (SOME(Absyn.CLASSMOD(l,Absyn.EQMOD(exp=e))),finalPrefix,eachPrefix,_)
-//      equation
-//        subs = translateArgs(l);
-//      then
-//        SCode.MOD(finalPrefix, eachPrefix, subs, SOME(e), inInfo);
-//
-//    case (SOME(Absyn.CLASSMOD(l,Absyn.NOMOD())),finalPrefix,eachPrefix,_)
-//      equation
-//        subs = translateArgs(l);
-//      then
-//        SCode.MOD(finalPrefix, eachPrefix, subs, NONE(), inInfo);
-//  end match;
-//end translateMod;
 protected function translateArgs
-  input list<Absyn.ElementArg> inArgs;
-  output list<SCode.SubMod> outSubMods;
+  input list<Absyn.ElementArg> args;
+  output list<SCode.SubMod> subMods = {};
+protected
+  SCode.Mod smod;
+  SCode.Element elem;
+  SCode.SubMod sub;
 algorithm
-  outSubMods := translateArgs_tail(inArgs, {});
+  for arg in args loop
+    subMods := match arg
+      case Absyn.MODIFICATION()
+        algorithm
+          smod := translateMod(arg.modification, SCode.boolFinal(arg.finalPrefix),
+            translateEach(arg.eachPrefix), arg.info);
+
+          if not SCode.isEmptyMod(smod) then
+            sub := translateSub(arg.path, smod, arg.info);
+            subMods := sub :: subMods;
+          end if;
+        then
+          subMods;
+
+      case Absyn.REDECLARATION()
+        algorithm
+          {elem} := translateElementspec(arg.constrainClass, arg.finalPrefix,
+            Absyn.NOT_INNER_OUTER(), SOME(arg.redeclareKeywords), SCode.PUBLIC(),
+            arg.elementSpec, arg.info);
+
+          sub := SCode.NAMEMOD(Absyn.elementSpecName(arg.elementSpec),
+            SCode.REDECL(
+              SCode.boolFinal(arg.finalPrefix),
+              translateEach(arg.eachPrefix),
+              elem));
+        then
+          sub :: subMods;
+    end match;
+  end for;
+
+  subMods := listReverse(subMods);
 end translateArgs;
-
-protected function translateArgs_tail
-  input list<Absyn.ElementArg> inArgs;
-  input list<SCode.SubMod> inAccumSubs;
-  output list<SCode.SubMod> outSubMods;
-algorithm
-  outSubMods := match(inArgs, inAccumSubs)
-    local
-      Boolean fp;
-      Absyn.Each ep;
-      Option<Absyn.Modification> mod;
-      SourceInfo info;
-      list<Absyn.ElementArg> rest_args;
-      SCode.Mod smod;
-      Absyn.ElementSpec spec;
-      String n;
-      SCode.Element elem;
-      Absyn.RedeclareKeywords rk;
-      Option<Absyn.ConstrainClass> cc;
-      SCode.Final sfp;
-      SCode.Each sep;
-      SCode.SubMod sub;
-      Option<SCode.SubMod> opt_mod;
-      list<SCode.SubMod> accum;
-      Absyn.Path p;
-
-    case (Absyn.MODIFICATION(finalPrefix = fp, eachPrefix = ep,
-        path = p, modification = mod, info = info) :: rest_args, _)
-      equation
-        smod = translateMod(mod, SCode.boolFinal(fp), translateEach(ep), info);
-        sub = translateSub(p, smod, info);
-      then
-        translateArgs_tail(rest_args, sub :: inAccumSubs);
-
-    case (Absyn.REDECLARATION(finalPrefix = fp, redeclareKeywords = rk, eachPrefix = ep,
-        elementSpec = spec, constrainClass = cc, info = info) :: rest_args, accum)
-      equation
-        n = Absyn.elementSpecName(spec);
-        {elem} = translateElementspec(cc, fp, Absyn.NOT_INNER_OUTER(),
-          SOME(rk), SCode.PUBLIC(), spec, info);
-        sfp = SCode.boolFinal(fp);
-        sep = translateEach(ep);
-        sub = SCode.NAMEMOD(n, SCode.REDECL(sfp, sep, elem));
-        // first put the redeclare
-        accum = sub :: accum;
-      then
-        translateArgs_tail(rest_args, accum);
-
-    case ({}, _) then listReverse(inAccumSubs);
-
-  end match;
-end translateArgs_tail;
 
 protected function translateSub
 "This function converts a Absyn.ComponentRef plus a list

@@ -33,6 +33,11 @@ package builtin
     output Integer c;
   end intAdd;
 
+  function intNeg
+    input Integer a;
+    output Integer b;
+  end intNeg;
+
   function boolAnd
     input Boolean b1;
     input Boolean b2;
@@ -104,6 +109,11 @@ package builtin
     output Boolean b;
   end intLt;
 
+  function intReal
+    input Integer i;
+    output Real r;
+  end intReal;
+
   function realInt
     input Real r;
     output Integer i;
@@ -145,6 +155,12 @@ package builtin
     input list<TypeVar> lst1;
     output list<TypeVar> result;
   end listAppend;
+
+  function realMul
+    input Real x;
+    input Real y;
+    output Real z;
+  end realMul;
 
   function realDiv
     input Real x;
@@ -242,6 +258,7 @@ package SimCodeVar
       Boolean isValueChangeable;
       Boolean isProtected;
       Boolean hideResult;
+      Option<String> matrixName;
     end SIMVAR;
   end SimVar;
 
@@ -334,6 +351,7 @@ package SimCode
       Option<SimulationSettings> simulationSettingsOpt;
       String fileNamePrefix;
       String fullPathPrefix; // Used for FMI where code is not generated in the same directory
+      String fmuTargetName;
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
       Option<FmiModelStructure> modelStructure;
@@ -488,6 +506,7 @@ package SimCode
     record LINEARSYSTEM
       Integer index;
       Boolean partOfMixed;
+      Boolean tornSystem;
       list<SimCodeVar.SimVar> vars;
       list<DAE.Exp> beqs;
       list<tuple<Integer, Integer, SimEqSystem>> simJac;
@@ -496,6 +515,7 @@ package SimCode
       Option<JacobianMatrix> jacobianMatrix;
       list<DAE.ElementSource> sources;
       Integer indexLinearSystem;
+      Integer nUnknowns;
     end LINEARSYSTEM;
   end LinearSystem;
 
@@ -505,9 +525,11 @@ package SimCode
       list<SimEqSystem> eqs;
       list<DAE.ComponentRef> crefs;
       Integer indexNonLinearSystem;
+      Integer nUnknowns;
       Option<JacobianMatrix> jacobianMatrix;
       Boolean homotopySupport;
       Boolean mixedSystem;
+      Boolean tornSystem;
     end NONLINEARSYSTEM;
   end NonlinearSystem;
 
@@ -534,6 +556,8 @@ package SimCode
       list<String> labels;
       Integer nClocks;
       Integer nSubClocks;
+      list<SimEqSystem> linearSystems;
+      list<SimEqSystem> nonLinearSystems;
     end MODELINFO;
   end ModelInfo;
 
@@ -623,6 +647,7 @@ package SimCode
     record FMIMODELSTRUCTURE
       FmiOutputs fmiOutputs;
       FmiDerivatives fmiDerivatives;
+      Option<JacobianMatrix> continuousPartialDerivatives;
       FmiDiscreteStates fmiDiscreteStates;
       FmiInitialUnknowns fmiInitialUnknowns;
     end FMIMODELSTRUCTURE;
@@ -811,6 +836,17 @@ end SimCodeFunction;
 
 package SimCodeUtil
 
+  function absoluteClockIdxForBaseClock
+    input Integer baseClockIdx;
+    input list<SimCode.ClockedPartition> allBaseClockPartitions;
+    output Integer absBaseClockIdx;
+  end absoluteClockIdxForBaseClock;
+
+  function getClockedPartitions
+    input SimCode.SimCode simcode;
+    output list<SimCode.ClockedPartition> clockedPartitions;
+  end getClockedPartitions;
+
   function functionInfo
     input SimCodeFunction.Function fn;
     output builtin.SourceInfo info;
@@ -970,6 +1006,45 @@ package SimCodeUtil
     input SimCode.SimCode simCode;
     output Boolean outIsTooBig;
   end isModelTooBigForCSharpInOneFile;
+
+  function codegenExpSanityCheck
+    input DAE.Exp inExp;
+    input SimCodeFunction.Context context;
+    output DAE.Exp outExp;
+  end codegenExpSanityCheck;
+
+  function selectScalarLiteralAssignments
+    input list<SimCode.SimEqSystem> inEqs;
+    output list<SimCode.SimEqSystem> eqs;
+  end selectScalarLiteralAssignments;
+
+  function filterScalarLiteralAssignments
+    input list<SimCode.SimEqSystem> inEqs;
+    output list<SimCode.SimEqSystem> eqs;
+  end filterScalarLiteralAssignments;
+
+  function sortSimpleAssignmentBasedOnLhs
+    input list<SimCode.SimEqSystem> inEqs;
+    output list<SimCode.SimEqSystem> eqs;
+  end sortSimpleAssignmentBasedOnLhs;
+
+  function sortCrefBasedOnSimCodeIndex
+    input list<DAE.ComponentRef> inCrefs;
+    input SimCode.SimCode simCode;
+    output list<DAE.ComponentRef> crs;
+  end sortCrefBasedOnSimCodeIndex;
+
+  function getNumContinuousEquations
+    input list<SimCode.SimEqSystem> eqs;
+    input Integer numStates;
+    output Integer n;
+  end getNumContinuousEquations;
+  function lookupVR
+    input DAE.ComponentRef cr;
+    input SimCode.SimCode simCode;
+    output Integer vr;
+  end lookupVR;
+
 end SimCodeUtil;
 
 package SimCodeFunctionUtil
@@ -1108,6 +1183,8 @@ package SimCodeFunctionUtil
     input DAE.ComponentRef cr;
     output String outdef;
   end generateSubPalceholders;
+
+
 
 end SimCodeFunctionUtil;
 
@@ -1251,6 +1328,11 @@ package System
     input String target;
     output String res;
   end stringReplace;
+
+  function makeC89Identifier
+    input String str;
+    output String res;
+  end makeC89Identifier;
 
   function tmpTick
     output Integer tickNo;
@@ -1640,13 +1722,6 @@ package DAE
     record PATTERN
       Pattern pattern;
     end PATTERN;
-    record SUM
-      Type ty;
-      DAE.Exp iterator;
-      DAE.Exp startIt;
-      DAE.Exp endIt;
-      DAE.Exp body;
-    end SUM;
   end Exp;
 
   uniontype CallAttributes
@@ -2177,6 +2252,7 @@ package DAE
 
   uniontype Subscript
     record WHOLEDIM end WHOLEDIM;
+    record WHOLE_NONEXP end WHOLE_NONEXP;
     record SLICE
       Exp exp;
     end SLICE;
@@ -2917,6 +2993,12 @@ package Util
     output Boolean out;
   end isSome;
 
+  function getOption
+    replaceable type Type_a subtypeof Any;
+    input Option<Type_a> inOption;
+    output Type_a out;
+  end getOption;
+
   function stringBool
   input String inString;
   output Boolean outBoolean;
@@ -3147,6 +3229,25 @@ package ComponentReference
     output Absyn.Path outPath;
   end crefToPathIgnoreSubs;
 
+  function crefPrefixStart
+    input DAE.ComponentRef inCref;
+    output DAE.ComponentRef outCref;
+  end crefPrefixStart;
+
+  function isStartCref
+    input DAE.ComponentRef cr;
+    output Boolean b;
+  end isStartCref;
+
+  function popCref
+    input DAE.ComponentRef inCR;
+    output DAE.ComponentRef outCR;
+  end popCref;
+
+  function crefRemovePrePrefix
+    input DAE.ComponentRef inCR;
+    output DAE.ComponentRef outCR;
+  end crefRemovePrePrefix;
 end ComponentReference;
 
 package Expression
@@ -3334,6 +3435,14 @@ package Config
   function typeinfo
     output Boolean flag;
   end typeinfo;
+
+  function globalHomotopy
+    output Boolean outBoolean;
+  end globalHomotopy;
+
+  function adaptiveHomotopy
+    output Boolean outBoolean;
+  end adaptiveHomotopy;
 end Config;
 
 package Flags
@@ -3362,6 +3471,12 @@ package Flags
   constant ConfigFlag DAE_MODE;
   constant ConfigFlag EQUATIONS_PER_FILE;
   constant ConfigFlag GENERATE_SYMBOLIC_JACOBIAN;
+  constant ConfigFlag HOMOTOPY_APPROACH;
+    constant ConfigFlag GENERATE_LABELED_SIMCODE;
+  constant ConfigFlag REDUCE_TERMS;
+  constant ConfigFlag LABELED_REDUCTION;
+  constant ConfigFlag LOAD_MSL_MODEL;
+  constant ConfigFlag Load_PACKAGE_FILE;
 
   function set
     input DebugFlag inFlag;

@@ -28,33 +28,22 @@
  *
  */
 
-/*
-  Stores results into MAT-file version 4 in format of Dymosim's result file.
-
-  Specifications of MAT-file ver4 are available from:
-  http://www.mathworks.com/access/helpdesk/help/pdf_doc/matlab/matfile_format.pdf
-
-  Specification of Dymosim's result file are available from (pages 213-214):
-  http://www.inf.ethz.ch/personal/cellier/Lect/MMPS/Refs/Dymola5Manual.pdf
+/*! \file events.h
  */
 
-#ifndef _SIMULATION_RESULT_MAT_H_
-#define _SIMULATION_RESULT_MAT_H_
+#ifndef _OMC_FMI_EVENTS_H_
+#define _OMC_FMI_EVENTS_H_
 
-#include "simulation_result.h"
 #include "simulation_data.h"
 
 #ifdef __cplusplus
 extern "C" {
-#endif /* cplusplus */
+#endif
 
-void mat4_init(simulation_result *self,DATA *data, threadData_t *threadData);
-void mat4_emit(simulation_result *self,DATA *data, threadData_t *threadData);
-void mat4_writeParameterData(simulation_result *self,DATA *data, threadData_t *threadData);
-void mat4_free(simulation_result *self,DATA *data, threadData_t *threadData);
+int checkForDiscreteChanges(DATA* data, threadData_t *threadData);
 
 #ifdef __cplusplus
 }
-#endif /* cplusplus */
+#endif
 
-#endif /* _SIMULATION_RESULT_MAT_H_ */
+#endif

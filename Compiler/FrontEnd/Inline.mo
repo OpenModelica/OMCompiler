@@ -40,30 +40,33 @@ encapsulated package Inline
   The entry point is the inlineCalls function, or inlineCallsInFunctions
   "
 
-public import Absyn;
-public import BaseHashTable;
-public import DAE;
-public import HashTableCG;
-public import SCode;
-public import Util;
+import Absyn;
+import AvlSetPath;
+import BaseHashTable;
+import DAE;
+import HashTableCG;
+import SCode;
+import Util;
 
-public type Functiontuple = tuple<Option<DAE.FunctionTree>,list<DAE.InlineType>>;
+type Functiontuple = tuple<Option<DAE.FunctionTree>,list<DAE.InlineType>>;
 
-protected import Ceval;
-protected import ClassInf;
-protected import ComponentReference;
-protected import Config;
-protected import Debug;
-protected import ElementSource;
-protected import Error;
-protected import Expression;
-protected import ExpressionDump;
-protected import ExpressionSimplify;
-protected import Flags;
-protected import Global;
-protected import List;
-protected import Types;
-protected import VarTransform;
+protected
+
+import Ceval;
+import ClassInf;
+import ComponentReference;
+import Config;
+import Debug;
+import ElementSource;
+import Error;
+import Expression;
+import ExpressionDump;
+import ExpressionSimplify;
+import Flags;
+import Global;
+import List;
+import Types;
+import VarTransform;
 
 public function inlineStartAttribute
   input Option<DAE.VariableAttributes> inVariableAttributesOption;
@@ -105,11 +108,11 @@ algorithm
       equation
         (r,source,true,_) = inlineExp(r,fns,isource);
       then (SOME(DAE.VAR_ATTR_BOOL(quantity,SOME(r),fixed,equationBound,isProtected,finalPrefix,so)),source,true);
-    case (SOME(DAE.VAR_ATTR_STRING(quantity=quantity,start = SOME(r),
+    case (SOME(DAE.VAR_ATTR_STRING(quantity=quantity,start = SOME(r),fixed=fixed,
           equationBound=equationBound,isProtected=isProtected,finalPrefix=finalPrefix,startOrigin=so)),_,_)
       equation
         (r,source,true,_) = inlineExp(r,fns,isource);
-      then (SOME(DAE.VAR_ATTR_STRING(quantity,SOME(r),equationBound,isProtected,finalPrefix,so)),source,true);
+      then (SOME(DAE.VAR_ATTR_STRING(quantity,SOME(r),fixed,equationBound,isProtected,finalPrefix,so)),source,true);
     case (SOME(DAE.VAR_ATTR_ENUMERATION(quantity=quantity,min=min,max=max,start = SOME(r),
           fixed=fixed,equationBound=equationBound,
           isProtected=isProtected,finalPrefix=finalPrefix,startOrigin=so)),_,_)
@@ -378,11 +381,26 @@ algorithm
       then
         (DAE.ASSERT(exp1_1,exp2_1,exp3_1,source),true);
 
+    case(DAE.INITIAL_ASSERT(exp1,exp2,exp3,source) ,fns)
+      equation
+        (exp1_1,source,b1,_) = inlineExp(exp1,fns,source);
+        (exp2_1,source,b2,_) = inlineExp(exp2,fns,source);
+        (exp3_1,source,b3,_) = inlineExp(exp3,fns,source);
+        true = b1 or b2 or b3;
+      then
+        (DAE.INITIAL_ASSERT(exp1_1,exp2_1,exp3_1,source),true);
+
     case(DAE.TERMINATE(exp,source),fns)
       equation
         (exp_1,source,true,_) = inlineExp(exp,fns,source);
       then
         (DAE.TERMINATE(exp_1,source),true);
+
+    case(DAE.INITIAL_TERMINATE(exp,source),fns)
+      equation
+        (exp_1,source,true,_) = inlineExp(exp,fns,source);
+      then
+        (DAE.INITIAL_TERMINATE(exp_1,source),true);
 
     case(DAE.REINIT(componentRef,exp,source),fns)
       equation
@@ -698,7 +716,7 @@ algorithm
       then (e_1,source,true);
     case (e,fns,source)
       equation
-        (e_1,_) = Expression.traverseExpBottomUp(e,function forceInlineCall(fns=fns),{});
+        (e_1,_) = Expression.traverseExpBottomUp(e,function forceInlineCall(fns=fns, visitedPaths=AvlSetPath.Tree.EMPTY()),{});
         b = not referenceEq(e, e_1);
         if b then
         source = ElementSource.addSymbolicTransformation(source,DAE.OP_INLINE(DAE.PARTIAL_EQUATION(e),DAE.PARTIAL_EQUATION(e_1)));
@@ -937,6 +955,7 @@ public function forceInlineCall
   input output DAE.Exp exp;
   input output list<DAE.Statement> assrtLst;
   input Functiontuple fns;
+  input AvlSetPath.Tree visitedPaths = AvlSetPath.EMPTY();
 algorithm
   (exp,assrtLst) := matchcontinue exp
     local
@@ -956,7 +975,7 @@ algorithm
       Boolean generateEvents,b;
       Option<SCode.Comment> comment;
 
-    case (e1 as DAE.CALL(p,args,DAE.CALL_ATTR(inlineType=inlineType)))
+    case (e1 as DAE.CALL(p,args,DAE.CALL_ATTR(inlineType=inlineType))) guard not AvlSetPath.hasKey(visitedPaths, p)
       equation
         //print(printInlineTypeStr(inlineType));
         false = Config.acceptMetaModelicaGrammar();
@@ -979,7 +998,7 @@ algorithm
         newExp = if not generateEvents then Expression.addNoEventToRelationsAndConds(newExp) else newExp;
         (newExp,(_,_,true)) = Expression.traverseExpBottomUp(newExp,replaceArgs,(argmap,checkcr,true));
         // for inlinecalls in functions
-        (newExp1,assrtLst) = Expression.traverseExpBottomUp(newExp,function forceInlineCall(fns=fns),assrtLst);
+        (newExp1,assrtLst) = Expression.traverseExpBottomUp(newExp,function forceInlineCall(fns=fns,visitedPaths=AvlSetPath.add(visitedPaths, p)),assrtLst);
       then (newExp1,assrtLst);
 
     else (exp,assrtLst);
@@ -997,7 +1016,7 @@ algorithm
     local
       list<DAE.Statement> stmts;
       VarTransform.VariableReplacements repl;
-      DAE.ComponentRef cr;
+      DAE.ComponentRef cr, cr1, cr2;
       DAE.ElementSource source;
       DAE.Exp exp, exp1, exp2;
       DAE.Statement stmt;
@@ -1034,6 +1053,31 @@ algorithm
         (repl,assertStmts) = mergeFunctionBody(stmts,iRepl,stmt::assertStmtsIn);
       then
         (repl,assertStmts);
+    // if a then x := b; else x := c; end if; => x := if a then b else c;
+    case (DAE.STMT_IF(exp = exp,
+           statementLst = {DAE.STMT_ASSIGN(exp1 = DAE.CREF(componentRef = cr1), exp = exp1)},
+           else_=DAE.ELSE(statementLst={DAE.STMT_ASSIGN(exp1 = DAE.CREF(componentRef = cr2), exp = exp2)}))::stmts,_,_)
+      guard ComponentReference.crefEqual(cr1, cr2)
+      equation
+        (exp,_) = VarTransform.replaceExp(exp,iRepl,NONE());
+        (exp1,_) = VarTransform.replaceExp(exp1,iRepl,NONE());
+        (exp2,_) = VarTransform.replaceExp(exp2,iRepl,NONE());
+        repl = VarTransform.addReplacementNoTransitive(iRepl,cr1,DAE.IFEXP(exp,exp1,exp2));
+        (repl,assertStmts) = mergeFunctionBody(stmts,repl,assertStmtsIn);
+      then (repl,assertStmts);
+
+    case (DAE.STMT_IF(exp = exp,
+           statementLst = {DAE.STMT_ASSIGN_ARR(lhs = DAE.CREF(componentRef = cr1), exp = exp1)},
+           else_=DAE.ELSE(statementLst={DAE.STMT_ASSIGN_ARR(lhs = DAE.CREF(componentRef = cr2), exp = exp2)}))::stmts,_,_)
+      guard ComponentReference.crefEqual(cr1, cr2)
+      equation
+        (exp,_) = VarTransform.replaceExp(exp,iRepl,NONE());
+        (exp1,_) = VarTransform.replaceExp(exp1,iRepl,NONE());
+        (exp2,_) = VarTransform.replaceExp(exp2,iRepl,NONE());
+        repl = VarTransform.addReplacementNoTransitive(iRepl,cr1,DAE.IFEXP(exp,exp1,exp2));
+        (repl,assertStmts) = mergeFunctionBody(stmts,repl,assertStmtsIn);
+      then (repl,assertStmts);
+
   end match;
 end mergeFunctionBody;
 
@@ -1380,7 +1424,7 @@ public function replaceArgs
 algorithm
   (outExp,outTuple) := matchcontinue (inExp,inTuple)
     local
-      DAE.ComponentRef cref;
+      DAE.ComponentRef cref, firstCref;
       list<tuple<DAE.ComponentRef, DAE.Exp>> argmap;
       DAE.Exp e;
       Absyn.Path path;
@@ -1396,12 +1440,30 @@ algorithm
       equation
         e = getExpFromArgMap(argmap,cref);
         (e,_) = ExpressionSimplify.simplify(e);
-      then (e,(argmap,checkcr,true));
+      then (e,inTuple);
 
-    case (e as DAE.CREF(componentRef = cref),(argmap,checkcr,true))
+    case (DAE.CREF(componentRef = cref),(argmap,checkcr,true))
       guard
-        BaseHashTable.hasKey(cref,checkcr)
-      then (e,(argmap,checkcr,false));
+        BaseHashTable.hasKey(ComponentReference.crefFirstCref(cref),checkcr)
+      then (inExp,(argmap,checkcr,false));
+
+    case (DAE.CREF(componentRef = cref),(argmap,checkcr,true))
+      algorithm
+        firstCref := ComponentReference.crefFirstCref(cref);
+        {} := ComponentReference.crefSubs(firstCref);
+        e := getExpFromArgMap(argmap,firstCref);
+        while not ComponentReference.crefIsIdent(cref) loop
+          cref := ComponentReference.crefRest(cref);
+          {} := ComponentReference.crefSubs(cref);
+          e := DAE.RSUB(e, -1, ComponentReference.crefFirstIdent(cref), ComponentReference.crefType(cref));
+        end while;
+      then (e,inTuple);
+
+    case (DAE.CREF(componentRef = cref),(argmap,checkcr,true))
+      equation
+        getExpFromArgMap(argmap,ComponentReference.crefStripSubs(ComponentReference.crefFirstCref(cref)));
+        // We have something like v[i].re and v is in the inputs... So we fail to inline.
+      then (inExp,(argmap,checkcr,false));
 
     case (DAE.UNBOX(DAE.CALL(path,expLst,DAE.CALL_ATTR(_,tuple_,false,isImpure,_,inlineType,tc)),ty),(argmap,checkcr,true))
       equation
@@ -1413,7 +1475,7 @@ algorithm
         isFunctionPointerCall = Types.isFunctionReferenceVar(ty2);
         e = DAE.CALL(path,expLst,DAE.CALL_ATTR(ty,tuple_,b,isImpure,isFunctionPointerCall,inlineType,tc));
         (e,_) = ExpressionSimplify.simplify(e);
-      then (e,(argmap,checkcr,true));
+      then (e,inTuple);
 
     case (e as DAE.UNBOX(DAE.CALL(path,_,DAE.CALL_ATTR(builtin=false)),_),(argmap,checkcr,true))
       equation
@@ -1434,7 +1496,7 @@ algorithm
         e = DAE.CALL(path,expLst,DAE.CALL_ATTR(ty2,tuple_,b,isImpure,isFunctionPointerCall,inlineType,tc));
         e = boxIfUnboxedFunRef(e,ty);
         (e,_) = ExpressionSimplify.simplify(e);
-      then (e,(argmap,checkcr,true));
+      then (e,inTuple);
 
     case (e as DAE.CALL(path,_,DAE.CALL_ATTR(ty=DAE.T_METATYPE(),builtin=false)),(argmap,checkcr,true))
       equation
@@ -1442,7 +1504,7 @@ algorithm
         true = BaseHashTable.hasKey(cref,checkcr);
       then (e,(argmap,checkcr,false));
 
-    case (e,(argmap,checkcr,replacedfailed)) then (e,(argmap,checkcr,replacedfailed));
+    else (inExp,inTuple);
   end matchcontinue;
 end replaceArgs;
 
@@ -1582,7 +1644,7 @@ public function simplifyAndForceInlineEquationExp "
   output DAE.ElementSource source;
 algorithm
   (exp,source) := ExpressionSimplify.simplifyAddSymbolicOperation(inExp,inSource);
-  (exp,source) := inlineEquationExp(exp,function forceInlineCall(fns=fns),source);
+  (exp,source) := inlineEquationExp(exp,function forceInlineCall(fns=fns, visitedPaths=AvlSetPath.Tree.EMPTY()),source);
 end simplifyAndForceInlineEquationExp;
 
 public function inlineEquationExp "

@@ -146,6 +146,7 @@ import InstExtends;
 import List;
 import Lookup;
 import MetaUtil;
+import Mutable;
 import OperatorOverloading;
 import PrefixUtil;
 import SCodeUtil;
@@ -326,11 +327,9 @@ algorithm
 
     // instantiate a class
     case (cache,ih,cdecls as _::_,path)
-      equation
-        (outCache,outEnv,outIH,outDAElist) = instantiateClass_dispatch(cache,ih,cdecls,path,doSCodeDep);
-        if Flags.isSet(Flags.NF_UNITCHECK) then
-            NFUnitCheck.unitChecking(outDAElist,outCache);
-        end if;
+      algorithm
+        (outCache,outEnv,outIH,outDAElist) := instantiateClass_dispatch(cache,ih,cdecls,path,doSCodeDep);
+        outDAElist := NFUnitCheck.checkUnits(outDAElist,FCore.getFunctionTree(outCache));
       then
         (outCache,outEnv,outIH,outDAElist);
 
@@ -1701,7 +1700,7 @@ public function instClassdef "
 algorithm
   (outCache,outEnv,outIH,outStore,outDae,outSets,outState,outTypesVarLst,outTypesTypeOption,optDerAttr,outEqualityConstraint,outGraph):=
   instClassdef2(inCache,inEnv,inIH,store,inMod2,inPrefix3,inState5,className,inClassDef6,inRestriction7,inVisibility,
-    inPartialPrefix,inEncapsulatedPrefix,inInstDims9,inBoolean10,inCallingScope,inGraph,inSets,instSingleCref,comment,info,Util.makeStatefulBoolean(false));
+    inPartialPrefix,inEncapsulatedPrefix,inInstDims9,inBoolean10,inCallingScope,inGraph,inSets,instSingleCref,comment,info,Mutable.create(false));
 end instClassdef;
 
 protected function instClassdefBasicType "
@@ -1725,7 +1724,7 @@ type"
   input Connect.Sets inSets;
   input Option<DAE.ComponentRef> instSingleCref;
   input SourceInfo info;
-  input Util.StatefulBoolean stopInst "prevent instantiation of classes adding components to primary types";
+  input Mutable<Boolean> stopInst "prevent instantiation of classes adding components to primary types";
   output FCore.Cache outCache;
   output FCore.Graph outEnv;
   output InnerOuter.InstHierarchy outIH;
@@ -1855,7 +1854,7 @@ protected function instClassdef2 "
   input Option<DAE.ComponentRef> instSingleCref;
   input SCode.Comment comment;
   input SourceInfo info;
-  input Util.StatefulBoolean stopInst "prevent instantiation of classes adding components to primary types";
+  input Mutable<Boolean> stopInst "prevent instantiation of classes adding components to primary types";
   output FCore.Cache outCache;
   output FCore.Graph outEnv;
   output InnerOuter.InstHierarchy outIH;
@@ -1946,7 +1945,7 @@ algorithm
                       normalAlgorithmLst = {}, initialAlgorithmLst = {}),
           re,vis,_,_,inst_dims,impl,_,graph,_,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         // adpro: if is a model, package, function, external function, record is not a basic type!
         false = valueEq(SCode.R_MODEL(), re);
         false = valueEq(SCode.R_PACKAGE(), re);
@@ -1985,7 +1984,7 @@ algorithm
           SCode.PARTS(elementLst = els),
           _,_,_,_,_,impl,_,graph,_,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
          true = SCode.isExternalObject(els);
          (cache,env,ih,dae,ci_state) = InstFunction.instantiateExternalObject(cache,env,ih,els,mods,impl,comment,info);
       then
@@ -2000,7 +1999,7 @@ algorithm
                       ),
         re,_,_,_,inst_dims,impl,callscope,graph,csets,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         false = SCode.isExternalObject(els);
         if Flags.getConfigBool(Flags.UNIT_CHECKING) then
           UnitParserExt.checkpoint();
@@ -2071,6 +2070,9 @@ algorithm
 
         (compelts_1, eqs_1, initeqs_1, alg_1, initalg_1) =
           InstUtil.extractConstantPlusDepsTpl(compelts_1, instSingleCref, {}, className, eqs_1, initeqs_1, alg_1, initalg_1);
+        if intEq(Flags.getConfigEnum(Flags.GRAMMAR), Flags.PDEMODELICA) then
+          compelts_1 = InstUtil.addGhostCells(compelts_1, eqs_1);
+        end if;
 
         //(csets, env2, ih) = InstUtil.addConnectionCrefsFromEqs(csets, eqs_1, pre, env2, ih);
 
@@ -2112,7 +2114,6 @@ algorithm
         if intEq(Flags.getConfigEnum(Flags.GRAMMAR), Flags.PDEMODELICA) then
           eqs_1 = List.fold1(eqs_1, InstUtil.discretizePDE, domainFieldsLst, {});
         end if;
-
         //Instantiate equations (see function "instEquation")
         (cache,env5,ih,dae2,csets2,ci_state3,graph) =
           instList(cache, env5, ih, pre, csets1, ci_state2, InstSection.instEquation, eqs_1, impl, InstTypes.alwaysUnroll, graph);
@@ -2189,7 +2190,7 @@ algorithm
           SCode.DERIVED(Absyn.TPATH(path = cn,arrayDim = ad),modifications = mod,attributes=DA),
           re,vis,_,_,inst_dims,impl,callscope,graph,_,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
 
         (cache,(c as SCode.CLASS(name=cn2,encapsulatedPrefix=enc2,restriction=r as SCode.R_ENUMERATION())), cenv) =
           Lookup.lookupClass(cache, env, cn, SOME(info));
@@ -2226,7 +2227,7 @@ algorithm
           SCode.DERIVED(Absyn.TPATH(path = cn,arrayDim = ad),modifications = mod,attributes=DA),
           re,vis,_,_,inst_dims,impl,callscope,graph,_,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
 
         (cache,(c as SCode.CLASS(name=cn2,encapsulatedPrefix=enc2,restriction=r)),cenv) = Lookup.lookupClass(cache, env, cn, SOME(info));
 
@@ -2235,7 +2236,7 @@ algorithm
 
         // If it's a connector, check that it's valid.
         valid_connector = ConnectUtil.checkShortConnectorDef(ci_state, DA, info);
-        Util.setStatefulBoolean(stopInst, not valid_connector);
+        Mutable.update(stopInst, not valid_connector);
         true = valid_connector;
 
         cenv_2 = FGraph.openScope(cenv, enc2, cn2, FGraph.classInfToScopeType(ci_state));
@@ -2268,7 +2269,7 @@ algorithm
           SCode.DERIVED(typeSpec = Absyn.TPATH(path = cn,arrayDim = ad), modifications = mod, attributes=DA),
           re,vis,partialPrefix,encapsulatedPrefix,inst_dims,impl,callscope,graph,_,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         false = valueEq(re, SCode.R_TYPE());
         false = valueEq(re, SCode.R_ENUMERATION());
         false = valueEq(re, SCode.R_PREDEFINED_ENUMERATION());
@@ -2281,7 +2282,7 @@ algorithm
 
         if match r
             case SCode.Restriction.R_PACKAGE() then false;
-            else if SCode.restrictionEqual(r,re) then Mod.isInvariantMod(mod) else false;
+            else if SCode.restrictionEqual(r,re) then Mod.isInvariantMod(mod) and Mod.isInvariantDAEMod(mods) else false;
           end match then
           // Is a very simple modification on an operator record; we do not need to handle it by adding SCode.EXTENDS
           // print("Short-circuit: " + SCodeDump.restrString(r)+" "+SCodeDump.restrString(re)+" : "+SCodeDump.printModStr(mod)+"\n");
@@ -2334,7 +2335,7 @@ algorithm
           SCode.DERIVED(Absyn.TPATH(path = cn,arrayDim = ad),modifications = mod,attributes=DA),
           re,vis,_,_,inst_dims,impl,callscope,graph,_,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         (cache,(c as SCode.CLASS(name=cn2,encapsulatedPrefix=enc2,restriction=r)),cenv) = Lookup.lookupClass(cache, env, cn, SOME(info));
 
         // not a basic type, change class name!
@@ -2374,7 +2375,7 @@ algorithm
           _,_,_,_,inst_dims,impl,_,graph,_,_,_,_,_)
       equation
         true = Config.acceptMetaModelicaGrammar();
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         true = Mod.emptyModOrEquality(mods) and SCode.emptyModOrEquality(mod);
         (cache,_,ih,tys,csets,oDA) =
         instClassDefHelper(cache,env,ih,{tSpec},pre,inst_dims,impl,{}, inSets,info);
@@ -2389,7 +2390,7 @@ algorithm
           _,_,_,_,inst_dims,impl,_,graph,_,_,_,_,_)
       equation
         true = Config.acceptMetaModelicaGrammar();
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         true = Mod.emptyModOrEquality(mods) and SCode.emptyModOrEquality(mod);
         (cache,_,ih,{ty},csets,oDA) =
         instClassDefHelper(cache,env,ih,{tSpec},pre,inst_dims,impl,{}, inSets,info);
@@ -2403,7 +2404,7 @@ algorithm
           _,_,_,_,inst_dims,impl,_,graph,_,_,_,_,_)
       equation
         true = Config.acceptMetaModelicaGrammar();
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         true = Mod.emptyModOrEquality(mods) and SCode.emptyModOrEquality(mod);
         (cache,_,ih,tys,csets,oDA) = instClassDefHelper(cache,env,ih,tSpecs,pre,inst_dims,impl,{}, inSets,info);
         tys = List.map(tys, Types.boxIfUnboxedType);
@@ -2416,7 +2417,7 @@ algorithm
           _,_,_,_,inst_dims,impl,_,graph,_,_,_,_,_)
       equation
         true = Config.acceptMetaModelicaGrammar();
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         true = Mod.emptyModOrEquality(mods) and SCode.emptyModOrEquality(mod);
         (cache,_,ih,{ty},csets,oDA) = instClassDefHelper(cache,env,ih,{tSpec},pre,inst_dims,impl,{}, inSets,info);
         ty = Types.boxIfUnboxedType(ty);
@@ -2429,7 +2430,7 @@ algorithm
           _,_,_,_,inst_dims,impl,_,graph,_,_,_,_,_)
       equation
         // true = Config.acceptMetaModelicaGrammar(); // We use this for builtins also
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         true = Mod.emptyModOrEquality(mods) and SCode.emptyModOrEquality(mod);
         (cache,_,ih,_,csets,oDA) = instClassDefHelper(cache,env,ih,{},pre,inst_dims,impl,{}, inSets,info);
         bc = SOME(DAE.T_METAPOLYMORPHIC(className));
@@ -2459,7 +2460,7 @@ algorithm
           _,_,_,_,inst_dims,impl,_,graph,_,_,_,_,_)
       equation
         true = Config.acceptMetaModelicaGrammar();
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         true = Mod.emptyModOrEquality(mods) and SCode.emptyModOrEquality(mod);
         false = listMember(Absyn.pathString(cn), {"tuple","Tuple","array","Array","Option","list","List"});
         (cache,(SCode.CLASS(name=cn2,restriction=SCode.R_UNIONTYPE(typeVars=typeVars),classDef=classDef)),cenv) = Lookup.lookupClass(cache, env, cn, SOME(info));
@@ -2503,7 +2504,7 @@ algorithm
           SCode.DERIVED(Absyn.TPATH(path = cn)),
           _,_,_,_,_,_,_,_,_,_,_,_,_)
       equation
-        false = Util.getStatefulBoolean(stopInst);
+        false = Mutable.access(stopInst);
         failure((_,_,_) = Lookup.lookupClass(cache,env, cn));
         cns = Absyn.pathString(cn);
         scope_str = FGraph.printGraphPathStr(env);
@@ -2660,7 +2661,7 @@ protected function instBasictypeBaseclass
   input list<list<DAE.Dimension>> inInstDims5;
   input String className;
   input SourceInfo info;
-  input Util.StatefulBoolean stopInst "prevent instantiation of classes adding components to primary types";
+  input Mutable<Boolean> stopInst "prevent instantiation of classes adding components to primary types";
   output FCore.Cache outCache;
   output InnerOuter.InstHierarchy outIH;
   output UnitAbsyn.InstStore outStore;
@@ -2700,7 +2701,7 @@ algorithm
         b1 = Types.basicType(ty);
         b2 = Types.arrayType(ty);
         b3 = Types.extendsBasicType(ty);
-        true = Util.boolOrList({b1, b2, b3});
+        true = boolOr(b1, boolOr(b2, b3));
 
         ErrorExt.rollBack("instBasictypeBaseclass");
       then
@@ -2755,7 +2756,7 @@ Handles the fail case rollbacks/deleteCheckpoint of errors."
   input list<list<DAE.Dimension>> inInstDims5;
   input String className;
   input SourceInfo inInfo;
-  input Util.StatefulBoolean stopInst "prevent instantiation of classes adding components to primary types";
+  input Mutable<Boolean> stopInst "prevent instantiation of classes adding components to primary types";
 algorithm
   _ := matchcontinue(inCache,inEnv1,inIH,store,inSCodeElementLst2,inSCodeElementLst3,inMod4,inInstDims5,className,stopInst)
   local
@@ -2789,7 +2790,7 @@ algorithm
         classname = FGraph.printGraphPathStr(env);
         ErrorExt.rollBack("instBasictypeBaseclass2");
         Error.addSourceMessage(Error.INHERIT_BASIC_WITH_COMPS, {classname}, inInfo);
-        Util.setStatefulBoolean(stopInst,true);
+        Mutable.update(stopInst,true);
       then
         ();
 
@@ -2980,7 +2981,7 @@ public function instElementList
   output list<DAE.Var> outVars;
   output ConnectionGraph.ConnectionGraph outGraph = inGraph;
   //output List<tuple<Absyn.ComponentRef,DAE.ComponentRef>> fieldDomLst = {};
-  output InstUtil.DomainFieldsLst domainFieldsList = {};
+  output InstUtil.DomainFieldsLst domainFieldsListOut = {};
 protected
   list<tuple<SCode.Element, DAE.Mod>> el;
   FCore.Cache cache;
@@ -2988,7 +2989,7 @@ protected
   list<DAE.Element> dae;
   list<list<DAE.Var>> varsl = {};
   list<list<DAE.Element>> dael = {};
-  Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>> fieldDomOpt;
+  InstUtil.DomainFieldOpt fieldDomOpt;
   list<Integer> element_order;
   array<tuple<SCode.Element, DAE.Mod>> el_arr;
   array<list<DAE.Var>> var_arr;
@@ -3023,7 +3024,7 @@ algorithm
       arrayUpdate(var_arr, length-idx+1, vars);
       arrayUpdate(dae_arr, length-idx+1, dae);
       if intEq(Flags.getConfigEnum(Flags.GRAMMAR), Flags.PDEMODELICA) then
-        domainFieldsList := InstUtil.optAppendField(domainFieldsList,fieldDomOpt);
+        domainFieldsListOut := InstUtil.optAppendField(domainFieldsListOut,fieldDomOpt);
       end if;
     end for;
 
@@ -3111,7 +3112,7 @@ public function instElement2
   output ClassInf.State outState = inState;
   output list<DAE.Var> outVars = {};
   output ConnectionGraph.ConnectionGraph outGraph = inGraph;
-  output Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>> outFieldDomOpt;
+  output InstUtil.DomainFieldOpt outFieldDomOpt = NONE();
 protected
   tuple<SCode.Element, DAE.Mod> elt;
   Boolean is_deleted;
@@ -3224,7 +3225,7 @@ public function instElement "
   output ClassInf.State outState;
   output list<DAE.Var> outVars;
   output ConnectionGraph.ConnectionGraph outGraph;
-  output Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>> outFieldDomOpt = NONE();
+  output InstUtil.DomainFieldOpt outFieldDomOpt = NONE();
 algorithm
   (outCache, outEnv, outIH, outUnitStore, outDae, outSets, outState, outVars, outGraph):=
   matchcontinue (inCache, inEnv, inIH, inUnitStore, inMod, inPrefix, inState,
@@ -3819,6 +3820,7 @@ protected
   DAE.Mod redecl_mod, m, old_m;
   String redecl_name, name;
   Boolean found;
+  SCode.Replaceable repl;
   Option<SCode.ConstrainClass> cc;
   list<SCode.Element> cc_comps;
   list<Absyn.ComponentRef> crefs;
@@ -3833,8 +3835,7 @@ algorithm
 
   (outElement, outMod) := matchcontinue (redecl_el, inElement)
     // Redeclaration of component.
-    case (SCode.COMPONENT(),
-          SCode.COMPONENT(prefixes = SCode.PREFIXES(replaceablePrefix = SCode.REPLACEABLE(cc = cc))))
+    case (SCode.COMPONENT(), SCode.COMPONENT(prefixes = SCode.PREFIXES(replaceablePrefix = repl)))
       algorithm
         true := redecl_name == inElement.name;
 
@@ -3847,23 +3848,31 @@ algorithm
         (outCache, old_m) := Mod.elabMod(outCache, outEnv, outIH, inPrefix,
           inElement.modifications, inImpl, Mod.COMPONENT(inElement.name), inElement.info);
 
-        if isSome(cc) then
-          // Constraining type on the component:
-          // Extract components belonging to constraining class.
-          cc_comps := InstUtil.extractConstrainingComps(cc, inEnv, inPrefix);
-          // Keep previous constraining class mods.
-          redecl_mod := InstUtil.keepConstrainingTypeModifersOnly(redecl_mod, cc_comps);
-          old_m := InstUtil.keepConstrainingTypeModifersOnly(old_m, cc_comps);
+        m := match repl
+          case SCode.REPLACEABLE(cc = cc as SOME(_))
+            algorithm
+              // Constraining type on the component:
+              // Extract components belonging to constraining class.
+              cc_comps := InstUtil.extractConstrainingComps(cc, inEnv, inPrefix);
+              // Keep previous constraining class mods.
+              redecl_mod := InstUtil.keepConstrainingTypeModifersOnly(redecl_mod, cc_comps);
+              old_m := InstUtil.keepConstrainingTypeModifersOnly(old_m, cc_comps);
 
-          m := Mod.merge(m, redecl_mod, redecl_name);
-          m := Mod.merge(m, old_m, redecl_name);
-          m := Mod.merge(m, inCmod, redecl_name);
-        else
-          // No constraining type on comp, throw away modifiers prior to redeclaration:
-          m := Mod.merge(redecl_mod, m, redecl_name);
-          m := Mod.merge(m, old_m, redecl_name);
-          m := Mod.merge(inCmod, m, redecl_name);
-        end if;
+              m := Mod.merge(m, redecl_mod, redecl_name);
+              m := Mod.merge(m, old_m, redecl_name);
+              m := Mod.merge(m, inCmod, redecl_name);
+            then
+              m;
+
+          else
+            algorithm
+              // No constraining type on comp, throw away modifiers prior to redeclaration:
+              m := Mod.merge(redecl_mod, m, redecl_name);
+              m := Mod.merge(m, old_m, redecl_name);
+              m := Mod.merge(inCmod, m, redecl_name);
+            then
+              m;
+        end match;
 
         (outCache, outElement) :=
           propagateRedeclCompAttr(outCache, outEnv, inElement, redecl_el);
@@ -4422,7 +4431,7 @@ algorithm
     case _
       algorithm
         crPath := ComponentReference.pathToCref(path);
-        (cache,env,_,_,_,_,_,_,name) := Lookup.lookupVarInPackages(cache, inEnv, crPath, {}, Util.makeStatefulBoolean(false));
+        (cache,env,_,_,_,_,_,_,name) := Lookup.lookupVarInPackages(cache, inEnv, crPath, {}, Mutable.create(false));
         path3 := makeFullyQualified2(env,name);
       then (cache,Absyn.makeFullyQualified(path3));
     else (cache,path);
@@ -4499,7 +4508,7 @@ algorithm
     // TODO! FIXME! what do we do here??!!
     case (cache,env,_)
       equation
-        (cache,env,_,_,_,_,_,_,name) = Lookup.lookupVarInPackagesIdent(cache, env, ident, {}, {}, Util.makeStatefulBoolean(false));
+        (cache,env,_,_,_,_,_,_,name) = Lookup.lookupVarInPackagesIdent(cache, env, ident, {}, {}, Mutable.create(false));
         path3 = makeFullyQualified2(env,name);
       then
         (cache,Absyn.makeFullyQualified(path3));
@@ -5341,7 +5350,7 @@ algorithm
       Option<CachedInstItem> opt;
       list<Option<CachedInstItem>> lst;
 
-    // nothing is we have +d=noCache
+    // nothing is we have -d=noCache
     case (_, _, _)
       equation
         false = Flags.isSet(Flags.CACHE);

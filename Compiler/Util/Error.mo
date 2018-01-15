@@ -164,8 +164,8 @@ public constant Message REM_ARG_ZERO = MESSAGE(17, TRANSLATION(), ERROR(),
   Util.gettext("Second argument in rem is zero in rem(%s,%s)."));
 public constant Message SCRIPT_READ_SIM_RES_ERROR = MESSAGE(18, SCRIPTING(), ERROR(),
   Util.gettext("Error reading simulation result."));
-public constant Message RECURSIVE_EXTENDS = MESSAGE(19, TRANSLATION(), ERROR(),
-  Util.gettext("Extending %s is not allowed, since it is an enclosing class."));
+public constant Message EXTENDS_LOOP = MESSAGE(19, TRANSLATION(), ERROR(),
+  Util.gettext("extends %s causes an instantiation loop."));
 public constant Message LOAD_MODEL_ERROR = MESSAGE(20, TRANSLATION(), ERROR(),
   Util.gettext("Class %s not found."));
 public constant Message WRITING_FILE_ERROR = MESSAGE(21, SCRIPTING(), ERROR(),
@@ -223,7 +223,7 @@ public constant Message INST_ARRAY_EQ_UNKNOWN_SIZE = MESSAGE(46, TRANSLATION(), 
 public constant Message TUPLE_ASSIGN_FUNCALL_ONLY = MESSAGE(47, TRANSLATION(), ERROR(),
   Util.gettext("Tuple assignment only allowed when rhs is function call (in %s)."));
 public constant Message INVALID_CONNECTOR_TYPE = MESSAGE(48, TRANSLATION(), ERROR(),
-  Util.gettext("Illegal connection: component %s is not a connector."));
+  Util.gettext("%s is not a valid connector."));
 public constant Message EXPANDABLE_NON_EXPANDABLE_CONNECTION = MESSAGE(49, TRANSLATION(), ERROR(),
   Util.gettext("Cannot connect expandable connector %s with non-expandable connector %s."));
 public constant Message UNDECLARED_CONNECTION = MESSAGE(50, TRANSLATION(), ERROR(),
@@ -249,7 +249,7 @@ public constant Message INHERITED_EXTENDS = MESSAGE(59, TRANSLATION(), ERROR(),
 public constant Message EXTEND_THROUGH_COMPONENT = MESSAGE(60, TRANSLATION(), ERROR(),
   Util.gettext("Part %s of base class name %s is not a class."));
 public constant Message PROTECTED_ACCESS = MESSAGE(61, TRANSLATION(), ERROR(),
-  Util.gettext("%s is protected and cannot be accessed outside it's scope."));
+  Util.gettext("Illegal access of protected element %s."));
 public constant Message ILLEGAL_MODIFICATION = MESSAGE(62, TRANSLATION(), ERROR(),
   Util.gettext("Illegal modification %s (of %s)."));
 public constant Message INTERNAL_ERROR = MESSAGE(63, TRANSLATION(), ERROR(),
@@ -284,10 +284,10 @@ public constant Message NO_MATCHING_FUNCTION_FOUND_NO_CANDIDATE = MESSAGE(77, TR
   Util.gettext("No matching function found for %s."));
 public constant Message FUNCTION_COMPS_MUST_HAVE_DIRECTION = MESSAGE(78, TRANSLATION(), ERROR(),
   Util.gettext("Component %s in function is neither input nor output."));
-public constant Message FUNCTION_SLOT_ALLREADY_FILLED = MESSAGE(79, TRANSLATION(), ERROR(),
+public constant Message FUNCTION_SLOT_ALREADY_FILLED = MESSAGE(79, TRANSLATION(), ERROR(),
   Util.gettext("Slot %s already filled in a function call in component %s."));
-public constant Message NO_SUCH_ARGUMENT = MESSAGE(80, TRANSLATION(), ERROR(),
-  Util.gettext("Function %s has no argument named %s."));
+public constant Message NO_SUCH_PARAMETER = MESSAGE(80, TRANSLATION(), ERROR(),
+  Util.gettext("Function %s has no parameter named %s."));
 public constant Message CONSTANT_OR_PARAM_WITH_NONCONST_BINDING = MESSAGE(81, TRANSLATION(), ERROR(),
   Util.gettext("%s is a constant or parameter with a non-constant initializer %s."));
 public constant Message WRONG_DIMENSION_TYPE = MESSAGE(82, TRANSLATION(), ERROR(),
@@ -438,6 +438,8 @@ public constant Message WRONG_NUMBER_OF_SUBSCRIPTS = MESSAGE(154, TRANSLATION(),
   Util.gettext("Wrong number of subscripts in %s (%s subscripts for %s dimensions)."));
 public constant Message FUNCTION_ELEMENT_WRONG_KIND = MESSAGE(155, TRANSLATION(), ERROR(),
   Util.gettext("Element is not allowed in function context: %s"));
+public constant Message MISSING_DEFAULT_ARG = MESSAGE(156, TRANSLATION(), WARNING(),
+  Util.gettext("Missing default argument on function parameter %s."));
 public constant Message DUPLICATE_CLASSES_TOP_LEVEL = MESSAGE(157, TRANSLATION(), ERROR(),
   Util.gettext("Duplicate classes on top level is not allowed (got %s)."));
 public constant Message WHEN_EQ_LHS = MESSAGE(158, TRANSLATION(), ERROR(),
@@ -465,11 +467,11 @@ public constant Message METARECORD_CONTAINS_METARECORD_MEMBER = MESSAGE(168, TRA
 public constant Message INVALID_EXTERNAL_OBJECT = MESSAGE(169, TRANSLATION(), ERROR(),
   Util.gettext("Invalid external object %s, %s."));
 public constant Message CIRCULAR_COMPONENTS = MESSAGE(170, TRANSLATION(), ERROR(),
-  Util.gettext("Cyclically dependent constants or parameters found in scope %s: %s."));
+  Util.gettext("Cyclically dependent constants or parameters found in scope %s: %s (ignore with -d=ignoreCycles)."));
 public constant Message FAILURE_TO_DEDUCE_DIMS_FROM_MOD = MESSAGE(171, TRANSLATION(), WARNING(),
   Util.gettext("Failed to deduce dimensions of %s due to unknown dimensions of modifier %s."));
 public constant Message REPLACEABLE_BASE_CLASS = MESSAGE(172, TRANSLATION(), ERROR(),
-  Util.gettext("Part %s of base class %s is replaceable."));
+  Util.gettext("Class %s in extends %s is replaceable."));
 public constant Message NON_REPLACEABLE_CLASS_EXTENDS = MESSAGE(173, TRANSLATION(), ERROR(),
   Util.gettext("Non-replaceable base class %s in class extends."));
 public constant Message ERROR_FROM_HERE = MESSAGE(174, TRANSLATION(), NOTIFICATION(),
@@ -501,7 +503,7 @@ public constant Message INVALID_SIZE_INDEX = MESSAGE(186, TRANSLATION(), ERROR()
 public constant Message ALGORITHM_TRANSITION_FAILURE = MESSAGE(187, TRANSLATION(), ERROR(),
   Util.gettext("Algorithm section is not allowed in %s."));
 public constant Message FAILURE_TO_DEDUCE_DIMS_NO_MOD = MESSAGE(188, TRANSLATION(), ERROR(),
-  Util.gettext("Failed to deduce dimensions of %s due to missing binding equation."));
+  Util.gettext("Failed to deduce dimension %s of %s due to missing binding equation."));
 public constant Message FUNCTION_MULTIPLE_ALGORITHM = MESSAGE(189, TRANSLATION(), WARNING(),
   Util.gettext("The behavior of multiple algorithm sections in function %s is not standard Modelica. OpenModelica will execute the sections in the order in which they were declared or inherited (same ordering as inherited input/output arguments, which also are not standardized)."));
 public constant Message STATEMENT_GENERIC_FAILURE = MESSAGE(190, TRANSLATION(), ERROR(),
@@ -515,7 +517,7 @@ public constant Message ARRAY_TYPE_MISMATCH = MESSAGE(193, TRANSLATION(), ERROR(
 public constant Message VECTORIZE_TWO_UNKNOWN = MESSAGE(194, TRANSLATION(), ERROR(),
   Util.gettext("Could not vectorize call with unknown dimensions due to finding two for-iterators: %s and %s."));
 public constant Message FUNCTION_SLOT_VARIABILITY = MESSAGE(195, TRANSLATION(), ERROR(),
-  Util.gettext("Function argument %s=%s is not a %sexpression."));
+  Util.gettext("Function argument %s=%s is not a %s expression."));
 public constant Message INVALID_ARRAY_DIM_IN_CONVERSION_OP = MESSAGE(196, TRANSLATION(), ERROR(),
   Util.gettext("Invalid dimension %s of argument to %s, expected dimension size %s but got %s."));
 public constant Message DUPLICATE_REDECLARATION = MESSAGE(197, TRANSLATION(), ERROR(),
@@ -531,7 +533,7 @@ public constant Message NON_FORMAL_PUBLIC_FUNCTION_VAR = MESSAGE(201, TRANSLATIO
 public constant Message PROTECTED_FORMAL_FUNCTION_VAR = MESSAGE(202, TRANSLATION(), ERROR(),
   Util.gettext("Invalid protected variable %s, function variables that are input/output must be public."));
 public constant Message UNFILLED_SLOT = MESSAGE(203, TRANSLATION(), ERROR(),
-  Util.gettext("Function argument %s was not given by the function call, and does not have a default value."));
+  Util.gettext("Function parameter %s was not given by the function call, and does not have a default value."));
 public constant Message SAME_CONNECT_INSTANCE = MESSAGE(204, TRANSLATION(), WARNING(),
   Util.gettext("connect(%s, %s) connects the same connector instance! The connect equation will be ignored."));
 public constant Message STACK_OVERFLOW = MESSAGE(205, SCRIPTING(), ERROR(),
@@ -555,7 +557,7 @@ public constant Message INSERT_CLASS = MESSAGE(213, SCRIPTING(), ERROR(),
 public constant Message MISSING_MODIFIED_ELEMENT = MESSAGE(214, TRANSLATION(), ERROR(),
   Util.gettext("Modified element %s not found in class %s."));
 public constant Message INVALID_REDECLARE_IN_BASIC_TYPE = MESSAGE(215, TRANSLATION(), ERROR(),
-  Util.gettext("Invalid redeclaration, attributes of basic types can not be redeclared."));
+  Util.gettext("Invalid redeclaration of %s, attributes of basic types may not be redeclared."));
 public constant Message INVALID_STREAM_CONNECTOR = MESSAGE(216, TRANSLATION(), ERROR(),
   Util.gettext("Invalid stream connector %s: %s"));
 public constant Message CONDITION_TYPE_ERROR = MESSAGE(217, TRANSLATION(), ERROR(),
@@ -575,11 +577,11 @@ public constant Message NOTIFY_NOT_LOADED = MESSAGE(223, SCRIPTING(), NOTIFICATI
 public constant Message REINIT_MUST_BE_REAL = MESSAGE(224, TRANSLATION(), ERROR(),
   Util.gettext("The first argument to reinit must be a subtype of Real, but %s has type %s."));
 public constant Message REINIT_MUST_BE_VAR = MESSAGE(225, TRANSLATION(), ERROR(),
-  Util.gettext("The first argument to reinit must be a variable, but %s is a %s."));
+  Util.gettext("The first argument to reinit must be a continuous time variable, but %s is %s."));
 public constant Message CONNECT_TWO_SOURCES = MESSAGE(226, TRANSLATION(), WARNING(),
   Util.gettext("Connecting two signal sources while connecting %s to %s."));
 public constant Message INNER_OUTER_FORMAL_PARAMETER = MESSAGE(227, TRANSLATION(), ERROR(),
-  Util.gettext("Invalid prefix %son formal parameter %s."));
+  Util.gettext("Invalid prefix %s on formal parameter %s."));
 public constant Message REDECLARE_NONEXISTING_ELEMENT = MESSAGE(228, TRANSLATION(), ERROR(),
   Util.gettext("Illegal redeclare of element %s, no inherited element with that name exists."));
 public constant Message INVALID_ARGUMENT_TYPE_FIRST_ARRAY = MESSAGE(229, TRANSLATION(), ERROR(),
@@ -617,7 +619,7 @@ public constant Message ASSIGN_UNKNOWN_ERROR = MESSAGE(244, TRANSLATION(), ERROR
 public constant Message WARNING_DEF_USE = MESSAGE(245, TRANSLATION(), WARNING(),
   Util.gettext("%s was used before it was defined (given a value). Additional such uses may exist for the variable, but some messages were suppressed."));
 public constant Message EXP_TYPE_MISMATCH = MESSAGE(246, TRANSLATION(), ERROR(),
-  Util.gettext("Expression %1 has type %3, expected type %2."));
+  Util.gettext("Expression '%1' has type %3, expected type %2."));
 public constant Message PACKAGE_ORDER_DUPLICATES = MESSAGE(247, TRANSLATION(), ERROR(),
   Util.gettext("Found duplicate names in package.order file: %s."));
 public constant Message ERRONEOUS_TYPE_ERROR = MESSAGE(248, TRANSLATION(), ERROR(),
@@ -714,6 +716,57 @@ public constant Message BUILTIN_EXTENDS_INVALID_ELEMENTS = MESSAGE(293, TRANSLAT
   Util.gettext("A class extending from builtin type %s may not have other elements."));
 public constant Message INITIAL_CALL_WARNING = MESSAGE(294, TRANSLATION(), WARNING(),
   Util.gettext("The standard says that initial() may only be used as a when condition (when initial() or when {..., initial(), ...}), but got condition %s."));
+public constant Message RANGE_TYPE_MISMATCH = MESSAGE(295, TRANSLATION(), ERROR(),
+  Util.gettext("Type mismatch in range: '%s' of type\n  %s\nis not type compatible with '%s' of type\n  %s"));
+public constant Message RANGE_ZERO_STEP = MESSAGE(296, TRANSLATION(), ERROR(),
+  Util.gettext("Range may not have a step size of 0."));
+public constant Message RANGE_INVALID_STEP = MESSAGE(297, TRANSLATION(),
+ERROR(),
+  Util.gettext("Range of type %s may not specify a step size."));
+public constant Message RANGE_INVALID_TYPE = MESSAGE(298, TRANSLATION(), ERROR(),
+  Util.gettext("Range has invalid type %s."));
+public constant Message CLASS_EXTENDS_MISSING_REDECLARE = MESSAGE(299, TRANSLATION(), WARNING(),
+  Util.gettext("Missing redeclare prefix on class extends %s, treating like redeclare anyway."));
+public constant Message CYCLIC_DIMENSIONS = MESSAGE(300, TRANSLATION(), ERROR(),
+  Util.gettext("Dimension %s of %s, '%s', could not be evaluated due to a cyclic dependency."));
+public constant Message INVALID_DIMENSION_TYPE = MESSAGE(301, TRANSLATION(), ERROR(),
+  Util.gettext("Dimension '%s' of type %s is not an integer expression or an enumeration or Boolean type name."));
+public constant Message RAGGED_DIMENSION = MESSAGE(302, TRANSLATION(), ERROR(),
+  Util.gettext("Ragged dimensions are not yet supported (from dimension '%s')"));
+public constant Message INVALID_TYPENAME_USE = MESSAGE(303, TRANSLATION(), ERROR(),
+  Util.gettext("Type name '%s' is not allowed in this context."));
+public constant Message FOUND_WRONG_INNER_ELEMENT = MESSAGE(305, TRANSLATION(), ERROR(),
+  Util.gettext("Found inner %s %s instead of expected %s."));
+public constant Message FOUND_OTHER_BASECLASS = MESSAGE(306, TRANSLATION(), ERROR(),
+  Util.gettext("Found other base class for extends %s after instantiating extends."));
+public constant Message OUTER_ELEMENT_MOD = MESSAGE(307, TRANSLATION(), ERROR(),
+  Util.gettext("Modifier '%s' found on outer element %s."));
+public constant Message OUTER_LONG_CLASS = MESSAGE(308, TRANSLATION(), ERROR(),
+  Util.gettext("Illegal outer class %s, outer classes may only be declared using short-class definitions."));
+public constant Message MISSING_INNER_ADDED = MESSAGE(309, TRANSLATION(), WARNING(),
+  Util.gettext("An inner declaration for outer %s %s could not be found and was automatically generated."));
+public constant Message MISSING_INNER_MESSAGE = MESSAGE(310, TRANSLATION(), NOTIFICATION(),
+  Util.gettext("The diagnostics message for the missing inner is: %s"));
+public constant Message INVALID_CONNECTOR_FORM = MESSAGE(311, TRANSLATION(), ERROR(),
+  Util.gettext("%s is not a valid form for a connector, connectors must be either c1.c2...cn or m.c (where c is a connector and m is a non-connector)."));
+public constant Message CONNECTOR_PREFIX_OUTSIDE_CONNECTOR = MESSAGE(312, TRANSLATION(), WARNING(),
+  Util.gettext("Prefix '%s' used outside connector declaration."));
+public constant Message EXTERNAL_OBJECT_INVALID_ELEMENT = MESSAGE(313, TRANSLATION(), ERROR(),
+  Util.gettext("External object %s contains invalid element '%s'."));
+public constant Message EXTERNAL_OBJECT_MISSING_STRUCTOR = MESSAGE(314, TRANSLATION(), ERROR(),
+  Util.gettext("External object %s is missing a %s."));
+public constant Message MULTIPLE_SECTIONS_IN_FUNCTION = MESSAGE(315, TRANSLATION(), ERROR(),
+  Util.gettext("Function %s has more than one algorithm section or external declaration."));
+public constant Message INVALID_EXTERNAL_LANGUAGE = MESSAGE(316, TRANSLATION(), ERROR(),
+  Util.gettext("'%s' is not a valid language for an external function."));
+public constant Message SUBSCRIPT_TYPE_MISMATCH = MESSAGE(317, TRANSLATION(), ERROR(),
+  Util.gettext("Subscript '%s' has type %s, expected type %s."));
+public constant Message EXP_INVALID_IN_FUNCTION = MESSAGE(318, TRANSLATION(), ERROR(),
+  Util.gettext("%s is not allowed in a function."));
+public constant Message NO_MATCHING_FUNCTION_FOUND_NFINST = MESSAGE(319, TRANSLATION(), ERROR(),
+  Util.gettext("No matching function found for %s.\nCandidates are:\n  %s"));
+public constant Message ARGUMENT_OUT_OF_RANGE = MESSAGE(320, TRANSLATION(), ERROR(),
+  Util.gettext("Argument %s of %s is out of range (%s)"));
 public constant Message INITIALIZATION_NOT_FULLY_SPECIFIED = MESSAGE(496, TRANSLATION(), WARNING(),
   Util.gettext("The initial conditions are not fully specified. %s."));
 public constant Message INITIALIZATION_OVER_SPECIFIED = MESSAGE(497, TRANSLATION(), WARNING(),
@@ -832,8 +885,8 @@ public constant Message CONT_CLOCKED_PARTITION_CONFLICT_VAR = MESSAGE(561, TRANS
   Util.gettext("Variable %s belongs to clocked and continuous partitions."));
 public constant Message ELSE_WHEN_CLOCK = MESSAGE(562, TRANSLATION(), ERROR(),
   Util.gettext("Clocked when equation can not contain elsewhen part."));
-public constant Message REINIT_NOTIN_WHEN = MESSAGE(563, TRANSLATION(), ERROR(),
-  Util.gettext("Operator reinit should be in body of when statement."));
+public constant Message REINIT_NOT_IN_WHEN = MESSAGE(563, TRANSLATION(), ERROR(),
+  Util.gettext("Operator reinit may only be used in the body of a when equation."));
 public constant Message NESTED_CLOCKED_WHEN = MESSAGE(564, TRANSLATION(), ERROR(),
   Util.gettext("Nested clocked when statements are not allowed."));
 public constant Message CLOCKED_WHEN_BRANCH = MESSAGE(565, TRANSLATION(), ERROR(),
@@ -866,6 +919,16 @@ public constant Message USER_TEARING_VARS = MESSAGE(578, SYMBOLIC(), NOTIFICATIO
   Util.gettext("Following iteration variables are selected by the user for strong component %s (DAE kind: %s):\n%s"));
 public constant Message CLASS_EXTENDS_TARGET_NOT_FOUND = MESSAGE(579, TRANSLATION(), ERROR(),
   Util.gettext("Base class targeted by class extends %s not found in the inherited classes."));
+public constant Message ASSIGN_PARAM_FIXED_ERROR = MESSAGE(580, TRANSLATION(), ERROR(),
+  Util.gettext("Trying to assign to parameter component %s(fixed=true) in %s := %s"));
+public constant Message EQN_NO_SPACE_TO_SOLVE = MESSAGE(581, SYMBOLIC(), WARNING(),
+  Util.gettext("Equation %s (size: %s) %s is not big enough to solve for enough variables.\n  Remaining unsolved variables are: %s\n  Already solved: %s\n  Equations used to solve those variables:%s"));
+public constant Message VAR_NO_REMAINING_EQN = MESSAGE(582, SYMBOLIC(), WARNING(),
+  Util.gettext("Variable %s does not have any remaining equation to be solved in.\n  The original equations were:%s"));
+public constant Message MOVING_PARAMETER_BINDING_TO_INITIAL_EQ_SECTION = MESSAGE(582, TRANSLATION(), NOTIFICATION(),
+  Util.gettext("Moving binding to initial equation section and setting fixed attribute of %s to false."));
+public constant Message MIXED_DETERMINED = MESSAGE(583, SYMBOLIC(), ERROR(),
+  Util.gettext("The given system is mixed-determined.   [index > %s]\nPlease checkout the option \"--maxMixedDeterminedIndex\"."));
 
 public constant Message MATCH_SHADOWING = MESSAGE(5001, TRANSLATION(), ERROR(),
   Util.gettext("Local variable '%s' shadows another variable."));
@@ -992,9 +1055,13 @@ public constant Message SUSAN_NOTIFY = MESSAGE(7012, TRANSLATION(), NOTIFICATION
 public constant Message PDEModelica_ERROR = MESSAGE(7013, TRANSLATION(), ERROR(),
   Util.gettext("PDEModelica: %s"));
 public constant Message TEMPLATE_ERROR_FUNC = MESSAGE(7014, TRANSLATION(), ERROR(),
-  Util.gettext("Template error: A template call failed (a call with %s parameters: %s). One possible reason could be that a template imported function call failed (which should not happen for functions called from within template code; templates preserve pure 'match'/non-failing semantics)."));
+  Util.gettext("Template error: A template call failed (%s). One possible reason could be that a template imported function call failed (which should not happen for functions called from within template code; templates assert pure 'match'/non-failing semantics)."));
 public constant Message FMU_EXPORT_NOT_SUPPORTED_CPP = MESSAGE(7015, SCRIPTING(), WARNING(),
   Util.gettext("Export of FMU type %s is not supported with Cpp target. FMU will be for Model Exchange (me)."));
+public constant Message DEPRECATED_API_CALL = MESSAGE(7016, SCRIPTING(), WARNING(),
+  Util.gettext("'%1' is deprecated. It is recommended to use '%2' instead."));
+public constant Message CONFLICTING_ALIAS_SET = MESSAGE(7017, SYMBOLIC(), WARNING(),
+  Util.gettext("The model contains alias variables with conflicting start and/or nominal values. It is recommended to resolve the conflicts, because otherwise the system could be hard to solve. To print the conflicting alias sets and the chosen candidates please use -d=aliasConflicts."));
 
 protected import ErrorExt;
 

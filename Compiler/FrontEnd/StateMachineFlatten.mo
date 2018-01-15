@@ -35,7 +35,7 @@
   description: Flattening of state machines
 
   This module contains functions to transform an instantiated state machine to flat data-flow equations.
-  The approach a rather direct implementation of the state machine to data-flow equations transformation
+  This approach is a rather direct implementation of the state machine to data-flow equations transformation
   described in the specification. A more efficient implemention could avoid that transformation to
   data-flow and instead keep the state machine structure in the back-end in order to generate optimized
   code (in terms of memory requirements and minimized conditional statements).
@@ -414,9 +414,9 @@ Author: BTH
   input list<DAE.Element> accElems;
   output list<DAE.Element> outElems = accElems;
 protected
-  list<DAE.Element> varLst, otherLst1, equationLst1, equationLst2, otherLst2, flatSmLst, otherLst3;
+  list<DAE.Element> varLst1, varLst2, assignedVarLst, stateVarLst, otherLst1, equationLst1, equationLst2, otherLst2, flatSmLst, otherLst3;
   DAE.ComponentRef componentRef;
-  list<DAE.ComponentRef> varCrefs;
+  list<DAE.ComponentRef> stateVarCrefs;
   list<Option<DAE.VariableAttributes>> variableAttributesOptions;
   list<Option<DAE.Exp>> startValuesOpt;
   list<tuple<DAE.ComponentRef, Option<DAE.Exp>>> varCrefStartVal;
@@ -425,40 +425,108 @@ protected
 algorithm
   DAE.SM_COMP(componentRef=componentRef, dAElist=dAElist) := inSMComp;
 
-  (varLst, otherLst1) := List.extractOnTrue(dAElist, isVar);
-  varCrefs := List.map(varLst, DAEUtil.varCref);
-  variableAttributesOptions := List.map(varLst, DAEUtil.getVariableAttributes);
+  (varLst1, otherLst1) := List.extractOnTrue(dAElist, isVar);
+
+  // FIXME More general handling requires supporting all valid elements, e.g., also IF_EQUATION (also in downstream functions), but not sure what can be possibly encountered here
+  (equationLst1, otherLst2) := List.extractOnTrue(otherLst1, isEquationOrWhenEquation);
+
+  // FIXME More general handling might require assignment matching algorithm. Current restriction relies on that any assigned variable appears at the LHS of an assignment equation.
+  // FIXME Maybe better to just filter out variables declared as "inputs" and assume that the rest are assigned variables?
+  // Retain all variables for which there exits an assignment equation
+  assignedVarLst := List.filterOnTrue(varLst1, function List.exist1(inList=equationLst1, inFindFunc=isVarAtLHS));
+  // Retain all variables which have "previous(x)" applied
+  stateVarLst := List.filterOnTrue(varLst1, function List.exist1(inList=equationLst1, inFindFunc=isPreviousAppliedToVar));
+  //print("StateMachineFlatten.smCompToDataFlow: stateVarLst:\n" + DAEDump.dumpElementsStr(stateVarLst) +"\n");
+
+  stateVarCrefs := List.map(stateVarLst, DAEUtil.varCref);
+  variableAttributesOptions := List.map(stateVarLst, DAEUtil.getVariableAttributes);
   startValuesOpt := List.map(variableAttributesOptions, getStartAttrOption);
-  varCrefStartVal := List.threadTuple(varCrefs, startValuesOpt);
+  varCrefStartVal := List.threadTuple(stateVarCrefs, startValuesOpt);
   crToExpOpt := HashTableCrToExpOption.emptyHashTableSized(listLength(varCrefStartVal) + 1);
   // create table that maps the cref of a variable to its start value
   crToExpOpt := List.fold(varCrefStartVal, BaseHashTable.add, crToExpOpt);
   //print("StateMachineFlatten.smCompToDataFlow: crToExpOpt:\n"); BaseHashTable.dumpHashTable(crToExpOpt);
 
-  (equationLst1, otherLst2) := List.extractOnTrue(otherLst1, isEquation);
-
-
   // 1. Make equations conditional so that they are only active if enclosing state is active
   // 2. Add reset equations for discrete-time states declared in the component
-  equationLst2 := List.fold3(equationLst1, addStateActivationAndReset, inSMComp, inEnclosingFlatSmSemantics, crToExpOpt, {});
+  (equationLst2, varLst2) := List.fold3(equationLst1, addStateActivationAndReset, inSMComp, inEnclosingFlatSmSemantics, crToExpOpt, ({},{}));
 
   (flatSmLst, otherLst3) := List.extractOnTrue(otherLst2, isFlatSm);
 
   // append non FLAT_SM elements to accumulator
-  outElems := List.flatten({outElems, varLst, equationLst2, otherLst3});
+  outElems := List.flatten({outElems, varLst1, varLst2, equationLst2, otherLst3});
 
   // recurse into FLAT_SM elements (if any)
   outElems := List.fold2(flatSmLst, flatSmToDataFlow, SOME(componentRef), SOME(inEnclosingFlatSmSemantics), outElems);
 end smCompToDataFlow;
 
-protected function addStateActivationAndReset
+
+protected function addStateActivationAndReset "
+Author: BTH
+The real work is done in helper function addStateActivationAndReset1.
+This top-level function just handles the recursive descent if inEqn is a DAE.WHEN_EQUATION().
+"
+  input DAE.Element inEqn "Expects DAE.EQUATION() or DAE.WHEN_EQUATION()";
+  input DAE.Element inEnclosingSMComp "The state component enclosing the equation";
+  input FlatSmSemantics inEnclosingFlatSmSemantics "The flat state machine semantics structure governing the state component";
+  input HashTableCrToExpOption.HashTable crToExpOpt "Table mapping variable declaration in the enclosing state to start values";
+  input tuple<list<DAE.Element>,list<DAE.Element>> accEqnsVars "Tuple for accumulating equations and variable definitions";
+  output tuple<list<DAE.Element>,list<DAE.Element>> outEqnsVars;
+protected
+  list<DAE.Element> equations1;
+  list<DAE.Element> vars1;
+  // WHEN_EQUATION
+  DAE.Exp condition;
+  list<DAE.Element> equations;
+  DAE.ElementSource source;
+algorithm
+  outEqnsVars := match (inEqn)
+    case DAE.EQUATION() then addStateActivationAndReset1(inEqn, inEnclosingSMComp, inEnclosingFlatSmSemantics, crToExpOpt, accEqnsVars);
+    case DAE.WHEN_EQUATION(condition,equations,NONE(),source)
+      algorithm
+        (equations1,vars1) := List.fold3(equations, addStateActivationAndReset, inEnclosingSMComp, inEnclosingFlatSmSemantics, crToExpOpt, ({},{}));
+      then (DAE.WHEN_EQUATION(condition,equations1,NONE(),source)::Util.tuple21(accEqnsVars), listAppend(vars1,Util.tuple22(accEqnsVars)));
+    case DAE.WHEN_EQUATION(elsewhen_=SOME(_))
+      algorithm
+        Error.addCompilerError("Encountered elsewhen part in a when clause of a clocked state machine.\n");
+      then fail();
+    else
+      algorithm
+        Error.addCompilerError("Internal compiler error: StateMachineFlatten.addStateActivationAndReset(..) called with unexpected argument.\n");
+    then fail();
+  end match;
+end addStateActivationAndReset;
+
+protected function addStateActivationAndReset1 "
+Author: BTH
+The function has following purpose:
+1. Make equations conditional so that they are only active if enclosing state is active
+2. Add reset equations for discrete-time states declared in the component
+
+FIXME 2017-02-17: There is problem with the approach taken in this function of transforming s.th. similar to
+  Real x(start=1.1);
+  x = previous(x) + 1
+to something like
+  x = if stateActive then x_previous + 1 else x_previous;
+  x_previous = if active and (activeReset or activeResetStates[1]) then 1.1 else previous(x);
+While this gives the correct reset semantics for x, one gets a wrong result for previous(x) at the reset instant:
+'x_previous' is set to the correct result value, but during the reset instant in general there will be 'previous(x) != x_previous'!
+The transformation below replaces all occurances of 'previous(x)' within the state's equations to 'x_previous', so that the
+state machine will show the correct behavior. However, if 'x' is accessed with 'previous(x)' from outside the state, it will hold
+the wrong value. Also, when plotting 'previous(x)' will show a wrong value during reset.
+Hence, one needs another mechanism to reset 'previous(x)' correctly, but I don't see how this can be easily done by an equation
+transformation to standard clocked synchronous equations in the front-end. Probably one could add a dedicated internal marker/operator
+which is then handled specially in the back-end.
+"
   input DAE.Element inEqn;
   input DAE.Element inEnclosingSMComp "The state component enclosing the equation";
   input FlatSmSemantics inEnclosingFlatSmSemantics "The flat state machine semantics structure governing the state component";
   input HashTableCrToExpOption.HashTable crToExpOpt "Table mapping variable declaration in the enclosing state to start values";
-  input list<DAE.Element> accEqns;
-  output list<DAE.Element> outEqns;
+  input tuple<list<DAE.Element>,list<DAE.Element>> accEqnsVars "Tuple for accumulating equations and variable definitions";
+  output tuple<list<DAE.Element>,list<DAE.Element>> outEqnsVars;
 protected
+  list<DAE.ComponentRef> stateVarCrefs;
+
   DAE.ComponentRef crefLHS, enclosingStateRef, substituteRef, activeResetRef, activeResetStatesRef, cref2;
   Boolean found, is;
   DAE.Type tyLHS;
@@ -473,17 +541,17 @@ protected
 algorithm
   DAE.EQUATION(exp, scalar, source) := inEqn;
   DAE.SM_COMP(componentRef=enclosingStateRef, dAElist=dAElist) := inEnclosingSMComp;
+  stateVarCrefs := BaseHashTable.hashTableKeyList(crToExpOpt);
 
   try
     // Handle case with LHS component reference
     DAE.CREF(componentRef=crefLHS, ty=tyLHS) := exp;
-    // Search whether the RHS of an equation 'x=exp' contains a subexpression 'previous(x)', if so, substitute them by 'x_previous'
-    (scalarNew, (_, found)) := Expression.traverseExpTopDown(scalar, traversingSubsPreviousCref, (crefLHS, false));
-    // Search whether the RHS of an equation 'x=exp' contains a subexpression  'pre' or 'previous(x)', if so, substitute them by 'x_previous'
-    //(scalarNew, (_, found)) := Expression.traverseExpTopDown(scalar, traversingSubsPreAndPreviousCref, (crefLHS, false)); // BTH useful to keep?
+    // For all {x1,x2,..}, search whether the RHS of an equation 'x=exp' contains a subexpression 'previous(x)', if so, substitute them by 'x_previous'
+    (scalarNew, (_, found)) := Expression.traverseExpTopDown(scalar, traversingSubsPreviousCrefs, (stateVarCrefs, false));
     eqn := DAE.EQUATION(exp, scalarNew, source);
 
-    if found then
+    // If it is an assigning state equation, transform equation 'a.x = e' to 'a.x = if a.active then e else a.x_previous'
+    if List.exist(stateVarCrefs, function ComponentReference.crefEqual(inComponentRef1=crefLHS)) then
       // Transform equation 'a.x = e' to 'a.x = if a.active then e else a.x_previous'
       eqn1 := wrapInStateActivationConditional(eqn, enclosingStateRef, true);
 
@@ -492,14 +560,17 @@ algorithm
       // Create fresh reset equation: 'a.x_previous = if a.active and (smOf.a.activeReset or smOf.fsm_of_a.activeResetStates[i] then x_start else previous(a.x)'
       eqn2 := createResetEquation(crefLHS, tyLHS, enclosingStateRef, inEnclosingFlatSmSemantics, crToExpOpt);
 
-      outEqns := eqn1 :: var2 :: eqn2 :: accEqns;
+      outEqnsVars := (eqn1 ::  eqn2 :: Util.tuple21(accEqnsVars), var2 :: Util.tuple22(accEqnsVars));
     else
-      outEqns := wrapInStateActivationConditional(eqn, enclosingStateRef, false)::accEqns;
+      outEqnsVars := (wrapInStateActivationConditional(eqn, enclosingStateRef, false)::Util.tuple21(accEqnsVars), Util.tuple22(accEqnsVars));
     end if;
+
   else
     try
       // Handle case with LHS derivative (der(a.x))
       if Flags.getConfigBool(Flags.CT_STATE_MACHINES) then
+        // BTH CT_STATE_MACHINES is experimental code
+
         DAE.CALL(Absyn.IDENT("der"), {DAE.CREF(componentRef=crefLHS, ty=tyLHS)}, attr) := exp;
 
         // Find variable declaration that corresponds to crefLHS
@@ -520,7 +591,7 @@ algorithm
           // Change equation 'der(a.x) = e' to 'a.x_der$ = e'
           eqn1 := DAE.EQUATION(DAE.CREF(cref2, tyLHS), scalar, source);
 
-          outEqns := eqn1 :: var2 :: accEqns;
+          outEqnsVars := (eqn1 ::  Util.tuple21(accEqnsVars), var2 :: Util.tuple22(accEqnsVars));
         else
           // Transform equation 'der(a.x) = e' to 'der(a.x) = if a.active then e else 0'
           eqn1 := wrapInStateActivationConditionalCT(inEqn, enclosingStateRef);
@@ -528,7 +599,7 @@ algorithm
           // Create fresh reinit equation: 'when a.active and (smOf.a.activeReset or smOf.fsm_of_a.activeResetStates[i]) then reinit(a.x, a.x_start) end when'
           eqn2 := createResetEquationCT(crefLHS, tyLHS, enclosingStateRef, inEnclosingFlatSmSemantics, crToExpOpt);
 
-          outEqns := eqn1 :: eqn2 :: accEqns;
+          outEqnsVars := (eqn1 ::  eqn2 :: Util.tuple21(accEqnsVars), Util.tuple22(accEqnsVars));
         end if;
       else
         fail();
@@ -543,7 +614,109 @@ algorithm
     end try;
   end try;
 
-end addStateActivationAndReset;
+end addStateActivationAndReset1;
+
+
+protected function isVarAtLHS "
+Author: BTH
+Return true if variable appears as LHS assignment in a scalar equation or in the body of a when equation.
+"
+  input DAE.Element eqn "Expects DAE.EQUATION() or DAE.WHEN_EQUATION()";
+  input DAE.Element var "Expects DAE.VAR())";
+  output Boolean res;
+protected
+  DAE.ComponentRef cref, crefLHS;
+  DAE.Type tyLHS;
+  // EQUATION
+  DAE.Exp exp;
+  DAE.Exp scalar, scalarNew;
+  DAE.ElementSource source;
+  // WHEN_EQUATION
+  list<DAE.Element> equations;
+  Option<DAE.Element> elsewhen_;
+algorithm
+  res := match (eqn)
+    case DAE.EQUATION(exp, scalar, source)
+      algorithm
+        cref := DAEUtil.varCref(var);
+        try
+			    // Handle case with LHS component reference
+			    DAE.CREF(componentRef=crefLHS, ty=tyLHS) := exp;
+			    res := ComponentReference.crefEqual(crefLHS, cref);
+			  else
+			    res := false;
+			  end try;
+			then res;
+    case DAE.WHEN_EQUATION(equations=equations,elsewhen_=NONE())
+      then List.exist1(equations, isVarAtLHS, var);
+    case DAE.WHEN_EQUATION(elsewhen_=SOME(_))
+      algorithm
+        Error.addCompilerError("Encountered elsewhen part in a when clause of a clocked state machine.\n");
+      then fail();
+    else
+      algorithm
+        Error.addCompilerError("Internal compiler error: StateMachineFlatten.isVarAtLHS(..) called with unexpected argument.\n");
+    then fail();
+  end match;
+end isVarAtLHS;
+
+protected function isPreviousAppliedToVar "
+Author: BTH
+Return true if variable x appears as previous(x) in the RHS of a scalar equation or in the body of a when equation.
+"
+  input DAE.Element eqn "Expects DAE.EQUATION() or DAE.WHEN_EQUATION()";
+  input DAE.Element var "Expects DAE.VAR())";
+  output Boolean found = false;
+protected
+  DAE.ComponentRef cref;
+  // EQUATION
+  DAE.Exp exp;
+  DAE.Exp scalar, scalarNew;
+  DAE.ElementSource source;
+  // WHEN_EQUATION
+  list<DAE.Element> equations;
+  Option<DAE.Element> elsewhen_;
+algorithm
+  found := match (eqn)
+    case DAE.EQUATION(exp, scalar, source)
+      algorithm
+        cref := DAEUtil.varCref(var);
+        (_, (_, found)) := Expression.traverseExpTopDown(scalar, traversingFindPreviousCref, (cref, false));
+      then found;
+    case DAE.WHEN_EQUATION(equations=equations,elsewhen_=NONE())
+      then List.exist1(equations, isPreviousAppliedToVar, var);
+    case DAE.WHEN_EQUATION(elsewhen_=SOME(_))
+      algorithm
+        Error.addCompilerError("Encountered elsewhen part in a when clause of a clocked state machine.\n");
+      then fail();
+    else
+      algorithm
+        Error.addCompilerError("Internal compiler error: StateMachineFlatten.isPreviousAppliedToVar(..) called with unexpected argument.\n");
+    then fail();
+  end match;
+end isPreviousAppliedToVar;
+
+
+protected function traversingFindPreviousCref "
+Author: BTH
+Given a cref 'x', find if the expression has subexpressions 'previous(x)' and indicate success.
+"
+  input DAE.Exp inExp;
+  input tuple<DAE.ComponentRef, Boolean> inCrefHit;
+  output DAE.Exp outExp;
+  output Boolean cont = true;
+  output tuple<DAE.ComponentRef, Boolean> outCrefHit;
+algorithm
+  (outExp, outCrefHit) := match (inExp, inCrefHit)
+    local
+      DAE.ComponentRef cr, cref;
+    case (DAE.CALL(Absyn.IDENT("previous"), {DAE.CREF(cr, _)}, _), (cref, _)) guard ComponentReference.crefEqual(cr, cref)
+      then (inExp, (cref, true));
+    else (inExp, inCrefHit);
+  end match;
+
+end traversingFindPreviousCref;
+
 
 protected function createResetEquationCT "
 Author: BTH
@@ -806,39 +979,6 @@ algorithm
   outEqn := DAE.EQUATION(exp, scalar1, source);
 end wrapInStateActivationConditionalCT;
 
-
-protected function traversingSubsPreAndPreviousCref "
-Author: BTH
-Given a cref 'x', find if the expression has subexpressions  'pre(x)' 'previous(x)' and replace them by 'x_previous'
-and return an indication if any substitutions took place.
-"
-  input DAE.Exp inExp;
-  input tuple<DAE.ComponentRef, Boolean> inCrefHit;
-  output DAE.Exp outExp;
-  output Boolean cont = true;
-  output tuple<DAE.ComponentRef, Boolean> outCrefHit;
-algorithm
-  (outExp, outCrefHit) := match (inExp, inCrefHit)
-    local
-      DAE.ComponentRef cr, cref, substituteRef;
-      Boolean hit;
-      DAE.CallAttributes attr;
-      DAE.Type ty;
-    case (DAE.CALL(Absyn.IDENT("previous"), {DAE.CREF(cr, ty)}, _),
-      (cref, _)) guard ComponentReference.crefEqual(cr, cref)
-      algorithm
-        substituteRef := ComponentReference.appendStringLastIdent("_previous", cref);
-      then (DAE.CREF(substituteRef, ty), (cref, true));
-    case (DAE.CALL(Absyn.IDENT("pre"), {DAE.CREF(cr, ty)}, _),
-      (cref, _)) guard ComponentReference.crefEqual(cr, cref)
-      algorithm
-        substituteRef := ComponentReference.appendStringLastIdent("_previous", cref);
-      then (DAE.CREF(substituteRef, ty), (cref, true));
-    else then (inExp, inCrefHit);
-  end match;
-
-end traversingSubsPreAndPreviousCref;
-
 protected function traversingSubsPreviousCref "
 Author: BTH
 Given a cref 'x', find if the expression has subexpressions 'previous(x)' and replace them by 'x_previous'
@@ -859,12 +999,42 @@ algorithm
     case (DAE.CALL(Absyn.IDENT("previous"), {DAE.CREF(cr, ty)}, _),
       (cref, _)) guard ComponentReference.crefEqual(cr, cref)
       algorithm
+        print("StateMachineFlatten.traversingSubsPreviousCref: cr: "+ComponentReference.crefStr(cr)+", cref: "+ComponentReference.crefStr(cref)+"\n");
         substituteRef := ComponentReference.appendStringLastIdent("_previous", cref);
       then (DAE.CREF(substituteRef, ty), (cref, true));
     else (inExp, inCrefHit);
   end match;
 
 end traversingSubsPreviousCref;
+
+protected function traversingSubsPreviousCrefs "
+Author: BTH
+Given a list of crefs '{x1,x2,...}', find if the expression has subexpressions 'previous(x)' and replace them by 'x_previous'
+and return an indication if any substitutions took place.
+"
+  input DAE.Exp inExp;
+  input tuple<list<DAE.ComponentRef>, Boolean> inCrefsHit;
+  output DAE.Exp outExp;
+  output Boolean cont = true;
+  output tuple<list<DAE.ComponentRef>, Boolean> outCrefsHit;
+algorithm
+  (outExp, outCrefsHit) := match (inExp, inCrefsHit)
+    local
+      DAE.ComponentRef cr, substituteRef;
+      list<DAE.ComponentRef> crefs;
+      Boolean hit;
+      DAE.CallAttributes attr;
+      DAE.Type ty;
+    case (DAE.CALL(Absyn.IDENT("previous"), {DAE.CREF(cr, ty)}, _), (crefs, _))
+      guard List.exist(crefs, function ComponentReference.crefEqual(inComponentRef1=cr))
+      algorithm
+        // print("StateMachineFlatten.traversingSubsPreviousCrefs: cr: "+ComponentReference.crefStr(cr)+", crefs: " + stringDelimitList(List.map(crefs, ComponentReference.crefStr), ",")+"\n");
+        substituteRef := ComponentReference.appendStringLastIdent("_previous", cr);
+      then (DAE.CREF(substituteRef, ty), (crefs, true));
+    else (inExp, inCrefsHit);
+  end match;
+
+end traversingSubsPreviousCrefs;
 
 protected function getStartAttrOption "
 Helper function to smCompToDataFlow
@@ -1499,18 +1669,21 @@ algorithm
   end for;
 
   // Boolean nextResetStates[nStates] = if active then {if selectedState == i then false else activeResetStates[i] for i in 1:nStates} else previous(nextResetStates);
+  // 2017-10-10 BTH NOTE: Replaced "selectedState" from MLS v3.3r1 by "activeState"!!!
   for i in 1:nStates loop
     exp := DAE.CREF(arrayGet(nextResetStatesRefs,i), DAE.T_BOOL_DEFAULT);
     expCond := DAE.CREF(activeRef, DAE.T_BOOL_DEFAULT);
+    /*===== MLS v3.3r1 specification semantics (probably wrong!): ===== */
     // selectedState == i:
-    exp1 := DAE.RELATION(DAE.CREF(selectedStateRef, DAE.T_INTEGER_DEFAULT), DAE.EQUAL(DAE.T_INTEGER_DEFAULT), DAE.ICONST(i),-1, NONE());
-    /*===== specification semantics (probably wrong!): ===== */
+    //exp1 := DAE.RELATION(DAE.CREF(selectedStateRef, DAE.T_INTEGER_DEFAULT), DAE.EQUAL(DAE.T_INTEGER_DEFAULT), DAE.ICONST(i),-1, NONE());
     // if (selectedState == i) then false else activeResetStates[i]
+    //expThen := DAE.IFEXP(exp1, DAE.BCONST(false), DAE.CREF(arrayGet(activeResetStatesRefs,i), DAE.T_BOOL_DEFAULT));
+    /*===== FIXED semantics: ===== */
+    // activeState == i:
+    exp1 := DAE.RELATION(DAE.CREF(activeStateRef, DAE.T_INTEGER_DEFAULT), DAE.EQUAL(DAE.T_INTEGER_DEFAULT), DAE.ICONST(i),-1, NONE());
+    // if (activeState == i) then false else activeResetStates[i]
     expThen := DAE.IFEXP(exp1, DAE.BCONST(false), DAE.CREF(arrayGet(activeResetStatesRefs,i), DAE.T_BOOL_DEFAULT));
-    /*===== ??FIXED?? semantics: ===== */
-    // if (selectedState == i) then false else activeReset
-    //expThen := DAE.IFEXP(exp1, DAE.BCONST(false), DAE.CREF(activeResetRef, DAE.T_BOOL_DEFAULT));
-
+    /*========== */
     // previous(nextResetStates[i])
     expElse := DAE.CALL(Absyn.IDENT("previous"), {DAE.CREF(arrayGet(nextResetStatesRefs,i), DAE.T_BOOL_DEFAULT)}, DAE.callAttrBuiltinImpureBool);
     // if active then (if selectedState == i then false else activeResetStates[i]) else previous(nextResetStates[i])
@@ -1540,7 +1713,7 @@ algorithm
 
   // Boolean stateMachineInFinalState = finalStates[activeState];
   exp := DAE.CREF(stateMachineInFinalStateRef, DAE.T_BOOL_DEFAULT);
-  rhs := DAE.CREF(qCref("finalStates", tArrayBool, {DAE.INDEX(DAE.CREF(activeStateRef,DAE.T_INTEGER_DEFAULT))}, preRef), DAE.T_BOOL_DEFAULT);
+  rhs := DAE.CREF(qCref("finalStates", nStatesArrayBool, {DAE.INDEX(DAE.CREF(activeStateRef,DAE.T_INTEGER_DEFAULT))}, preRef), DAE.T_BOOL_DEFAULT);
   eqs := DAE.EQUATION(exp, rhs, DAE.emptyElementSource) :: eqs;
 
   // Now return the semantics equations of the flat state machine and associated variables and parameters
@@ -1725,6 +1898,19 @@ algorithm
     else false;
   end match;
 end isEquation;
+
+protected function isEquationOrWhenEquation "
+Author: BTH
+Return true if element is an EQUATION or WHEN_EQUATION, otherwise false"
+    input  DAE.Element inElement;
+  output Boolean result;
+algorithm
+  result := match (inElement)
+    case DAE.EQUATION() then true;
+    case DAE.WHEN_EQUATION() then true;
+    else false;
+  end match;
+end isEquationOrWhenEquation;
 
 protected function isPreOrPreviousEquation "
 Author: BTH

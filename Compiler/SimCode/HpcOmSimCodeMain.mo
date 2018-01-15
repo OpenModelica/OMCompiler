@@ -47,6 +47,7 @@ public import SimCode;
 
 // protected imports
 protected
+import AdjacencyMatrix;
 import Array;
 import BackendDAEUtil;
 import BackendDAEOptimize;
@@ -67,11 +68,8 @@ public function createSimCode "
   Entry point to create SimCode from BackendDAE."
   input BackendDAE.BackendDAE inBackendDAE;
   input BackendDAE.BackendDAE inInitDAE;
-  input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
   input Option<BackendDAE.BackendDAE> inInitDAE_lambda0;
   input list<BackendDAE.Equation> inRemovedInitialEquationLst;
-  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
-  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
   input Absyn.Path inClassName;
   input String filenamePrefix;
   input String inString11;
@@ -134,7 +132,7 @@ algorithm
       //Setup
       //-----
       (simCode,(lastEqMappingIdx,equationSccMapping)) =
-          SimCodeUtil.createSimCode( inBackendDAE, inInitDAE, NONE(), inUseHomotopy, inInitDAE_lambda0, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inClassName, filenamePrefix, inString11, functions,
+          SimCodeUtil.createSimCode( inBackendDAE, inInitDAE, inInitDAE_lambda0, NONE(), inRemovedInitialEquationLst, inClassName, filenamePrefix, inString11, functions,
                                      externalFunctionIncludes, includeDirs, libs,libPaths,program, simSettingsOpt, recordDecls, literals, args );
 
       //get simCode-backendDAE mappings
@@ -189,7 +187,7 @@ algorithm
       //-----
       System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_HPCOM_MODULES);
       (simCode,(lastEqMappingIdx,equationSccMapping)) =
-          SimCodeUtil.createSimCode( inBackendDAE, inInitDAE, NONE(), inUseHomotopy, inInitDAE_lambda0, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inClassName, filenamePrefix, inString11, functions,
+          SimCodeUtil.createSimCode( inBackendDAE, inInitDAE, inInitDAE_lambda0, NONE(), inRemovedInitialEquationLst, inClassName, filenamePrefix, inString11, functions,
                                      externalFunctionIncludes, includeDirs, libs,libPaths,program, simSettingsOpt, recordDecls, literals, args );
 
       //get simCode-backendDAE mappings
@@ -357,7 +355,7 @@ algorithm
 
       //Create Memory-Map and Sim-Code
       //------------------------------
-      (optTmpMemoryMap, varToArrayIndexMapping, varToIndexMapping) = HpcOmMemory.createMemoryMap(simCode.modelInfo, simCode.varToArrayIndexMapping, simCode.varToIndexMapping, taskGraphOdeSimplified, BackendDAEUtil.transposeMatrix(taskGraphOdeSimplified,arrayLength(taskGraphOdeSimplified)), taskGraphDataOdeSimplified, eqs, filenamePrefix, schedulerInfo, scheduleOde, sccSimEqMapping, criticalPaths, criticalPathsWoC, criticalPathInfo, numProc, HpcOmTaskGraph.getSystemComponents(inBackendDAE));
+      (optTmpMemoryMap, varToArrayIndexMapping, varToIndexMapping) = HpcOmMemory.createMemoryMap(simCode.modelInfo, simCode.varToArrayIndexMapping, simCode.varToIndexMapping, taskGraphOdeSimplified, AdjacencyMatrix.transposeAdjacencyMatrix(taskGraphOdeSimplified,arrayLength(taskGraphOdeSimplified)), taskGraphDataOdeSimplified, eqs, filenamePrefix, schedulerInfo, scheduleOde, sccSimEqMapping, criticalPaths, criticalPathsWoC, criticalPathInfo, numProc, HpcOmTaskGraph.getSystemComponents(inBackendDAE));
 
       //BaseHashTable.dumpHashTable(varToArrayIndexMapping);
 
@@ -463,7 +461,7 @@ protected
     String fileName;
  algorithm
    taskGraph1 := arrayCopy(iTaskGraph);
-   taskGraphT := BackendDAEUtil.transposeMatrix(taskGraph1,arrayLength(taskGraph1));
+   taskGraphT := AdjacencyMatrix.transposeAdjacencyMatrix(taskGraph1,arrayLength(taskGraph1));
    taskGraphMeta1 := HpcOmTaskGraph.copyTaskGraphMeta(iTaskGraphMeta);
    contractedTasks := arrayCreate(arrayLength(taskGraph1),0);
    // contract nodes in the graph
@@ -472,7 +470,7 @@ protected
 /*
    //DEBUG
    (taskGraph1,taskGraphMeta1) := GRS_newGraph(taskGraph1,taskGraphMeta1,contractedTasks);
-   taskGraphT := BackendDAEUtil.transposeMatrix(taskGraph1,arrayLength(taskGraph1));
+   taskGraphT := AdjacencyMatrix.transposeAdjacencyMatrix(taskGraph1,arrayLength(taskGraph1));
    fileName := ("taskGraphMergeDebug.graphml");
    schedulerInfo := arrayCreate(arrayLength(taskGraph1), (-1,-1,-1.0));
    HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraph1, taskGraphMeta1, fileName, "", {}, {}, iSccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,true,true));

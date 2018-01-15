@@ -11,12 +11,9 @@ function getSolvedSystem<A>
   input Option<list<String>> strPostOptModules = NONE();
   output A outSODE;
   output A outInitDAE;
-  output Option<BackendDAE.InlineData> inlineData;
-  output Boolean outUseHomotopy;
   output Option<A> outInitDAE_lambda0;
+  output Option<BackendDAE.InlineData> inlineData;
   output list<BackendDAE.Equation> outRemovedInitialEquationLst;
-  output list<BackendDAE.Var> outPrimaryParameters;
-  output list<BackendDAE.Var> outAllPrimaryParameters;
 algorithm
   assert(false, getInstanceName());
 end getSolvedSystem;

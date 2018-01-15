@@ -55,12 +55,13 @@ extern "C" {
 #define NUMBER_OF_CATEGORIES 11
 
 typedef enum {
-  modelInstantiated       = 1<<0,
-  modelInitializationMode = 1<<1,
-  modelEventMode          = 1<<2,
-  modelContinuousTimeMode = 1<<3,
-  modelTerminated         = 1<<4,
-  modelError              = 1<<5
+  modelInstantiated       = 1<<0, /* ME and CS */
+  modelInitializationMode = 1<<1, /* ME and CS */
+  modelContinuousTimeMode = 1<<2, /* ME only */
+  modelEventMode          = 1<<3, /* ME only */
+  modelSlaveInitialized   = 1<<4, /* CS only */
+  modelTerminated         = 1<<5, /* ME and CS */
+  modelError              = 1<<6  /* ME and CS */
 } ModelState;
 
 typedef struct {
@@ -85,9 +86,8 @@ typedef struct {
   fmi2String fmuResourceLocation;
 
   int _need_update;
-#ifdef FMU_EXPERIMENTAL
   int _has_jacobian;
-#endif
+  ANALYTIC_JACOBIAN* fmiDerJac;
 } ModelInstance;
 
 #ifdef __cplusplus

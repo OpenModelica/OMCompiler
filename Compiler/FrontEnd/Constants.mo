@@ -423,9 +423,14 @@ record Dialog
 end Dialog;
 
 record Selector
-  parameter String filter=\"\";
-  parameter String caption=\"\";
+  parameter String filter;
+  parameter String caption;
 end Selector;
+
+record choices
+  Boolean checkBox = false;
+  Boolean __Dymola_checkBox = false;
+end choices;
 
 //
 // connector Frame \"Frame of a mechanical system\"

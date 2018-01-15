@@ -254,11 +254,25 @@ algorithm
         /* TODO: Add operation to source */
       then DAE.ASSERT(e11,e22,e32,source);
 
+    case DAE.INITIAL_ASSERT(e1,e2,e3,source)
+      equation
+        (e11,_) = replaceExp(e1, repl, condExpFunc);
+        (e22,_) = replaceExp(e2, repl, condExpFunc);
+        (e32,_) = replaceExp(e3, repl, condExpFunc);
+        /* TODO: Add operation to source */
+      then DAE.INITIAL_ASSERT(e11,e22,e32,source);
+
     case DAE.TERMINATE(e1,source)
       equation
         (e11,_) = replaceExp(e1, repl, condExpFunc);
         /* TODO: Add operation to source */
       then DAE.TERMINATE(e11,source);
+
+    case DAE.INITIAL_TERMINATE(e1,source)
+      equation
+        (e11,_) = replaceExp(e1, repl, condExpFunc);
+        /* TODO: Add operation to source */
+      then DAE.INITIAL_TERMINATE(e11,source);
 
     case DAE.REINIT(cr,e1,source)
       equation
@@ -339,15 +353,16 @@ algorithm
           (fixed) = replaceExpOpt(fixed,repl,condExpFunc);
         then SOME(DAE.VAR_ATTR_BOOL(quantity,initial_,fixed,eb,ip,fn,startOrigin));
 
-      case(SOME(DAE.VAR_ATTR_STRING(quantity,initial_,eb,ip,fn,startOrigin)),_,_)
+      case(SOME(DAE.VAR_ATTR_STRING(quantity,initial_,fixed,eb,ip,fn,startOrigin)),_,_)
         equation
           (quantity) = replaceExpOpt(quantity,repl,condExpFunc);
           (initial_) = replaceExpOpt(initial_,repl,condExpFunc);
-        then SOME(DAE.VAR_ATTR_STRING(quantity,initial_,eb,ip,fn,startOrigin));
+          (fixed) = replaceExpOpt(fixed,repl,condExpFunc);
+        then SOME(DAE.VAR_ATTR_STRING(quantity,initial_,fixed,eb,ip,fn,startOrigin));
 
       case (NONE(),_,_) then NONE();
   end match;
-end  applyReplacementsVarAttr;
+end applyReplacementsVarAttr;
 
 public function applyReplacements "This function takes a VariableReplacements and two component references.
   It applies the replacements to each component reference.
@@ -890,9 +905,6 @@ protected
   HashTable3.HashTable invHt;
 algorithm
   REPLACEMENTS(ht,invHt) := outRepl;
-  if BaseHashTable.hasKey(src, ht) then // TODO: Is this correct? Previously, we skipped this code which was a dead case
-    return;
-  end if;
   ht := BaseHashTable.add((src, dst), ht);
   invHt := addReplacementInv(invHt, src, dst);
   outRepl := REPLACEMENTS(ht,invHt);

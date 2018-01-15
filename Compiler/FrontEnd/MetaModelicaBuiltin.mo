@@ -490,6 +490,14 @@ function stringLength "O(1)"
 external "builtin";
 end stringLength;
 
+function stringEmpty "O(1)"
+  input String str;
+  output Boolean isEmpty;
+algorithm
+  isEmpty := stringLength(str) == 0;
+  annotation(__OpenModelica_EarlyInline = true, __OpenModelica_BuiltinPtr = true);
+end stringEmpty;
+
 function stringGet "O(1)"
   input String str;
   input Integer index;
@@ -651,6 +659,14 @@ function arrayLength<A> "O(1)"
   output Integer length;
 external "builtin";
 end arrayLength;
+
+function arrayEmpty<A> "O(1)"
+  input array<A> arr;
+  output Boolean isEmpty;
+algorithm
+  isEmpty := arrayLength(arr) == 0;
+  annotation(__OpenModelica_EarlyInline = true, __OpenModelica_BuiltinPtr = true);
+end arrayEmpty;
 
 function arrayGet<A> "O(1)"
   input array<A> arr;
@@ -941,6 +957,13 @@ NOTE: Make sure you do NOT create cycles as infinite lists are not handled well 
   input list<A> inNewRest;
 external "builtin";
 end listSetRest;
+
+function listArrayLiteral<A>
+  "O(n)"
+  input list<A> lst;
+  output array<A> arr;
+external "builtin";
+end listArrayLiteral;
 
 end Dangerous;
 

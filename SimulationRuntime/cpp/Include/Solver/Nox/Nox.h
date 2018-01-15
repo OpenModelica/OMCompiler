@@ -5,6 +5,8 @@
  */
 
 
+#include <Solver/Nox/NOX_StatusTest_SgnChange.H>
+
 
 class Nox : public IAlgLoopSolver
 {
@@ -30,6 +32,21 @@ private:
   void solverinit();
   void createStatusTests();
   void createSolverParameters();
+  void LocaHomotopySolve(const int numberofhomotopytries);
+  NOX::StatusTest::StatusType BasicNLSsolve();
+  void addPrintingList(const Teuchos::RCP<Teuchos::ParameterList> solverParametersPtr);
+  void copySolution(const Teuchos::RCP<const NOX::Solver::Generic> solver,double* const algLoopSolution);
+  void printLogger();
+  void divisionbyzerohandling(double const * const y0);
+  bool CheckWhetherSolutionIsNearby(double const * const y);
+  void CheckWhetherSolutionIsNearbyWrapper();
+  bool isdivisionbyzeroerror(const std::exception &ex);
+  void modifySolverParameters(const Teuchos::RCP<Teuchos::ParameterList> solverParametersPtr,const int iter);
+  Teuchos::RCP<Teuchos::ParameterList> setLocaParams();
+  bool modify_y(const int counter);
+  void BinRep(std::vector<double> &result, const int number);
+
+  void check4EventRetry(double* y);
 
   //void check4EventRetry(double* y)
 
@@ -44,14 +61,20 @@ private:
   ITERATIONSTATUS
     _iterationStatus;     ///< Output   - Denotes the status of iteration
 
-  long int _dimSys;
+  const long int _dimSys;
 
   double
 	  *_y,
 	  *_y0,
       *_y_old,
       *_y_new,
-      *_yScale;
+      *_yScale,
+      *_helpArray,
+	  _locTol,
+	  _currentIterateNorm,
+	  *_currentIterate,
+    _SimTimeOld,
+    _SimTimeNew;
 
   Teuchos::RCP<NoxLapackInterface> _noxLapackInterface;
 
@@ -60,6 +83,10 @@ private:
   //used for status tests
   Teuchos::RCP<NOX::StatusTest::NormF> _statusTestNormF;
   Teuchos::RCP<NOX::StatusTest::MaxIters> _statusTestMaxIters;
+  Teuchos::RCP<NOX::StatusTest::Stagnation> _statusTestStagnation;
+  Teuchos::RCP<NOX::StatusTest::Divergence> _statusTestDivergence;
+  Teuchos::RCP<NOX::StatusTest::SgnChange> _statusTestSgnChange;
+
   Teuchos::RCP<NOX::StatusTest::Combo> _statusTestsCombo;
 
   //list of solver parameters
@@ -68,8 +95,13 @@ private:
   //solver
   Teuchos::RCP<NOX::Solver::Generic> _solver;
 
+  Teuchos::RCP<std::ostream> _output;
+
   bool _firstCall;
-  bool _generateoutput;
   bool _useDomainScaling;
+
+  bool _OutOfProperMethods;
+  bool _eventRetry;
+  LogCategory _lc;
 };
 /** @} */ // end of solverNox

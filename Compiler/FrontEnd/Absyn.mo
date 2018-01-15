@@ -901,6 +901,8 @@ uniontype FunctionArgs "The FunctionArgs uniontype consists of a list of positio
 
 end FunctionArgs;
 
+constant FunctionArgs emptyFunctionArgs = FUNCTIONARGS({},{});
+
 uniontype ReductionIterType
   record COMBINE "Reductions are by default calculated as all combinations of the iterators"
   end COMBINE;
@@ -2947,6 +2949,19 @@ algorithm
   end match;
 end pathLastIdent;
 
+public function pathLast
+  "Returns the last ident (after last dot) in a path"
+  input output Path path;
+algorithm
+  path := match path
+    local
+      Path p;
+    case QUALIFIED(path = p) then pathLast(p);
+    case IDENT() then path;
+    case FULLYQUALIFIED(path = p) then pathLast(p);
+  end match;
+end pathLast;
+
 public function pathFirstIdent "Returns the first ident (before first dot) in a path"
   input Path inPath;
   output Ident outIdent;
@@ -4184,28 +4199,16 @@ algorithm
 end crefSetLastSubs;
 
 public function crefHasSubscripts "This function finds if a cref has subscripts"
-  input ComponentRef inComponentRef;
-  output Boolean outHasSubscripts;
+  input ComponentRef cref;
+  output Boolean hasSubscripts;
 algorithm
-  outHasSubscripts := match (inComponentRef)
-    local
-      Ident i;
-      Boolean b;
-      ComponentRef c;
-
-    case CREF_IDENT(subscripts = {}) then false;
-
-    case CREF_QUAL(subscripts = {},componentRef = c)
-      equation
-        b = crefHasSubscripts(c);
-      then
-        b;
-
-    case CREF_FULLYQUALIFIED(componentRef = c)
-      equation
-        b = crefHasSubscripts(c);
-      then
-        b;
+  hasSubscripts := match cref
+    case CREF_IDENT() then not listEmpty(cref.subscripts);
+    case CREF_QUAL(subscripts = {}) then crefHasSubscripts(cref.componentRef);
+    case CREF_FULLYQUALIFIED() then crefHasSubscripts(cref.componentRef);
+    case WILD() then false;
+    case ALLWILD() then false;
+    else true;
   end match;
 end crefHasSubscripts;
 
@@ -6840,6 +6843,19 @@ algorithm
     else false;
   end match;
 end isInvariantExpNoTraverse;
+
+function pathPartCount
+  "Returns the number of parts a path consists of, e.g. A.B.C gives 3."
+  input Path path;
+  input Integer partsAccum = 0;
+  output Integer parts;
+algorithm
+  parts := match path
+    case Path.IDENT() then partsAccum + 1;
+    case Path.QUALIFIED() then pathPartCount(path.path, partsAccum + 1);
+    case Path.FULLYQUALIFIED() then pathPartCount(path.path, partsAccum);
+  end match;
+end pathPartCount;
 
 annotation(__OpenModelica_Interface="frontend");
 end Absyn;

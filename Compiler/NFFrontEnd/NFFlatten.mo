@@ -35,91 +35,141 @@ encapsulated package NFFlatten
   description: Flattening
 
 
-  New instantiation, enable with +d=newInst.
+  New instantiation, enable with -d=newInst.
 "
 
-import Inst = NFInst;
 import Binding = NFBinding;
-import NFClass.Class;
-import NFComponent.Component;
-import NFEquation.Equation;
-import NFExpression.Expression;
+import Equation = NFEquation;
+import NFFunction.Function;
 import NFInstNode.InstNode;
-import NFMod.Modifier;
-import NFPrefix.Prefix;
-import NFStatement.Statement;
-
-import ComponentReference;
-import DAE;
-import ExpressionSimplify;
-import List;
-import Util;
-import ElementSource;
-
-import DAEExpression = Expression;
-import Dimension = NFDimension;
-import Subscript = NFSubscript;
-import Type = NFType;
+import Statement = NFStatement;
+import FlatModel = NFFlatModel;
 
 protected
-import DAEUtil;
+import ComponentRef = NFComponentRef;
+import Dimension = NFDimension;
+import ExecStat.execStat;
+import ExpressionIterator = NFExpressionIterator;
+import Expression = NFExpression;
+import Inst = NFInst;
+import List;
+import NFCall.Call;
+import NFClass.Class;
+import NFClassTree.ClassTree;
+import NFComponent.Component;
+import NFModifier.Modifier;
+import Sections = NFSections;
+import Prefixes = NFPrefixes;
+import NFPrefixes.Visibility;
+import RangeIterator = NFRangeIterator;
+import Subscript = NFSubscript;
+import Type = NFType;
+import Util;
+import MetaModelica.Dangerous.listReverseInPlace;
+import ConnectionSets = NFConnectionSets.ConnectionSets;
+import Connection = NFConnection;
+import Connector = NFConnector;
+import ConnectEquations = NFConnectEquations;
+import Connections = NFConnections;
+import Face = NFConnector.Face;
+import System;
+import ComplexType = NFComplexType;
+import NFInstNode.CachedData;
+import NFPrefixes.Variability;
+import Variable = NFVariable;
+import BindingOrigin = NFBindingOrigin;
 
 public
-partial function ExpandScalarFunc<ElementT>
-  input ElementT element;
-  input Prefix prefix;
-  input output list<DAE.Element> elements;
-end ExpandScalarFunc;
+type FunctionTree = FunctionTreeImpl.Tree;
+
+encapsulated package FunctionTreeImpl
+  import Absyn.Path;
+  import NFFunction.Function;
+  import BaseAvlTree;
+
+  extends BaseAvlTree;
+  redeclare type Key = Absyn.Path;
+  redeclare type Value = Function;
+
+  redeclare function extends keyStr
+  algorithm
+    outString := Absyn.pathString(inKey);
+  end keyStr;
+
+  redeclare function extends valueStr
+  algorithm
+    outString := "";
+  end valueStr;
+
+  redeclare function extends keyCompare
+  algorithm
+    outResult := Absyn.pathCompareNoQual(inKey1, inKey2);
+  end keyCompare;
+
+  redeclare function addConflictDefault = addConflictKeep;
+end FunctionTreeImpl;
 
 function flatten
   input InstNode classInst;
-  output DAE.DAElist dae;
+  input String name;
+  output FlatModel flatModel;
+  output FunctionTree funcs;
 protected
-  list<DAE.Element> elems;
-  DAE.Element class_elem;
-  SourceInfo info = InstNode.info(classInst);
+  Sections sections;
+  list<Variable> vars;
+  list<Equation> eql, ieql;
+  list<list<Statement>> alg, ialg;
 algorithm
-  elems := flattenNode(classInst);
-  elems := listReverse(elems);
-  class_elem := DAE.COMP(InstNode.name(classInst), elems, ElementSource.createElementSource(info), NONE());
-  dae := DAE.DAE({class_elem});
+  sections := Sections.EMPTY();
+
+  (vars, sections) :=
+    flattenClass(InstNode.getClass(classInst), ComponentRef.EMPTY(), Visibility.PUBLIC, {}, sections);
+  vars := listReverseInPlace(vars);
+
+  flatModel := match sections
+    case Sections.SECTIONS()
+      algorithm
+        eql := listReverseInPlace(sections.equations);
+        ieql := listReverseInPlace(sections.initialEquations);
+        alg := listReverseInPlace(sections.algorithms);
+        ialg := listReverseInPlace(sections.initialAlgorithms);
+      then
+        FlatModel.FLAT_MODEL(vars, eql, ieql, alg, ialg);
+
+    else FlatModel.FLAT_MODEL(vars, {}, {}, {}, {});
+  end match;
+
+  execStat(getInstanceName() + "(" + name + ")");
+  flatModel := resolveConnections(flatModel, name);
+  funcs := flattenFunctions(flatModel, name);
 end flatten;
 
-function flattenNode
-  input InstNode node;
-  input Prefix prefix = Prefix.NO_PREFIX();
-  input list<DAE.Element> inElements = {};
-  output list<DAE.Element> elements;
-algorithm
-  elements := flattenClass(InstNode.getClass(node), prefix, inElements);
-end flattenNode;
-
+protected
 function flattenClass
-  input Class instance;
-  input Prefix prefix;
-  input output list<DAE.Element> elements;
+  input Class cls;
+  input ComponentRef prefix;
+  input Visibility visibility;
+  input output list<Variable> vars;
+  input output Sections sections;
+protected
+  ClassTree cls_tree;
 algorithm
-  _ := match instance
-    case Class.INSTANCED_CLASS()
+  () := match cls
+    case Class.INSTANCED_CLASS(elements = cls_tree as ClassTree.FLAT_TREE())
       algorithm
-        for c in instance.components loop
-          if InstNode.isComponent(c) then
-            elements := flattenComponent(c, prefix, elements);
-          else
-            elements := flattenNode(c, prefix, elements);
-          end if;
+        for c in cls_tree.components loop
+          (vars, sections) := flattenComponent(c, prefix, visibility, vars, sections);
         end for;
 
-        elements := flattenEquations(instance.equations, prefix, elements);
-        elements := flattenInitialEquations(instance.initialEquations, prefix, elements);
-        elements := flattenAlgorithms(instance.algorithms, elements);
-        elements := flattenInitialAlgorithms(instance.initialAlgorithms, elements);
+        sections := flattenSections(cls.sections, prefix, sections);
       then
         ();
 
+    case Class.INSTANCED_BUILTIN() then ();
+
     else
       algorithm
-        print("Got non-instantiated component " + Prefix.toString(prefix) + "\n");
+        Error.assertion(false, getInstanceName() + " got non-instantiated component " + ComponentRef.toString(prefix) + "\n", sourceInfo());
       then
         ();
 
@@ -128,882 +178,846 @@ end flattenClass;
 
 function flattenComponent
   input InstNode component;
-  input Prefix prefix;
-  input output list<DAE.Element> elements;
+  input ComponentRef prefix;
+  input Visibility visibility;
+  input output list<Variable> vars;
+  input output Sections sections;
 protected
-  Component c = InstNode.component(component);
-  Prefix new_pre;
+  InstNode comp_node;
+  Component c;
   Type ty;
+  Binding condition;
+  Class cls;
+  Visibility vis;
 algorithm
-  _ := match c
-    case Component.TYPED_COMPONENT()
-      algorithm
-        ty := Component.getType(c);
-        new_pre := Prefix.addNode(component, prefix);
+  // Remove components that are only outer.
+  if InstNode.isOnlyOuter(component) or InstNode.isEmpty(component) then
+    return;
+  end if;
 
-        elements := match ty
-          case Type.ARRAY()
-            then flattenArray(Component.unliftType(c), ty.dimensions, new_pre, flattenScalar, elements);
-          else flattenScalar(c, new_pre, elements);
+  comp_node := InstNode.resolveOuter(component);
+  c := InstNode.component(comp_node);
+
+  () := match c
+    case Component.TYPED_COMPONENT(condition = condition, ty = ty)
+      algorithm
+        // Don't add the component if it has a condition that's false.
+        if Binding.isBound(condition) and Expression.isFalse(Binding.getTypedExp(condition)) then
+          return;
+        end if;
+
+        cls := InstNode.getClass(c.classInst);
+        vis := if InstNode.isProtected(component) then Visibility.PROTECTED else visibility;
+
+        (vars, sections) := match cls
+          case Class.INSTANCED_BUILTIN()
+            then flattenSimpleComponent(comp_node, c, vis, cls.attributes, prefix, vars, sections);
+          else flattenComplexComponent(comp_node, cls, ty, vis, prefix, vars, sections);
         end match;
       then
         ();
 
     else
       algorithm
-        assert(false, "flattenComponent got unknown component");
+        Error.assertion(false, getInstanceName() + " got unknown component", sourceInfo());
       then
         fail();
 
   end match;
 end flattenComponent;
 
-function flattenArray<ElementT>
-  input ElementT element;
+function flattenSimpleComponent
+  input InstNode node;
+  input Component comp;
+  input Visibility visibility;
+  input list<Modifier> typeAttrs;
+  input ComponentRef prefix;
+  input output list<Variable> vars;
+  input output Sections sections;
+protected
+  InstNode comp_node = node;
+  ComponentRef name;
+  Binding binding;
+  Type ty;
+  SourceInfo info;
+  Component.Attributes comp_attr;
+  Visibility vis;
+  Equation eq;
+  list<tuple<String, Binding>> ty_attrs;
+algorithm
+  Component.TYPED_COMPONENT(ty = ty, binding = binding, attributes = comp_attr, info = info) := comp;
+
+  binding := flattenBinding(binding, prefix, comp_node);
+  name := ComponentRef.prefixCref(comp_node, ty, {}, prefix);
+
+  // If the component is an array component with a binding and at least discrete variability,
+  // move the binding into an equation. This avoids having to scalarize the binding.
+  if Type.isArray(ty) and Binding.isBound(binding) and
+     Component.variability(comp) >= Variability.DISCRETE then
+    eq := Equation.ARRAY_EQUALITY(Expression.CREF(ty, name), Binding.getTypedExp(binding), ty, info);
+    sections := Sections.prependEquation(eq, sections);
+    binding := Binding.UNBOUND();
+  end if;
+
+  ty_attrs := list(flattenTypeAttribute(m, prefix, node) for m in typeAttrs);
+  vars := Variable.VARIABLE(name, ty, binding, visibility, comp_attr, ty_attrs, info) :: vars;
+end flattenSimpleComponent;
+
+function flattenTypeAttribute
+  input Modifier attr;
+  input ComponentRef prefix;
+  input InstNode component;
+  output tuple<String, Binding> outAttr;
+protected
+  Binding binding;
+algorithm
+  binding := flattenBinding(Modifier.binding(attr), prefix, component);
+  outAttr := (Modifier.name(attr), binding);
+end flattenTypeAttribute;
+
+function flattenComplexComponent
+  input InstNode node;
+  input Class cls;
+  input Type ty;
+  input Visibility visibility;
+  input ComponentRef prefix;
+  input output list<Variable> vars;
+  input output Sections sections;
+protected
+  list<Dimension> dims;
+  ComponentRef name;
+algorithm
+  dims := Type.arrayDims(ty);
+  name := ComponentRef.prefixCref(node, ty, {}, prefix);
+
+  // Flatten the class directly if the component is a scalar, otherwise scalarize it.
+  if listEmpty(dims) then
+    (vars, sections) := flattenClass(cls, name, visibility, vars, sections);
+  else
+    (vars, sections) := flattenArray(cls, dims, name, visibility, vars, sections);
+  end if;
+end flattenComplexComponent;
+
+function flattenArray
+  input Class cls;
   input list<Dimension> dimensions;
-  input Prefix prefix;
-  input ExpandScalarFunc scalarFunc;
-  input output list<DAE.Element> elements;
+  input ComponentRef prefix;
+  input Visibility visibility;
+  input output list<Variable> vars;
+  input output Sections sections;
   input list<Subscript> subscripts = {};
 protected
   Dimension dim;
   list<Dimension> rest_dims;
-  Prefix sub_pre;
-  Option<Expression> oe;
-  Expression e;
-  Integer i;
+  ComponentRef sub_pre;
+  RangeIterator range_iter;
+  Expression sub_exp;
 algorithm
   if listEmpty(dimensions) then
-    sub_pre := Prefix.setSubscripts(listReverse(subscripts), prefix);
-    elements := scalarFunc(element, sub_pre, elements);
+    sub_pre := ComponentRef.setSubscripts(listReverse(subscripts), prefix);
+    (vars, sections) := flattenClass(cls, sub_pre, visibility, vars, sections);
   else
     dim :: rest_dims := dimensions;
+    range_iter := RangeIterator.fromDim(dim);
 
-    elements := match dim
-      case Dimension.INTEGER()
-        then flattenArrayIntDim(element, dim.size, rest_dims, prefix,
-          subscripts, scalarFunc, elements);
-
-      case Dimension.BOOLEAN()
-        then flattenArrayBoolDim(element, rest_dims, prefix, subscripts,
-          scalarFunc, elements);
-
-      case Dimension.ENUM()
-        then flattenArrayEnumDim(element, dim.enumType, rest_dims, prefix,
-          subscripts, scalarFunc, elements);
-
-      else
-        algorithm
-          assert(false, getInstanceName() + " got unknown dimension.");
-        then
-          fail();
-
-    end match;
+    while RangeIterator.hasNext(range_iter) loop
+      (range_iter, sub_exp) := RangeIterator.next(range_iter);
+      (vars, sections) := flattenArray(cls, rest_dims, prefix, visibility, vars, sections,
+        Subscript.INDEX(sub_exp) :: subscripts);
+    end while;
   end if;
 end flattenArray;
 
-function flattenArrayIntDim<ElementT>
-  input ElementT element;
-  input Integer dimSize;
-  input list<Dimension> restDims;
-  input Prefix prefix;
-  input list<Subscript> subscripts;
-  input ExpandScalarFunc scalarFunc;
-  input output list<DAE.Element> elements;
-protected
-  list<Subscript> subs;
+function flattenBinding
+  input output Binding binding;
+  input ComponentRef prefix;
+  input InstNode component;
 algorithm
-  for i in 1:dimSize loop
-    subs := Subscript.INDEX(Expression.INTEGER(i)) :: subscripts;
-    elements := flattenArray(element, restDims, prefix, scalarFunc, elements, subs);
-  end for;
-end flattenArrayIntDim;
-
-function flattenArrayBoolDim<ElementT>
-  input ElementT element;
-  input list<Dimension> restDims;
-  input Prefix prefix;
-  input list<Subscript> subscripts;
-  input ExpandScalarFunc scalarFunc;
-  input output list<DAE.Element> elements;
-protected
-  list<Subscript> subs;
-algorithm
-  subs := Subscript.INDEX(Expression.BOOLEAN(false)) :: subscripts;
-  elements := flattenArray(element, restDims, prefix, scalarFunc, elements, subs);
-  subs := Subscript.INDEX(Expression.BOOLEAN(true)) :: subscripts;
-  elements := flattenArray(element, restDims, prefix, scalarFunc, elements, subs);
-end flattenArrayBoolDim;
-
-function flattenArrayEnumDim<ElementT>
-  input ElementT element;
-  input Type enumType;
-  input list<Dimension> restDims;
-  input Prefix prefix;
-  input list<Subscript> subscripts;
-  input ExpandScalarFunc scalarFunc;
-  input output list<DAE.Element> elements;
-protected
-  Integer i = 1;
-  Expression enum_exp;
-  list<String> literals;
-  list<Subscript> subs;
-algorithm
-  literals := match enumType
-    case Type.ENUMERATION() then enumType.literals;
-    else
-      algorithm
-        assert(false, getInstanceName() + " got non-enum type");
-      then
-        fail();
-  end match;
-
-  for l in literals loop
-    enum_exp := Expression.ENUM_LITERAL(enumType, l, i);
-    i := i + 1;
-
-    subs := Subscript.INDEX(enum_exp) :: subscripts;
-    elements := flattenArray(element, restDims, prefix, scalarFunc, elements, subs);
-  end for;
-end flattenArrayEnumDim;
-
-function flattenScalar
-  input Component component;
-  input Prefix prefix;
-  input output list<DAE.Element> elements;
-algorithm
-  _ := match component
+  () := match binding
     local
-      Class i;
-      DAE.Element var;
-      DAE.ComponentRef cref;
-      Component.Attributes attr;
-      list<DAE.Dimension> dims;
-      Option<DAE.Exp> binding_exp;
-      SourceInfo info;
-      Option<DAE.VariableAttributes> var_attr;
+      list<Subscript> subs;
+      Integer binding_level;
 
-    case Component.TYPED_COMPONENT()
+    case Binding.UNBOUND() then ();
+
+    case Binding.TYPED_BINDING()
       algorithm
-        i := InstNode.getClass(component.classInst);
-        info := InstNode.info(component.classInst);
+        binding_level := BindingOrigin.level(binding.origin);
 
-        elements := match i
-          case Class.INSTANCED_BUILTIN()
-            algorithm
-              cref := Prefix.toCref(prefix);
-              binding_exp := flattenBinding(component.binding, prefix);
-              attr := component.attributes;
-              var_attr := makeVarAttributes(i.attributes, component.ty);
-
-              var := DAE.VAR(
-                cref,
-                attr.variability,
-                attr.direction,
-                DAE.NON_PARALLEL(),
-                attr.visibility,
-                Type.toDAE(component.ty),
-                binding_exp,
-                {},
-                attr.connectorType,
-                ElementSource.createElementSource(info),
-                var_attr,
-                NONE(),
-                Absyn.NOT_INNER_OUTER());
-            then
-              var :: elements;
-
-          else flattenClass(i, prefix, elements);
-        end match;
+        if binding_level > 0 then
+          subs := List.flatten(ComponentRef.subscriptsN(prefix, InstNode.level(component) - binding_level));
+          binding.bindingExp := Expression.subscript(binding.bindingExp, subs);
+        end if;
       then
         ();
 
     else
       algorithm
-        assert(false, getInstanceName() + " got untyped component.");
-      then
-        fail();
-
-  end match;
-end flattenScalar;
-
-function flattenBinding
-  input Binding binding;
-  input Prefix prefix;
-  output Option<DAE.Exp> bindingExp;
-algorithm
-  bindingExp := match binding
-    local
-      list<Subscript> subs;
-      DAE.Exp e;
-
-    case Binding.UNBOUND() then NONE();
-
-    case Binding.TYPED_BINDING()
-      algorithm
-        if binding.propagatedDims <= 0 then
-          bindingExp := SOME(Expression.toDAE(binding.bindingExp));
-        else
-          subs := List.lastN(List.flatten(Prefix.allSubscripts(prefix)), binding.propagatedDims);
-          bindingExp := SOME(Expression.toDAE(Expression.subscript(binding.bindingExp, subs)));
-        end if;
-      then
-        bindingExp;
-
-    else
-      algorithm
-        assert(false, getInstanceName() + " got untyped binding.");
+        Error.assertion(false, getInstanceName() + " got untyped binding.", sourceInfo());
       then
         fail();
 
   end match;
 end flattenBinding;
 
-function flattenEquation
-  input Equation eq;
-  input Prefix prefix;
-  input output list<DAE.Element> elements = {};
-protected
-  list<DAE.Element> els = {}, els1, els2;
-  Expression e;
-  DAE.Exp de;
-  Option<DAE.Exp> oe;
-  list<DAE.Exp> range;
-algorithm
-  elements := match eq
-    local
-      DAE.Exp lhs, rhs;
-      Integer is, ie, step;
-
-    case Equation.EQUALITY()
-      algorithm
-        lhs := Expression.toDAE(applyExpPrefix(prefix, eq.lhs));
-        rhs := Expression.toDAE(applyExpPrefix(prefix, eq.rhs));
-      then
-        DAE.EQUATION(lhs, rhs, ElementSource.createElementSource(eq.info)) :: elements;
-
-    case Equation.IF()
-      then flattenIfEquation(eq.branches, prefix, eq.info, false) :: elements;
-
-    case Equation.FOR()
-      algorithm
-        // flatten the equations
-        els1 := List.fold1(eq.body, flattenEquation, prefix, {});
-
-        // deal with the range
-        if isSome(eq.range) then
-          SOME(e) := eq.range;
-          SOME(de) := DAEUtil.evaluateExp(Expression.toDAE(e), elements);
-          range := match (de)
-                    case DAE.ARRAY(array = range) then range;
-                    case DAE.RANGE(_, DAE.ICONST(is), SOME(DAE.ICONST(step)), DAE.ICONST(ie))
-                      then List.map(ExpressionSimplify.simplifyRange(is, step, ie), DAEExpression.makeIntegerExp);
-                    case DAE.RANGE(_, DAE.ICONST(is), _, DAE.ICONST(ie))
-                      then if is <= ie
-                           then List.map(ExpressionSimplify.simplifyRange(is, 1, ie), DAEExpression.makeIntegerExp)
-                           else List.map(ExpressionSimplify.simplifyRange(is, -1, ie), DAEExpression.makeIntegerExp);
-                  end match;
-          // replace index in elements
-          for i in range loop
-            els := DAEUtil.replaceCrefInDAEElements(els1, DAE.CREF_IDENT(eq.name, Type.toDAE(eq.indexType), {}), i);
-            elements := listAppend(els, elements);
-          end for;
-        end if;
-      then
-        elements;
-
-    case Equation.WHEN()
-      then flattenWhenEquation(eq.branches, prefix, eq.info) :: elements;
-
-    case Equation.ASSERT()
-      then DAE.ASSERT(
-        Expression.toDAE(eq.condition),
-        Expression.toDAE(eq.message),
-        Expression.toDAE(eq.level),
-        ElementSource.createElementSource(eq.info)) :: elements;
-
-    case Equation.TERMINATE()
-      then
-        DAE.TERMINATE(Expression.toDAE(eq.message), ElementSource.createElementSource(eq.info)) :: elements;
-
-    //case Equation.REINIT()
-    //  then
-    //    DAE.REINIT(eq.cref, eq.reinitExp, ElementSource.createElementSource(eq.info)) :: elements;
-
-    case Equation.NORETCALL()
-      then
-        DAE.NORETCALL(Expression.toDAE(eq.exp), ElementSource.createElementSource(eq.info)) :: elements;
-
-    case Equation.CONNECT()
-      algorithm
-        // TODO! FIXME! implement this
-      then
-        elements;
-
-    else elements;
-  end match;
-end flattenEquation;
-
-function flattenEquations
-  input list<Equation> equations;
-  input Prefix prefix;
-  input output list<DAE.Element> elements = {};
-algorithm
-  elements := List.fold1(equations, flattenEquation, prefix, elements);
-end flattenEquations;
-
-function flattenInitialEquation
-  input Equation eq;
-  input Prefix prefix;
-  input output list<DAE.Element> elements;
-algorithm
-  elements := match eq
-    local
-      DAE.Exp lhs, rhs;
-
-    case Equation.EQUALITY()
-      algorithm
-        lhs := Expression.toDAE(applyExpPrefix(prefix, eq.lhs));
-        rhs := Expression.toDAE(applyExpPrefix(prefix, eq.rhs));
-      then
-        DAE.INITIALEQUATION(lhs, rhs, ElementSource.createElementSource(eq.info)) :: elements;
-
-    case Equation.IF()
-      then flattenIfEquation(eq.branches, prefix, eq.info, true) :: elements;
-
-    else elements;
-  end match;
-end flattenInitialEquation;
-
-function flattenInitialEquations
-  input list<Equation> equations;
-  input Prefix prefix;
-  input output list<DAE.Element> elements = {};
-algorithm
-  elements := List.fold1(equations, flattenInitialEquation, prefix, elements);
-end flattenInitialEquations;
-
-function flattenIfEquation
-  input list<tuple<Expression, list<Equation>>> ifBranches;
-  input Prefix prefix;
-  input SourceInfo info;
-  input Boolean isInitial;
-  output DAE.Element ifEquation;
-protected
-  list<Expression> conditions = {};
-  list<DAE.Element> branch, else_branch;
-  list<list<DAE.Element>> branches = {};
-  list<DAE.Exp> dconds;
-algorithm
-  for b in ifBranches loop
-    conditions := Util.tuple21(b) :: conditions;
-    branches := flattenEquations(Util.tuple22(b), prefix) :: branches;
-  end for;
-
-  // Transform the last branch to an else-branch if its condition is true.
-  if Expression.isTrue(listHead(conditions)) then
-    conditions := listRest(conditions);
-    else_branch := listHead(branches);
-    branches := listRest(branches);
-  else
-    else_branch := {};
-  end if;
-
-  conditions := listReverse(conditions);
-  branches := listReverse(branches);
-  dconds := list(Expression.toDAE(c) for c in conditions);
-
-  if isInitial then
-    ifEquation := DAE.INITIAL_IF_EQUATION(dconds, branches, else_branch,
-      ElementSource.createElementSource(info));
-  else
-    ifEquation := DAE.IF_EQUATION(dconds, branches, else_branch,
-      ElementSource.createElementSource(info));
-  end if;
-end flattenIfEquation;
-
-function flattenWhenEquation
-  input list<tuple<Expression, list<Equation>>> whenBranches;
-  input Prefix prefix;
-  input SourceInfo info;
-  output DAE.Element whenEquation;
-protected
-  DAE.Exp cond1,cond2;
-  list<DAE.Element> els1, els2;
-  tuple<Expression, list<Equation>> head;
-  list<tuple<Expression, list<Equation>>> rest;
-  Option<DAE.Element> owhenEquation = NONE();
-algorithm
-
-  head::rest := whenBranches;
-  cond1 := Expression.toDAE(Util.tuple21(head));
-  els1 := flattenEquations(Util.tuple22(head), prefix);
-  rest := listReverse(rest);
-
-  for b in rest loop
-    cond2 := Expression.toDAE(Util.tuple21(b));
-    els2 := flattenEquations(Util.tuple22(b), prefix);
-    whenEquation := DAE.WHEN_EQUATION(cond2, els2, owhenEquation, ElementSource.createElementSource(info));
-    owhenEquation := SOME(whenEquation);
-  end for;
-
-  whenEquation := DAE.WHEN_EQUATION(cond1, els1, owhenEquation, ElementSource.createElementSource(info));
-
-end flattenWhenEquation;
-
-function flattenStatement
-  input Statement alg;
-  input output list<DAE.Statement> stmts = {};
-protected
-  list<DAE.Statement> sts;
-  Expression e;
-  DAE.Exp de;
-  Option<DAE.Exp> oe;
-  list<DAE.Exp> range;
-algorithm
-  stmts := match alg
-    local
-      DAE.Exp lhs, rhs;
-      Integer is, ie, step;
-      DAE.Type ty;
-
-    case Statement.ASSIGNMENT()
-      algorithm
-        //lhs := ExpressionSimplify.simplify(alg.lhs);
-        //rhs := ExpressionSimplify.simplify(alg.rhs);
-        lhs := Expression.toDAE(alg.lhs);
-        rhs := Expression.toDAE(alg.rhs);
-        ty := DAEExpression.typeof(lhs);
-      then
-        DAE.STMT_ASSIGN(ty, lhs, rhs, ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.FUNCTION_ARRAY_INIT()
-      then
-        DAE.STMT_ARRAY_INIT(alg.name, alg.ty, ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.FOR()
-      algorithm
-        // flatten the list of statements
-        sts := flattenStatements(alg.body);
-        if isSome(alg.range) then
-          SOME(e) := alg.range;
-          de := Expression.toDAE(e);
-        else
-          de := DAE.SCONST("NO RANGE GIVEN TODO FIXME");
-        end if;
-      then
-        DAE.STMT_FOR(alg.indexType, false, alg.name, alg.index, de, sts, ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.IF()
-      then flattenIfStatement(alg.branches, alg.info) :: stmts;
-
-    case Statement.WHEN()
-      then flattenWhenStatement(alg.branches, alg.info) :: stmts;
-
-    case Statement.ASSERT()
-      then
-        DAE.STMT_ASSERT(
-          Expression.toDAE(alg.condition),
-          Expression.toDAE(alg.message),
-          Expression.toDAE(alg.level),
-          ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.TERMINATE()
-      then
-        DAE.STMT_TERMINATE(Expression.toDAE(alg.message),
-          ElementSource.createElementSource(alg.info)) :: stmts;
-
-    //case Statement.REINIT()
-    //  then
-    //    DAE.STMT_REINIT(
-    //      Expression.toDAE(Expression.makeCrefExp(alg.cref, ComponentReference.crefType(alg.cref))),
-    //      Expression.toDAE(alg.reinitExp),
-    //      ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.NORETCALL()
-      then
-        DAE.STMT_NORETCALL(Expression.toDAE(alg.exp),
-          ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.WHILE()
-      algorithm
-        // flatten the list of statements
-        sts := flattenStatements(alg.body);
-      then
-        DAE.STMT_WHILE(Expression.toDAE(alg.condition), sts,
-          ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.RETURN()
-      then
-        DAE.STMT_RETURN(ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.BREAK()
-      then
-        DAE.STMT_BREAK(ElementSource.createElementSource(alg.info)) :: stmts;
-
-    case Statement.FAILURE()
-      algorithm
-        // flatten the list of statements
-        sts := flattenStatements(alg.body);
-      then
-        DAE.STMT_FAILURE(sts, ElementSource.createElementSource(alg.info)) :: stmts;
-
-    else stmts;
-  end match;
-end flattenStatement;
-
-public function flattenStatements
-  input list<Statement> algs;
-  input output list<DAE.Statement> stmts = {};
-algorithm
-  stmts := listReverse(List.fold(algs, flattenStatement, stmts));
-end flattenStatements;
-
-function flattenAlgorithmStmts
-  input list<Statement> algSection;
-  input output list<DAE.Element> elements = {};
-protected
-  DAE.Algorithm alg;
-algorithm
-  alg := DAE.ALGORITHM_STMTS(flattenStatements(algSection));
-  elements := DAE.ALGORITHM(alg, DAE.emptyElementSource) :: elements;
-end flattenAlgorithmStmts;
-
-function flattenAlgorithms
-  input list<list<Statement>> algorithms;
-  input output list<DAE.Element> elements = {};
-algorithm
-  elements := List.fold(algorithms, flattenAlgorithmStmts, elements);
-end flattenAlgorithms;
-
-function flattenInitialAlgorithmStmts
-  input list<Statement> algSection;
-  input output list<DAE.Element> elements = {};
-protected
-  DAE.Algorithm alg;
-algorithm
-  alg := DAE.ALGORITHM_STMTS(flattenStatements(algSection));
-  elements := DAE.INITIALALGORITHM(alg, DAE.emptyElementSource) :: elements;
-end flattenInitialAlgorithmStmts;
-
-function flattenInitialAlgorithms
-  input list<list<Statement>> algorithms;
-  input output list<DAE.Element> elements = {};
-algorithm
-  elements := List.fold(algorithms, flattenInitialAlgorithmStmts, elements);
-end flattenInitialAlgorithms;
-
-function flattenIfStatement
-  input list<tuple<Expression, list<Statement>>> ifBranches;
-  input SourceInfo info;
-  output DAE.Statement ifStatement;
-protected
-  DAE.Exp cond1, cond2;
-  list<DAE.Statement> stmts1, stmts2;
-  tuple<Expression, list<Statement>> head;
-  list<tuple<Expression, list<Statement>>> rest;
-  DAE.Else elseStatement = DAE.NOELSE();
-algorithm
-  head :: rest := ifBranches;
-  cond1 := Expression.toDAE(Util.tuple21(head));
-  stmts1 := flattenStatements(Util.tuple22(head));
-  rest := listReverse(rest);
-
-  for b in rest loop
-    cond2 := Expression.toDAE(Util.tuple21(b));
-    stmts2 := flattenStatements(Util.tuple22(b));
-    elseStatement := DAE.ELSEIF(cond2, stmts2, elseStatement);
-  end for;
-
-  ifStatement := DAE.STMT_IF(cond1, stmts1,  elseStatement, ElementSource.createElementSource(info));
-
-end flattenIfStatement;
-
-function flattenWhenStatement
-  input list<tuple<Expression, list<Statement>>> whenBranches;
-  input SourceInfo info;
-  output DAE.Statement whenStatement;
-protected
-  DAE.Exp cond1,cond2;
-  list<DAE.Statement> stmts1, stmts2;
-  tuple<Expression, list<Statement>> head;
-  list<tuple<Expression, list<Statement>>> rest;
-  Option<DAE.Statement> owhenStatement = NONE();
-algorithm
-
-  head :: rest := whenBranches;
-  cond1 := Expression.toDAE(Util.tuple21(head));
-  stmts1 := flattenStatements(Util.tuple22(head));
-  rest := listReverse(rest);
-
-  for b in rest loop
-  cond2 := Expression.toDAE(Util.tuple21(b));
-    stmts2 := flattenStatements(Util.tuple22(b));
-    whenStatement := DAE.STMT_WHEN(cond2, {}, false, stmts2, owhenStatement, ElementSource.createElementSource(info));
-    owhenStatement := SOME(whenStatement);
-  end for;
-
-  whenStatement := DAE.STMT_WHEN(cond1, {}, false, stmts1, owhenStatement, ElementSource.createElementSource(info));
-
-end flattenWhenStatement;
-
-function applyExpPrefix
-  input Prefix prefix;
+function flattenExp
   input output Expression exp;
+  input ComponentRef prefix;
+algorithm
+  exp := Expression.map(exp, function flattenExp_traverse(prefix = prefix));
+end flattenExp;
+
+function flattenExp_traverse
+  input output Expression exp;
+  input ComponentRef prefix;
 algorithm
   exp := match exp
     case Expression.CREF()
       algorithm
-        exp.prefix := Prefix.transferSubscripts(prefix, exp.prefix);
+        exp.cref := ComponentRef.transferSubscripts(prefix, exp.cref);
       then
         exp;
 
     else exp;
   end match;
-end applyExpPrefix;
+end flattenExp_traverse;
 
-function makeVarAttributes
-  input list<Modifier> mods;
-  input Type ty;
-  output Option<DAE.VariableAttributes> attributes;
+function flattenSections
+  input Sections sections;
+  input ComponentRef prefix;
+  input output Sections accumSections;
 algorithm
-  if listEmpty(mods) then
-    attributes := NONE();
-    return;
+  () := match sections
+    local
+      list<Equation> eq, ieq;
+      list<list<Statement>> alg, ialg;
+
+    case Sections.SECTIONS()
+      algorithm
+        eq := flattenEquations(sections.equations, prefix);
+        ieq := flattenEquations(sections.initialEquations, prefix);
+        alg := flattenAlgorithms(sections.algorithms, prefix);
+        ialg := flattenAlgorithms(sections.initialAlgorithms, prefix);
+        accumSections := Sections.prepend(eq, ieq, alg, ialg, accumSections);
+      then
+        ();
+
+    else ();
+  end match;
+end flattenSections;
+
+function flattenEquations
+  input list<Equation> eql;
+  input ComponentRef prefix;
+  output list<Equation> equations = {};
+algorithm
+  for eq in eql loop
+    equations := flattenEquation(eq, prefix, equations);
+  end for;
+end flattenEquations;
+
+function flattenEquation
+  input Equation eq;
+  input ComponentRef prefix;
+  input output list<Equation> equations;
+algorithm
+  equations := match eq
+    local
+      Expression e1, e2, e3;
+
+    case Equation.EQUALITY()
+      algorithm
+        e1 := flattenExp(eq.lhs, prefix);
+        e2 := flattenExp(eq.rhs, prefix);
+      then
+        Equation.EQUALITY(e1, e2, eq.ty, eq.info) :: equations;
+
+    case Equation.FOR()
+      algorithm
+        eq.body := flattenEquations(eq.body, prefix);
+      then
+        unrollForLoop(eq, equations);
+
+    case Equation.CONNECT()
+      algorithm
+        e1 := flattenExp(eq.lhs, prefix);
+        e2 := flattenExp(eq.rhs, prefix);
+      then
+        Equation.CONNECT(e1, e2, eq.info) :: equations;
+
+    case Equation.IF()
+      then flattenIfEquation(eq.branches, prefix, eq.info, equations);
+
+    case Equation.WHEN()
+      algorithm
+        eq.branches := list(flattenEqBranch(b, prefix) for b in eq.branches);
+      then
+        eq :: equations;
+
+    case Equation.ASSERT()
+      algorithm
+        e1 := flattenExp(eq.condition, prefix);
+        e2 := flattenExp(eq.message, prefix);
+        e3 := flattenExp(eq.level, prefix);
+      then
+        Equation.ASSERT(e1, e2, e3, eq.info) :: equations;
+
+    case Equation.TERMINATE()
+      algorithm
+        e1 := flattenExp(eq.message, prefix);
+      then
+        Equation.TERMINATE(e1, eq.info) :: equations;
+
+    case Equation.REINIT()
+      algorithm
+        e1 := flattenExp(eq.cref, prefix);
+        e2 := flattenExp(eq.reinitExp, prefix);
+      then
+        Equation.REINIT(e1, e2, eq.info) :: equations;
+
+    case Equation.NORETCALL()
+      algorithm
+        e1 := flattenExp(eq.exp, prefix);
+      then
+        Equation.NORETCALL(e1, eq.info) :: equations;
+
+    else eq :: equations;
+  end match;
+end flattenEquation;
+
+function flattenIfEquation
+  input list<tuple<Expression, list<Equation>>> branches;
+  input ComponentRef prefix;
+  input SourceInfo info;
+  input output list<Equation> equations;
+protected
+  list<tuple<Expression, list<Equation>>> bl = {};
+  Expression cond;
+  list<Equation> eql;
+algorithm
+  for b in branches loop
+    (cond, eql) := b;
+    eql := flattenEquations(eql, prefix);
+
+    if Expression.isTrue(cond) and listEmpty(bl) then
+      // If the condition is literal true and we haven't collected any other
+      // branches yet, replace the if equation with this branch.
+      equations := listAppend(eql, equations);
+      return;
+    elseif not Expression.isFalse(cond) then
+      // Only add the branch to the list of branches if the condition is not
+      // literal false, otherwise just drop it since it will never trigger.
+      bl := (cond, eql) :: bl;
+    end if;
+  end for;
+
+  // Add the flattened if equation to the list of equations if we got this far,
+  // and there are any branches still remaining.
+  if not listEmpty(bl) then
+    equations := Equation.IF(listReverseInPlace(bl), info) :: equations;
+  end if;
+end flattenIfEquation;
+
+function flattenEqBranch
+  input output tuple<Expression, list<Equation>> branch;
+  input ComponentRef prefix;
+protected
+  Expression exp;
+  list<Equation> eql;
+algorithm
+  (exp, eql) := branch;
+  exp := flattenExp(exp, prefix);
+  eql := flattenEquations(eql, prefix);
+  branch := (exp, eql);
+end flattenEqBranch;
+
+function unrollForLoop
+  input Equation forLoop;
+  input output list<Equation> equations;
+protected
+  InstNode iter;
+  String iter_name;
+  list<Equation> body, unrolled_body;
+  Binding binding;
+  Expression range;
+  RangeIterator range_iter;
+  Expression val;
+algorithm
+  Equation.FOR(iterator = iter, body = body) := forLoop;
+
+  // Get the range to iterate over.
+  Component.ITERATOR(binding = binding) := InstNode.component(iter);
+  iter_name := InstNode.name(iter);
+  SOME(range) := Binding.typedExp(binding);
+  range_iter := RangeIterator.fromExp(range);
+
+  // Unroll the loop by replacing the iterator with each of its values in the for loop body.
+  while RangeIterator.hasNext(range_iter) loop
+    (range_iter, val) := RangeIterator.next(range_iter);
+    unrolled_body := list(Equation.mapExp(eq,
+      function replaceForIterator(iteratorName = iter_name, iteratorValue = val)) for eq in body);
+    equations := listAppend(unrolled_body, equations);
+  end while;
+end unrollForLoop;
+
+function replaceForIterator
+  input output Expression exp;
+  input String iteratorName;
+  input Expression iteratorValue;
+algorithm
+  exp := Expression.map(exp,
+    function replaceForIterator2(iteratorName = iteratorName, iteratorValue = iteratorValue));
+end replaceForIterator;
+
+function replaceForIterator2
+  input output Expression exp;
+  input String iteratorName;
+  input Expression iteratorValue;
+
+  import Origin = NFComponentRef.Origin;
+algorithm
+  exp := match exp
+    local
+      String name;
+
+    case Expression.CREF(cref = ComponentRef.CREF(
+        node = InstNode.COMPONENT_NODE(name = name), origin = Origin.ITERATOR))
+      then if name == iteratorName then iteratorValue else exp;
+
+    else exp;
+  end match;
+end replaceForIterator2;
+
+function flattenAlgorithms
+  input output list<list<Statement>> algorithms;
+  input ComponentRef prefix;
+algorithm
+  algorithms := listReverse(
+    Statement.mapExpList(alg, function flattenExp(prefix = prefix)) for alg in algorithms);
+end flattenAlgorithms;
+
+function resolveConnections
+  input output FlatModel flatModel;
+  input String name;
+protected
+  Connections conns;
+  list<Equation> conn_eql;
+  ConnectionSets.Sets csets;
+  array<list<Connector>> csets_array;
+algorithm
+  // Generate the connect equations and add them to the equation list.
+  (flatModel, conns) := Connections.collect(flatModel);
+  csets := ConnectionSets.fromConnections(conns);
+  csets_array := ConnectionSets.extractSets(csets);
+  conn_eql := ConnectEquations.generateEquations(csets_array);
+  flatModel.equations := listAppend(conn_eql, flatModel.equations);
+
+  // Evaluate any connection operators if they're used.
+  if System.getHasStreamConnectors() or System.getUsesCardinality() then
+    flatModel := evaluateConnectionOperators(flatModel, csets, csets_array);
   end if;
 
-  attributes := match ty
-    case Type.REAL() then makeRealVarAttributes(mods);
-    case Type.INTEGER() then makeIntVarAttributes(mods);
-    case Type.BOOLEAN() then makeBoolVarAttributes(mods);
-    case Type.STRING() then makeStringVarAttributes(mods);
-    case Type.ENUMERATION() then makeEnumVarAttributes(mods);
-    else NONE();
+  execStat(getInstanceName() + "(" + name + ")");
+end resolveConnections;
+
+function evaluateConnectionOperators
+  input output FlatModel flatModel;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
+algorithm
+  flatModel.variables := list(evaluateBindingConnOp(c, sets, setsArray) for c in flatModel.variables);
+  flatModel.equations := evaluateEquationsConnOp(flatModel.equations, sets, setsArray);
+  flatModel.initialEquations := evaluateEquationsConnOp(flatModel.initialEquations, sets, setsArray);
+  // TODO: Implement evaluation for algorithm sections.
+end evaluateConnectionOperators;
+
+function evaluateBindingConnOp
+  input output Variable var;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
+protected
+  Binding binding;
+  Expression exp, eval_exp;
+algorithm
+  () := match var
+    case Variable.VARIABLE(binding = binding as Binding.TYPED_BINDING(bindingExp = exp))
+      algorithm
+        eval_exp := ConnectEquations.evaluateOperators(exp, sets, setsArray);
+
+        if not referenceEq(exp, eval_exp) then
+          binding.bindingExp := eval_exp;
+          var.binding := binding;
+        end if;
+      then
+        ();
+
+    else ();
   end match;
-end makeVarAttributes;
+end evaluateBindingConnOp;
 
-function makeRealVarAttributes
-  input list<Modifier> mods;
-  output Option<DAE.VariableAttributes> attributes;
-protected
-  Option<DAE.Exp> quantity = NONE(), unit = NONE(), displayUnit = NONE();
-  Option<DAE.Exp> min = NONE(), max = NONE(), start = NONE(), fixed = NONE(), nominal = NONE();
-  Option<DAE.StateSelect> state_select = NONE();
+function evaluateEquationsConnOp
+  input output list<Equation> equations;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
 algorithm
-  for m in mods loop
-    () := match Modifier.name(m)
-      case "displayUnit" algorithm displayUnit := makeVarAttribute(m); then ();
-      case "fixed"       algorithm fixed := makeVarAttribute(m); then ();
-      case "max"         algorithm max := makeVarAttribute(m); then ();
-      case "min"         algorithm min := makeVarAttribute(m); then ();
-      case "nominal"     algorithm nominal := makeVarAttribute(m); then ();
-      case "quantity"    algorithm quantity := makeVarAttribute(m); then ();
-      case "start"       algorithm start := makeVarAttribute(m); then ();
-      case "stateSelect" algorithm state_select := makeStateSelectAttribute(m); then ();
-      case "unit"        algorithm unit := makeVarAttribute(m); then ();
+  equations := list(evaluateEquationConnOp(eq, sets, setsArray) for eq in equations);
+end evaluateEquationsConnOp;
 
-      // The attributes should already be type checked, so we shouldn't get any
-      // unknown attributes here.
-      else
-        algorithm
-          assert(false, getInstanceName() + " got unknown type attribute " +
-            Modifier.name(m));
-        then
-          fail();
-    end match;
-  end for;
-
-  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_REAL(
-    quantity, unit, displayUnit, min, max, start, fixed, nominal,
-    state_select, NONE(), NONE(), NONE(), NONE(), NONE(), NONE()));
-end makeRealVarAttributes;
-
-function makeIntVarAttributes
-  input list<Modifier> mods;
-  output Option<DAE.VariableAttributes> attributes;
-protected
-  Option<DAE.Exp> quantity = NONE(), min = NONE(), max = NONE();
-  Option<DAE.Exp> start = NONE(), fixed = NONE();
+function evaluateEquationConnOp
+  input output Equation eq;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
 algorithm
-  for m in mods loop
-    () := match Modifier.name(m)
-      case "quantity" algorithm quantity := makeVarAttribute(m); then ();
-      case "min"      algorithm min := makeVarAttribute(m); then ();
-      case "max"      algorithm max := makeVarAttribute(m); then ();
-      case "start"    algorithm start := makeVarAttribute(m); then ();
-      case "fixed"    algorithm fixed := makeVarAttribute(m); then ();
-
-      // The attributes should already be type checked, so we shouldn't get any
-      // unknown attributes here.
-      else
-        algorithm
-          assert(false, getInstanceName() + " got unknown type attribute " +
-            Modifier.name(m));
-        then
-          fail();
-    end match;
-  end for;
-
-  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_INT(
-    quantity, min, max, start, fixed,
-    NONE(), NONE(), NONE(), NONE(), NONE(), NONE()));
-end makeIntVarAttributes;
-
-function makeBoolVarAttributes
-  input list<Modifier> mods;
-  output Option<DAE.VariableAttributes> attributes;
-protected
-  Option<DAE.Exp> quantity = NONE(), start = NONE(), fixed = NONE();
-algorithm
-  for m in mods loop
-    () := match Modifier.name(m)
-      case "quantity" algorithm quantity := makeVarAttribute(m); then ();
-      case "start"    algorithm start := makeVarAttribute(m); then ();
-      case "fixed"    algorithm fixed := makeVarAttribute(m); then ();
-
-      // The attributes should already be type checked, so we shouldn't get any
-      // unknown attributes here.
-      else
-        algorithm
-          assert(false, getInstanceName() + " got unknown type attribute " +
-            Modifier.name(m));
-        then
-          fail();
-    end match;
-  end for;
-
-  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_BOOL(
-    quantity, start, fixed, NONE(), NONE(), NONE(), NONE()));
-end makeBoolVarAttributes;
-
-function makeStringVarAttributes
-  input list<Modifier> mods;
-  output Option<DAE.VariableAttributes> attributes;
-protected
-  Option<DAE.Exp> quantity = NONE(), start = NONE();
-algorithm
-  for m in mods loop
-    () := match Modifier.name(m)
-      case "quantity" algorithm quantity := makeVarAttribute(m); then ();
-      case "start"    algorithm start := makeVarAttribute(m); then ();
-
-      // The attributes should already be type checked, so we shouldn't get any
-      // unknown attributes here.
-      else
-        algorithm
-          assert(false, getInstanceName() + " got unknown type attribute " +
-            Modifier.name(m));
-        then
-          fail();
-    end match;
-  end for;
-
-  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_STRING(
-    quantity, start, NONE(), NONE(), NONE(), NONE()));
-end makeStringVarAttributes;
-
-function makeEnumVarAttributes
-  input list<Modifier> mods;
-  output Option<DAE.VariableAttributes> attributes;
-protected
-  Option<DAE.Exp> quantity = NONE(), min = NONE(), max = NONE();
-  Option<DAE.Exp> start = NONE(), fixed = NONE();
-algorithm
-  for m in mods loop
-    () := match Modifier.name(m)
-      case "fixed"       algorithm fixed := makeVarAttribute(m); then ();
-      case "max"         algorithm max := makeVarAttribute(m); then ();
-      case "min"         algorithm min := makeVarAttribute(m); then ();
-      case "quantity"    algorithm quantity := makeVarAttribute(m); then ();
-      case "start"       algorithm start := makeVarAttribute(m); then ();
-
-      // The attributes should already be type checked, so we shouldn't get any
-      // unknown attributes here.
-      else
-        algorithm
-          assert(false, getInstanceName() + " got unknown type attribute " +
-            Modifier.name(m));
-        then
-          fail();
-    end match;
-  end for;
-
-  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_ENUMERATION(
-    quantity, min, max, start, fixed, NONE(), NONE(), NONE(), NONE()));
-end makeEnumVarAttributes;
-
-function makeVarAttribute
-  input Modifier mod;
-  output Option<DAE.Exp> attribute;
-algorithm
-  attribute := match mod
+  eq := match eq
     local
-      Expression exp;
+      Expression e1, e2;
 
-    case Modifier.MODIFIER(binding = Binding.TYPED_BINDING(bindingExp = exp))
-      then SOME(Expression.toDAE(exp));
-
-    else
+    case Equation.EQUALITY()
       algorithm
-        assert(false, getInstanceName() + " got untyped binding");
+        e1 := ConnectEquations.evaluateOperators(eq.lhs, sets, setsArray);
+        e2 := ConnectEquations.evaluateOperators(eq.rhs, sets, setsArray);
       then
-        fail();
+        Equation.EQUALITY(e1, e2, eq.ty, eq.info);
 
+    case Equation.ARRAY_EQUALITY()
+      algorithm
+        eq.rhs := ConnectEquations.evaluateOperators(eq.rhs, sets, setsArray);
+      then
+        eq;
+
+    case Equation.FOR()
+      algorithm
+        eq.body := evaluateEquationsConnOp(eq.body, sets, setsArray);
+      then
+        eq;
+
+    case Equation.IF()
+      algorithm
+        eq.branches := list(evaluateEqBranchConnOp(b, sets, setsArray) for b in eq.branches);
+      then
+        eq;
+
+    case Equation.WHEN()
+      algorithm
+        eq.branches := list(evaluateEqBranchConnOp(b, sets, setsArray) for b in eq.branches);
+      then
+        eq;
+
+    case Equation.REINIT()
+      algorithm
+        eq.reinitExp := ConnectEquations.evaluateOperators(eq.reinitExp, sets, setsArray);
+      then
+        eq;
+
+    case Equation.NORETCALL()
+      algorithm
+        eq.exp := ConnectEquations.evaluateOperators(eq.exp, sets, setsArray);
+      then
+        eq;
+
+    else eq;
   end match;
-end makeVarAttribute;
+end evaluateEquationConnOp;
 
-function makeStateSelectAttribute
-  input Modifier mod;
-  output Option<DAE.StateSelect> stateSelect;
+function evaluateEqBranchConnOp
+  input output tuple<Expression, list<Equation>> branch;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
+protected
+  Expression exp;
+  list<Equation> eql;
 algorithm
-  stateSelect := match mod
-    local
-      Expression exp;
-      InstNode node;
+  (exp, eql) := branch;
+  eql := evaluateEquationsConnOp(eql, sets, setsArray);
+  branch := (exp, eql);
+end evaluateEqBranchConnOp;
 
-    case Modifier.MODIFIER(binding = Binding.TYPED_BINDING(
-        bindingExp = exp as Expression.ENUM_LITERAL(
-          ty = Type.ENUMERATION(typePath = Absyn.IDENT("StateSelect")))))
-      then
-        SOME(lookupStateSelectMember(exp.name));
-
-    case Modifier.MODIFIER(binding = Binding.TYPED_BINDING(
-        bindingExp = exp as Expression.CREF(component = node)))
-      then
-        SOME(lookupStateSelectMember(InstNode.name(node)));
-
-    case Modifier.MODIFIER(binding = Binding.TYPED_BINDING())
-      algorithm
-        assert(false, getInstanceName() + " got non StateSelect value");
-      then
-        fail();
-
-    else
-      algorithm
-        assert(false, getInstanceName() + " git untyped binding");
-      then
-        fail();
-
-  end match;
-end makeStateSelectAttribute;
-
-function lookupStateSelectMember
+function flattenFunctions
+  input FlatModel flatModel;
   input String name;
-  output DAE.StateSelect stateSelect;
+  output FunctionTree funcs;
 algorithm
-  stateSelect := match name
-    case "never" then DAE.StateSelect.NEVER();
-    case "avoid" then DAE.StateSelect.AVOID();
-    case "default" then DAE.StateSelect.DEFAULT();
-    case "prefer" then DAE.StateSelect.PREFER();
-    case "always" then DAE.StateSelect.ALWAYS();
-    else
+  funcs := FunctionTree.new();
+  funcs := List.fold(flatModel.variables, collectComponentFuncs, funcs);
+  funcs := List.fold(flatModel.equations, collectEquationFuncs, funcs);
+  funcs := List.fold(flatModel.initialEquations, collectEquationFuncs, funcs);
+  funcs := List.fold(flatModel.algorithms, collectAlgorithmFuncs, funcs);
+  funcs := List.fold(flatModel.initialAlgorithms, collectAlgorithmFuncs, funcs);
+  execStat(getInstanceName() + "(" + name + ")");
+end flattenFunctions;
+
+function collectComponentFuncs
+  input Variable var;
+  input output FunctionTree funcs;
+protected
+  Binding binding;
+  ComponentRef cref;
+  InstNode node;
+  Type ty;
+algorithm
+  () := match var
+    case Variable.VARIABLE(ty = ty, binding = binding)
       algorithm
-        assert(false, getInstanceName() + " got unknown StateSelect literal");
+        // TODO: Collect functions from the component's type attributes.
+
+        // Collect external object structors.
+        () := match ty
+          case Type.COMPLEX(complexTy = ComplexType.EXTERNAL_OBJECT())
+            algorithm
+              funcs := collectExternalObjectStructors(ty.complexTy, funcs);
+            then
+              ();
+
+          else ();
+        end match;
+
+        // Collect functions used in the component's binding, if it has one.
+        if Binding.isBound(binding) then
+          funcs := collectExpFuncs(Binding.getTypedExp(binding), funcs);
+        end if;
       then
-        fail();
+        ();
+
   end match;
-end lookupStateSelectMember;
+end collectComponentFuncs;
+
+function collectExternalObjectStructors
+  input ComplexType ty;
+  input output FunctionTree funcs;
+protected
+  InstNode constructor, destructor;
+  Function fn;
+algorithm
+  ComplexType.EXTERNAL_OBJECT(constructor, destructor) := ty;
+  CachedData.FUNCTION(funcs = {fn}) := InstNode.getFuncCache(constructor);
+  funcs := flattenFunction(fn, funcs);
+  CachedData.FUNCTION(funcs = {fn}) := InstNode.getFuncCache(destructor);
+  funcs := flattenFunction(fn, funcs);
+end collectExternalObjectStructors;
+
+function collectEquationFuncs
+  input Equation eq;
+  input output FunctionTree funcs;
+algorithm
+  () := match eq
+    case Equation.EQUALITY()
+      algorithm
+        funcs := collectExpFuncs(eq.lhs, funcs);
+        funcs := collectExpFuncs(eq.rhs, funcs);
+      then
+        ();
+
+    case Equation.ARRAY_EQUALITY()
+      algorithm
+        // Lhs is always a cref, no need to check it.
+        funcs := collectExpFuncs(eq.rhs, funcs);
+      then
+        ();
+
+    case Equation.FOR()
+      algorithm
+        funcs := List.fold(eq.body, collectEquationFuncs, funcs);
+      then
+        ();
+
+    case Equation.IF()
+      algorithm
+        funcs := List.fold(eq.branches, collectEqBranchFuncs, funcs);
+      then
+        ();
+
+    case Equation.WHEN()
+      algorithm
+        funcs := List.fold(eq.branches, collectEqBranchFuncs, funcs);
+      then
+        ();
+
+    case Equation.ASSERT()
+      algorithm
+        funcs := collectExpFuncs(eq.condition, funcs);
+        funcs := collectExpFuncs(eq.message, funcs);
+        funcs := collectExpFuncs(eq.level, funcs);
+      then
+        ();
+
+    case Equation.TERMINATE()
+      algorithm
+        funcs := collectExpFuncs(eq.message, funcs);
+      then
+        ();
+
+    case Equation.REINIT()
+      algorithm
+        funcs := collectExpFuncs(eq.reinitExp, funcs);
+      then
+        ();
+
+    case Equation.NORETCALL()
+      algorithm
+        funcs := collectExpFuncs(eq.exp, funcs);
+      then
+        ();
+
+    else ();
+  end match;
+end collectEquationFuncs;
+
+function collectEqBranchFuncs
+  input tuple<Expression, list<Equation>> branch;
+  input output FunctionTree funcs;
+algorithm
+  funcs := collectExpFuncs(Util.tuple21(branch), funcs);
+  funcs := List.fold(Util.tuple22(branch), collectEquationFuncs, funcs);
+end collectEqBranchFuncs;
+
+function collectAlgorithmFuncs
+  input list<Statement> alg;
+  input output FunctionTree funcs;
+algorithm
+  funcs := List.fold(alg, collectStatementFuncs, funcs);
+end collectAlgorithmFuncs;
+
+function collectStatementFuncs
+  input Statement stmt;
+  input output FunctionTree funcs;
+algorithm
+  () := match stmt
+    case Statement.ASSIGNMENT()
+      algorithm
+        funcs := collectExpFuncs(stmt.lhs, funcs);
+        funcs := collectExpFuncs(stmt.rhs, funcs);
+      then
+        ();
+
+    case Statement.FOR()
+      algorithm
+        funcs := List.fold(stmt.body, collectStatementFuncs, funcs);
+      then
+        ();
+
+    case Statement.IF()
+      algorithm
+        funcs := List.fold(stmt.branches, collectStmtBranchFuncs, funcs);
+      then
+        ();
+
+    case Statement.WHEN()
+      algorithm
+        funcs := List.fold(stmt.branches, collectStmtBranchFuncs, funcs);
+      then
+        ();
+
+    case Statement.ASSERT()
+      algorithm
+        funcs := collectExpFuncs(stmt.condition, funcs);
+        funcs := collectExpFuncs(stmt.message, funcs);
+        funcs := collectExpFuncs(stmt.level, funcs);
+      then
+        ();
+
+    case Statement.TERMINATE()
+      algorithm
+        funcs := collectExpFuncs(stmt.message, funcs);
+      then
+        ();
+
+    case Statement.NORETCALL()
+      algorithm
+        funcs := collectExpFuncs(stmt.exp, funcs);
+      then
+        ();
+
+    case Statement.WHILE()
+      algorithm
+        funcs := collectExpFuncs(stmt.condition, funcs);
+        funcs := List.fold(stmt.body, collectStatementFuncs, funcs);
+      then
+        ();
+
+    else ();
+  end match;
+end collectStatementFuncs;
+
+function collectStmtBranchFuncs
+  input tuple<Expression, list<Statement>> branch;
+  input output FunctionTree funcs;
+algorithm
+  funcs := collectExpFuncs(Util.tuple21(branch), funcs);
+  funcs := List.fold(Util.tuple22(branch), collectStatementFuncs, funcs);
+end collectStmtBranchFuncs;
+
+function collectExpFuncs
+  input Expression exp;
+  input output FunctionTree funcs;
+algorithm
+  funcs := Expression.fold(exp, collectExpFuncs_traverse, funcs);
+end collectExpFuncs;
+
+function collectExpFuncs_traverse
+  input Expression exp;
+  input output FunctionTree funcs;
+algorithm
+  () := match exp
+    case Expression.CALL()
+      algorithm
+        funcs := flattenFunction(Call.typedFunction(exp.call), funcs);
+      then
+        ();
+
+    else ();
+  end match;
+end collectExpFuncs_traverse;
+
+function flattenFunction
+  input Function fn;
+  input output FunctionTree funcs;
+algorithm
+  if not Function.isCollected(fn) then
+    Function.collect(fn);
+    funcs := FunctionTree.add(funcs, Function.name(fn), fn);
+    funcs := collectClassFunctions(fn.node, funcs);
+  end if;
+end flattenFunction;
+
+function collectClassFunctions
+  input InstNode clsNode;
+  input output FunctionTree funcs;
+protected
+  Class cls;
+  ClassTree cls_tree;
+  Sections sections;
+  Component comp;
+  Binding binding;
+algorithm
+  cls := InstNode.getClass(clsNode);
+
+  () := match cls
+    case Class.INSTANCED_CLASS(elements = cls_tree as ClassTree.FLAT_TREE(), sections = sections)
+      algorithm
+        for c in cls_tree.components loop
+          comp := InstNode.component(c);
+          binding := Component.getBinding(comp);
+
+          if Binding.isBound(binding) then
+            funcs := collectExpFuncs(Binding.getTypedExp(binding), funcs);
+          end if;
+        end for;
+
+        () := match sections
+          case Sections.SECTIONS()
+            algorithm
+              funcs := List.fold(sections.algorithms, collectAlgorithmFuncs, funcs);
+            then
+              ();
+
+          else ();
+        end match;
+      then
+        ();
+
+    else ();
+  end match;
+end collectClassFunctions;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFFlatten;

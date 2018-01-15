@@ -193,10 +193,11 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber)
 {
   void *dataAndThreadData[2] = {data, threadData};
   LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
-  DATA_UMFPACK* solverData = (DATA_UMFPACK*)systemData->solverData;
+  DATA_UMFPACK* solverData = (DATA_UMFPACK*)systemData->solverData[0];
 
   int i, j, status = UMFPACK_OK, success = 0, ni=0, n = systemData->size, eqSystemNumber = systemData->equationIndex, indexes[2] = {1,eqSystemNumber};
   int casualTearingSet = systemData->strictTearingFunctionCall != NULL;
+  double tmpJacEvalTime;
 
   infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with UMFPACK Solver",
    eqSystemNumber, (int) systemData->size,
@@ -235,25 +236,22 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber)
     memcpy(solverData->work, systemData->x, sizeof(double)*solverData->n_row);
     wrapper_fvec_umfpack(solverData->work, systemData->b, dataAndThreadData, sysNumber);
   }
-
-  infoStreamPrint(LOG_LS, 0, "###  %f  time to set Matrix A and vector b.", rt_ext_tp_tock(&(solverData->timeClock)));
+  tmpJacEvalTime = rt_ext_tp_tock(&(solverData->timeClock));
+  systemData->jacobianTime += tmpJacEvalTime;
+  infoStreamPrint(LOG_LS_V, 0, "###  %f  time to set Matrix A and vector b.", tmpJacEvalTime);
 
   if (ACTIVE_STREAM(LOG_LS_V))
   {
-    if (ACTIVE_STREAM(LOG_LS_V))
-    {
-      infoStreamPrint(LOG_LS_V, 1, "Old solution x:");
-      for(i = 0; i < solverData->n_row; ++i)
-        infoStreamPrint(LOG_LS_V, 0, "[%d] %s = %g", i+1, modelInfoGetEquation(&data->modelData->modelDataXml,eqSystemNumber).vars[i], systemData->x[i]);
+    infoStreamPrint(LOG_LS_V, 1, "Old solution x:");
+    for(i = 0; i < solverData->n_row; ++i)
+      infoStreamPrint(LOG_LS_V, 0, "[%d] %s = %g", i+1, modelInfoGetEquation(&data->modelData->modelDataXml,eqSystemNumber).vars[i], systemData->x[i]);
+    messageClose(LOG_LS_V);
 
-      messageClose(LOG_LS_V);
-    }
     infoStreamPrint(LOG_LS_V, 1, "Matrix A n_rows = %d", solverData->n_row);
     for (i=0; i<solverData->n_row; i++){
       infoStreamPrint(LOG_LS_V, 0, "%d. Ap => %d -> %d", i, solverData->Ap[i], solverData->Ap[i+1]);
       for (j=solverData->Ap[i]; j<solverData->Ap[i+1]; j++){
         infoStreamPrint(LOG_LS_V, 0, "A[%d,%d] = %f", i, solverData->Ai[j], solverData->Ax[j]);
-
       }
     }
     messageClose(LOG_LS_V);
@@ -293,7 +291,7 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber)
       success = 1;
     }
   }
-  infoStreamPrint(LOG_LS, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
+  infoStreamPrint(LOG_LS_V, 0, "Solve System: %f", rt_ext_tp_tock(&(solverData->timeClock)));
 
   /* print solution */
   if (1 == success){
@@ -356,7 +354,7 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber)
 int solveSingularSystem(LINEAR_SYSTEM_DATA* systemData)
 {
 
-  DATA_UMFPACK* solverData = (DATA_UMFPACK*) systemData->solverData;
+  DATA_UMFPACK* solverData = (DATA_UMFPACK*) systemData->solverData[0];
   double *Ux, *Rs, r_ii, *b, sum, *y, *z;
   int *Up, *Ui, *Q, do_recip, rank = 0, current_rank, current_unz, i, j, k, l,
       success = 0, status, stop = 0;

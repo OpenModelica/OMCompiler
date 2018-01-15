@@ -34,16 +34,21 @@ protected
   import Dimension = NFDimension;
 
 public
-  import Absyn.Exp;
-  import Absyn.Path;
+  import Absyn.{Exp, Path, Subscript};
   import Dump;
   import NFClass.Class;
-  import NFExpression.Expression;
+  import Expression = NFExpression;
   import NFInstNode.InstNode;
   import Type = NFType;
+  import ComponentRef = NFComponentRef;
+  import NFPrefixes.Variability;
+
+  record RAW_DIM
+    Absyn.Subscript dim;
+  end RAW_DIM;
 
   record UNTYPED
-    Absyn.Exp dimension;
+    Expression dimension;
     Boolean isProcessing;
   end UNTYPED;
 
@@ -60,48 +65,45 @@ public
 
   record EXP
     Expression exp;
+    Variability var;
   end EXP;
 
   record UNKNOWN
   end UNKNOWN;
 
-  function fromTypedExp
+  function fromExp
     input Expression exp;
+    input Variability var;
     output Dimension dim;
   algorithm
     dim := match exp
       local
         Class cls;
+        ComponentRef cref;
+        Type ty;
 
       case Expression.INTEGER() then INTEGER(exp.value);
 
-      case Expression.CREF()
-        algorithm
-          if InstNode.isClass(exp.component) then
-            cls := InstNode.getClass(exp.component);
-
-            dim := match cls
-              case Class.PARTIAL_BUILTIN(ty = Type.BOOLEAN())
-                then BOOLEAN();
-
-              case Class.PARTIAL_BUILTIN(ty = Type.ENUMERATION())
-                then ENUM(cls.ty);
-
-              else
-                algorithm
-                  assert(false, getInstanceName() + " got non-typename class.");
-                then
-                  fail();
-            end match;
-          else
-            dim := Dimension.EXP(exp);
-          end if;
+      case Expression.TYPENAME(ty = Type.ARRAY(elementType = ty))
         then
-          dim;
+          match ty
+            case Type.BOOLEAN() then BOOLEAN();
+            case Type.ENUMERATION() then ENUM(ty);
+            else
+              algorithm
+                Error.assertion(false, getInstanceName() + " got invalid typename", sourceInfo());
+              then
+                fail();
+          end match;
 
-      else Dimension.EXP(exp);
+      else Dimension.EXP(exp, var);
     end match;
-  end fromTypedExp;
+  end fromExp;
+
+  function fromExpList
+    input list<Expression> expl;
+    output Dimension dim = INTEGER(listLength(expl));
+  end fromExpList;
 
   function toDAE
     input Dimension dim;
@@ -149,21 +151,21 @@ public
   end isEqual;
 
   public function allEqual
-  input list<Dimension> dims1;
-  input list<Dimension> dims2;
-  output Boolean allEqual;
-algorithm
-  allEqual := match(dims1, dims2)
-    local
-      Dimension dim1, dim2;
-      list<Dimension> rest1, rest2;
+    input list<Dimension> dims1;
+    input list<Dimension> dims2;
+    output Boolean allEqual;
+  algorithm
+    allEqual := match(dims1, dims2)
+      local
+        Dimension dim1, dim2;
+        list<Dimension> rest1, rest2;
 
-    case ({}, {}) then true;
-    case (dim1::rest1, dim2::rest2) guard isEqual(dim1, dim2)
-      then allEqual(rest1, rest2);
-    else false;
-  end match;
-end allEqual;
+      case ({}, {}) then true;
+      case (dim1::rest1, dim2::rest2) guard isEqual(dim1, dim2)
+        then allEqual(rest1, rest2);
+      else false;
+    end match;
+  end allEqual;
 
   function isEqualKnown
     input Dimension dim1;
@@ -174,9 +176,37 @@ end allEqual;
       case (UNKNOWN(), _) then false;
       case (_, UNKNOWN()) then false;
       case (EXP(), EXP()) then Expression.isEqual(dim1.exp, dim2.exp);
+      case (EXP(), _) then false;
+      case (_, EXP()) then false;
       else Dimension.size(dim1) == Dimension.size(dim2);
     end match;
   end isEqualKnown;
+
+  function isKnown
+    input Dimension dim;
+    output Boolean known;
+  algorithm
+    known := match dim
+      case INTEGER() then true;
+      case BOOLEAN() then true;
+      case ENUM() then true;
+      else false;
+    end match;
+  end isKnown;
+
+  function subscriptType
+    "Returns the expected type of a subscript for the given dimension."
+    input Dimension dim;
+    output Type ty;
+  algorithm
+    ty := match dim
+      case INTEGER() then Type.INTEGER();
+      case BOOLEAN() then Type.BOOLEAN();
+      case ENUM() then dim.enumType;
+      case EXP() then Expression.typeOf(dim.exp);
+      else Type.UNKNOWN();
+    end match;
+  end subscriptType;
 
   function toString
     input Dimension dim;
@@ -191,9 +221,31 @@ end allEqual;
       case ENUM(enumType = ty as Type.ENUMERATION()) then Absyn.pathString(ty.typePath);
       case EXP() then Expression.toString(dim.exp);
       case UNKNOWN() then ":";
-      case UNTYPED() then Dump.printExpStr(dim.dimension);
+      case UNTYPED() then Expression.toString(dim.dimension);
     end match;
   end toString;
+
+  function sizeExp
+    "Returns the size of a dimension as an expression."
+    input Dimension dim;
+    input ComponentRef cref;
+    input Integer index;
+    output Expression sizeExp;
+  algorithm
+    sizeExp := match dim
+      local
+        Type ty;
+
+      case INTEGER() then Expression.INTEGER(dim.size);
+      case BOOLEAN() then Expression.BOOLEAN(true);
+      case ENUM(enumType = ty as Type.ENUMERATION())
+        then Expression.makeEnumLiteral(ty, listLength(ty.literals));
+      case EXP() then dim.exp;
+      case UNKNOWN()
+        then Expression.SIZE(Expression.CREF(Type.INTEGER(), ComponentRef.stripSubscripts(cref)),
+                             SOME(Expression.INTEGER(index)));
+    end match;
+  end sizeExp;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFDimension;

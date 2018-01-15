@@ -47,21 +47,37 @@
 #include "mixedSystem.h"
 #include "delay.h"
 #include "epsilon.h"
+#include "simulation/solver/fmi_events.h"
 #include "simulation/solver/stateset.h"
 #include "meta/meta_modelica.h"
 
 int maxEventIterations = 20;
 double linearSparseSolverMaxDensity = 0.2;
-int linearSparseSolverMinSize = 4001;
+int linearSparseSolverMinSize = 201;
 double nonlinearSparseSolverMaxDensity = 0.2;
 int nonlinearSparseSolverMinSize = 10001;
+double maxStepFactor = 1e12;
 double newtonXTol = 1e-12;
 double newtonFTol = 1e-12;
+double steadyStateTol = 1e-3;
 const size_t SIZERINGBUFFER = 3;
 int compiledInDAEMode = 0;
 int compiledWithSymSolver = 0;
 double numericalDifferentiationDeltaXlinearize = 1e-8;
 double numericalDifferentiationDeltaXsolver = 1e-8;
+double homAdaptBend = 0.5;
+double homHEps = 1e-5;
+int homMaxLambdaSteps = 0;
+int homMaxNewtonSteps = 20;
+int homMaxTries = 10;
+double homTauDecreasingFactor = 10.0;
+double homTauDecreasingFactorPredictor = 2.0;
+double homTauIncreasingFactor = 2.0;
+double homTauIncreasingThreshold = 10.0;
+double homTauMax = 10.0;
+double homTauMin = 1e-4;
+double homTauStart = 0.2;
+int homBacktraceStrategy = 1;
 
 static double tolZC;
 
@@ -90,7 +106,7 @@ void updateDiscreteSystem(DATA *data, threadData_t *threadData)
   debugStreamPrint(LOG_EVENTS_V, 0, "updated discrete System");
 
   relationChanged = checkRelations(data);
-  discreteChanged = data->callback->checkForDiscreteChanges(data, threadData);
+  discreteChanged = checkForDiscreteChanges(data, threadData);
   while(discreteChanged || data->simulationInfo->needToIterate || relationChanged)
   {
     if(data->simulationInfo->needToIterate) {
@@ -117,7 +133,7 @@ void updateDiscreteSystem(DATA *data, threadData_t *threadData)
     }
 
     relationChanged = checkRelations(data);
-    discreteChanged = data->callback->checkForDiscreteChanges(data, threadData);
+    discreteChanged = checkForDiscreteChanges(data, threadData);
   }
   storeRelations(data);
 
@@ -921,14 +937,15 @@ void initializeDataStruc(DATA *data, threadData_t *threadData)
 
   /* set default solvers for algebraic loops */
 #if !defined(OMC_MINIMAL_RUNTIME)
-  data->simulationInfo->nlsMethod = NLS_HYBRID;
+  data->simulationInfo->nlsMethod = NLS_MIXED;
 #else
   data->simulationInfo->nlsMethod = NLS_HOMOTOPY;
 #endif
-  data->simulationInfo->lsMethod = LS_LAPACK;
-  data->simulationInfo->lssMethod = LS_UMFPACK;
+  data->simulationInfo->nlsLinearSolver = NLS_LS_DEFAULT;
+  data->simulationInfo->lsMethod = LS_DEFAULT;
+  data->simulationInfo->lssMethod = LSS_DEFAULT;
   data->simulationInfo->mixedMethod = MIXED_SEARCH;
-  data->simulationInfo->newtonStrategy = NEWTON_PURE;
+  data->simulationInfo->newtonStrategy = NEWTON_DAMPED2;
   data->simulationInfo->nlsCsvInfomation = 0;
   data->simulationInfo->currentContext = CONTEXT_ALGEBRAIC;
   data->simulationInfo->jacobianEvals = data->modelData->nStates;

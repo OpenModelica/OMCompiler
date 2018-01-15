@@ -42,17 +42,24 @@ encapsulated package NFBuiltin
 
 public
 import Absyn;
-import DAE;
 import SCode;
 import Binding = NFBinding;
+import BindingOrigin = NFBindingOrigin;
 import NFClass.Class;
-import NFClass.ClassTree;
+import NFClassTree;
 import NFComponent.Component;
-import NFExpression.Expression;
+import Expression = NFExpression;
 import NFInstNode.InstNode;
 import NFInstNode.InstNodeType;
-import NFMod.Modifier;
+import NFModifier.Modifier;
 import Type = NFType;
+import BuiltinFuncs = NFBuiltinFuncs;
+import Pointer;
+import NFPrefixes.Variability;
+import NFPrefixes.Visibility;
+import ComponentRef = NFComponentRef;
+import NFComponentRef.Origin;
+import Restriction = NFRestriction;
 
 encapsulated package Elements
   import SCode;
@@ -63,46 +70,35 @@ encapsulated package Elements
     Absyn.TPATH(Absyn.IDENT("$EnumType"), NONE());
 
   // StateSelect-specific elements:
-  constant SCode.Element STATESELECT_NEVER = SCode.COMPONENT(
-    "never", SCode.defaultPrefixes, SCode.defaultConstAttr, ENUMTYPE_SPEC,
-    SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
-
-  constant SCode.Element STATESELECT_AVOID = SCode.COMPONENT(
-    "avoid", SCode.defaultPrefixes, SCode.defaultConstAttr, ENUMTYPE_SPEC,
-    SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
-
-  constant SCode.Element STATESELECT_DEFAULT = SCode.COMPONENT(
-    "default", SCode.defaultPrefixes, SCode.defaultConstAttr, ENUMTYPE_SPEC,
-    SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
-
-  constant SCode.Element STATESELECT_PREFER = SCode.COMPONENT(
-    "prefer", SCode.defaultPrefixes, SCode.defaultConstAttr, ENUMTYPE_SPEC,
-    SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
-
-  constant SCode.Element STATESELECT_ALWAYS = SCode.COMPONENT(
-    "always", SCode.defaultPrefixes, SCode.defaultConstAttr, ENUMTYPE_SPEC,
-    SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
-
   constant SCode.Element REAL = SCode.CLASS("Real",
     SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_TYPE(),
     SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()),
-    SCode.noComment,Absyn.dummyInfo);
+    SCode.noComment, Absyn.dummyInfo);
 
   constant SCode.Element INTEGER = SCode.CLASS("Integer",
     SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_TYPE(),
     SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()),
-    SCode.noComment,Absyn.dummyInfo);
+    SCode.noComment, Absyn.dummyInfo);
 
   constant SCode.Element BOOLEAN = SCode.CLASS("Boolean",
     SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_TYPE(),
     SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()),
-    SCode.noComment,Absyn.dummyInfo);
+    SCode.noComment, Absyn.dummyInfo);
 
   constant SCode.Element STRING = SCode.CLASS("String",
     SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_TYPE(),
     SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()),
-    SCode.noComment,Absyn.dummyInfo);
+    SCode.noComment, Absyn.dummyInfo);
 
+  constant SCode.Element ENUMERATION = SCode.CLASS("enumeration",
+    SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_TYPE(),
+    SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()),
+    SCode.noComment, Absyn.dummyInfo);
+
+  constant SCode.Element ANY = SCode.CLASS("polymorphic",
+    SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_TYPE(),
+    SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()),
+    SCode.noComment, Absyn.dummyInfo);
 
   constant SCode.Element STATESELECT = SCode.CLASS("StateSelect",
     SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.NOT_PARTIAL(), SCode.R_TYPE(),
@@ -115,143 +111,232 @@ encapsulated package Elements
     }),
     SCode.noComment, Absyn.dummyInfo);
 
-  // Builtin variable time:
-  constant SCode.Element TIME = SCode.COMPONENT("time", SCode.defaultPrefixes,
-      SCode.ATTR({}, SCode.POTENTIAL(), SCode.NON_PARALLEL(), SCode.VAR(), Absyn.INPUT(), Absyn.NONFIELD()),
-      Absyn.TPATH(Absyn.IDENT("Real"), NONE()), SCode.NOMOD(), SCode.noComment, NONE(), Absyn.dummyInfo);
+  constant SCode.Element EXTERNALOBJECT = SCode.CLASS("ExternalObject",
+    SCode.defaultPrefixes, SCode.NOT_ENCAPSULATED(), SCode.PARTIAL(), SCode.R_CLASS(),
+    SCode.PARTS({}, {}, {}, {}, {}, {}, {}, NONE()), SCode.noComment, Absyn.dummyInfo);
 
 end Elements;
 
 // InstNodes for the builtin types. These have empty class trees to prevent
 // access to the attributes via dot notation (which is not needed for
 // modifiers and illegal in other cases).
-constant InstNode REAL_TYPE = InstNode.CLASS_NODE("Real",
-  Elements.REAL,
-  listArray({Class.PARTIAL_BUILTIN(Type.REAL(), ClassTree.EMPTY(), listArray({}), Modifier.NOMOD())}),
-  InstNode.EMPTY_NODE(), InstNodeType.NORMAL_CLASS());
+constant InstNode POLYMORPHIC_NODE = InstNode.CLASS_NODE("polymorphic",
+  Elements.ANY, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(Type.POLYMORPHIC(""), NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.TYPE())),
+  arrayCreate(NFInstNode.NUMBER_OF_CACHES, NFInstNode.CachedData.NO_CACHE()),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
 
-constant InstNode INT_TYPE = InstNode.CLASS_NODE("Integer",
-  Elements.INTEGER,
-  listArray({Class.PARTIAL_BUILTIN(Type.INTEGER(), ClassTree.EMPTY(), listArray({}), Modifier.NOMOD())}),
-  InstNode.EMPTY_NODE(), InstNodeType.NORMAL_CLASS());
+constant InstNode REAL_NODE = InstNode.CLASS_NODE("Real",
+  Elements.REAL, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(Type.REAL(), NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.TYPE())),
+  arrayCreate(NFInstNode.NUMBER_OF_CACHES, NFInstNode.CachedData.NO_CACHE()),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
 
-constant InstNode BOOLEAN_TYPE = InstNode.CLASS_NODE("Boolean",
-  Elements.BOOLEAN,
-  listArray({Class.PARTIAL_BUILTIN(Type.BOOLEAN(), ClassTree.EMPTY(), listArray({}), Modifier.NOMOD())}),
-  InstNode.EMPTY_NODE(), InstNodeType.NORMAL_CLASS());
+constant InstNode INTEGER_NODE = InstNode.CLASS_NODE("Integer",
+  Elements.INTEGER, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(Type.INTEGER(), NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.TYPE())),
+  listArray({NFInstNode.CachedData.FUNCTION({NFBuiltinFuncs.INTEGER}, true, false), NFInstNode.CachedData.NO_CACHE(), NFInstNode.CachedData.NO_CACHE()}),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
 
-constant InstNode STRING_TYPE = InstNode.CLASS_NODE("String",
-  Elements.STRING,
-  listArray({Class.PARTIAL_BUILTIN(Type.STRING(), ClassTree.EMPTY(), listArray({}), Modifier.NOMOD())}),
-  InstNode.EMPTY_NODE(), InstNodeType.NORMAL_CLASS());
+constant ComponentRef INTEGER_CREF =
+  ComponentRef.CREF(INTEGER_NODE, {}, Type.INTEGER(), Origin.CREF, ComponentRef.EMPTY());
 
-constant Type STATESELECT_TYPE_TYPE = Type.ENUMERATION(
+constant InstNode BOOLEAN_NODE = InstNode.CLASS_NODE("Boolean",
+  Elements.BOOLEAN, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(Type.BOOLEAN(), NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.TYPE())),
+  arrayCreate(NFInstNode.NUMBER_OF_CACHES, NFInstNode.CachedData.NO_CACHE()),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
+
+constant ComponentRef BOOLEAN_CREF =
+  ComponentRef.CREF(BOOLEAN_NODE, {}, Type.INTEGER(), Origin.CREF, ComponentRef.EMPTY());
+
+constant InstNode STRING_NODE = InstNode.CLASS_NODE("String",
+  Elements.STRING, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(Type.STRING(), NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.TYPE())),
+  listArray({ NFInstNode.CachedData.FUNCTION({
+	                                              NFBuiltinFuncs.STRING_ENUM, NFBuiltinFuncs.STRING_INT,
+	                                              NFBuiltinFuncs.STRING_BOOL, NFBuiltinFuncs.STRING_REAL,
+	                                              NFBuiltinFuncs.STRING_REAL_FORMAT
+                                              },
+                                              true, false),
+              NFInstNode.CachedData.NO_CACHE(),
+              NFInstNode.CachedData.NO_CACHE()}
+            ),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
+
+constant ComponentRef STRING_CREF =
+  ComponentRef.CREF(STRING_NODE, {}, Type.INTEGER(), Origin.CREF, ComponentRef.EMPTY());
+
+constant InstNode ENUM_NODE = InstNode.CLASS_NODE("enumeration",
+  Elements.ENUMERATION, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(Type.ENUMERATION_ANY(), NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.ENUMERATION())),
+  arrayCreate(NFInstNode.NUMBER_OF_CACHES, NFInstNode.CachedData.NO_CACHE()),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
+
+constant Type STATESELECT_TYPE = Type.ENUMERATION(
   Absyn.IDENT("StateSelect"), {"never", "avoid", "default", "prefer", "always"});
 
-constant InstNode STATESELECT_TYPE = InstNode.CLASS_NODE("StateSelect",
-  Elements.STATESELECT,
-  listArray({Class.PARTIAL_BUILTIN(STATESELECT_TYPE_TYPE, ClassTree.EMPTY(), listArray({}), Modifier.NOMOD())}),
-  InstNode.EMPTY_NODE(), InstNodeType.NORMAL_CLASS());
+constant InstNode STATESELECT_NODE = InstNode.CLASS_NODE("StateSelect",
+  Elements.STATESELECT, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(STATESELECT_TYPE, NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.ENUMERATION())),
+  arrayCreate(NFInstNode.NUMBER_OF_CACHES, NFInstNode.CachedData.NO_CACHE()),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
+
+constant ComponentRef STATESELECT_CREF =
+  ComponentRef.CREF(STATESELECT_NODE, {}, STATESELECT_TYPE, Origin.CREF, ComponentRef.EMPTY());
 
 constant Binding STATESELECT_NEVER_BINDING =
   Binding.TYPED_BINDING(
-    Expression.ENUM_LITERAL(STATESELECT_TYPE_TYPE, "never", 1),
-    STATESELECT_TYPE_TYPE,
-    DAE.C_CONST(),
-    -1,
-    Absyn.dummyInfo);
+    Expression.ENUM_LITERAL(STATESELECT_TYPE, "never", 1),
+    STATESELECT_TYPE,
+    Variability.CONSTANT,
+    BindingOrigin.ORIGIN(-1, NFBindingOrigin.ElementType.CLASS, Absyn.dummyInfo));
 
 constant Binding STATESELECT_AVOID_BINDING =
   Binding.TYPED_BINDING(
-    Expression.ENUM_LITERAL(STATESELECT_TYPE_TYPE, "avoid", 2),
-    STATESELECT_TYPE_TYPE,
-    DAE.C_CONST(),
-    -1,
-    Absyn.dummyInfo);
+    Expression.ENUM_LITERAL(STATESELECT_TYPE, "avoid", 2),
+    STATESELECT_TYPE,
+    Variability.CONSTANT,
+    BindingOrigin.ORIGIN(-1, NFBindingOrigin.ElementType.CLASS, Absyn.dummyInfo));
 
 constant Binding STATESELECT_DEFAULT_BINDING =
   Binding.TYPED_BINDING(
-    Expression.ENUM_LITERAL(STATESELECT_TYPE_TYPE, "default", 3),
-    STATESELECT_TYPE_TYPE,
-    DAE.C_CONST(),
-    -1,
-    Absyn.dummyInfo);
+    Expression.ENUM_LITERAL(STATESELECT_TYPE, "default", 3),
+    STATESELECT_TYPE,
+    Variability,
+    BindingOrigin.ORIGIN(-1, NFBindingOrigin.ElementType.CLASS, Absyn.dummyInfo));
 
 constant Binding STATESELECT_PREFER_BINDING =
   Binding.TYPED_BINDING(
-    Expression.ENUM_LITERAL(STATESELECT_TYPE_TYPE, "prefer", 4),
-    STATESELECT_TYPE_TYPE,
-    DAE.C_CONST(),
-    -1,
-    Absyn.dummyInfo);
+    Expression.ENUM_LITERAL(STATESELECT_TYPE, "prefer", 4),
+    STATESELECT_TYPE,
+    Variability.CONSTANT,
+    BindingOrigin.ORIGIN(-1, NFBindingOrigin.ElementType.CLASS, Absyn.dummyInfo));
 
 constant Binding STATESELECT_ALWAYS_BINDING =
   Binding.TYPED_BINDING(
-    Expression.ENUM_LITERAL(STATESELECT_TYPE_TYPE, "always", 5),
-    STATESELECT_TYPE_TYPE,
-    DAE.C_CONST(),
-    -1,
-    Absyn.dummyInfo);
+    Expression.ENUM_LITERAL(STATESELECT_TYPE, "always", 5),
+    STATESELECT_TYPE,
+    Variability.CONSTANT,
+    BindingOrigin.ORIGIN(-1, NFBindingOrigin.ElementType.CLASS, Absyn.dummyInfo));
 
 constant InstNode STATESELECT_NEVER =
   InstNode.COMPONENT_NODE("never",
-    Elements.STATESELECT_NEVER,
-    listArray({Component.TYPED_COMPONENT(
+    Visibility.PUBLIC,
+    Pointer.createImmutable(Component.TYPED_COMPONENT(
       InstNode.EMPTY_NODE(),
-      STATESELECT_TYPE_TYPE,
+      STATESELECT_TYPE,
       STATESELECT_NEVER_BINDING,
-      NFComponent.CONST_ATTR)}),
-    STATESELECT_TYPE);
+      Binding.UNBOUND(),
+      NFComponent.CONSTANT_ATTR,
+      Absyn.dummyInfo)),
+    0,
+    STATESELECT_NODE);
+
+constant ComponentRef STATESELECT_NEVER_CREF =
+  ComponentRef.CREF(STATESELECT_NEVER, {}, STATESELECT_TYPE, Origin.CREF, STATESELECT_CREF);
 
 constant InstNode STATESELECT_AVOID =
   InstNode.COMPONENT_NODE("avoid",
-    Elements.STATESELECT_AVOID,
-    listArray({Component.TYPED_COMPONENT(
+    Visibility.PUBLIC,
+    Pointer.createImmutable(Component.TYPED_COMPONENT(
       InstNode.EMPTY_NODE(),
-      STATESELECT_TYPE_TYPE,
+      STATESELECT_TYPE,
       STATESELECT_AVOID_BINDING,
-      NFComponent.CONST_ATTR)}),
-    STATESELECT_TYPE);
+      Binding.UNBOUND(),
+      NFComponent.CONSTANT_ATTR,
+      Absyn.dummyInfo)),
+    0,
+    STATESELECT_NODE);
+
+constant ComponentRef STATESELECT_AVOID_CREF =
+  ComponentRef.CREF(STATESELECT_AVOID, {}, STATESELECT_TYPE, Origin.CREF, STATESELECT_CREF);
 
 constant InstNode STATESELECT_DEFAULT =
   InstNode.COMPONENT_NODE("default",
-    Elements.STATESELECT_DEFAULT,
-    listArray({Component.TYPED_COMPONENT(
+    Visibility.PUBLIC,
+    Pointer.createImmutable(Component.TYPED_COMPONENT(
       InstNode.EMPTY_NODE(),
-      STATESELECT_TYPE_TYPE,
+      STATESELECT_TYPE,
       STATESELECT_DEFAULT_BINDING,
-      NFComponent.CONST_ATTR)}),
-    STATESELECT_TYPE);
+      Binding.UNBOUND(),
+      NFComponent.CONSTANT_ATTR,
+      Absyn.dummyInfo)),
+    0,
+    STATESELECT_NODE);
+
+constant ComponentRef STATESELECT_DEFAULT_CREF =
+  ComponentRef.CREF(STATESELECT_DEFAULT, {}, STATESELECT_TYPE, Origin.CREF, STATESELECT_CREF);
 
 constant InstNode STATESELECT_PREFER =
   InstNode.COMPONENT_NODE("prefer",
-    Elements.STATESELECT_PREFER,
-    listArray({Component.TYPED_COMPONENT(
+    Visibility.PUBLIC,
+    Pointer.createImmutable(Component.TYPED_COMPONENT(
       InstNode.EMPTY_NODE(),
-      STATESELECT_TYPE_TYPE,
+      STATESELECT_TYPE,
       STATESELECT_PREFER_BINDING,
-      NFComponent.CONST_ATTR)}),
-    STATESELECT_TYPE);
+      Binding.UNBOUND(),
+      NFComponent.CONSTANT_ATTR,
+      Absyn.dummyInfo)),
+    0,
+    STATESELECT_NODE);
+
+constant ComponentRef STATESELECT_PREFER_CREF =
+  ComponentRef.CREF(STATESELECT_PREFER, {}, STATESELECT_TYPE, Origin.CREF, STATESELECT_CREF);
 
 constant InstNode STATESELECT_ALWAYS =
-InstNode.COMPONENT_NODE("always",
-    Elements.STATESELECT_ALWAYS,
-    listArray({Component.TYPED_COMPONENT(
+  InstNode.COMPONENT_NODE("always",
+    Visibility.PUBLIC,
+    Pointer.createImmutable(Component.TYPED_COMPONENT(
       InstNode.EMPTY_NODE(),
-      STATESELECT_TYPE_TYPE,
+      STATESELECT_TYPE,
       STATESELECT_ALWAYS_BINDING,
-      NFComponent.CONST_ATTR)}),
-    STATESELECT_TYPE);
+      Binding.UNBOUND(),
+      NFComponent.CONSTANT_ATTR,
+      Absyn.dummyInfo)),
+    0,
+    STATESELECT_NODE);
+
+constant ComponentRef STATESELECT_ALWAYS_CREF =
+  ComponentRef.CREF(STATESELECT_ALWAYS, {}, STATESELECT_TYPE, Origin.CREF, STATESELECT_CREF);
+
+constant InstNode EXTERNALOBJECT_NODE = InstNode.CLASS_NODE("ExternalObject",
+  Elements.EXTERNALOBJECT, Visibility.PUBLIC,
+  Pointer.createImmutable(Class.PARTIAL_BUILTIN(Type.UNKNOWN(), NFClassTree.EMPTY,
+    Modifier.NOMOD(), Restriction.CLASS())),
+  arrayCreate(NFInstNode.NUMBER_OF_CACHES, NFInstNode.CachedData.NO_CACHE()),
+  InstNode.EMPTY_NODE(), InstNodeType.BUILTIN_CLASS());
+
+constant Type ASSERTIONLEVEL_TYPE = Type.ENUMERATION(
+  Absyn.IDENT("AssertionLevel"), {"error", "warning"});
+
+constant Expression ASSERTIONLEVEL_ERROR = Expression.ENUM_LITERAL(
+  ASSERTIONLEVEL_TYPE, "error", 1);
+
+constant Expression ASSERTIONLEVEL_WARNING = Expression.ENUM_LITERAL(
+  ASSERTIONLEVEL_TYPE, "error", 2);
 
 constant InstNode TIME =
   InstNode.COMPONENT_NODE("time",
-    Elements.TIME,
-    listArray({Component.TYPED_COMPONENT(
-      REAL_TYPE,
+    Visibility.PUBLIC,
+    Pointer.createImmutable(Component.TYPED_COMPONENT(
+      REAL_NODE,
       Type.REAL(),
       Binding.UNBOUND(),
-      NFComponent.INPUT_ATTR)}),
+      Binding.UNBOUND(),
+      NFComponent.INPUT_ATTR,
+      Absyn.dummyInfo)),
+    0,
     InstNode.EMPTY_NODE());
+
+constant ComponentRef TIME_CREF = ComponentRef.CREF(TIME, {}, Type.REAL(), Origin.CREF, ComponentRef.EMPTY());
 
 annotation(__OpenModelica_Interface="frontend");
 end NFBuiltin;

@@ -29,19 +29,16 @@
  *
  */
 
-encapsulated package NFStatement
+encapsulated uniontype NFStatement
+  import Absyn;
+  import Type = NFType;
+  import Expression = NFExpression;
+  import NFInstNode.InstNode;
 
-import Absyn;
-import DAE;
-import NFExpression.Expression;
+protected
+  import Statement = NFStatement;
 
-public uniontype Statement
-  record UNTYPED_ASSIGNMENT
-    Absyn.Exp lhs;
-    Absyn.Exp rhs;
-    SourceInfo info;
-  end UNTYPED_ASSIGNMENT;
-
+public
   record ASSIGNMENT
     Expression lhs "The asignee";
     Expression rhs "The expression";
@@ -50,30 +47,15 @@ public uniontype Statement
 
   record FUNCTION_ARRAY_INIT "Used to mark in which order local array variables in functions should be initialized"
     String name;
-    DAE.Type ty;
+    Type ty;
     SourceInfo info;
   end FUNCTION_ARRAY_INIT;
 
-  record UNTYPED_FOR
-    String name;
-    Option<Absyn.Exp> range;
-    list<Statement> body;
-    SourceInfo info;
-  end UNTYPED_FOR;
-
   record FOR
-    String name "The name of the iterator variable.";
-    Integer index "The index of the scope of the iterator variable.";
-    DAE.Type indexType "The type of the index/iterator variable.";
-    Option<Expression> range "The range expression to loop over.";
+    InstNode iterator;
     list<Statement> body "The body of the for loop.";
     SourceInfo info;
   end FOR;
-
-  record UNTYPED_IF
-    list<tuple<Absyn.Exp, list<Statement>>> branches;
-    SourceInfo info;
-  end UNTYPED_IF;
 
   record IF
     list<tuple<Expression, list<Statement>>> branches
@@ -81,23 +63,11 @@ public uniontype Statement
     SourceInfo info;
   end IF;
 
-  record UNTYPED_WHEN
-    list<tuple<Absyn.Exp, list<Statement>>> branches;
-    SourceInfo info;
-  end UNTYPED_WHEN;
-
   record WHEN
     list<tuple<Expression, list<Statement>>> branches
       "List of branches, where each branch is a tuple of a condition and a body.";
     SourceInfo info;
   end WHEN;
-
-  record UNTYPED_ASSERT
-    Absyn.Exp condition;
-    Absyn.Exp message;
-    Absyn.Exp level;
-    SourceInfo info;
-  end UNTYPED_ASSERT;
 
   record ASSERT
     Expression condition "The assert condition.";
@@ -106,43 +76,15 @@ public uniontype Statement
     SourceInfo info;
   end ASSERT;
 
-  record UNTYPED_TERMINATE
-    Absyn.Exp message;
-    SourceInfo info;
-  end UNTYPED_TERMINATE;
-
   record TERMINATE
     Expression message "The message to display if the terminate triggers.";
     SourceInfo info;
   end TERMINATE;
 
-  record UNTYPED_REINIT
-    Absyn.ComponentRef cref;
-    Absyn.Exp reinitExp;
-    SourceInfo info;
-  end UNTYPED_REINIT;
-
-  record REINIT
-    Expression cref "The variable to reinitialize.";
-    Expression reinitExp "The new value of the variable.";
-    SourceInfo info;
-  end REINIT;
-
-  record UNTYPED_NORETCALL
-    Absyn.Exp exp;
-    SourceInfo info;
-  end UNTYPED_NORETCALL;
-
   record NORETCALL
     Expression exp;
     SourceInfo info;
   end NORETCALL;
-
-  record UNTYPED_WHILE
-    Absyn.Exp condition;
-    list<Statement> body;
-    SourceInfo info;
-  end UNTYPED_WHILE;
 
   record WHILE
     Expression condition;
@@ -163,7 +105,218 @@ public uniontype Statement
     SourceInfo info;
   end FAILURE;
 
-end Statement;
+  function info
+    input Statement stmt;
+    output SourceInfo info;
+  algorithm
+    info := match stmt
+      case ASSIGNMENT() then stmt.info;
+      case FUNCTION_ARRAY_INIT() then stmt.info;
+      case FOR() then stmt.info;
+      case IF() then stmt.info;
+      case WHEN() then stmt.info;
+      case ASSERT() then stmt.info;
+      case TERMINATE() then stmt.info;
+      case NORETCALL() then stmt.info;
+      case WHILE() then stmt.info;
+      case RETURN() then stmt.info;
+      case BREAK() then stmt.info;
+      case FAILURE() then stmt.info;
+    end match;
+  end info;
+
+  function mapExpListList
+    input output list<list<Statement>> stmtl;
+    input MapFunc func;
+
+    partial function MapFunc
+      input output Expression exp;
+    end MapFunc;
+  algorithm
+    stmtl := list(mapExpList(s, func) for s in stmtl);
+  end mapExpListList;
+
+  function mapExpList
+    input output list<Statement> stmtl;
+    input MapFunc func;
+
+    partial function MapFunc
+      input output Expression exp;
+    end MapFunc;
+  algorithm
+    stmtl := list(mapExp(s, func) for s in stmtl);
+  end mapExpList;
+
+  function mapExp
+    input output Statement stmt;
+    input MapFunc func;
+
+    partial function MapFunc
+      input output Expression exp;
+    end MapFunc;
+  algorithm
+    stmt := match stmt
+      local
+        Expression e1, e2, e3;
+
+      case ASSIGNMENT()
+        algorithm
+          e1 := func(stmt.lhs);
+          e2 := func(stmt.rhs);
+        then
+          if referenceEq(e1, stmt.lhs) and referenceEq(e2, stmt.rhs) then
+            stmt else ASSIGNMENT(e1, e2, stmt.info);
+
+      case FOR()
+        algorithm
+          stmt.body := mapExpList(stmt.body, func);
+        then
+          stmt;
+
+      case IF()
+        algorithm
+          stmt.branches := list(
+            (func(Util.tuple21(b)), mapExpList(Util.tuple22(b), func)) for b in stmt.branches);
+        then
+          stmt;
+
+      case WHEN()
+        algorithm
+          stmt.branches := list(
+            (func(Util.tuple21(b)), mapExpList(Util.tuple22(b), func)) for b in stmt.branches);
+        then
+          stmt;
+
+      case ASSERT()
+        algorithm
+          e1 := func(stmt.condition);
+          e2 := func(stmt.message);
+          e3 := func(stmt.level);
+        then
+          if referenceEq(e1, stmt.condition) and referenceEq(e2, stmt.message) and
+            referenceEq(e3, stmt.level) then stmt else ASSERT(e1, e2, e3, stmt.info);
+
+      case TERMINATE()
+        algorithm
+          e1 := func(stmt.message);
+        then
+          if referenceEq(e1, stmt.message) then stmt else TERMINATE(e1, stmt.info);
+
+      case NORETCALL()
+        algorithm
+          e1 := func(stmt.exp);
+        then
+          if referenceEq(e1, stmt.exp) then stmt else NORETCALL(e1, stmt.info);
+
+      case WHILE()
+        then WHILE(func(stmt.condition), mapExpList(stmt.body, func), stmt.info);
+
+      else stmt;
+    end match;
+  end mapExp;
+
+  function foldExpListList<ArgT>
+    input list<list<Statement>> stmt;
+    input FoldFunc func;
+    input output ArgT arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    for s in stmt loop
+      arg := foldExpList(s, func, arg);
+    end for;
+  end foldExpListList;
+
+  function foldExpList<ArgT>
+    input list<Statement> stmt;
+    input FoldFunc func;
+    input output ArgT arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    for s in stmt loop
+      arg := foldExp(s, func, arg);
+    end for;
+  end foldExpList;
+
+  function foldExp<ArgT>
+    input Statement stmt;
+    input FoldFunc func;
+    input output ArgT arg;
+
+    partial function FoldFunc
+      input Expression exp;
+      input output ArgT arg;
+    end FoldFunc;
+  algorithm
+    () := match stmt
+      case Statement.ASSIGNMENT()
+        algorithm
+          arg := func(stmt.lhs, arg);
+          arg := func(stmt.rhs, arg);
+        then
+          ();
+
+      case Statement.FOR()
+        algorithm
+          arg := foldExpList(stmt.body, func, arg);
+        then
+          ();
+
+      case Statement.IF()
+        algorithm
+          for b in stmt.branches loop
+            arg := func(Util.tuple21(b), arg);
+            arg := foldExpList(Util.tuple22(b), func, arg);
+          end for;
+        then
+          ();
+
+      case Statement.WHEN()
+        algorithm
+          for b in stmt.branches loop
+            arg := func(Util.tuple21(b), arg);
+            arg := foldExpList(Util.tuple22(b), func, arg);
+          end for;
+        then
+          ();
+
+      case Statement.ASSERT()
+        algorithm
+          arg := func(stmt.condition, arg);
+          arg := func(stmt.message, arg);
+          arg := func(stmt.level, arg);
+        then
+          ();
+
+      case Statement.TERMINATE()
+        algorithm
+          arg := func(stmt.message, arg);
+        then
+          ();
+
+      case Statement.NORETCALL()
+        algorithm
+          arg := func(stmt.exp, arg);
+        then
+          ();
+
+      case Statement.WHILE()
+        algorithm
+          arg := func(stmt.condition, arg);
+          arg := foldExpList(stmt.body, func, arg);
+        then
+          ();
+
+      else ();
+    end match;
+  end foldExp;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFStatement;

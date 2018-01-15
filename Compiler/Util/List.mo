@@ -96,6 +96,7 @@ encapsulated package List
 "
 
 protected
+import Array;
 import MetaModelica.Dangerous.{listReverseInPlace, arrayGetNoBoundsChecking, arrayUpdateNoBoundsChecking, arrayCreateNoInit};
 import MetaModelica.Dangerous;
 import DoubleEndedList;
@@ -394,6 +395,20 @@ algorithm
   end for;
 end append_reverse;
 
+public function append_reverser<T>
+  "Appends the elements from list2 in reverse order to list1."
+  input list<T> inList1;
+  input list<T> inList2;
+  output list<T> outList=inList1;
+algorithm
+  // Do not optimize the case listEmpty(inList2) and listLength(inList1)==1
+  // since we use listReverseInPlace together with this function.
+  // An alternative would be to keep both (and rename this append_reverse_always_copy)
+  for e in inList2 loop
+    outList := e::outList;
+  end for;
+end append_reverser;
+
 public function appendr<T>
   "Appends two lists in reverse order compared to listAppend."
   input list<T> inList1;
@@ -569,19 +584,13 @@ public function last<T>
   "Returns the last element of a list. Fails if the list is empty."
   input list<T> inList;
   output T outLast;
+protected
+  list<T> rest;
 algorithm
-  outLast := match(inList)
-    local
-      T e;
-      list<T> rest;
-
-    case (e :: rest)
-      algorithm
-        while not listEmpty(rest) loop
-          e::rest := rest;
-        end while;
-      then e;
-  end match;
+  outLast::rest := inList;
+  for e in rest loop
+    outLast := e;
+  end for;
 end last;
 
 public function lastElement<T>
@@ -604,12 +613,10 @@ public function lastListOrEmpty<T>
   if the outer list is empty."
   input list<list<T>> inListList;
   output list<T> outLastList = {};
-protected
-  list<list<T>> rest = inListList;
 algorithm
-  while not listEmpty(rest) loop
-    outLastList :: rest := rest;
-  end while;
+  for e in inListList loop
+    outLastList := e;
+  end for;
 end lastListOrEmpty;
 
 public function secondLast<T>
@@ -730,6 +737,16 @@ algorithm
   end for;
 end stripN;
 
+public function heapSortIntList
+  input output list<Integer> lst;
+algorithm
+  lst := match lst
+      case {} then lst;
+      case {_} then lst;
+    else arrayList(Array.heapSort(listArray(lst)));
+    end match;
+end heapSortIntList;
+
 public function sort<T>
   "Sorts a list given an ordering function with the mergesort algorithm.
     Example:
@@ -757,7 +774,7 @@ algorithm
     else
       e2 :: rest := rest;
       if listEmpty(rest) then
-        outList := if inCompFunc(e2, e1) then inList else e2::{e1};
+        outList := if inCompFunc(e2, e1) then inList else {e2,e1};
       else
         middle := intDiv(listLength(inList), 2);
         (left, right) := split(inList, middle);
@@ -1006,7 +1023,7 @@ algorithm
   a1 := arrayCreate(inN, false);
   a1 := fold1r(inList,arrayUpdate,true,a1);
 
-  for i in inN:1 loop
+  for i in inN:-1:1 loop
     if a1[i] then
       outSorted := i :: outSorted;
     end if;
@@ -1187,18 +1204,14 @@ public function splitOnTrue<T>
     input T inElement;
     output Boolean outResult;
   end PredicateFunc;
-protected
-  T e;
-  list<T> rest = inList;
 algorithm
-  while not listEmpty(rest) loop
-    e :: rest := rest;
+  for e in inList loop
     if inFunc(e) then
       outTrueList := e :: outTrueList;
     else
       outFalseList := e :: outFalseList;
     end if;
-  end while;
+  end for;
 
   outTrueList := listReverseInPlace(outTrueList);
   outFalseList := listReverseInPlace(outFalseList);
@@ -1217,18 +1230,14 @@ public function split1OnTrue<T, ArgT1>
     input ArgT1 inArg1;
     output Boolean outResult;
   end PredicateFunc;
-protected
-  T e;
-  list<T> rest = inList;
 algorithm
-  while not listEmpty(rest) loop
-    e :: rest := rest;
+  for e in inList loop
     if inFunc(e, inArg1) then
       outTrueList := e :: outTrueList;
     else
       outFalseList := e :: outFalseList;
     end if;
-  end while;
+  end for;
 
   outTrueList := listReverseInPlace(outTrueList);
   outFalseList := listReverseInPlace(outFalseList);
@@ -1249,18 +1258,14 @@ public function split2OnTrue<T, ArgT1, ArgT2>
     input ArgT2 inArg2;
     output Boolean outResult;
   end PredicateFunc;
-protected
-  T e;
-  list<T> rest = inList;
 algorithm
-  while not listEmpty(rest) loop
-    e :: rest := rest;
+  for e in inList loop
     if inFunc(e, inArg1, inArg2) then
       outTrueList := e :: outTrueList;
     else
       outFalseList := e :: outFalseList;
     end if;
-  end while;
+  end for;
 
   outTrueList := listReverseInPlace(outTrueList);
   outFalseList := listReverseInPlace(outFalseList);
@@ -1578,6 +1583,50 @@ algorithm
                 intEq(lst_size, listLength(inList2));
 end setEqualOnTrue;
 
+public function intersectionIntSorted
+  "Provides same functionality as listIntersection, but for integer values
+   in sorted lists. The complexity in this case is O(n)."
+  input list<Integer> inList1;
+  input list<Integer> inList2;
+  output list<Integer> outResult = {};
+protected
+  Integer i1, i2;
+  Integer o1, o2;
+  list<Integer> l1 = inList1, l2 = inList2;
+algorithm
+  if listEmpty(inList1) or listEmpty(inList2) then
+    return;
+  end if;
+  i1::l1 := l1;
+  i2::l2 := l2;
+  o1:=i1;o2:=i2;
+  while true loop
+    if i1 > i2 then
+      if listEmpty(l2) then
+        break;
+      end if;
+      i2::l2 := l2;
+      if o2 > i2 then fail();end if; o2:=i2;
+    elseif i1 < i2 then
+      if listEmpty(l1) then
+        break;
+      end if;
+      i1::l1 := l1;
+      if o1 > i1 then fail();end if; o1:=i1;
+    else
+      outResult := i1::outResult;
+      if listEmpty(l1) or listEmpty(l2) then
+        break;
+      end if;
+      i1::l1 := l1;
+      i2::l2 := l2;
+      if o1 > i1 then fail();end if; o1:=i1;
+      if o2 > i2 then fail();end if; o2:=i2;
+    end if;
+  end while;
+  outResult := listReverseInPlace(outResult);
+end intersectionIntSorted;
+
 public function intersectionIntN
   "Provides same functionality as listIntersection, but for integer values
    between 1 and N. The complexity in this case is O(n)."
@@ -1708,7 +1757,7 @@ algorithm
     a := addPos(inList1, a, 1);
     a := addPos(inList2, a, 1);
 
-    for i in inN:1 loop
+    for i in inN:-1:1 loop
       if arrayGet(a, i) == 1 then
         outDifference := i :: outDifference;
       end if;
@@ -1776,7 +1825,7 @@ algorithm
     a := addPos(inList1, a, 1);
     a := addPos(inList2, a, 1);
 
-    for i in inN:1 loop
+    for i in inN:-1:1 loop
       if arrayGet(a, i) > 0 then
         outUnion := i :: outUnion;
       end if;
@@ -2948,6 +2997,28 @@ algorithm
   end try;
 end mapAllValueBool;
 
+public function map1AllValueBool<TI, TO, VT, ArgT1>
+  "Same as mapAllValueBool, but takes one extra argument."
+  input list<TI> inList;
+  input MapFunc inMapFunc;
+  input VT inValue;
+  input ArgT1 inArg1;
+  output Boolean outAllValue;
+
+  partial function MapFunc
+    input TI inElement;
+    input ArgT1 inArg1;
+    output TO outElement;
+  end MapFunc;
+algorithm
+  try
+    map1AllValue(inList, inMapFunc, inValue, inArg1);
+    outAllValue := true;
+  else
+    outAllValue := false;
+  end try;
+end map1AllValueBool;
+
 public function map1AllValue<TI, TO, VT, ArgT1>
   "Applies a function to all elements in the lists, and fails if not all
    elements are equal to the given value. This function also takes an extra
@@ -3040,13 +3111,35 @@ algorithm
   end for;
 end mapListAllValueBool;
 
-public function foldAllValue<TI, TO, VT, ArgT1>
+public function map1ListAllValueBool<TI, TO, VT, ArgT1>
+  "Same as mapListAllValueBool, but takes one extra argument."
+  input list<list<TI>> inList;
+  input MapFunc inMapFunc;
+  input VT inValue;
+  input ArgT1 inArg1;
+  output Boolean outAllValue = true;
+
+  partial function MapFunc
+    input TI inElement;
+    input ArgT1 inArg1;
+    output TO outElement;
+  end MapFunc;
+algorithm
+  for lst in inList loop
+    if not map1AllValueBool(lst, inMapFunc, inValue, inArg1) then
+      outAllValue := false;
+      return;
+    end if;
+  end for;
+end map1ListAllValueBool;
+
+public function foldAllValue<TI, TO, ArgT1>
   "Applies a function to all elements in the lists, and fails if not all
    elements are equal to the given value. This function also takes an extra
    argument that are passed to the mapping function and updated"
   input list<TI> inList;
   input MapFunc inMapFunc;
-  input VT inValue;
+  input TO inValue;
   input ArgT1 inArg1;
 
   partial function MapFunc
@@ -3136,6 +3229,49 @@ algorithm
   end for;
 end mapBoolOr;
 
+public function mapBoolAnd<TI>
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value."
+  input list<TI> inList;
+  input MapFunc inFunc;
+  output Boolean res = false;
+
+  partial function MapFunc
+    input TI inElement;
+    output Boolean outBool;
+  end MapFunc;
+algorithm
+  for e in inList loop
+    if not inFunc(e) then
+      return;
+    end if;
+  end for;
+  res := true;
+end mapBoolAnd;
+
+public function mapMapBoolAnd<TI,TI2>
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value."
+  input list<TI> inList;
+  input MapFunc inFunc;
+  input MapBFunc inBFunc;
+  output Boolean res = false;
+
+  partial function MapBFunc
+    input TI2 inElement;
+    output Boolean outBool;
+  end MapBFunc;
+  partial function MapFunc
+    input TI inElement;
+    output TI2 outElement;
+  end MapFunc;
+algorithm
+  for e in inList loop
+    if not inBFunc(inFunc(e)) then
+      return;
+    end if;
+  end for;
+  res := true;
+end mapMapBoolAnd;
+
 
 public function map1BoolOr<TI, ArgT1>
   "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value.
@@ -3158,6 +3294,29 @@ algorithm
     end if;
   end for;
 end map1BoolOr;
+
+
+public function map1BoolAnd<TI, ArgT1>
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of false return value.
+  inFunc takes one additional argument."
+  input list<TI> inList;
+  input MapFunc inFunc;
+  input ArgT1 inArg1;
+  output Boolean res = false;
+
+  partial function MapFunc
+    input TI inElement;
+    input ArgT1 inArg1;
+    output Boolean outBool;
+  end MapFunc;
+algorithm
+  for e in inList loop
+    if not inFunc(e, inArg1) then
+      return;
+    end if;
+  end for;
+  res := true;
+end map1BoolAnd;
 
 
 public function map1ListBoolOr<TI, ArgT1>
@@ -4391,6 +4550,22 @@ algorithm
   outList1 := listReverseInPlace(outList1);
   outList2 := listReverseInPlace(outList2);
 end unzip;
+
+public function unzipReverse<T1, T2>
+  "Like unzip, but returns the lists in reverse order."
+  input list<tuple<T1, T2>> inTuples;
+  output list<T1> outList1 = {};
+  output list<T2> outList2 = {};
+protected
+  T1 e1;
+  T2 e2;
+algorithm
+  for tpl in inTuples loop
+    (e1, e2) := tpl;
+    outList1 := e1 :: outList1;
+    outList2 := e2 :: outList2;
+  end for;
+end unzipReverse;
 
 public function unzipFirst<T1, T2>
   "Takes a list of two-element tuples and creates a list from the first element
@@ -5901,6 +6076,42 @@ algorithm
   fail();
 end find1;
 
+public function findAndRemove<T>
+  "This function retrieves the first element of a list for which the passed
+   function evaluates to true. And returns the list with the element removed."
+  input list<T> inList;
+  input SelectFunc inFunc;
+  output T outElement;
+  output list<T> rest;
+
+  partial function SelectFunc
+    input T inElement;
+    output Boolean outSelect;
+  end SelectFunc;
+protected
+  Integer i=0;
+  DoubleEndedList<T> delst;
+  T t;
+algorithm
+  for e in inList loop
+    if inFunc(e) then
+      outElement := e;
+      delst := DoubleEndedList.fromList({});
+      rest := inList;
+      for i in 1:i loop
+        t::rest := rest;
+        DoubleEndedList.push_back(delst, t);
+      end for;
+      _::rest := rest;
+      rest := DoubleEndedList.toListAndClear(delst, prependToList=rest);
+      return;
+    end if;
+    i := i + 1;
+  end for;
+  fail();
+end findAndRemove;
+
+
 public function findAndRemove1<T, ArgT1>
   "This function retrieves the first element of a list for which the passed
    function evaluates to true. And returns the list with the element removed."
@@ -6037,7 +6248,7 @@ public function deletePositions<T>
 protected
   list<Integer> sorted_pos;
 algorithm
-  sorted_pos := sort(inPositions, intGt);
+  sorted_pos := sortedUnique(sort(inPositions, intGt), intEq);
   outList := deletePositionsSorted(inList, sorted_pos);
 end deletePositions;
 
@@ -6911,7 +7122,7 @@ algorithm
       list<T> rest1,rest2;
 
     case (el1 :: rest1, el2 :: rest2)
-      then referenceEq(el1,el2) and allReferenceEq(rest1,rest2);
+      then if referenceEq(el1,el2) then allReferenceEq(rest1,rest2) else false;
 
     case ({},{}) then true;
     else false;

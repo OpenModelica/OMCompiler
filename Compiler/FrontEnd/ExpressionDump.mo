@@ -429,8 +429,8 @@ Returns a string if SOME otherwise ''"
 algorithm
   str := match(oexp)
     local DAE.Exp e;
-    case(NONE()) then "";
     case(SOME(e)) then printExpStr(e);
+    else "";
   end match;
 end printOptExpStr;
 
@@ -1103,7 +1103,7 @@ algorithm
       then
         Graphviz.LNODE("CALL",{fs},{},argnodes);
 
-    case(DAE.PARTEVALFUNCTION(path = _,expList = args))
+    case(DAE.PARTEVALFUNCTION(expList = args))
       equation
         argnodes = List.map(args, dumpExpGraphviz);
       then
@@ -1469,7 +1469,7 @@ algorithm
       then
         res_str;
 
-    case (DAE.REDUCTION(reductionInfo=DAE.REDUCTIONINFO(path = _),expr = exp,iterators={DAE.REDUCTIONITER(exp=iterexp)}),level)
+    case (DAE.REDUCTION(reductionInfo=DAE.REDUCTIONINFO(),expr = exp,iterators={DAE.REDUCTIONITER(exp=iterexp)}),level)
       equation
         gen_str = genStringNTime("   |", level);
         new_level1 = level + 1;
@@ -1506,15 +1506,6 @@ algorithm
         new_level1 = level + 1;
         ct = dumpExpStr(e, new_level1);
         res_str = stringAppendList({gen_str,"UNBOX ","\n",ct,""});
-      then
-        res_str;
-
-     case (DAE.SUM(startIt=start, endIt=stop, body=e),level)
-      equation
-        gen_str = genStringNTime("   |", level);
-        new_level1 = level + 1;
-        res_str = "("+dumpExpStr(start,new_level1)+" to "+dumpExpStr(stop,new_level1)+")["+dumpExpStr(e,new_level1)+"]";
-        res_str = stringAppendList({gen_str,"SIGMA ","\n",res_str,""});
       then
         res_str;
 

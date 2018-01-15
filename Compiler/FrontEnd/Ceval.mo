@@ -862,7 +862,7 @@ algorithm
       then
         (inCache, Values.EMPTY(inExp.scope, s, v, inExp.tyStr), inST);
 
-    case (_,env,e,_,_,_,_) guard Config.getGraphicsExpMode()
+    case (_,_,_,_,_,_,_) guard Config.getGraphicsExpMode()
       algorithm
         ty := Expression.typeof(inExp);
         v := Types.typeToValue(ty);
@@ -885,79 +885,63 @@ public function cevalIfConstant
    or if the expression is a call of parameter constness whose return type
    contains unknown dimensions (in which case we need to determine the size of
    those dimensions)."
-  input FCore.Cache inCache;
+  input output FCore.Cache cache;
   input FCore.Graph inEnv;
-  input DAE.Exp inExp;
-  input DAE.Properties inProp;
+  input output DAE.Exp exp;
+  input output DAE.Properties prop;
   input Boolean impl;
   input SourceInfo inInfo;
-  output FCore.Cache outCache;
-  output DAE.Exp outExp;
-  output DAE.Properties outProp;
 algorithm
-  (outCache, outExp, outProp) :=
-  matchcontinue(inCache, inEnv, inExp, inProp, impl, inInfo)
+  if Expression.isEvaluatedConst(exp) then
+    // Don't mess up the dimensions, etc by using the Values module
+    return;
+  end if;
+  (cache, exp, prop) := matchcontinue prop
     local
-        DAE.Exp e;
-        Values.Value v;
-        FCore.Cache cache;
-        DAE.Properties prop;
+      Values.Value v;
       DAE.Type tp;
 
-    /* adrpo: this is not needed! we do dimension propagation on function call!
-    case (_, _, e as DAE.CALL(attr = DAE.CALL_ATTR(ty = DAE.T_ARRAY(dims = _))),
-        DAE.PROP(constFlag = DAE.C_PARAM()), _, _)
-      equation
-        (e, prop) = cevalWholedimRetCall(e, inCache, inEnv, inInfo, 0);
-      then
-        (inCache, e, prop);*/
+    case DAE.PROP(constFlag = DAE.C_PARAM(), type_ = tp)
+      // BoschRexroth specifics
+      guard not Flags.getConfigBool(Flags.CEVAL_EQUATION)
+      then (cache, exp, DAE.PROP(tp, DAE.C_VAR()));
 
-    case (_, _, e, DAE.PROP(constFlag = DAE.C_PARAM(), type_ = tp), _, _) // BoschRexroth specifics
-      equation
-        false = Flags.getConfigBool(Flags.CEVAL_EQUATION);
-      then
-        (inCache, e, DAE.PROP(tp, DAE.C_VAR()));
+    case DAE.PROP(constFlag = DAE.C_CONST(), type_ = tp)
+      algorithm
+        (cache, v, _) := ceval(cache, inEnv, exp, impl, NONE(), Absyn.NO_MSG(), 0);
+        exp := ValuesUtil.valueExp(v);
+        exp := ValuesUtil.fixZeroSizeArray(exp, tp);
+      then (cache, exp, prop);
 
-    case (_, _, e, DAE.PROP(constFlag = DAE.C_CONST()), _, _)
-      equation
-        (cache, v, _) = ceval(inCache, inEnv, e, impl, NONE(), Absyn.NO_MSG(), 0);
-        e = ValuesUtil.valueExp(v);
-      then
-        (cache, e, inProp);
+    case DAE.PROP_TUPLE()
+      algorithm
+        DAE.C_CONST() := Types.propAllConst(prop);
+        (cache, v, _) := ceval(cache, inEnv, exp, false, NONE(), Absyn.NO_MSG(), 0);
+        exp := ValuesUtil.valueExp(v);
+      then (cache, exp, prop);
 
-    case (_, _, e, DAE.PROP_TUPLE(), _, _)
-      equation
-        DAE.C_CONST() = Types.propAllConst(inProp);
-        (cache, v, _) = ceval(inCache, inEnv, e, false, NONE(), Absyn.NO_MSG(), 0);
-        e = ValuesUtil.valueExp(v);
-      then
-        (cache, e, inProp);
-
-    case (_, _, _, DAE.PROP_TUPLE(), _, _) // BoschRexroth specifics
-      equation
-        false = Flags.getConfigBool(Flags.CEVAL_EQUATION);
-        DAE.C_PARAM() = Types.propAllConst(inProp);
+    case DAE.PROP_TUPLE()
+      // BoschRexroth specifics
+      guard not Flags.getConfigBool(Flags.CEVAL_EQUATION)
+      algorithm
+        DAE.C_PARAM() := Types.propAllConst(prop);
         print(" tuple non constant evaluation not implemented yet\n");
-      then
-        fail();
+      then fail();
 
-    case (_, _, e, _, _, _)
-      equation
-        true = Expression.isConst(e); // Structural parameters and the like... we can ceval them if we want to
-        false = Config.acceptMetaModelicaGrammar();
-        // false = Expression.isConstValue(e);
-        // print("Try ceval: " + ExpressionDump.printExpStr(e) + "; expect " + Types.unparseType(Types.getPropType(inProp)) + "\n");
-        (_, v, _) = ceval(inCache, inEnv, e, impl, NONE(), Absyn.NO_MSG(), 0);
-        // print("Ceval'ed constant: " + ExpressionDump.printExpStr(inExp) + " => " + ValuesUtil.valString(v) + "\n");
-        e = ValuesUtil.valueExp(v);
-        // print("Ceval'ed constant: " + ExpressionDump.printExpStr(inExp) + "\n");
-      then (inCache, e, inProp);
+    case _
+      // Structural parameters and the like... we can ceval them if we want to
+      guard Expression.isConst(exp) and not Config.acceptMetaModelicaGrammar()
+      algorithm
+        (_, v, _) := ceval(cache, inEnv, exp, impl, NONE(), Absyn.NO_MSG(), 0);
+        exp := ValuesUtil.valueExp(v);
+        exp := ValuesUtil.fixZeroSizeArray(exp, Types.getPropType(prop));
+      then (cache, exp, prop);
 
     else
-      equation
+      algorithm
         // If we fail to evaluate, at least we should simplify the expression
-        (e,_) = ExpressionSimplify.simplify1(inExp);
-      then (inCache, e, inProp);
+        (exp,_) := ExpressionSimplify.simplify1(exp);
+      then (cache, exp, prop);
 
   end matchcontinue;
 end cevalIfConstant;
@@ -1166,23 +1150,24 @@ algorithm
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
       then cevalBuiltinClock; */
     // MetaModelica type conversions
-    case "intString" equation true = Config.acceptMetaModelicaGrammar(); then cevalIntString;
-    case "realString" equation true = Config.acceptMetaModelicaGrammar(); then cevalRealString;
-    case "stringCharInt" equation true = Config.acceptMetaModelicaGrammar(); then cevalStringCharInt;
-    case "intStringChar" equation true = Config.acceptMetaModelicaGrammar(); then cevalIntStringChar;
-    case "stringLength" equation true = Config.acceptMetaModelicaGrammar(); then cevalStringLength;
-    case "stringInt" equation true = Config.acceptMetaModelicaGrammar(); then cevalStringInt;
-    case "stringListStringChar" equation true = Config.acceptMetaModelicaGrammar(); then cevalStringListStringChar;
-    case "listStringCharString" equation true = Config.acceptMetaModelicaGrammar(); then cevalListStringCharString;
-    case "stringAppendList" equation true = Config.acceptMetaModelicaGrammar(); then cevalStringAppendList;
-    case "stringDelimitList" equation true = Config.acceptMetaModelicaGrammar(); then cevalStringDelimitList;
-    case "listLength" equation true = Config.acceptMetaModelicaGrammar(); then cevalListLength;
-    case "listAppend" equation true = Config.acceptMetaModelicaGrammar(); then cevalListAppend;
-    case "listReverse" equation true = Config.acceptMetaModelicaGrammar(); then cevalListReverse;
-    case "listHead" equation true = Config.acceptMetaModelicaGrammar(); then cevalListFirst;
-    case "listRest" equation true = Config.acceptMetaModelicaGrammar(); then cevalListRest;
-    case "listMember" equation true = Config.acceptMetaModelicaGrammar(); then cevalListMember;
-    case "anyString" equation true = Config.acceptMetaModelicaGrammar(); then cevalAnyString;
+    case "intString" guard Config.acceptMetaModelicaGrammar() then cevalIntString;
+    case "realString" guard Config.acceptMetaModelicaGrammar() then cevalRealString;
+    case "stringCharInt" guard Config.acceptMetaModelicaGrammar() then cevalStringCharInt;
+    case "intStringChar" guard Config.acceptMetaModelicaGrammar() then cevalIntStringChar;
+    case "stringLength" guard Config.acceptMetaModelicaGrammar() then cevalStringLength;
+    case "stringInt" guard Config.acceptMetaModelicaGrammar() then cevalStringInt;
+    case "stringListStringChar" guard Config.acceptMetaModelicaGrammar() then cevalStringListStringChar;
+    case "listStringCharString" guard Config.acceptMetaModelicaGrammar() then cevalListStringCharString;
+    case "stringAppendList" guard Config.acceptMetaModelicaGrammar() then cevalStringAppendList;
+    case "stringDelimitList" guard Config.acceptMetaModelicaGrammar() then cevalStringDelimitList;
+    case "listLength" guard Config.acceptMetaModelicaGrammar() then cevalListLength;
+    case "listAppend" guard Config.acceptMetaModelicaGrammar() then cevalListAppend;
+    case "listReverse" guard Config.acceptMetaModelicaGrammar() then cevalListReverse;
+    case "listHead" guard Config.acceptMetaModelicaGrammar() then cevalListFirst;
+    case "listRest" guard Config.acceptMetaModelicaGrammar() then cevalListRest;
+    case "listMember" guard Config.acceptMetaModelicaGrammar() then cevalListMember;
+    case "anyString" guard Config.acceptMetaModelicaGrammar() then cevalAnyString;
+    case "listArrayLiteral" guard Config.acceptMetaModelicaGrammar() then cevalListArrayLiteral;
     case "numBits" then cevalNumBits;
     case "integerMax" then cevalIntegerMax;
     case "getLoadedLibraries" then cevalGetLoadedLibraries;
@@ -1436,29 +1421,18 @@ protected function cevalMatrixElt "Evaluates the expression of a matrix construc
   input Boolean inBoolean "impl";
   input Absyn.Msg inMsg;
   input Integer numIter;
-  output FCore.Cache outCache;
-  output list<Values.Value> outValues;
+  output FCore.Cache outCache = inCache;
+  output list<Values.Value> outValues = {};
+protected
+  Values.Value v;
+  list<Values.Value> vl;
 algorithm
-  (outCache, outValues) :=
-  match (inCache, inEnv, inMatrix, inBoolean, inMsg)
-    local
-      Values.Value v;
-      list<Values.Value> vl;
-      FCore.Graph env;
-      list<DAE.Exp> expl;
-      list<list<DAE.Exp>> expll;
-      Boolean impl;
-      Absyn.Msg msg;
-      FCore.Cache cache;
-    case (cache,env,(expl :: expll),impl,msg)
-      equation
-        (cache,vl,_) = cevalList(cache,env,expl,impl,NONE(),msg,numIter);
-        v = ValuesUtil.makeArray(vl);
-        (cache,vl)= cevalMatrixElt(cache,env, expll, impl,msg,numIter);
-      then
-        (cache,v :: vl);
-    case (cache,_,{},_,_) then (cache,{});
-  end match;
+  for expl in inMatrix loop
+    (outCache,vl,_) := cevalList(outCache,inEnv,expl,inBoolean,NONE(),inMsg,numIter);
+    v := ValuesUtil.makeArray(vl);
+    outValues := v::outValues;
+  end for;
+  outValues := listReverseInPlace(outValues);
 end cevalMatrixElt;
 
 protected function cevalBuiltinSize "Evaluates the size operator."
@@ -2603,6 +2577,38 @@ algorithm
         (cache,Values.BOOL(b),st);
   end match;
 end cevalListMember;
+
+protected function cevalListArrayLiteral
+  input FCore.Cache inCache;
+  input FCore.Graph inEnv;
+  input list<DAE.Exp> inExpExpLst;
+  input Boolean inBoolean;
+  input Option<GlobalScript.SymbolTable> inST;
+  input Absyn.Msg inMsg;
+  input Integer numIter;
+  output FCore.Cache outCache;
+  output Values.Value outValue;
+  output Option<GlobalScript.SymbolTable> outInteractiveInteractiveSymbolTableOption;
+algorithm
+  (outCache,outValue,outInteractiveInteractiveSymbolTableOption):=
+  match (inCache,inEnv,inExpExpLst,inBoolean,inST,inMsg,numIter)
+    local
+      FCore.Graph env;
+      DAE.Exp exp;
+      Boolean impl;
+      Option<GlobalScript.SymbolTable> st;
+      Absyn.Msg msg;
+      FCore.Cache cache;
+      list<Values.Value> vals;
+      Values.Value val;
+      Boolean b;
+    case (cache,env,{exp},impl,st,msg,_)
+      equation
+        (cache,Values.LIST(vals),st) = ceval(cache,env,exp,impl,st,msg,numIter+1);
+      then
+        (cache,Values.META_ARRAY(vals),st);
+  end match;
+end cevalListArrayLiteral;
 
 protected function cevalAnyString
   input FCore.Cache inCache;
@@ -3773,6 +3779,8 @@ algorithm
     case (Values.INTEGER(i1), Values.INTEGER(i2)) then Values.INTEGER(max(i1, i2));
     case (Values.REAL(r1), Values.REAL(r2)) then Values.REAL(max(r1, r2));
     case (Values.BOOL(b1), Values.BOOL(b2)) then Values.BOOL(b1 or b2);
+    case (Values.ENUM_LITERAL(), Values.ENUM_LITERAL())
+      then if v1.index > v2.index then v1 else v2;
     else
       algorithm
         true := Flags.isSet(Flags.FAILTRACE);
@@ -3849,6 +3857,8 @@ algorithm
     case (Values.INTEGER(i1), Values.INTEGER(i2)) then Values.INTEGER(min(i1, i2));
     case (Values.REAL(r1), Values.REAL(r2)) then Values.REAL(min(r1, r2));
     case (Values.BOOL(b1), Values.BOOL(b2)) then Values.BOOL(b1 and b2);
+    case (Values.ENUM_LITERAL(), Values.ENUM_LITERAL())
+      then if v1.index < v2.index then v1 else v2;
     else
       algorithm
         true := Flags.isSet(Flags.FAILTRACE);
@@ -4562,16 +4572,14 @@ public function cevalList "This function does constant
   output Option<GlobalScript.SymbolTable> outInteractiveInteractiveSymbolTableOption;
 protected
   list<DAE.Exp> expLstNew = inExpExpLst;
-  DAE.Exp exp;
   Values.Value v;
   Option<GlobalScript.SymbolTable> st = inST;
 
 algorithm
-  while not listEmpty(expLstNew) loop
-    exp::expLstNew := expLstNew;
+  for exp in expLstNew loop
     (outCache, v, st) := ceval(outCache, inEnv, exp, inBoolean, st, inMsg, numIter+1);
     outValuesValueLst := v :: outValuesValueLst;
-  end while;
+  end for;
   outValuesValueLst := listReverseInPlace(outValuesValueLst);
   outInteractiveInteractiveSymbolTableOption := st;
 end cevalList;
@@ -4841,7 +4849,7 @@ output Boolean res;
 algorithm
   res := matchcontinue(cr,exp)
     case(_,_) equation
-      res = Util.boolOrList(List.map1(Expression.extractCrefsFromExp(exp),ComponentReference.crefEqual,cr));
+      res = List.map1BoolOr(Expression.extractCrefsFromExp(exp),ComponentReference.crefEqual,cr);
     then res;
     else false;
   end matchcontinue;
@@ -5474,10 +5482,10 @@ protected
   Values.Value val;
   FCore.Cache cache;
   FCore.StructuralParameters structuralParameters;
-  array<DAE.FunctionTree> functionTree;
+  Mutable<DAE.FunctionTree> functionTree;
 algorithm
   structuralParameters := (AvlSetCR.EMPTY(),{});
-  functionTree := arrayCreate(1,functions);
+  functionTree := Mutable.create(functions);
   cache := FCore.CACHE(NONE(), functionTree, structuralParameters, Absyn.IDENT(""), Absyn.dummyProgram);
   (_,val,_) := ceval(cache, FGraph.empty(), exp, false, NONE(), Absyn.NO_MSG(),0);
   oexp := ValuesUtil.valueExp(val);

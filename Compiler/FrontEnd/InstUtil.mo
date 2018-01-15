@@ -229,7 +229,7 @@ Helper function for reEvaluateInitialIfEqns, makes the contenst of an initial if
   input list<DAE.Element> inElems;
   output list<DAE.Element> outElems;
 algorithm
-  outElems := matchcontinue(inElems)
+  outElems := match(inElems)
     local
       DAE.Element elem;
       DAE.ComponentRef cr;
@@ -285,7 +285,7 @@ algorithm
         outElems = makeDAEElementInitial(elems);
       then
         elem::outElems;
-  end matchcontinue;
+  end match;
 end makeDAEElementInitial;
 
 public function lookupTopLevelClass
@@ -568,7 +568,7 @@ algorithm
       list<SCode.AlgorithmSection> initialAlgorithmLst1,initialAlgorithmLst2;
       SCode.ClassDef cd1, cd2;
 
-    // when +g=MetaModelica, check class equality!
+    // when -g=MetaModelica, check class equality!
     case (_,_)
       equation
         true = Config.acceptMetaModelicaGrammar();
@@ -622,6 +622,7 @@ public function prefixEqualUnlessBasicType
 algorithm
   _ := matchcontinue (pre1, pre2, cls)
     local
+      String idn;
     // adrpo: TODO! FIXME!, I think here we should have pre1 = Prefix.CLASSPRE(variability1) == pre2 = Prefix.CLASSPRE(variability2)
 
     // don't care about prefix for:
@@ -639,10 +640,7 @@ algorithm
     case (_, _, SCode.CLASS(restriction = SCode.R_PREDEFINED_CLOCK())) then ();
     // don't care about prefix for:
     // - Real, String, Integer, Boolean
-    case (_, _, SCode.CLASS(name = "Real")) then ();
-    case (_, _, SCode.CLASS(name = "Integer")) then ();
-    case (_, _, SCode.CLASS(name = "String")) then ();
-    case (_, _, SCode.CLASS(name = "Boolean")) then ();
+    case (_, _, SCode.CLASS(name = idn)) guard idn=="Real" or idn== "Integer" or idn=="String" or idn=="Boolean" then ();
     // BTH
     case (_, _, SCode.CLASS(name = "Clock"))
       equation
@@ -927,7 +925,7 @@ What ever is left in modifier is printed as a warning. That means that we have m
   input DAE.Mod inmod;
   input String callingScope;
 algorithm
-  _ := matchcontinue(inElems, inmod, callingScope)
+  _ := match(inElems, inmod, callingScope)
     local
       SCode.Element elem;
       String cn,s1,s2;
@@ -973,7 +971,7 @@ algorithm
       equation
         matchModificationToComponents(elems,inmod,callingScope);
       then ();
-  end matchcontinue;
+  end match;
 end matchModificationToComponents;
 
 protected function elementNameMember
@@ -1294,7 +1292,7 @@ protected function removeBindings
   input list<SCode.Element> elements;
   output list<SCode.Element> outElements;
 algorithm
-  outElements := matchcontinue (elements)
+  outElements := match (elements)
     local
       SCode.Element el;
       list<SCode.Element> els,els1;
@@ -1318,7 +1316,7 @@ algorithm
       equation
         els1 = removeBindings(els);
       then el::els1;
-  end matchcontinue;
+  end match;
 end removeBindings;
 
 protected function removeExtBindings
@@ -1326,7 +1324,7 @@ protected function removeExtBindings
   input list<tuple<SCode.Element, DAE.Mod>> elements;
   output list<tuple<SCode.Element, DAE.Mod>> outElements;
 algorithm
-  outElements := matchcontinue (elements)
+  outElements := match (elements)
     local
       tuple<SCode.Element, DAE.Mod> el;
       list<tuple<SCode.Element, DAE.Mod>> els,els1;
@@ -1350,7 +1348,7 @@ algorithm
       equation
         els1 = removeExtBindings(els);
       then el::els1;
-  end matchcontinue;
+  end match;
 end removeExtBindings;
 
 public function getModsForDep "
@@ -1413,37 +1411,25 @@ end addNomod;
 public function sortElementList
   "Sorts constants and parameters by dependencies, so that they are instantiated
   before they are used."
-  input list<Element> inElements;
+  input output list<Element> inElements;
   input FCore.Graph inEnv;
   input Boolean isFunctionScope;
-  output list<Element> outElements;
   type Element = tuple<SCode.Element, DAE.Mod>;
+protected
+  list<Element> outE,cycleElts;
+  list<tuple<Element, list<Element>>> cycles;
+  list<tuple<Element, list<Element>>> g;
 algorithm
-  outElements := matchcontinue(inElements, inEnv, isFunctionScope)
-    local
-      list<Element> outE,cycleElts;
-      list<tuple<Element, list<Element>>> cycles;
-      list<tuple<Element, list<Element>>> g;
-
-    // no sorting for meta-modelica!
-    case (_, _, _)
-      equation
-        true = Config.acceptMetaModelicaGrammar();
-      then
-        inElements;
-
+  // no sorting for meta-modelica!
+  if not Config.acceptMetaModelicaGrammar() then
     // sort the elements according to the dependencies
-    else
-      equation
-        g = Graph.buildGraph(inElements, getElementDependencies, (inElements,isFunctionScope));
-        (outE, cycles) = Graph.topologicalSort(g, isElementEqual);
-        // printGraph(inEnv, g, outE, cycles);
-        // append the elements in the cycles as they might not actually be cycles, but they depend on elements not in the list (i.e. package constants, etc)!
-        outE = listAppend(outE, List.map(cycles, Util.tuple21));
-        checkCyclicalComponents(cycles, inEnv);
-      then
-        outE;
-  end matchcontinue;
+    g := Graph.buildGraph(inElements, getElementDependencies, (inElements,isFunctionScope));
+    (outE, cycles) := Graph.topologicalSort(g, isElementEqual);
+    // printGraph(inEnv, g, outE, cycles);
+    // append the elements in the cycles as they might not actually be cycles, but they depend on elements not in the list (i.e. package constants, etc)!
+    inElements := listAppend(outE, List.map(cycles, Util.tuple21));
+    checkCyclicalComponents(cycles, inEnv);
+  end if;
 end sortElementList;
 
 protected function printGraph
@@ -1989,7 +1975,7 @@ protected function checkCyclicalComponents
   input FCore.Graph inEnv;
   type Element = tuple<SCode.Element, DAE.Mod>;
 algorithm
-  _ := matchcontinue(inCycles, inEnv)
+  () := matchcontinue inCycles
     local
       list<list<Element>> cycles;
       list<list<String>> names;
@@ -1997,9 +1983,9 @@ algorithm
       String cycles_str, scope_str;
       list<tuple<Element, list<Element>>> graph;
 
-    case ({}, _) then ();
+    case {} then ();
 
-    case (_, _)
+    case _
       equation
         graph = Graph.filterGraph(inCycles, isElementParamOrConst);
         {} = Graph.findCycles(graph, isElementEqual);
@@ -2015,8 +2001,12 @@ algorithm
         cycles_str = "{" + cycles_str + "}";
         scope_str = FGraph.printGraphPathStr(inEnv);
         Error.addMessage(Error.CIRCULAR_COMPONENTS, {scope_str, cycles_str});
+
+        if not Flags.isSet(Flags.IGNORE_CYCLES) then
+          fail();
+        end if;
       then
-        fail();
+        ();
   end matchcontinue;
 end checkCyclicalComponents;
 
@@ -2108,7 +2098,7 @@ public function classdefAndImpElts
   output list<SCode.Element> cdefElts;
   output list<SCode.Element> restElts;
 algorithm
-  (cdefElts,restElts) := matchcontinue (elts)
+  (cdefElts,restElts) := match (elts)
     local
       list<SCode.Element> res,xs;
       SCode.Element cdef,imp,e;
@@ -2132,7 +2122,7 @@ algorithm
         (cdefElts,restElts) = classdefAndImpElts(xs);
       then
         (cdefElts,e::restElts);
-  end matchcontinue;
+  end match;
 end classdefAndImpElts;
 
 /*
@@ -2142,7 +2132,7 @@ protected function extendsElts
   input list<SCode.Element> inSCodeElementLst;
   output list<SCode.Element> outSCodeElementLst;
 algorithm
-  outSCodeElementLst := matchcontinue (inSCodeElementLst)
+  outSCodeElementLst := match (inSCodeElementLst)
     local
       list<SCode.Element> res,xs;
       SCode.Element cdef;
@@ -2157,7 +2147,7 @@ algorithm
         res = extendsElts(xs);
       then
         res;
-  end matchcontinue;
+  end match;
 end extendsElts;
 */
 
@@ -2167,7 +2157,7 @@ public function componentElts
   input list<SCode.Element> inSCodeElementLst;
   output list<SCode.Element> outSCodeElementLst;
 algorithm
-  outSCodeElementLst := matchcontinue (inSCodeElementLst)
+  outSCodeElementLst := match (inSCodeElementLst)
     local
       list<SCode.Element> res,xs;
       SCode.Element cdef;
@@ -2182,7 +2172,7 @@ algorithm
         res = componentElts(xs);
       then
         res;
-  end matchcontinue;
+  end match;
 end componentElts;
 
 public function addClassdefsToEnv
@@ -2867,25 +2857,21 @@ public function removeCrefFromCrefs
   input Absyn.ComponentRef inComponentRef;
   output list<Absyn.ComponentRef> outAbsynComponentRefLst;
 algorithm
-  outAbsynComponentRefLst := matchcontinue (inAbsynComponentRefLst,inComponentRef)
+  outAbsynComponentRefLst := match (inAbsynComponentRefLst,inComponentRef)
     local
       String n1,n2;
       list<Absyn.ComponentRef> rest_1,rest;
       Absyn.ComponentRef cr1,cr2;
     case ({},_) then {};
-    case ((cr1 :: rest),cr2)
+    case ((Absyn.CREF_IDENT(name = n1,subscripts = {}) :: rest),cr2 as Absyn.CREF_IDENT(name = n2,subscripts = {}))
+      guard stringEq(n1, n2)
       equation
-        Absyn.CREF_IDENT(name = n1,subscripts = {}) = cr1;
-        Absyn.CREF_IDENT(name = n2,subscripts = {}) = cr2;
-        true = stringEq(n1, n2);
         rest_1 = removeCrefFromCrefs(rest, cr2);
       then
         rest_1;
-    case ((cr1 :: rest),cr2) // If modifier like on comp like: T t(x=t.y) => t.y must be removed
+    case ((Absyn.CREF_QUAL(name = n1) :: rest),cr2 as Absyn.CREF_IDENT(name = n2)) // If modifier like on comp like: T t(x=t.y) => t.y must be removed
+      guard stringEq(n1, n2)
       equation
-        Absyn.CREF_QUAL(name = n1) = cr1;
-        Absyn.CREF_IDENT(name = n2) = cr2;
-        true = stringEq(n1, n2);
         rest_1 = removeCrefFromCrefs(rest, cr2);
       then
         rest_1;
@@ -2894,7 +2880,7 @@ algorithm
         rest_1 = removeCrefFromCrefs(rest, cr2);
       then
         (cr1 :: rest_1);
-  end matchcontinue;
+  end match;
 end removeCrefFromCrefs;
 
 public function keepConstrainingTypeModifersOnly
@@ -2904,7 +2890,7 @@ public function keepConstrainingTypeModifersOnly
   input list<SCode.Element> elems;
   output DAE.Mod filteredMod;
 algorithm
-  filteredMod := matchcontinue(inMod,elems)
+  filteredMod := match(inMod,elems)
     local
       SCode.Final f;
       SCode.Each e;
@@ -2922,7 +2908,7 @@ algorithm
         subs = keepConstrainingTypeModifersOnly2(subs,compNames);
       then
         DAE.MOD(f,e,subs,oe,info);
-  end matchcontinue;
+  end match;
 end keepConstrainingTypeModifersOnly;
 
 protected function keepConstrainingTypeModifersOnly2 "
@@ -2932,7 +2918,7 @@ Helper function for keepConstrainingTypeModifersOnly"
   input list<String> elems;
   output list<DAE.SubMod> osubs;
 algorithm
-  osubs := matchcontinue(isubs,elems)
+  osubs := match(isubs,elems)
     local
       DAE.SubMod sub;
       DAE.Mod mod;
@@ -2943,16 +2929,13 @@ algorithm
     case({},_) then {};
     case(subs,{}) then subs;
     case((sub as DAE.NAMEMOD(ident=n))::subs,_)
-      equation
-        osubs = keepConstrainingTypeModifersOnly2(subs,elems);
-        b = List.isMemberOnTrue(n,elems,stringEq);
-        osubs2 = if b then {sub} else {};
-        osubs = listAppend(osubs2,osubs);
+      guard
+        List.isMemberOnTrue(n,elems,stringEq)
       then
-        osubs;
+        sub::keepConstrainingTypeModifersOnly2(subs,elems);
     case(_::subs,_) then keepConstrainingTypeModifersOnly2(subs,elems);
 
-  end matchcontinue;
+  end match;
 end keepConstrainingTypeModifersOnly2;
 
 public function extractConstrainingComps
@@ -3318,10 +3301,7 @@ algorithm
       list<SCode.Element> els;
       SCode.Path path;
 
-    case (cache, _, _, _, cl as SCode.CLASS(name = "Real"), _, _) then (cache,{},cl,DAE.NOMOD());
-    case (cache, _, _, _, cl as SCode.CLASS(name = "Integer"), _, _) then (cache,{},cl,DAE.NOMOD());
-    case (cache, _, _, _, cl as SCode.CLASS(name = "String"), _, _) then (cache,{},cl,DAE.NOMOD());
-    case (cache, _, _, _, cl as SCode.CLASS(name = "Boolean"), _, _) then (cache,{},cl,DAE.NOMOD());
+    case (cache, _, _, _, cl as SCode.CLASS(name = id), _, _) guard id=="Real" or id=="Integer" or id=="String" or id=="Boolean" then (cache,{},cl,DAE.NOMOD());
     // BTH
     case (cache, _, _, _, cl as SCode.CLASS(name = "Clock"), _, _)
       equation
@@ -3911,10 +3891,10 @@ protected function attrIsParam
   input SCode.Attributes inAttributes;
   output Boolean outBoolean;
 algorithm
-  outBoolean := matchcontinue (inAttributes)
+  outBoolean := match (inAttributes)
     case SCode.ATTR(variability = SCode.PARAM()) then true;
     else false;
-  end matchcontinue;
+  end match;
 end attrIsParam;
 
 public function elabComponentArraydimFromEnv
@@ -4318,7 +4298,7 @@ public function addNameToDerivativeMapping
   input Absyn.Path path;
   output list<DAE.Function> outElts;
 algorithm
-  outElts := matchcontinue(inElts,path)
+  outElts := match(inElts,path)
   local
     DAE.Function elt;
     list<DAE.FunctionDefinition> funcs;
@@ -4343,7 +4323,7 @@ algorithm
       equation
         elts = addNameToDerivativeMapping(elts,path);
       then elt::elts;
-  end matchcontinue;
+  end match;
 end addNameToDerivativeMapping;
 
 protected function addNameToDerivativeMappingFunctionDefs " help function to addNameToDerivativeMappingElts"
@@ -4351,7 +4331,7 @@ protected function addNameToDerivativeMappingFunctionDefs " help function to add
   input Absyn.Path path;
   output list<DAE.FunctionDefinition> outFuncs;
 algorithm
-  outFuncs := matchcontinue(inFuncs,path)
+  outFuncs := match(inFuncs,path)
     local
       DAE.FunctionDefinition func;
       Absyn.Path p1,p2;
@@ -4373,7 +4353,7 @@ algorithm
         funcs = addNameToDerivativeMappingFunctionDefs(funcs,path);
       then func::funcs;
 
-  end matchcontinue;
+  end match;
 end addNameToDerivativeMappingFunctionDefs;
 
 public function getDeriveAnnotation "
@@ -4586,21 +4566,18 @@ helper function for getDeriveAnnotation"
   output String inputVar;
   output DAE.derivativeCond cond;
 algorithm
-  (inputVar,cond) := matchcontinue(m)
+  (inputVar,cond) := match(m)
   local
-    DAE.EqMod eq;
     DAE.Exp e;
   case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(binding = SOME(DAE.TYPED(modifierAsExp=e)))))
-    equation
-      then (inputVar,DAE.NO_DERIVATIVE(e));
+    then (inputVar,DAE.NO_DERIVATIVE(e));
   case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(binding = NONE())))
-    equation
     then (inputVar,DAE.NO_DERIVATIVE(DAE.ICONST(1)));
   case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(binding = NONE()))) // zeroderivative
-  then (inputVar,DAE.ZERO_DERIVATIVE());
+    then (inputVar,DAE.ZERO_DERIVATIVE());
 
   else ("",DAE.ZERO_DERIVATIVE());
-  end matchcontinue;
+  end match;
 end extractNameAndExp;
 
 protected function getDerivativeSubModsOptDefault "
@@ -4634,16 +4611,16 @@ helper function for getDeriveAnnotation
 Get current derive order"
   input list<SCode.SubMod> inSubs;
   output Integer order;
-algorithm order := matchcontinue(inSubs)
+algorithm order := match(inSubs)
   local
     Absyn.Exp ae;
     SCode.Mod m;
     list<SCode.SubMod> subs;
   case({}) then 1;
   case(SCode.NAMEMOD("order",(SCode.MOD(binding= SOME((Absyn.INTEGER(order))))))::_)
-  then order;
+    then order;
   case(_::subs) then getDerivativeOrder(subs);
-  end matchcontinue;
+  end match;
 end getDerivativeOrder;
 
 public function setFullyQualifiedTypename
@@ -5677,11 +5654,11 @@ protected function getOptPath
   input Absyn.Path inPath;
   output Option<Absyn.Path> outAbsynPathOption;
 algorithm
-  outAbsynPathOption := matchcontinue (inPath)
+  outAbsynPathOption := match (inPath)
     local Absyn.Path p;
     case Absyn.IDENT(name = "") then NONE();
     case p then SOME(p);
-  end matchcontinue;
+  end match;
 end getOptPath;
 
 protected function checkProt
@@ -5692,7 +5669,7 @@ protected function checkProt
   input DAE.ComponentRef inComponentRef;
   input SourceInfo info;
 algorithm
-  _ := matchcontinue (inVisibility,inMod,inComponentRef,info)
+  _ := match (inVisibility,inMod,inComponentRef,info)
     local
       DAE.ComponentRef cref;
       String str1, str2;
@@ -5706,7 +5683,7 @@ algorithm
         Error.addSourceMessage(Error.MODIFY_PROTECTED, {str1, str2}, info);
       then
         ();
-  end matchcontinue;
+  end match;
 end checkProt;
 
 public function getStateSelectFromExpOption
@@ -5716,15 +5693,14 @@ public function getStateSelectFromExpOption
   output Option<DAE.StateSelect> outDAEStateSelectOption;
 algorithm
   outDAEStateSelectOption:=
-  matchcontinue (inExpExpOption)
+  match (inExpExpOption)
     case (SOME(DAE.ENUM_LITERAL(name = Absyn.QUALIFIED("StateSelect", path = Absyn.IDENT("never"))))) then SOME(DAE.NEVER());
     case (SOME(DAE.ENUM_LITERAL(name = Absyn.QUALIFIED("StateSelect", path = Absyn.IDENT("avoid"))))) then SOME(DAE.AVOID());
     case (SOME(DAE.ENUM_LITERAL(name = Absyn.QUALIFIED("StateSelect", path = Absyn.IDENT("default"))))) then SOME(DAE.DEFAULT());
     case (SOME(DAE.ENUM_LITERAL(name = Absyn.QUALIFIED("StateSelect", path = Absyn.IDENT("prefer"))))) then SOME(DAE.PREFER());
     case (SOME(DAE.ENUM_LITERAL(name = Absyn.QUALIFIED("StateSelect", path = Absyn.IDENT("always"))))) then SOME(DAE.ALWAYS());
-    case (NONE()) then NONE();
     else NONE();
-  end matchcontinue;
+  end match;
 end getStateSelectFromExpOption;
 
 public function isSubModNamed
@@ -5734,7 +5710,7 @@ public function isSubModNamed
   input DAE.SubMod inSubMod;
   output Boolean isNamed;
 algorithm
-  isNamed := matchcontinue(inName, inSubMod)
+  isNamed := match(inName, inSubMod)
     local
       String submod_name;
 
@@ -5742,7 +5718,7 @@ algorithm
       then stringEqual(inName, submod_name);
 
     else false;
-  end matchcontinue;
+  end match;
 end isSubModNamed;
 
 public function liftRecordBinding
@@ -6120,7 +6096,7 @@ This function splits the Element list into these categories:
   output list<SCode.Element> classextendsElts;
   output list<SCode.Element> filtered;
 algorithm
-  (impElts,defElts,classextendsElts,filtered) := matchcontinue (elts)
+  (impElts,defElts,classextendsElts,filtered) := match (elts)
     local
       list<SCode.Element> xs;
       SCode.Element elt;
@@ -6163,7 +6139,7 @@ algorithm
       then
         (impElts,defElts,classextendsElts,elt::filtered);
 
-  end matchcontinue;
+  end match;
 end splitEltsNoComponents;
 
 public function splitEltsInnerAndOther "
@@ -6181,7 +6157,7 @@ public function splitEltsInnerAndOther "
   output list<SCode.Element> innerCompElts;
   output list<SCode.Element> otherCompElts;
 algorithm
-  (cdefImpElts,classextendsElts,extElts,innerCompElts,otherCompElts) := matchcontinue (elts)
+  (cdefImpElts,classextendsElts,extElts,innerCompElts,otherCompElts) := match (elts)
     local
       list<SCode.Element> res,xs,innerComps,otherComps;
       SCode.Element cdef,imp,ext,comp;
@@ -6239,7 +6215,7 @@ algorithm
         (cdefImpElts,classextendsElts,extElts,innerComps,otherComps) = splitEltsInnerAndOther(xs);
       then
         (cdefImpElts,classextendsElts,extElts,innerComps,comp::otherComps);
-  end matchcontinue;
+  end match;
 end splitEltsInnerAndOther;
 
 protected function orderComponents
@@ -6250,7 +6226,7 @@ protected function orderComponents
   input list<SCode.Element> inCompElts;
   output list<SCode.Element> outCompElts;
 algorithm
-  outCompElts := matchcontinue(inComp, inCompElts)
+  outCompElts := match(inComp, inCompElts)
     local
       list<SCode.Element> compElts;
 
@@ -6275,7 +6251,7 @@ algorithm
       equation
         compElts = listAppend(inCompElts, {inComp});
       then compElts;
-  end matchcontinue;
+  end match;
 end orderComponents;
 
 protected function splitClassExtendsElts
@@ -6286,7 +6262,7 @@ protected function splitClassExtendsElts
   output list<SCode.Element> classextendsElts;
   output list<SCode.Element> outElts;
 algorithm
-  (classextendsElts,outElts) := matchcontinue (elts)
+  (classextendsElts,outElts) := match (elts)
     local
       list<SCode.Element> res,xs;
       SCode.Element cdef;
@@ -6304,7 +6280,7 @@ algorithm
       then
         (classextendsElts, cdef :: res);
 
-  end matchcontinue;
+  end match;
 end splitClassExtendsElts;
 
 protected function addClassdefsToEnv3
@@ -6497,7 +6473,7 @@ algorithm
   case (_,_,_,_,{}) then inMod;
   case (cache,env,pre,mod,inst_dims)
     equation
-      exps = List.map1(inst_dims,Expression.dimensionsToExps,{});
+      exps = List.map(inst_dims,Expression.dimensionsToExps);
       aexps = List.mapList(exps, Expression.unelabExp);
       mod2 = traverseModAddDims4(cache,env,pre,mod, aexps, true);
 
@@ -6832,7 +6808,7 @@ public function propagateClassPrefix
   input Prefix.Prefix pre;
   output SCode.Attributes outAttr;
 algorithm
-  outAttr := matchcontinue(attr,pre)
+  outAttr := match(attr,pre)
     local
       Absyn.ArrayDim ad;
       SCode.ConnectorType ct;
@@ -6850,7 +6826,7 @@ algorithm
       then SCode.ATTR(ad,ct,prl,vt,dir,isf);
     // anything else
     else attr;
-  end matchcontinue;
+  end match;
 end propagateClassPrefix;
 
 public function checkUseConstValue
@@ -7029,88 +7005,106 @@ This function modifies equations into bindings for parameters"
   input DAE.DAElist inVarsDae;
   input DAE.DAElist inEquationsDae "Note: functions from here are not considered";
   output DAE.DAElist outVarsDae;
+protected
+  list<DAE.Element> vars, vars1, equations, equations1;
+  DAE.Element v1;
+  Integer i;
+  list<Integer> is;
+  DAE.Exp e;
+  DAE.ComponentRef cr;
+  Absyn.Path path;
 algorithm
-  outVarsDae := matchcontinue(inVarsDae,inEquationsDae)
-  local
-    list<DAE.Element> vars, vars1, equations;
-    DAE.Element var;
-    DAE.Exp e;
-    DAE.ComponentRef componentRef;
-    DAE.VarKind kind;
-    DAE.VarDirection direction;
-    DAE.VarParallelism parallelism;
-    DAE.VarVisibility protection;
-    DAE.Type ty;
-    DAE.InstDims  dims;
-    DAE.ConnectorType ct;
-    Option<DAE.VariableAttributes> variableAttributesOption;
-    Option<SCode.Comment> absynCommentOption;
-    Absyn.InnerOuter innerOuter;
-    DAE.ElementSource source "the origin of the element";
-    case (DAE.DAE(vars),DAE.DAE({})) then DAE.DAE(vars);
-    case (DAE.DAE({}),_) then DAE.DAE({});
-    case (DAE.DAE(DAE.VAR(componentRef,kind,direction,parallelism,protection,ty,NONE(),
-                          dims,ct,source,variableAttributesOption,
-                          absynCommentOption,innerOuter)::vars), DAE.DAE(equations))
-      equation
-        SOME(e)=findCorrespondingBinding(componentRef, equations);
-        DAE.DAE(vars1) = propagateBinding(DAE.DAE(vars),DAE.DAE(equations));
-      then
-        DAE.DAE(DAE.VAR(componentRef,kind,direction,parallelism,protection,ty,SOME(e),dims,
-                ct,source,variableAttributesOption, absynCommentOption,innerOuter)::vars1);
-
-    case (DAE.DAE(var::vars), DAE.DAE(equations))
-      equation
-        DAE.DAE(vars1)=propagateBinding(DAE.DAE(vars),DAE.DAE(equations));
-      then
-        DAE.DAE(var::vars1);
-  end matchcontinue;
+  DAE.DAE(vars) := inVarsDae;
+  DAE.DAE(equations) := inEquationsDae;
+  if listEmpty(vars) or listEmpty(equations) then
+    outVarsDae := inVarsDae;
+    return;
+  end if;
+  vars1 := {};
+  is := {};
+  for v in vars loop
+    v1 := matchcontinue v
+      case v1 as DAE.VAR()
+        algorithm
+          (e,i) := findCorrespondingBinding(v1.componentRef, equations);
+          v1.binding := SOME(e);
+          is := i::is;
+        then v1;
+      else v;
+    end matchcontinue;
+    vars1 := v1::vars1;
+  end for;
+  vars1 := listReverse(vars1);
+  equations1 := List.deletePositions(equations, is);
+  equations1 := list(DAEUtil.moveElementToInitialSection(eq) for eq in equations);
+  i := 0;
+  for eq in equations1 loop
+    _ := match eq
+      case DAE.INITIALEQUATION(exp1=DAE.CREF(ty=DAE.T_COMPLEX()), exp2=DAE.CALL(path=path))
+        guard Absyn.pathLastIdent(path)=="constructor"
+        algorithm
+          // Don't duplicate constructor calls
+          is := i::is;
+        then ();
+      case DAE.INITIAL_COMPLEX_EQUATION(lhs=DAE.CREF(componentRef=cr))
+        algorithm
+          vars1 := list(match v
+            case DAE.VAR(binding=SOME(_)) guard ComponentReference.crefPrefixOf(cr, v.componentRef)
+              algorithm
+                is := i::is;
+              then v;
+            // Moving parameter bindings into initial equation section means we need to force fixed=false...
+            case DAE.VAR(binding=NONE()) guard ComponentReference.crefPrefixOf(cr, v.componentRef)
+              algorithm
+                v.variableAttributesOption := DAEUtil.setFixedAttr(v.variableAttributesOption, SOME(DAE.BCONST(false)));
+                Error.addSourceMessage(Error.MOVING_PARAMETER_BINDING_TO_INITIAL_EQ_SECTION, {ComponentReference.printComponentRefStr(v.componentRef)}, eq.source.info);
+              then v;
+            else v;
+            end match for v in vars1);
+        then ();
+      else /* algorithm print(anyString(eq)); */ then ();
+    end match;
+    i := i+1;
+  end for;
+  equations1 := List.deletePositions(equations1, is);
+  outVarsDae := DAE.DAE(listAppend(equations1, vars1));
 end propagateBinding;
 
 protected function findCorrespondingBinding "
 Helper function for propagateBinding"
   input DAE.ComponentRef inCref;
   input list<DAE.Element> inEquations;
-  output Option<DAE.Exp> outExp;
+  output DAE.Exp outExp;
+  input output Integer i=0;
 algorithm
-  outExp:=matchcontinue(inCref, inEquations)
+  outExp :=match (inCref, inEquations)
     local
       DAE.ComponentRef cref,cref2,cref3;
       DAE.Exp e;
       list<DAE.Element> equations;
 
-    case (_, {}) then NONE();
-
     case (cref, DAE.DEFINE(componentRef=cref2, exp=e)::_)
-      equation
-        true = ComponentReference.crefEqual(cref,cref2);
-      then
-        SOME(e);
+      guard ComponentReference.crefEqual(cref,cref2)
+      then e;
 
     case (cref, DAE.EQUATION(exp=DAE.CREF(cref2,_),scalar=e)::_)
-      equation
-        true = ComponentReference.crefEqual(cref,cref2);
-      then
-        SOME(e);
+      guard ComponentReference.crefEqual(cref,cref2)
+      then e;
 
     case (cref, DAE.EQUEQUATION(cr1=cref2,cr2=cref3)::_)
-      equation
-        true = ComponentReference.crefEqual(cref,cref2);
-        e = Expression.crefExp(cref3);
-      then
-        SOME(e);
+      guard ComponentReference.crefEqual(cref,cref2)
+      then Expression.crefExp(cref3);
 
     case (cref, DAE.COMPLEX_EQUATION(lhs=DAE.CREF(cref2,_),rhs=e)::_)
-      equation
-        true = ComponentReference.crefEqual(cref,cref2);
-      then
-        SOME(e);
+      guard ComponentReference.crefEqual(cref,cref2)
+      then e;
 
     case (cref, _::equations)
-      then
-        findCorrespondingBinding(cref,equations);
+      algorithm
+        (outExp,i) := findCorrespondingBinding(cref,equations,i+1);
+      then outExp;
 
-  end matchcontinue;
+  end match;
 end findCorrespondingBinding;
 
 public function isPartial
@@ -7118,10 +7112,10 @@ public function isPartial
   input DAE.Mod mods;
   output SCode.Partial outPartial;
 algorithm
-  outPartial := matchcontinue (partialPrefix,mods)
+  outPartial := match (partialPrefix,mods)
     case (SCode.PARTIAL(),DAE.NOMOD()) then SCode.PARTIAL();
     else SCode.NOT_PARTIAL();
-  end matchcontinue;
+  end match;
 end isPartial;
 
 public function isFunctionInput
@@ -7129,10 +7123,10 @@ public function isFunctionInput
   input Absyn.Direction direction;
   output Boolean functionInput;
 algorithm
-  functionInput := matchcontinue(classState, direction)
+  functionInput := match(classState, direction)
     case (ClassInf.FUNCTION(), Absyn.INPUT()) then true;
     else false;
-  end matchcontinue;
+  end match;
 end isFunctionInput;
 
 public function extractClassDefComment
@@ -7327,7 +7321,7 @@ protected function splitClassDefsAndComponents
   output list<tuple<SCode.Element, DAE.Mod>> outClassDefs;
   output list<tuple<SCode.Element, DAE.Mod>> outComponentDefs;
 algorithm
-  (outClassDefs, outComponentDefs) := matchcontinue(inLstElAndMod)
+  (outClassDefs, outComponentDefs) := match(inLstElAndMod)
     local
       SCode.Element e;
       DAE.Mod m;
@@ -7350,7 +7344,7 @@ algorithm
       then
         ((e,m)::clsdefs, compdefs);
 
-  end matchcontinue;
+  end match;
 end splitClassDefsAndComponents;
 
 public function selectModifiers
@@ -7657,7 +7651,7 @@ algorithm
   ocache := match cache
     local
       Option<FCore.Graph> ie;
-      array<DAE.FunctionTree> f;
+      Mutable<DAE.FunctionTree> f;
       AvlSetCR.Tree ht;
       list<list<DAE.ComponentRef>> crs;
       Absyn.Path p;
@@ -7676,7 +7670,7 @@ algorithm
   ocache := match (cache,pre)
     local
       Option<FCore.Graph> ie;
-      array<DAE.FunctionTree> f;
+      Mutable<DAE.FunctionTree> f;
       AvlSetCR.Tree ht;
       list<DAE.ComponentRef> crs;
       list<list<DAE.ComponentRef>> crss;
@@ -8053,6 +8047,12 @@ algorithm
     case (exp as DAE.SIZE(),arg) then (exp,false,arg);
     case (exp as DAE.CALL(path=Absyn.IDENT("isPresent"), attr = DAE.CALL_ATTR(builtin = true)),arg)
       then (exp,false,arg);
+    case (DAE.CREF(componentRef = DAE.WILD()), (_, info))
+      algorithm
+        // _ shouldn't be allowed to be used like a variable, but until that's
+        // enforced just give an error message here instead of just failing.
+        Error.addSourceMessage(Error.WARNING_DEF_USE, {"_"}, info);
+      then (inExp, true, inTpl);
     case (exp as DAE.CREF(componentRef=cr),(unbound,info))
       equation
         b = listMember(ComponentReference.crefFirstIdent(cr),unbound);
@@ -8208,8 +8208,143 @@ end propagateModFinal;
 //------------------------------
 //------  PDE extension:  ------
 //------------------------------
-
+public type DomainFieldOpt = Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>>;
 public type DomainFieldsLst = list<tuple<DAE.ComponentRef,list<Absyn.ComponentRef>>>;
+
+public function addGhostCells
+//add ghost cells to fields that are differentiated in pder
+  input list<tuple<SCode.Element, DAE.Mod>> inCompelts;
+  input list<SCode.Equation> inEqs;
+  output list<tuple<SCode.Element, DAE.Mod>> outCompelts;
+  protected list<Absyn.Ident> fieldNamesP;
+  protected list<tuple<SCode.Element, DAE.Mod>> ghostCompelts;
+algorithm
+  fieldNamesP := List.fold(inEqs, fieldsInPderEq, {});
+  ghostCompelts := List.fold1(inCompelts,addGhostCells2,fieldNamesP,{});
+  outCompelts := listAppend(inCompelts,ghostCompelts);
+end addGhostCells;
+
+function fieldsInPderEq
+//adds field variable names that are differentiated using pder
+//in given equation to given list if it isn't already there
+  input SCode.Equation eq;
+  input list<Absyn.Ident> inFieldNames;
+  output list<Absyn.Ident> outFieldNames;
+algorithm
+  outFieldNames := match eq
+  local
+    list<Absyn.Ident> fieldNames1;
+    Absyn.Exp lhs_exp, rhs_exp;
+    case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp))
+      /*,domain = domainCr as Absyn.CREF_IDENT(), comment = comment, info = info))*/
+    algorithm
+      (_,fieldNames1) := Absyn.traverseExpTopDown(lhs_exp, fieldInPderExp, inFieldNames);
+      (_,fieldNames1) := Absyn.traverseExpTopDown(rhs_exp, fieldInPderExp, fieldNames1);
+    then
+      listAppend(inFieldNames,fieldNames1);
+    else
+      inFieldNames;
+  end match;
+end fieldsInPderEq;
+
+function fieldInPderExp
+//if given expression is pder call, than adds the differentiated field name
+//to given list of names if it is not already there
+  input Absyn.Exp inExp;
+  input list<Absyn.Ident> inFieldNames;
+  output Absyn.Exp outExp;
+  output list<Absyn.Ident> outFieldNames;
+algorithm
+  outFieldNames := match inExp
+    local
+      Absyn.Ident newFieldName;
+    case Absyn.CALL(function_=Absyn.CREF_IDENT(name="pder"),functionArgs=Absyn.FUNCTIONARGS(args={Absyn.CREF(Absyn.CREF_IDENT(name=newFieldName)),_}))
+    then
+      List.unionElt(newFieldName,inFieldNames);
+    case Absyn.CALL(function_=Absyn.CREF_IDENT(name="pder"),functionArgs=Absyn.FUNCTIONARGS(args={Absyn.CREF(Absyn.CREF_IDENT(name=newFieldName)),_,_}))
+    then
+      List.unionElt(newFieldName,inFieldNames);
+    else
+      inFieldNames;
+  end match;
+  outExp := inExp;
+end fieldInPderExp;
+
+function addGhostCells2
+  //if name of given variable is in the given array
+  //adds ghost cells for it
+  input tuple<SCode.Element, DAE.Mod> inCompelt;
+  input list<Absyn.Ident> fieldNamesP;
+  input list<tuple<SCode.Element, DAE.Mod>> inGhosts;
+  output list<tuple<SCode.Element, DAE.Mod>> outGhosts;
+algorithm
+  outGhosts := matchcontinue inCompelt
+  local
+    SCode.Ident name;
+    SCode.Prefixes prefixes;
+    SCode.Attributes attributes;
+    Absyn.TypeSpec typeSpec;
+    SCode.Mod modifications;
+    SCode.Comment comment;
+    Option<Absyn.Exp> condition;
+    SCode.SourceInfo info;
+
+    Absyn.ArrayDim arrayDims;
+    SCode.ConnectorType connectorType;
+    SCode.Parallelism parallelism;
+    SCode.Variability variability;
+    Absyn.Direction direction;
+
+    SCode.Final finalPrefix "final prefix";
+    SCode.Each  eachPrefix "each prefix";
+    list<SCode.SubMod> subModLst;
+    Option<Absyn.Exp> binding;
+    SCode.SourceInfo info2;
+
+    DAE.Mod daeMod;
+
+    tuple<SCode.Element, DAE.Mod> ghostL, ghostR;
+
+    case (SCode.COMPONENT(name, prefixes,
+            SCode.ATTR(arrayDims,connectorType,parallelism,
+                       variability, direction, Absyn.FIELD()
+            ), typeSpec,
+            SCode.MOD(finalPrefix, eachPrefix,subModLst,binding,info2)/*modifications*/,
+            comment, condition, info),daeMod)
+      equation
+        listMember(name, fieldNamesP) = true;
+
+        //remove domain from the subModLst:
+        subModLst = List.filterOnFalse(subModLst,isSubModDomainOrStart);
+
+        ghostL = (SCode.COMPONENT(stringAppend(name,"$ghostL"), prefixes,
+              SCode.ATTR(arrayDims,connectorType,parallelism,
+             variability, direction, Absyn.NONFIELD()), typeSpec,
+             SCode.MOD(finalPrefix, eachPrefix,subModLst,binding,info2),
+             comment, condition, info),daeMod);
+        ghostR = (SCode.COMPONENT(stringAppend(name,"$ghostR"), prefixes,
+             SCode.ATTR(arrayDims,connectorType,parallelism,
+             variability, direction, Absyn.NONFIELD()), typeSpec,
+             SCode.MOD(finalPrefix, eachPrefix,subModLst,binding,info2),
+             comment, condition, info),daeMod);
+      then
+        ghostL::ghostR::inGhosts;
+    else
+      inGhosts;
+  end matchcontinue;
+end addGhostCells2;
+
+function isSubModDomainOrStart
+  input SCode.SubMod subMod;
+  output Boolean isNotDomain;
+algorithm
+  isNotDomain := match subMod
+    local String idn;
+    case SCode.NAMEMOD(ident=idn) guard idn=="domain" or idn=="start" then true;
+    else false;
+  end match;
+end isSubModDomainOrStart;
+
 
 public function elabField
 //For field variables: finds the "domain" modifier,
@@ -8224,7 +8359,7 @@ public function elabField
   input SourceInfo inInfo;
   output DAE.Dimensions outDims;
   output DAE.Mod outMod;
-  output Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>> outFieldDomOpt;
+  output DomainFieldOpt outFieldDomOpt;
 
 algorithm
   (outDims, outMod, outFieldDomOpt) := match(attr, inMod)
@@ -8235,19 +8370,22 @@ algorithm
       list<DAE.SubMod> subModLst;
       Option<DAE.EqMod> binding;
       DAE.SourceInfo info;
-      Integer N;
+      Integer N = -1;
       DAE.ComponentRef dcr;
+      DAE.SubMod domainSubMod;
     case(SCode.ATTR(isField=Absyn.NONFIELD()),_)
       //TODO: check that the domain attribute (modifier) is not present.
       then
         (inDims,inMod,NONE());
     case(SCode.ATTR(isField=Absyn.FIELD()),DAE.MOD(finalPrefix = finalPrefix, eachPrefix = eachPrefix, subModLst = subModLst, binding = binding, info = info))
       equation
-//        DAE.MOD(finalPrefix = finalPrefix, eachPrefix = eachPrefix, subModLst = subModLst, eqModOption = eqModOption) = inMod;
+        //find the domain modifier:
+        (domainSubMod, subModLst) = List.findAndRemove(subModLst, findDomainSubMod);
+        dcr = getQualDcr(domainSubMod, inInfo);
         //get N from the domain and remove domain from the subModLst:
-        (N, subModLst, SOME(dcr)) = List.fold30(subModLst,domainSearchFun,-1,{},NONE());
+        (N, dcr) = getNDcr(dcr);
         if (N == -1) then Error.addSourceMessageAndFail(Error.PDEModelica_ERROR,
-            {"Domain of the field variable '", name, "' not found."}, inInfo);
+            {"Domain of the field variable '" + name + "' not found."}, inInfo);
         end if;
         subModLst = listReverse(subModLst);
         subModLst = List.map(subModLst,addEach);
@@ -8255,57 +8393,76 @@ algorithm
         dim_f = DAE.DIM_INTEGER(N);
       then
         (dim_f::inDims, outMod, SOME((Absyn.CREF_IDENT(name, {}),dcr)));
+    case(_,DAE.NOMOD())
+      equation
+        Error.addSourceMessageAndFail(Error.PDEModelica_ERROR,
+            {"Field variable '" + name + "' has no domain modifier."}, inInfo);
+      then
+        (inDims,inMod,NONE());
   end match;
 end elabField;
 
-protected function domainSearchFun
-"fold function to find domain modifier in modifiers list"
-//TODO: simplify this function, perhaps not use fold
+protected function findDomainSubMod
   input DAE.SubMod subMod;
-  input Integer inN;
-  input list<DAE.SubMod> inSubModLst;
-  input Option<DAE.ComponentRef> inCrOpt;
-  output Integer outN;
-  output list<DAE.SubMod> outSubModLst;
-  output Option<DAE.ComponentRef> outCrOpt;
+  output Boolean isDomain;
+algorithm
+   isDomain := match subMod
+     case DAE.NAMEMOD(ident="domain") then true;
+     else false;
+   end match;
+end findDomainSubMod;
 
-  algorithm
-    (outSubModLst,outN,outCrOpt) := matchcontinue subMod
-    local
-      DAE.Mod mod;
-      list<DAE.SubMod>  subModLst;
-      Option<DAE.EqMod> eqModOption;
-//      list<Values.Value> values;
-//      list<String> names;
-      list<DAE.Var> varLst;
-      Integer N;
-      DAE.ComponentRef cr;
+protected function getQualDcr
+  input DAE.SubMod domainSubMod;
+  input SourceInfo inInfo;
+  output DAE.ComponentRef dcr;
+algorithm
+  dcr := match domainSubMod
+  local
+    DAE.ComponentRef cr;
     case DAE.NAMEMOD(ident="domain", mod=DAE.MOD(binding=SOME(
-          DAE.TYPED(
-            modifierAsExp=DAE.CREF(
-              componentRef = cr,
-              ty=DAE.T_COMPLEX(
-                complexClassType=ClassInf.RECORD(
-                  path=Absyn.FULLYQUALIFIED(
-                    path=Absyn.IDENT(name="DomainLineSegment1D")
-                  )
-                )
+      DAE.TYPED(
+        modifierAsExp=DAE.CREF(
+          componentRef = cr,
+          ty=DAE.T_COMPLEX(
+            complexClassType=ClassInf.RECORD(
+              path=Absyn.FULLYQUALIFIED(
+                path=Absyn.IDENT(name="DomainLineSegment1D")
               )
             )
           )
-        )))
+        )
+      )
+    )))
+    then cr;
+    case _
       equation
-        DAE.CREF_IDENT(identType = DAE.T_COMPLEX(varLst = varLst)) = cr;
-        N = List.findSome(varLst,findN);
-      then (inSubModLst,N,SOME(cr));
-    case DAE.NAMEMOD(ident="domain")
-      equation
-        print("cant find N in the domain");
+        Error.addSourceMessageAndFail(Error.PDEModelica_ERROR,
+            {"The domain type is wrong.\n"}, inInfo);
       then
         fail();
-    else (subMod::inSubModLst,inN,inCrOpt);
-    end matchcontinue;
-end domainSearchFun;
+  end match;
+end getQualDcr;
+
+protected function getNDcr
+  input DAE.ComponentRef dcr;
+  output Integer outN;
+  output DAE.ComponentRef outCrOpt;
+algorithm
+  (outN,outCrOpt) := match dcr
+  local
+    DAE.ComponentRef cr1;
+    list<DAE.Var> varLst;
+    Integer N;
+    case DAE.CREF_QUAL(componentRef = cr1)
+      then getNDcr(cr1);
+    case DAE.CREF_IDENT(identType = DAE.T_COMPLEX(varLst = varLst))
+      equation
+        N = List.findSome(varLst,findN);
+      then (N,dcr);
+  end match;
+end getNDcr;
+
 
 protected function findN
 "a map function to find N in domain class modifiers"
@@ -8346,7 +8503,7 @@ end addEach;
 
 public function optAppendField
   input DomainFieldsLst inDomFieldsLst;
-  input Option<tuple<Absyn.ComponentRef,DAE.ComponentRef>> fieldDomOpt;
+  input DomainFieldOpt fieldDomOpt;
   output DomainFieldsLst outDomFieldsLst;
 algorithm
   outDomFieldsLst := match fieldDomOpt
@@ -8400,9 +8557,6 @@ public function discretizePDE
   output List<SCode.Equation> outDiscretizedEQs;
   protected List<SCode.Equation> newDiscretizedEQs;
 algorithm
-    newDiscretizedEQs := {inEQ};
-    //TODO: fix:
-
     newDiscretizedEQs := match inEQ
       local
         Absyn.Exp lhs_exp, rhs_exp;
@@ -8413,16 +8567,14 @@ algorithm
         List<Absyn.ComponentRef> fieldLst;
         Absyn.Ident name;
         list<Absyn.Subscript> subscripts;
-      //Normal equation withhout domain specified, no field variables present:
-      case SCode.EQUATION(SCode.EQ_EQUALS())
-      then {inEQ};
+
       //PDE with domain specified, allow for field variables:
       case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = domainCr as Absyn.CREF_IDENT(), comment = comment, info = info))
         equation
           (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr,info);
-//        then list(newEQFun(i, lhs_exp, rhs_exp, domainCr, comment, info, fieldLst) for i in 2:N-1);
-        then creatFieldEqs(lhs_exp, rhs_exp, domainCr, N, comment, info, fieldLst);
+        then creatFieldEqs(lhs_exp, rhs_exp, domainCr, N, fieldLst, comment, info);
+
       //same as previous but with ".interior"
       case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = domainCr as Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="interior")),
@@ -8430,47 +8582,20 @@ algorithm
         equation
           domainCr1 = Absyn.CREF_IDENT(name, subscripts);
           (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
-//        then list(newEQFun(i, lhs_exp, rhs_exp, domainCr1, comment, info, fieldLst) for i in 2:N-1);
-        then creatFieldEqs(lhs_exp, rhs_exp, domainCr, N, comment, info, fieldLst);
+        then creatFieldEqs(lhs_exp, rhs_exp, domainCr, N, fieldLst, comment, info);
 
-        //left boundary extrapolation
-/*        case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
-                      domain = domainCr as Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="left")),
-                      comment = comment, info = info))
-            equation
-//              Absyn.CALL(function_ = Absyn.CREF_IDENT(name="extrapolateField", subscripts={}), functionArgs = Absyn.FUNCTIONARGS(args = {})) = rhs_exp;
-//              Absyn.CREF(fieldCr as Absyn.CREF_IDENT()) = lhs_exp;
-          fieldCr = matchExtrapAndField(lhs_exp, rhs_exp);
-          domainCr1 = Absyn.CREF_IDENT(name, subscripts);
-          (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
-        then
-          {extrapolateFieldEq(false, fieldCr, domainCr1, N, comment, info, fieldLst)};
-*/
-/*
-      //right boundary extrapolation
-      case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
-                  domain = domainCr as Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="right")),
-                  comment = comment, info = info))
-        equation
-//          Absyn.CALL(function_ = Absyn.CREF_IDENT(name="extrapolateField", subscripts={}), functionArgs = Absyn.FUNCTIONARGS(args = {})) = rhs_exp;
-//          Absyn.CREF(fieldCr as Absyn.CREF_IDENT()) = lhs_exp;
-
-          fieldCr = matchExtrapAndField(lhs_exp, rhs_exp);
-          domainCr1 = Absyn.CREF_IDENT(name, subscripts);
-          (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
-        then
-          {extrapolateFieldEq(true, fieldCr, domainCr1, N, comment, info, fieldLst)};*/
       //left boundary condition or extrapolation
       case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="left")),
                   comment = comment, info = info))
         equation
           domainCr1 = Absyn.CREF_IDENT(name, subscripts);
-          (_,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
+          (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
           (lhs_exp, _) = Absyn.traverseExp(lhs_exp, extrapFieldTraverseFun, 1);
           (rhs_exp, _) = Absyn.traverseExp(rhs_exp, extrapFieldTraverseFun, 1);
         then
-          {newEQFun(1, lhs_exp, rhs_exp, domainCr1, comment, info, fieldLst)};
+          {newEQFun(1, lhs_exp, rhs_exp, domainCr1, N, true, fieldLst, comment, info)};
+
       //right boundary condition or extrapolation
       case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="right")),
@@ -8481,7 +8606,15 @@ algorithm
           (lhs_exp, _) = Absyn.traverseExp(lhs_exp, extrapFieldTraverseFun, N);
           (rhs_exp, _) = Absyn.traverseExp(rhs_exp, extrapFieldTraverseFun, N);
         then
-          {newEQFun(N, lhs_exp, rhs_exp, domainCr1, comment, info, fieldLst)};
+          {newEQFun(N, lhs_exp, rhs_exp, domainCr1, N, true, fieldLst, comment, info)};
+      //Unhandled pde
+      case SCode.EQUATION(SCode.EQ_PDE())
+        equation
+          print("Unhandled type of EQ_PDE in discretizePDE\n");
+          fail();
+      then {};
+      //Other than EQ_PDE:
+      else {inEQ};
     end match;
 
   outDiscretizedEQs := listAppend(inDiscretizedEQs, newDiscretizedEQs);
@@ -8509,14 +8642,15 @@ algorithm
         i = -1;
       end if;
     then
+      //TODO: add check wheter the field in extrapolateField arg is in given domain.
       Absyn.BINARY(
                Absyn.BINARY(
                  Absyn.INTEGER(2),
                  Absyn.MUL(),
-                 Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(inN+i))::subscripts))
+                 Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(inN))::subscripts))
                ),
                Absyn.SUB(),
-               Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(inN+2*i))::subscripts))
+               Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(inN+i))::subscripts))
              );
     else
       inExp;
@@ -8526,43 +8660,12 @@ algorithm
 end extrapFieldTraverseFun;
 
 
-
-
-
-
-
-//TODO: remove never called:
-protected function matchExtrapAndField
-  input Absyn.Exp lhs_exp;
-  input Absyn.Exp rhs_exp;
-  output Absyn.ComponentRef fieldCr;
-  protected String s;
-algorithm
-  s := "Ahoj";
-  fieldCr := match (lhs_exp, rhs_exp)
-    local
-      Absyn.ComponentRef fcr, fcr_arg;
-    case (Absyn.CALL(
-                          function_ = Absyn.CREF_IDENT(name="extrapolateField", subscripts={}),
-                          functionArgs = Absyn.FUNCTIONARGS(args = {Absyn.CREF(Absyn.CREF_IDENT())})
-                    ),
-         Absyn.CREF(fcr as Absyn.CREF_IDENT())
-         )
-    then
-      fcr;
-    case (Absyn.CREF(fcr as Absyn.CREF_IDENT()),Absyn.CALL(function_ = Absyn.CREF_IDENT(name="extrapolateField", subscripts={}), functionArgs = Absyn.FUNCTIONARGS(args = {Absyn.CREF(Absyn.CREF_IDENT())})))
-    then
-      fcr;
-  end match;
-
-end matchExtrapAndField;
-
 protected function getDomNFields
   input DomainFieldsLst inDomFieldLst;
   input Absyn.ComponentRef inDomainCr;
   input SCode.SourceInfo info;
-  output Integer outN;
-  output List<Absyn.ComponentRef> outFieldLst;
+  output Integer outN = 0;
+  output List<Absyn.ComponentRef> outFieldLst = {};
 algorithm
   try
     (outN,outFieldLst) := List.findSome1(inDomFieldLst,domNFieldsFindFun,inDomainCr);
@@ -8601,15 +8704,15 @@ protected function absynDAECrefEqualName
   protected String name1, name2;
   algorithm
     //TODO: implement
-  equal := matchcontinue (domainCr1, domainCr2)
+  equal := match (domainCr1, domainCr2)
     case (Absyn.CREF_IDENT(name = name1), DAE.CREF_IDENT(ident = name2))
-      equation
-        true = stringEqual(name1,name2);
+      guard
+        stringEqual(name1,name2)
     then
       true;
     else
       false;
-  end matchcontinue;
+  end match;
 end absynDAECrefEqualName;
 
 
@@ -8659,9 +8762,9 @@ protected function creatFieldEqs "creates list of equations for fields. If the e
   input Absyn.Exp rhs_exp;
   input Absyn.ComponentRef domainCr;
   input Integer N;
+  input List<Absyn.ComponentRef> fieldLst;
   input SCode.Comment comment;
   input SCode.SourceInfo info;
-  input List<Absyn.ComponentRef> fieldLst;
   output List<SCode.Equation> outDiscretizedEQs;
   protected Boolean bl, br;
 algorithm
@@ -8671,12 +8774,13 @@ algorithm
   outDiscretizedEQs := match (bl, br)
     //case ((_,false),(_,false)) //no pder()
     case (false,false) //no pder()
-    then
-      list(newEQFun(i, lhs_exp, rhs_exp, domainCr, comment, info, fieldLst) for i in 1:N);
+    then   //TODO: both branches are the same now, when using ghost cells, simplify!
+      list(newEQFun(i, lhs_exp, rhs_exp, domainCr, N, false, fieldLst, comment, info) for i in 1:N);
     else  //contains some pder()
-      list(newEQFun(i, lhs_exp, rhs_exp, domainCr, comment, info, fieldLst) for i in 2:N-1);
+      list(newEQFun(i, lhs_exp, rhs_exp, domainCr, N, false, fieldLst, comment, info) for i in 1:N);
   end match;
 end creatFieldEqs;
+
 
 protected function hasPderTraverseFun
   input Absyn.Exp inExp;
@@ -8698,32 +8802,34 @@ protected function newEQFun
   input Absyn.Exp inLhs_exp;
   input Absyn.Exp inRhs_exp;
   input Absyn.ComponentRef domainCr;
+  input Integer N;
+  input Boolean isBC;  //-1 left ghost cell, 0 no ghost cell, 1 right ghost cell
+  input list<Absyn.ComponentRef> fieldLst;
   input SCode.Comment comment;
   input SCode.SourceInfo info;
-  input list<Absyn.ComponentRef> fieldLst;
   output SCode.Equation outEQ;
   protected Absyn.Exp outLhs_exp, outRhs_exp;
 algorithm
-  (outLhs_exp, _) := Absyn.traverseExpTopDown(inLhs_exp,discretizeTraverseFun,(i,fieldLst,domainCr,info,false));
-  (outRhs_exp, _) := Absyn.traverseExpTopDown(inRhs_exp,discretizeTraverseFun,(i,fieldLst,domainCr,info,false));
+  (outLhs_exp, _) := Absyn.traverseExpTopDown(inLhs_exp,discretizeTraverseFun,(i,fieldLst,domainCr,info,false,N,isBC));
+  (outRhs_exp, _) := Absyn.traverseExpTopDown(inRhs_exp,discretizeTraverseFun,(i,fieldLst,domainCr,info,false,N,isBC));
   outEQ := SCode.EQUATION(SCode.EQ_EQUALS(outLhs_exp, outRhs_exp, comment, info));
 end newEQFun;
 
 protected function discretizeTraverseFun
   input Absyn.Exp inExp;
-  input tuple<Integer, list<Absyn.ComponentRef>, Absyn.ComponentRef, SCode.SourceInfo,Boolean> inTup;
+  input tuple<Integer, list<Absyn.ComponentRef>, Absyn.ComponentRef, SCode.SourceInfo,Boolean,Integer,Boolean> inTup;
   output Absyn.Exp outExp;
-  output tuple<Integer, list<Absyn.ComponentRef>, Absyn.ComponentRef, SCode.SourceInfo,Boolean> outTup;
-  protected Integer i;
+  output tuple<Integer, list<Absyn.ComponentRef>, Absyn.ComponentRef, SCode.SourceInfo,Boolean,Integer,Boolean> outTup;
+  protected Integer i,N;
 //   protected String eqDomainName;
   protected list<Absyn.ComponentRef> fieldLst;
   protected SCode.SourceInfo info;
-  protected Boolean skip, failVar;
+  protected Boolean skip, failVar,isBC;
   protected Absyn.ComponentRef domainCr;
   protected Absyn.Ident domName;
 algorithm
   failVar := false;
-  (i, fieldLst, domainCr, info, skip) := inTup;
+  (i, fieldLst, domainCr, info, skip, N, isBC) := inTup;
   Absyn.CREF_IDENT(name = domName) := domainCr;
   if skip then
     outExp := inExp;
@@ -8735,6 +8841,7 @@ algorithm
       Absyn.Ident name, fieldDomainName;
       list<Absyn.Subscript> subscripts;
       Absyn.ComponentRef fieldCr;
+      Absyn.Exp exp, leftVar, actualVar, rightVar;
     case  Absyn.CREF(Absyn.CREF_QUAL(name = domName, subscripts = {}, componentRef=Absyn.CREF_IDENT(name="x",subscripts={})))
     //coordinate x
     then
@@ -8743,23 +8850,36 @@ algorithm
     //field
       equation
         true = List.isMemberOnTrue(fieldCr,fieldLst,Absyn.crefEqual);
+        exp = (if isBC and i == 1 then
+                Absyn.CREF(Absyn.CREF_IDENT(stringAppend(name,"$ghostL"), subscripts))  //left BC
+              elseif isBC and i == N then
+                Absyn.CREF(Absyn.CREF_IDENT(stringAppend(name,"$ghostR"), subscripts))  //right BC
+              else
+                Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i))::subscripts))  //no BC
+              );
       then
-        Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i))::subscripts));
+        exp;
     case Absyn.CALL(Absyn.CREF_IDENT("pder",{}),Absyn.FUNCTIONARGS({Absyn.CREF(fieldCr as Absyn.CREF_IDENT(name, subscripts)),Absyn.CREF(Absyn.CREF_IDENT(name="x"))},_))
-    //pder
+    //pder - first derivative
       equation
         if not List.isMemberOnTrue(fieldCr,fieldLst,Absyn.crefEqual) then
           failVar = true;
           Error.addSourceMessageAndFail(Error.COMPILER_ERROR,{"Field variable '" +  name + "' has different domain than the equation or is not a field." }, info);
         end if;
-          skip = true;
+        //skip = true
+        leftVar = (if i == 1 then
+                     Absyn.CREF(Absyn.CREF_IDENT(stringAppend(name,"$ghostL"), subscripts))
+                   else
+                     Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i-1))::subscripts))
+                  );
+        rightVar = (if i == N then
+                     Absyn.CREF(Absyn.CREF_IDENT(stringAppend(name,"$ghostR"), subscripts))
+                   else
+                     Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i+1))::subscripts))
+                  );
         then
           Absyn.BINARY(
-            Absyn.BINARY(
-              Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i+1))::subscripts)),
-              Absyn.SUB(),
-              Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i-1))::subscripts))
-            ),
+            Absyn.BINARY(rightVar, Absyn.SUB(), leftVar),
             Absyn.DIV(),
             Absyn.BINARY(
               Absyn.INTEGER(2),
@@ -8767,6 +8887,40 @@ algorithm
               Absyn.CREF(Absyn.CREF_QUAL(domName,{},Absyn.CREF_IDENT("dx",{})))
             )
           );
+    case Absyn.CALL(Absyn.CREF_IDENT("pder",{}),Absyn.FUNCTIONARGS({Absyn.CREF(fieldCr as Absyn.CREF_IDENT(name, subscripts)),Absyn.CREF(Absyn.CREF_IDENT(name="x")),Absyn.CREF(Absyn.CREF_IDENT(name="x"))},_))
+    //pder - second derivative
+      equation
+        if not List.isMemberOnTrue(fieldCr,fieldLst,Absyn.crefEqual) then
+          failVar = true;
+          Error.addSourceMessageAndFail(Error.COMPILER_ERROR,{"Field variable '" +  name + "' has different domain than the equation or is not a field." }, info);
+        end if;
+        //skip = true
+        leftVar = (if i == 1 then
+                     Absyn.CREF(Absyn.CREF_IDENT(stringAppend(name,"$ghostL"), subscripts))
+                   else
+                     Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i-1))::subscripts))
+                  );
+        actualVar = Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i))::subscripts));
+        rightVar = (if i == N then
+                     Absyn.CREF(Absyn.CREF_IDENT(stringAppend(name,"$ghostR"), subscripts))
+                   else
+                     Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i+1))::subscripts))
+                  );
+        then
+          Absyn.BINARY(
+            Absyn.BINARY(
+              Absyn.BINARY(
+                leftVar, Absyn.SUB(), Absyn.BINARY(
+                  Absyn.INTEGER(2),Absyn.MUL(),actualVar
+                )
+              ), Absyn.ADD(),rightVar
+            ), Absyn.DIV(), Absyn.BINARY(
+                Absyn.CREF(Absyn.CREF_QUAL(domName,{},Absyn.CREF_IDENT("dx",{}))),Absyn.POW(),Absyn.INTEGER(2)
+            )
+          );
+
+
+
     case Absyn.CALL(Absyn.CREF_IDENT("pder",{}),Absyn.FUNCTIONARGS({Absyn.CREF(_),_},_))
     //pder with differentiating wrt wrong variable
       equation
@@ -8784,7 +8938,7 @@ algorithm
   if failVar then
     fail();
   end if;
-  outTup := (i, fieldLst, domainCr, info, skip);
+  outTup := (i, fieldLst, domainCr, info, skip, N, isBC);
 end discretizeTraverseFun;
 
 protected function findDomF<T>
@@ -8792,14 +8946,14 @@ protected function findDomF<T>
   input String name;
   output Boolean found;
 algorithm
-  found := matchcontinue inTup
+  found := match inTup
     local String nameLoc;
     case (nameLoc,_)
-      equation
-        true = stringEqual(nameLoc,name);
+      guard
+        stringEqual(nameLoc,name)
     then true;
     else false;
-  end matchcontinue;
+  end match;
 end findDomF;
 /*
 public function findDomains

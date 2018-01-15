@@ -37,6 +37,8 @@ protected
 public
   import Dimension = NFDimension;
   import NFInstNode.InstNode;
+  import Subscript = NFSubscript;
+  import ComplexType = NFComplexType;
 
   record INTEGER
   end INTEGER;
@@ -58,6 +60,9 @@ public
     list<String> literals;
   end ENUMERATION;
 
+  record ENUMERATION_ANY "enumeration(:)"
+  end ENUMERATION_ANY;
+
   record ARRAY
     Type elementType;
     list<Dimension> dimensions;
@@ -76,12 +81,24 @@ public
 
   record COMPLEX
     InstNode cls;
+    ComplexType complexTy;
   end COMPLEX;
 
   record FUNCTION
     Type resultType;
     DAE.FunctionAttributes attributes;
   end FUNCTION;
+
+  record METABOXED "Used for MetaModelica generic types"
+    Type ty;
+  end METABOXED;
+
+  record POLYMORPHIC
+    String name;
+  end POLYMORPHIC;
+
+  record ANY
+  end ANY;
 
   // TODO: Fix constants in uniontypes and use these wherever applicable to
   // speed up comparisons using referenceEq.
@@ -117,6 +134,41 @@ public
       else ARRAY(ty, dims);
     end match;
   end liftArrayLeftList;
+
+  function unliftArray
+    input output Type ty;
+  protected
+    Type el_ty;
+    list<Dimension> dims;
+  algorithm
+    ARRAY(el_ty, _ :: dims) := ty;
+
+    if listEmpty(dims) then
+      ty := el_ty;
+    else
+      ty := ARRAY(el_ty, dims);
+    end if;
+  end unliftArray;
+
+  function unliftArrayN
+    input Integer N;
+    input output Type ty;
+  protected
+    Type el_ty;
+    list<Dimension> dims;
+  algorithm
+    ARRAY(el_ty, dims) := ty;
+
+    for i in 1:N loop
+      dims := listRest(dims);
+    end for;
+
+    if listEmpty(dims) then
+      ty := el_ty;
+    else
+      ty := ARRAY(el_ty, dims);
+    end if;
+  end unliftArrayN;
 
   function isInteger
     input Type ty;
@@ -168,12 +220,24 @@ public
     end match;
   end isArray;
 
+  function isVector
+    "Return whether the type is a vector type or not, i.e. a 1-dimensional array."
+    input Type ty;
+    output Boolean isVector;
+  algorithm
+    isVector := match ty
+      case ARRAY(dimensions = {_}) then true;
+      else false;
+    end match;
+  end isVector;
+
   function isEnumeration
     input Type ty;
     output Boolean isEnum;
   algorithm
     isEnum := match ty
       case ENUMERATION() then true;
+      case ENUMERATION_ANY() then true;
       else false;
     end match;
   end isEnumeration;
@@ -197,6 +261,22 @@ public
       else false;
     end match;
   end isScalarArray;
+
+  function isBasic
+    input Type ty;
+    output Boolean isNumeric;
+  algorithm
+    isNumeric := match ty
+      case REAL() then true;
+      case INTEGER() then true;
+      case BOOLEAN() then true;
+      case STRING() then true;
+      case ENUMERATION() then true;
+      case CLOCK() then true;
+      case FUNCTION() then isBasic(ty.resultType);
+      else false;
+    end match;
+  end isBasic;
 
   function isBasicNumeric
     input Type ty;
@@ -232,7 +312,9 @@ public
       case BOOLEAN() then true;
       case CLOCK() then true;
       case ENUMERATION() then true;
+      case ENUMERATION_ANY() then true;
       case FUNCTION() then isScalarBuiltin(ty.resultType);
+      else false;
     end match;
   end isScalarBuiltin;
 
@@ -289,19 +371,20 @@ public
     dims := match ty
       case ARRAY() then ty.dimensions;
       case FUNCTION() then arrayDims(ty.resultType);
+      else {};
     end match;
   end arrayDims;
 
-  function getTypeDims
+  function nthDimension
     input Type ty;
-    output list<Dimension> dims;
+    input Integer index;
+    output Dimension dim;
   algorithm
-    try
-      dims := arrayDims(ty);
-    else
-      dims := {};
-    end try;
-  end getTypeDims;
+    dim := match ty
+      case ARRAY() then listGet(ty.dimensions, index);
+      case FUNCTION() then nthDimension(ty.resultType, index);
+    end match;
+  end nthDimension;
 
   function dimensionCount
     input Type ty;
@@ -314,21 +397,6 @@ public
     end match;
   end dimensionCount;
 
-  function scalarSuperType
-    "Checks that the given types are scalar and that one is a subtype of the other."
-    input Type ty1;
-    input Type ty2;
-    output Type ty;
-  algorithm
-    ty := match (ty1, ty2)
-      case (INTEGER(), INTEGER()) then INTEGER();
-      case (REAL(), REAL()) then REAL();
-      case (INTEGER(), REAL()) then REAL();
-      case (REAL(), INTEGER()) then REAL();
-      case (BOOLEAN(), BOOLEAN()) then BOOLEAN();
-    end match;
-  end scalarSuperType;
-
   function toString
     input Type ty;
     output String str;
@@ -338,21 +406,35 @@ public
       case Type.REAL() then "Real";
       case Type.STRING() then "String";
       case Type.BOOLEAN() then "Boolean";
-      case Type.ENUMERATION() then "enumeration()";
+      case Type.ENUMERATION() then "enumeration " + Absyn.pathString(ty.typePath) +
+        "(" + stringDelimitList(ty.literals, ", ") + ")";
+      case Type.ENUMERATION_ANY() then "enumeration(:)";
       case Type.CLOCK() then "Clock";
       case Type.ARRAY() then toString(ty.elementType) + "[" + stringDelimitList(List.map(ty.dimensions, Dimension.toString), ", ") + "]";
-      case Type.TUPLE() then "tuple(" + stringDelimitList(List.map(ty.types, toString), ", ") + ")";
+      case Type.TUPLE() then "(" + stringDelimitList(List.map(ty.types, toString), ", ") + ")";
       case Type.FUNCTION() then "function( output " + toString(ty.resultType) + " )";
-      case Type.NORETCALL() then "noretcall()";
+      case Type.NORETCALL() then "()";
       case Type.UNKNOWN() then "unknown()";
-      case Type.COMPLEX() then "complex()";
+      case Type.COMPLEX() then InstNode.name(ty.cls);
+      case Type.POLYMORPHIC() then "<" + ty.name + ">";
+      case Type.ANY() then "$ANY$";
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown type: " + anyString(ty));
+          Error.assertion(false, getInstanceName() + " got unknown type: " + anyString(ty), sourceInfo());
         then
           fail();
     end match;
   end toString;
+
+  function typenameString
+    input Type ty;
+    output String str;
+  algorithm
+    str := match ty
+      case Type.ENUMERATION() then Absyn.pathString(ty.typePath);
+      else toString(ty);
+    end match;
+  end typenameString;
 
   function toDAE
     input Type ty;
@@ -365,7 +447,6 @@ public
       case Type.BOOLEAN() then DAE.T_BOOL_DEFAULT;
       case Type.ENUMERATION() then DAE.T_ENUMERATION(NONE(), ty.typePath, ty.literals, {}, {});
       case Type.CLOCK() then DAE.T_CLOCK_DEFAULT;
-      case Type.ENUMERATION() then DAE.T_ENUMERATION_DEFAULT;
       case Type.ARRAY()
         then DAE.T_ARRAY(toDAE(ty.elementType),
           list(Dimension.toDAE(d) for d in ty.dimensions));
@@ -375,14 +456,83 @@ public
         then DAE.T_FUNCTION({} /*TODO:FIXME*/, toDAE(ty.resultType), ty.attributes, Absyn.IDENT("TODO:FIXME"));
       case Type.NORETCALL() then DAE.T_NORETCALL_DEFAULT;
       case Type.UNKNOWN() then DAE.T_UNKNOWN_DEFAULT;
-      case Type.COMPLEX() then DAE.T_COMPLEX_DEFAULT;
+      case Type.COMPLEX()
+        // TODO: Use proper ClassInf.State here.
+        then DAE.Type.T_COMPLEX(ClassInf.MODEL(InstNode.scopePath(ty.cls)), {}, NONE());
+      case Type.POLYMORPHIC() then DAE.T_METAPOLYMORPHIC(ty.name);
+      case Type.ANY() then DAE.T_ANYTYPE(NONE());
       else
         algorithm
-          assert(false, getInstanceName() + " got unknown type: " + anyString(ty));
+          Error.assertion(false, getInstanceName() + " got unknown type: " + anyString(ty), sourceInfo());
         then
           fail();
     end match;
   end toDAE;
+
+  function subscript
+    input output Type ty;
+    input list<Subscript> subs;
+  algorithm
+    for sub in subs loop
+      if Subscript.isIndex(sub) then
+        ty := unliftArray(ty);
+      end if;
+    end for;
+  end subscript;
+
+  function isEqual
+    input Type ty1;
+    input Type ty2;
+    output Boolean equal;
+  algorithm
+    if referenceEq(ty1, ty2) then
+      equal := true;
+      return;
+    end if;
+
+    if valueConstructor(ty1) <> valueConstructor(ty2) then
+      equal := false;
+      return;
+    end if;
+
+    equal := match (ty1, ty2)
+      local
+        list<String> names1, names2;
+
+      case (ENUMERATION(), ENUMERATION())
+        then List.isEqualOnTrue(ty1.literals, ty2.literals, stringEq);
+
+      case (ARRAY(), ARRAY())
+        then isEqual(ty1.elementType, ty2.elementType) and
+             List.isEqualOnTrue(ty1.dimensions, ty2.dimensions, Dimension.isEqualKnown);
+
+      case (TUPLE(names = SOME(names1)), TUPLE(names = SOME(names2)))
+        then List.isEqualOnTrue(names1, names2, stringEq) and
+             List.isEqualOnTrue(ty1.types, ty2.types, isEqual);
+
+      case (TUPLE(names = NONE()), TUPLE(names = NONE()))
+        then List.isEqualOnTrue(ty1.types, ty2.types, isEqual);
+
+      case (TUPLE(), TUPLE()) then false;
+
+      else true;
+    end match;
+  end isEqual;
+
+  function isDiscrete
+    input Type ty;
+    output Boolean isDiscrete;
+  algorithm
+    isDiscrete := match ty
+      case INTEGER() then true;
+      case STRING() then true;
+      case BOOLEAN() then true;
+      case ENUMERATION() then true;
+      case ARRAY() then isDiscrete(ty.elementType);
+      case FUNCTION() then isDiscrete(ty.resultType);
+      else false;
+    end match;
+  end isDiscrete;
 
   annotation(__OpenModelica_Interface="frontend");
 end NFType;

@@ -30,40 +30,40 @@
  */
 
 encapsulated package BackendVariable
-" file:        mo
-  package:     BackendVariable
-  description: BackendVariables contains the function that deals with the datytypes
-               BackendDAE.VAR BackendDAE.Variables and BackendVariablesArray.
-
+"BackendVariables contains the function that deals with the datytypes
+BackendDAE.VAR BackendDAE.Variables and BackendVariablesArray.
 "
 
-public import BackendDAE;
-public import DAE;
-public import SCode;
-public import Values;
+import BackendDAE;
+import DAE;
+import SCode;
+import Values;
 
-protected import Absyn;
-protected import Array;
-protected import BackendDAEUtil;
-protected import BaseHashSet;
-protected import BaseHashTable;
-protected import ComponentReference;
-protected import DAEUtil;
-protected import Debug;
-protected import ElementSource;
-protected import Error;
-protected import Expression;
-protected import ExpressionDump;
-protected import ExpressionSimplify;
-protected import Flags;
-protected import Global;
-protected import HashSet;
-protected import List;
-protected import MetaModelica.Dangerous;
-protected import StringUtil;
-protected import System;
-protected import Util;
-protected import Types;
+protected
+
+import Absyn;
+import Array;
+import BackendDAEUtil;
+import BaseHashSet;
+import BaseHashTable;
+import ComponentReference;
+import DAEUtil;
+import Debug;
+import ElementSource;
+import Error;
+import Expression;
+import ExpressionDump;
+import ExpressionSimplify;
+import Flags;
+import Global;
+import HashSet;
+import List;
+import MetaModelica.Dangerous;
+import Mutable;
+import StringUtil;
+import System;
+import Types;
+import Util;
 
 /* =======================================================
  *
@@ -114,6 +114,7 @@ algorithm
     case (BackendDAE.VAR(values=SOME(DAE.VAR_ATTR_REAL(fixed=SOME(DAE.BCONST(fixed)))))) then fixed;
     case (BackendDAE.VAR(values=SOME(DAE.VAR_ATTR_INT(fixed=SOME(DAE.BCONST(fixed)))))) then fixed;
     case (BackendDAE.VAR(values=SOME(DAE.VAR_ATTR_BOOL(fixed=SOME(DAE.BCONST(fixed)))))) then fixed;
+    case (BackendDAE.VAR(values=SOME(DAE.VAR_ATTR_STRING(fixed=SOME(DAE.BCONST(fixed)))))) then fixed;
     case (BackendDAE.VAR(values=SOME(DAE.VAR_ATTR_ENUMERATION(fixed=SOME(DAE.BCONST(fixed)))))) then fixed;
 
     // params and consts are by default fixed
@@ -318,7 +319,7 @@ algorithm
 end varBindExp;
 
 public function varHasConstantBindExp
-"Returns the true if the bindExp is constant otherwise false."
+"Returns true if the bindExp is constant otherwise false."
   input BackendDAE.Var v;
   output Boolean  out;
 algorithm
@@ -332,6 +333,22 @@ algorithm
     else false;
   end match;
 end varHasConstantBindExp;
+
+public function varHasNonConstantBindExpOrStartValue
+"Returns true if the bindExp is not constant otherwise false."
+  input BackendDAE.Var v;
+  output Boolean  out;
+algorithm
+  out := match(v)
+    local
+      DAE.Exp e;
+
+    case (BackendDAE.VAR(bindExp=SOME(e)))
+    then not Expression.isConst(e);
+
+    else not varHasConstantStartExp(v);
+  end match;
+end varHasNonConstantBindExpOrStartValue;
 
 public function varHasConstantStartExp
 "Returns the true if the binding/start value is constant otherwise false."
@@ -465,7 +482,7 @@ algorithm
     case DAE.T_INTEGER() then DAE.VAR_ATTR_INT(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     case DAE.T_INTEGER() then DAE.VAR_ATTR_INT(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     case DAE.T_BOOL() then DAE.VAR_ATTR_BOOL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
-    case DAE.T_STRING() then DAE.VAR_ATTR_STRING(NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
+    case DAE.T_STRING() then DAE.VAR_ATTR_STRING(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     case DAE.T_ENUMERATION() then DAE.VAR_ATTR_ENUMERATION(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     else equation
       // repord a warning on failtrace
@@ -1373,6 +1390,24 @@ algorithm
   end match;
 end hasVarEvaluateAnnotation;
 
+public function hasVarEvaluateAnnotationFalse
+  "Returns true if var has Evaluate=false annotation
+   author: ptaeuber"
+  input BackendDAE.Var inVar;
+  output Boolean isFalse;
+protected
+  SCode.Annotation ann;
+  Absyn.Exp val;
+algorithm
+  try
+    BackendDAE.VAR(comment=SOME(SCode.COMMENT(annotation_ = SOME(ann)))) := inVar;
+    (val,_) := SCode.getNamedAnnotation(ann, "Evaluate");
+    isFalse := stringEqual(Dump.printExpStr(val), "false");
+  else
+    isFalse := false;
+  end try;
+end hasVarEvaluateAnnotationFalse;
+
 public function hasAnnotation"checks if the variable has an annotation"
   input BackendDAE.Var inVar;
   output Boolean hasAnnot;
@@ -1430,7 +1465,7 @@ protected
   DAE.ComponentRef cr;
 algorithm
   cr := ComponentReference.prependStringCref(BackendDAE.derivativeNamePrefix, inCref);
-  outVar := BackendDAE.VAR(cr, BackendDAE.VARIABLE(),DAE.BIDIR(),DAE.NON_PARALLEL(),DAE.T_REAL_DEFAULT,NONE(),{},
+  outVar := BackendDAE.VAR(cr, BackendDAE.VARIABLE(),DAE.BIDIR(),DAE.NON_PARALLEL(),DAE.T_REAL_DEFAULT,NONE(),NONE(),{},
                           DAE.emptyElementSource,
                           NONE(),
                           NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
@@ -1474,12 +1509,12 @@ algorithm
       DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path)) = inType;
       source = DAE.SOURCE(Absyn.dummyInfo, {}, Prefix.NOCOMPPRE(), {}, {path}, {}, {});
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), {}, source, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, source, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
     then outVar;
 
     else equation
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
     then outVar;
   end match;
 end createCSEVar;
@@ -1493,7 +1528,7 @@ public function generateVar
   input Option<DAE.VariableAttributes> attr;
   output BackendDAE.Var var;
 algorithm
-  var := BackendDAE.VAR(cr,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),subs,DAE.emptyElementSource,attr,NONE(),DAE.BCONST(false),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false);
+  var := BackendDAE.VAR(cr,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),NONE(),subs,DAE.emptyElementSource,attr,NONE(),DAE.BCONST(false),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false);
 end generateVar;
 
 public function generateArrayVar
@@ -1530,7 +1565,7 @@ algorithm
         vars;
     case (_,_,_,_)
       equation
-        var = BackendDAE.VAR(name,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),{},DAE.emptyElementSource,attr,NONE(),DAE.BCONST(false),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(), false);
+        var = BackendDAE.VAR(name,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),NONE(),{},DAE.emptyElementSource,attr,NONE(),DAE.BCONST(false),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(), false);
       then
         {var};
   end match;
@@ -1554,12 +1589,12 @@ algorithm
       DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path)) = inType;
       source = DAE.SOURCE(Absyn.dummyInfo, {}, Prefix.NOCOMPPRE(), {}, {path}, {}, {});
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), inArryDim, source, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, source, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
     then outVar;
 
     else equation
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), inArryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
     then outVar;
   end match;
 end createCSEArrayVar;
@@ -2014,7 +2049,12 @@ protected
   array<Option<BackendDAE.Var>> varOptArr;
 algorithm
   BackendDAE.VARIABLE_ARRAY(varOptArr=varOptArr) := inArray;
-  outVars := list(Util.getOption(varOptArr[i]) for i guard isSome(varOptArr[i]) in 1:arrayLength(varOptArr));
+  outVars := {};
+  for i in arrayLength(varOptArr):-1:1 loop
+    if isSome(varOptArr[i]) then
+      outVars := Util.getOption(varOptArr[i])::outVars;
+    end if;
+  end for;
 end vararrayList;
 
 /* =======================================================
@@ -2055,6 +2095,50 @@ public function emptyVarsSized
   input Integer size;
   output BackendDAE.Variables outVariables = emptyVars(size);
 end emptyVarsSized;
+
+public function isCrefInVarList "O(n)"
+  input DAE.ComponentRef inCref;
+  input list<BackendDAE.Var> inVars;
+  output Boolean isInList = false;
+algorithm
+  for v in inVars loop
+    if ComponentReference.crefEqual(BackendVariable.varCref(v), inCref) then
+      isInList := true;
+      return;
+    end if;
+  end for;
+end isCrefInVarList;
+
+public function areAllCrefsInVarList "O(n^2)"
+  input list<DAE.ComponentRef> inCrefs;
+  input list<BackendDAE.Var> inVars;
+  output Boolean isInList = true;
+algorithm
+  for cref in inCrefs loop
+    if not isCrefInVarList(cref, inVars) then
+      isInList := false;
+      return;
+    end if;
+  end for;
+end areAllCrefsInVarList;
+
+public function areAllCrefsPrimaryParameters
+  input list<DAE.ComponentRef> inCrefs;
+  input BackendDAE.Variables inVars;
+  output Boolean isPrimary = true;
+protected
+  BackendDAE.Var v;
+algorithm
+  for cref in inCrefs loop
+    try
+      (v, _) := getVar2(cref, inVars);
+      true := isParam(v) and varFixed(v);
+    else
+      isPrimary := false;
+      return;
+    end try;
+  end for;
+end areAllCrefsPrimaryParameters;
 
 public function varList
   "Takes a BackendDAE.Variables and returns a list of all variables in it,
@@ -2235,6 +2319,17 @@ algorithm
   end match;
 end isVarKindVariable;
 
+public function isVarKindState
+  input BackendDAE.VarKind inVarKind;
+  output Boolean result;
+algorithm
+  result :=
+  match (inVarKind)
+    case (BackendDAE.STATE()) then true;
+    else false;
+  end match;
+end isVarKindState;
+
 public function isTopLevelInputOrOutput "author: LP
 
   This function checks if the provided cr is from a var that is on top model
@@ -2331,6 +2426,24 @@ algorithm
     then vars;
   end match;
 end deleteVar;
+
+public function deleteVarIfExistsAndReturn
+"author: ptaeuber
+  Deletes a variable from Variables and returns it."
+  input DAE.ComponentRef inComponentRef;
+  input BackendDAE.Variables inVariables;
+  output list<BackendDAE.Var> outVarLst = {};
+  output BackendDAE.Variables outVariables = inVariables;
+protected
+  list<Integer> ilst;
+algorithm
+  try
+    (outVarLst,ilst) := getVar(inComponentRef,inVariables);
+    (outVariables,_) := removeVars(ilst,inVariables,{});
+    outVariables := listVar1(varList(outVariables));
+  else
+  end try;
+end deleteVarIfExistsAndReturn;
 
 public function removeCrefs "author: wbraun
   Removes a list of DAE.ComponentRef from BackendDAE.Variables"
@@ -2486,7 +2599,7 @@ protected
   DAE.Type tp = ComponentReference.crefLastType(cr);
   DAE.Dimensions dims = Expression.arrayDimension(tp);
 algorithm
- v := BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), dims, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+ v := BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), dims, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
 end makeVar;
 
 public function addVarDAE
@@ -2883,11 +2996,11 @@ algorithm
         (_,b) = replaceVarWithWholeDimSubs(rest,iPerformed);
       then (DAE.WHOLEDIM()::rest, b);
 
-    case (DAE.SLICE(exp = sub_exp)::rest, _)
+    case ((sub as DAE.SLICE(exp = sub_exp))::rest, _)
       equation
         (res,b) = replaceVarWithWholeDimSubs(rest,iPerformed);
         const = Expression.isConst(sub_exp);
-        res = if const then DAE.SLICE(sub_exp)::rest else (DAE.WHOLEDIM()::rest);
+        res = if const then sub::rest else (DAE.WHOLEDIM()::rest);
       then
         (res, b or not const);
 
@@ -3037,34 +3150,30 @@ public function getVarIndexFromVariablesIndexInFirstSet
   input BackendDAE.Variables inVariables2;
   output list<Integer> v_lst;
 protected
-  array<list<Integer>> a;
+  Mutable<list<Integer>> a;
 algorithm
-  (a,_) := traverseBackendDAEVars(inVariables,
-    function traversingVarIndexInFirstSetFinder(inVars = inVariables2), (arrayCreate(1,{}),arrayCreate(1,1)));
-  v_lst := listReverse(a[1]);
+  (_,a,_) := traverseBackendDAEVars(inVariables, traversingVarIndexInFirstSetFinder, (inVariables2,Mutable.create({}),Mutable.create(1)));
+  v_lst := listReverse(Mutable.access(a));
 end getVarIndexFromVariablesIndexInFirstSet;
 
 protected function traversingVarIndexInFirstSetFinder
 "author: Frenkel TUD 2010-11"
-  input BackendDAE.Var inVar;
-  input BackendDAE.Variables inVars;
-  input tuple<array<list<Integer>>,array<Integer>> inIndices;
-  output BackendDAE.Var outVar = inVar;
-  output tuple<array<list<Integer>>,array<Integer>> outIndices;
+  input output BackendDAE.Var var;
+  input output tuple<BackendDAE.Variables,Mutable<list<Integer>>,Mutable<Integer>> data;
 protected
   DAE.ComponentRef cr;
-  array<list<Integer>> l;
-  array<Integer> i;
+  BackendDAE.Variables vars;
+  Mutable<list<Integer>> l;
+  Mutable<Integer> i;
 algorithm
-  (l,i) := inIndices;
-  outIndices := inIndices;
+  (vars,l,i) := data;
   try
-    cr := varCref(inVar);
-    getVar(cr, inVars);
-    l[1] := i[1]::l[1];
+    cr := varCref(var);
+    getVar(cr, vars);
+    Mutable.update(l, Mutable.access(i)::Mutable.access(l));
   else
   end try;
-  i[1] := i[1]+1;
+  Mutable.update(i, Mutable.access(i)+1);
 end traversingVarIndexInFirstSetFinder;
 
 public function mergeVariables

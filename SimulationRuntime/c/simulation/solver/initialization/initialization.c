@@ -37,6 +37,7 @@
 #include "util/omc_error.h"
 #include "openmodelica.h"
 #include "openmodelica_func.h"
+#include "simulation/options.h"
 #include "simulation/solver/model_help.h"
 #if !defined(OMC_MINIMAL_RUNTIME)
 #include "util/read_matlab4.h"
@@ -72,6 +73,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+
+int init_lambda_steps = 4;
 
 /*! \fn void dumpInitializationStatus(DATA *data)
  *
@@ -168,17 +171,32 @@ void dumpInitialSolution(DATA *simData)
   messageClose(LOG_SOTI);
 }
 
-/*! \fn static int symbolic_initialization(DATA *data)
+/*! \fn static int symbolic_initialization(DATA *data, threadData_t *threadData)
  *
  *  \param [ref] [data]
+ *  \param [ref] [threadData]
  *
  *  \author lochel
  */
-static int symbolic_initialization(DATA *data, threadData_t *threadData, long numLambdaSteps)
+static int symbolic_initialization(DATA *data, threadData_t *threadData)
 {
   TRACE_PUSH
-  long step;
   int retVal;
+  FILE *pFile = NULL;
+  long i;
+  MODEL_DATA *mData = data->modelData;
+  int homotopySupport = 0;
+  int solveWithGlobalHomotopy;
+
+#if !defined(OMC_NUM_NONLINEAR_SYSTEMS) || OMC_NUM_NONLINEAR_SYSTEMS>0
+  for(i=0; i<mData->nNonLinearSystems; i++) {
+    if (data->simulationInfo->nonlinearSystemData[i].homotopySupport) {
+      homotopySupport = 1;
+      break;
+    }
+  }
+#endif
+  solveWithGlobalHomotopy = homotopySupport && ((data->callback->useHomotopy == 1 && init_lambda_steps > 1) || data->callback->useHomotopy == 2);
 
 #if !defined(OMC_NDELAY_EXPRESSIONS) || OMC_NDELAY_EXPRESSIONS>0
   /* initial sample and delay before initial the system */
@@ -188,52 +206,65 @@ static int symbolic_initialization(DATA *data, threadData_t *threadData, long nu
   storePreValues(data);
   overwriteOldSimulationData(data);
 
-  if (data->callback->useHomotopy && numLambdaSteps > 1)
+  /* If there is no homotopy in the model or local homotopy is activated
+     or homotopy is disabled by runtime flag '-ils=<lambda_steps>',
+     solve WITHOUT HOMOTOPY or LOCAL HOMOTOPY. */
+  if (!solveWithGlobalHomotopy){
+    if (data->callback->useHomotopy == 3 && !omc_flag[FLAG_HOMOTOPY_ON_FIRST_TRY])
+      infoStreamPrint(LOG_INIT, 0, "Automatically set -homotopyOnFirstTry, because trying without homotopy first is not supported for the adaptive local approach yet.");
+    data->simulationInfo->lambda = 1.0;
+    data->callback->functionInitialEquations(data, threadData);
+
+  /* If there is homotopy in the model and global homotopy is activated
+     and homotopy on first try is deactivated,
+     TRY TO SOLVE WITHOUT HOMOTOPY FIRST.
+     To-Do: Activate trying without homotopy first also for the adaptive global homotopy approach */
+  } else if (!omc_flag[FLAG_HOMOTOPY_ON_FIRST_TRY] && data->callback->useHomotopy != 2) {
+    /* try */
+#ifndef OMC_EMCC
+  MMC_TRY_INTERNAL(simulationJumpBuffer)
+#endif
+
+    data->simulationInfo->lambda = 1.0;
+    infoStreamPrint(LOG_INIT, 0, "Try to solve the initialization problem without homotopy first.");
+    data->callback->functionInitialEquations(data, threadData);
+    solveWithGlobalHomotopy = 0;
+
+    /* catch */
+#ifndef OMC_EMCC
+  MMC_CATCH_INTERNAL(simulationJumpBuffer)
+#endif
+    if(solveWithGlobalHomotopy)
+      warningStreamPrint(LOG_ASSERT, 0, "Failed to solve the initialization problem without homotopy method. If homotopy is available the homotopy method is used now.");
+  }
+
+  /* If there is homotopy in the model and global homotopy is activated
+     and solving without homotopy failed or is not wanted,
+     use EQUIDISTANT GLOBAL HOMOTOPY METHOD. */
+  if (data->callback->useHomotopy == 1 && solveWithGlobalHomotopy)
   {
-    long i;
+    long step;
     char buffer[4096];
-    FILE *pFile = NULL;
-
-    modelica_real* realVars = (modelica_real*)calloc(data->modelData->nVariablesReal, sizeof(modelica_real));
-    modelica_integer* integerVars = (modelica_integer*)calloc(data->modelData->nVariablesInteger, sizeof(modelica_integer));
-    modelica_boolean* booleanVars = (modelica_boolean*)calloc(data->modelData->nVariablesBoolean, sizeof(modelica_boolean));
-    modelica_string* stringVars = (modelica_string*) omc_alloc_interface.malloc_uncollectable(data->modelData->nVariablesString * sizeof(modelica_string));
-    MODEL_DATA *mData = data->modelData;
-
-    assertStreamPrint(threadData, 0 != realVars, "out of memory");
-    assertStreamPrint(threadData, 0 != integerVars, "out of memory");
-    assertStreamPrint(threadData, 0 != booleanVars, "out of memory");
-    assertStreamPrint(threadData, 0 != stringVars, "out of memory");
-
-    for(i=0; i<mData->nVariablesReal; ++i) {
-      realVars[i] = mData->realVarsData[i].attribute.start;
-    }
-    for(i=0; i<mData->nVariablesInteger; ++i) {
-      integerVars[i] = mData->integerVarsData[i].attribute.start;
-    }
-    for(i=0; i<mData->nVariablesBoolean; ++i) {
-      booleanVars[i] = mData->booleanVarsData[i].attribute.start;
-    }
-    for(i=0; i<mData->nVariablesString; ++i) {
-      stringVars[i] = mData->stringVarsData[i].attribute.start;
-    }
 
 #if !defined(OMC_NO_FILESYSTEM)
+    const char sep[] = ",";
     if(ACTIVE_STREAM(LOG_INIT))
     {
-      sprintf(buffer, "%s_homotopy.csv", mData->modelFilePrefix);
+      sprintf(buffer, "%s_equidistant_global_homotopy.csv", mData->modelFilePrefix);
+      infoStreamPrint(LOG_INIT, 0, "The homotopy path will be exported to %s.", buffer);
       pFile = fopen(buffer, "wt");
-      fprintf(pFile, "%s,", "lambda");
+      fprintf(pFile, "\"sep=%s\"\n%s", sep, "\"lambda\"");
       for(i=0; i<mData->nVariablesReal; ++i)
-        fprintf(pFile, "%s,", mData->realVarsData[i].info.name);
+        fprintf(pFile, "%s\"%s\"", sep, mData->realVarsData[i].info.name);
       fprintf(pFile, "\n");
     }
 #endif
 
+    infoStreamPrint(LOG_INIT, 0, "Global homotopy with equidistant step size started.");
     infoStreamPrint(LOG_INIT, 1, "homotopy process\n---------------------------");
-    for(step=0; step<numLambdaSteps; ++step)
+    for(step=0; step<init_lambda_steps; ++step)
     {
-      data->simulationInfo->lambda = ((double)step)/(numLambdaSteps-1);
+      data->simulationInfo->lambda = ((double)step)/(init_lambda_steps-1);
       infoStreamPrint(LOG_INIT, 0, "homotopy parameter lambda = %g", data->simulationInfo->lambda);
 
       if(data->simulationInfo->lambda > 1.0) {
@@ -247,45 +278,49 @@ static int symbolic_initialization(DATA *data, threadData_t *threadData, long nu
 
       infoStreamPrint(LOG_INIT, 0, "homotopy parameter lambda = %g done\n---------------------------", data->simulationInfo->lambda);
 
+#if !defined(OMC_NO_FILESYSTEM)
       if(ACTIVE_STREAM(LOG_INIT))
       {
-        fprintf(pFile, "%.16g,", data->simulationInfo->lambda);
+        fprintf(pFile, "%.16g", data->simulationInfo->lambda);
         for(i=0; i<mData->nVariablesReal; ++i)
-          fprintf(pFile, "%.16g,", data->localData[0]->realVars[i]);
+          fprintf(pFile, "%s%.16g", sep, data->localData[0]->realVars[i]);
         fprintf(pFile, "\n");
       }
-
-      if(check_nonlinear_solutions(data, 0) ||
-         check_linear_solutions(data, 0) ||
-         check_mixed_solutions(data, 0))
-        break;
-
-      setAllStartToVars(data);
+#endif
     }
+    data->simulationInfo->homotopySteps += init_lambda_steps;
     messageClose(LOG_INIT);
 
+#if !defined(OMC_NO_FILESYSTEM)
     if(ACTIVE_STREAM(LOG_INIT))
       fclose(pFile);
-
-    for(i=0; i<mData->nVariablesReal; ++i)
-      mData->realVarsData[i].attribute.start = realVars[i];
-    for(i=0; i<mData->nVariablesInteger; ++i)
-      mData->integerVarsData[i].attribute.start = integerVars[i];
-    for(i=0; i<mData->nVariablesBoolean; ++i)
-      mData->booleanVarsData[i].attribute.start = booleanVars[i];
-    for(i=0; i<mData->nVariablesString; ++i)
-      mData->stringVarsData[i].attribute.start = stringVars[i];
-
-    free(realVars);
-    free(integerVars);
-    free(booleanVars);
-    omc_alloc_interface.free_uncollectable(stringVars);
+#endif
   }
-  else
+
+  /* If there is homotopy in the model and the adaptive global homotopy approach is activated
+     and solving without homotopy failed or is not wanted,
+     use ADAPTIVE GLOBAL HOMOTOPY APPROACH. */
+  if (data->callback->useHomotopy == 2 && solveWithGlobalHomotopy)
   {
-    data->simulationInfo->lambda = 1.0;
+    if (!omc_flag[FLAG_HOMOTOPY_ON_FIRST_TRY])
+      infoStreamPrint(LOG_INIT, 0, "Automatically set -homotopyOnFirstTry, because trying without homotopy first is not supported for the adaptive global approach yet.");
+
+    infoStreamPrint(LOG_INIT, 0, "Global homotopy with adaptive step size started.");
+    infoStreamPrint(LOG_INIT, 1, "homotopy process\n---------------------------");
+
+    // Solve lambda0-DAE
+    data->simulationInfo->lambda = 0;
+    infoStreamPrint(LOG_INIT, 0, "solve simplified lambda0-DAE");
+    data->callback->functionInitialEquations_lambda0(data, threadData);
+    infoStreamPrint(LOG_INIT, 0, "solving simplified lambda0-DAE done\n---------------------------");
+
+    // Run along the homotopy path and solve the actual system
+    infoStreamPrint(LOG_INIT, 0, "run along the homotopy path and solve the actual system");
     data->callback->functionInitialEquations(data, threadData);
+
+    messageClose(LOG_INIT);
   }
+
   storeRelations(data);
 
   /* check for over-determined systems */
@@ -387,13 +422,10 @@ int importStartValues(DATA *data, threadData_t *threadData, const char *pInitFil
   }
 
   pError = omc_new_matlab4_reader(pInitFile, &reader);
-  if(pError)
-  {
+  if(pError) {
     throwStreamPrint(threadData, "unable to read input-file <%s> [%s]", pInitFile, pError);
     return 1;
-  }
-  else
-  {
+  } else {
     infoStreamPrint(LOG_INIT, 0, "import real variables");
     for(i=0; i<mData->nVariablesReal; ++i) {
       pVar = omc_matlab4_find_var(&reader, mData->realVarsData[i].info.name);
@@ -403,7 +435,6 @@ int importStartValues(DATA *data, threadData_t *threadData, const char *pInitFil
         pVar = omc_matlab4_find_var(&reader, newVarname);
         free(newVarname);
       }
-
       if(pVar) {
         omc_matlab4_val(&(mData->realVarsData[i].attribute.start), &reader, pVar, initTime);
         infoStreamPrint(LOG_INIT, 0, "| %s(start=%g)", mData->realVarsData[i].info.name, mData->realVarsData[i].attribute.start);
@@ -544,12 +575,14 @@ void initSample(DATA* data, threadData_t *threadData, double startTime, double s
  *
  *  \author lochel
  */
-int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod, const char* pInitFile, double initTime, int lambda_steps)
+int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod, const char* pInitFile, double initTime)
 {
   TRACE_PUSH
   int initMethod = IIM_SYMBOLIC; /* default method */
   int retVal = -1;
   int i;
+
+  data->simulationInfo->homotopySteps = 0;
 
   infoStreamPrint(LOG_INIT, 0, "### START INITIALIZATION ###");
 
@@ -574,7 +607,6 @@ int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod
   if(!(pInitFile && strcmp(pInitFile, ""))) {
     data->callback->updateBoundParameters(data, threadData);
     data->callback->updateBoundVariableAttributes(data, threadData);
-    setAllVarsToStart(data);
   }
 
   /* update static data of linear/non-linear system solvers */
@@ -630,7 +662,7 @@ int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod
   if(IIM_NONE == initMethod) {
     retVal = 0;
   } else if(IIM_SYMBOLIC == initMethod) {
-    retVal = symbolic_initialization(data, threadData, lambda_steps);
+    retVal = symbolic_initialization(data, threadData);
   } else {
     throwStreamPrint(threadData, "unsupported option -iim");
   }
@@ -652,9 +684,9 @@ int initialization(DATA *data, threadData_t *threadData, const char* pInitMethod
   infoStreamPrint(LOG_INIT, 0, "### END INITIALIZATION ###");
 #endif
 
-  overwriteOldSimulationData(data);     /* overwrite the whole ring-buffer with initialized values */
-  storePreValues(data);                 /* save pre-values */
-  updateDiscreteSystem(data, threadData);           /* evaluate discrete variables (event iteration) */
+  overwriteOldSimulationData(data);       /* overwrite the whole ring-buffer with initialized values */
+  storePreValues(data);                   /* save pre-values */
+  updateDiscreteSystem(data, threadData); /* evaluate discrete variables (event iteration) */
   saveZeroCrossings(data, threadData);
 
   /* do pivoting for dynamic state selection if selection changed try again */

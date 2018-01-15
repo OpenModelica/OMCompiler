@@ -8,16 +8,18 @@ encapsulated package Tpl
   $Id$
 "
 
-protected import Config;
-protected import ClockIndexes;
-protected import Debug;
-protected import Error;
-protected import File;
-protected import Flags;
-protected import List;
-protected import Print;
-protected import StringUtil;
-protected import System;
+protected
+import Config;
+import ClockIndexes;
+import Debug;
+import Error;
+import File;
+import Flags;
+import List;
+import Print;
+import StackOverflow;
+import StringUtil;
+import System;
 
 // indentation will be implemented through spaces
 // where tabs will be converted where 1 tab = 4 spaces ??
@@ -129,7 +131,7 @@ public function writeStr
 
   output Text outText;
 algorithm
-  outText := matchcontinue (inText, inStr)
+  outText := match (inText, inStr)
     local
       Tokens toks;
       list<tuple<Tokens,BlockType>> blstack;
@@ -147,21 +149,22 @@ algorithm
             tokens = toks,
             blocksStack = blstack
             ), str)
-      equation
-        -1 = System.stringFind(str, "\n");
+      guard
+        -1 == System.stringFind(str, "\n")
       then
         MEM_TEXT(ST_STRING(str) :: toks, blstack);
 
     case (FILE_TEXT(), str)
+      guard
+        -1 == System.stringFind(str, "\n")
       equation
-        -1 = System.stringFind(str, "\n");
         stringFile(inText, str, line=false);
       then inText;
 
     // a new-line is inside
     else
       writeChars(inText, System.strtokIncludingDelimiters(inStr, "\n"));
-  end matchcontinue;
+  end match;
 end writeStr;
 
 public function writeTok
@@ -170,7 +173,7 @@ public function writeTok
 
   output Text outText;
 algorithm
-  outText := matchcontinue (inText, inToken)
+  outText := match (inText, inToken)
     local
       Text txt;
       Tokens toks;
@@ -200,7 +203,7 @@ algorithm
         tokFileText(inText, tok);
       then inText;
 
-  end matchcontinue;
+  end match;
 end writeTok;
 
 public function writeText
@@ -209,7 +212,7 @@ public function writeText
 
   output Text outText;
 algorithm
-  outText := matchcontinue (inText, inTextToWrite)
+  outText := match (inText, inTextToWrite)
     local
       Tokens toks, txttoks;
       list<tuple<Tokens,BlockType>> blstack;
@@ -249,7 +252,7 @@ algorithm
         true = Flags.isSet(Flags.FAILTRACE); Debug.trace("-!!!Tpl.writeText failed - incomplete text was passed to be written\n");
       then
         fail();
-  end matchcontinue;
+  end match;
 end writeText;
 
 protected function writeChars
@@ -374,7 +377,7 @@ public function softNewLine
   input Text inText;
   output Text outText;
 algorithm
-  outText := matchcontinue (inText)
+  outText := match (inText)
     local
       Text txt;
       Tokens toks;
@@ -382,8 +385,7 @@ algorithm
       StringToken tok;
 
     //empty - nothing
-    case (txt as MEM_TEXT(
-                   tokens = {} ))
+    case (txt as MEM_TEXT(tokens = {} ))
       then
         txt;
 
@@ -412,7 +414,7 @@ algorithm
       then
         fail();
 
-  end matchcontinue;
+  end match;
 end softNewLine;
 
 protected function isAtStartOfLine
@@ -1496,7 +1498,7 @@ protected function iterAlignWrapString
   output Boolean outAtStartOfLine;
 algorithm
   (outActualPositionOnLine, outAtStartOfLine)
-   := matchcontinue (inTokens, inActualIndex, inAlignNum, inAlignSeparator, inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
+   := match (inTokens, inActualIndex, inAlignNum, inAlignSeparator, inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
     local
       Tokens toks;
       StringToken tok,  asep, wsep;
@@ -1509,8 +1511,9 @@ algorithm
 
     //align and try wrap
     case (tok :: toks, idx, anum, asep, wwidth, wsep, pos, isstart, aind)
+      guard
+        (idx > 0) and (intMod(idx,anum) == 0)
       equation
-        true = (idx > 0) and (intMod(idx,anum) == 0);
         (pos, isstart, aind) = tokString(asep, pos, isstart, aind);
         (pos, isstart, aind) = tryWrapString(wwidth, wsep, pos, isstart, aind);
         (pos, isstart, aind) = tokString(tok, pos, isstart, aind);
@@ -1521,9 +1524,10 @@ algorithm
         (pos, isstart);
     //wrap
     case (tok :: toks, idx, anum, asep, wwidth, wsep, pos, isstart, aind)
-      equation
+      guard
         //false = (idx > 0) and (intMod(idx,anum) == 0);
-        true = (wwidth > 0) and (pos >= wwidth); //check wwidth for the invariant that should be always true here
+        (wwidth > 0) and (pos >= wwidth) //check wwidth for the invariant that should be always true here
+      equation
         (pos, isstart, aind) = tokString(wsep, pos, isstart, aind);
         (pos, isstart, aind) = tokString(tok, pos, isstart, aind);
         (pos, isstart)
@@ -1550,7 +1554,7 @@ algorithm
         true = Flags.isSet(Flags.FAILTRACE); Debug.trace("-!!!Tpl.iterAlignWrapString failed.\n");
       then
         fail();
-  end matchcontinue;
+  end match;
 end iterAlignWrapString;
 
 
@@ -1566,7 +1570,7 @@ protected function tryWrapString
   output Integer outAfterNewLineIndent;
 algorithm
   (outActualPositionOnLine, outAtStartOfLine, outAfterNewLineIndent)
-   := matchcontinue (inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
+   := match (inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
     local
       Integer pos, aind, wwidth;
       Boolean isstart;
@@ -1574,14 +1578,13 @@ algorithm
 
     //wrap
     case (wwidth, wsep, pos, isstart, aind)
-      equation
-        true = (wwidth > 0) and (pos >= wwidth); //check wwidth for the invariant that should be always true here
-        (pos, isstart, aind) = tokString(wsep, pos, isstart, aind);
+      guard
+        (wwidth > 0) and (pos >= wwidth) //check wwidth for the invariant that should be always true here
       then
-        (pos, isstart, aind);
+        tokString(wsep, pos, isstart, aind);
 
     else (inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent);
-  end matchcontinue;
+  end match;
 end tryWrapString;
 
 
@@ -1847,7 +1850,7 @@ protected function iterAlignWrapFile
   output Boolean outAtStartOfLine;
 algorithm
   (outActualPositionOnLine, outAtStartOfLine)
-   := matchcontinue (inTokens, inActualIndex, inAlignNum, inAlignSeparator, inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
+   := match (inTokens, inActualIndex, inAlignNum, inAlignSeparator, inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
     local
       Tokens toks;
       StringToken tok,  asep, wsep;
@@ -1860,8 +1863,9 @@ algorithm
 
     //align and try wrap
     case (tok :: toks, idx, anum, asep, wwidth, wsep, pos, isstart, aind)
+      guard
+        (idx > 0) and (intMod(idx,anum) == 0)
       equation
-        true = (idx > 0) and (intMod(idx,anum) == 0);
         (pos, isstart, aind) = tokFile(file, asep, pos, isstart, aind);
         (pos, isstart, aind) = tryWrapFile(file, wwidth, wsep, pos, isstart, aind);
         (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind);
@@ -1872,9 +1876,10 @@ algorithm
         (pos, isstart);
     //wrap
     case (tok :: toks, idx, anum, asep, wwidth, wsep, pos, isstart, aind)
-      equation
+      guard
         //false = (idx > 0) and (intMod(idx,anum) == 0);
-        true = (wwidth > 0) and (pos >= wwidth); //check wwidth for the invariant that should be always true here
+        (wwidth > 0) and (pos >= wwidth) //check wwidth for the invariant that should be always true here
+      equation
         (pos, isstart, aind) = tokFile(file, wsep, pos, isstart, aind);
         (pos, isstart, aind) = tokFile(file, tok, pos, isstart, aind);
         (pos, isstart)
@@ -1901,7 +1906,7 @@ algorithm
         true = Flags.isSet(Flags.FAILTRACE); Debug.trace("-!!!Tpl.iterAlignWrapString failed.\n");
       then
         fail();
-  end matchcontinue;
+  end match;
 end iterAlignWrapFile;
 
 
@@ -1918,7 +1923,7 @@ protected function tryWrapFile
   output Integer outAfterNewLineIndent;
 algorithm
   (outActualPositionOnLine, outAtStartOfLine, outAfterNewLineIndent)
-   := matchcontinue (inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
+   := match (inWrapWidth, inWrapSeparator, inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent)
     local
       Integer pos, aind, wwidth;
       Boolean isstart;
@@ -1926,14 +1931,13 @@ algorithm
 
     //wrap
     case (wwidth, wsep, pos, isstart, aind)
-      equation
-        true = (wwidth > 0) and (pos >= wwidth); //check wwidth for the invariant that should be always true here
-        (pos, isstart, aind) = tokFile(file, wsep, pos, isstart, aind);
+      guard
+        (wwidth > 0) and (pos >= wwidth) //check wwidth for the invariant that should be always true here
       then
-        (pos, isstart, aind);
+        tokFile(file, wsep, pos, isstart, aind);
 
     else (inActualPositionOnLine, inAtStartOfLine, inAfterNewLineIndent);
-  end matchcontinue;
+  end match;
 end tryWrapFile;
 
 
@@ -1993,11 +1997,38 @@ end strTokString;
 public function failIfTrue
   input Boolean istrue;
 algorithm
-  _ := match istrue
-    case ( false ) then ();
-    case ( _ ) then fail();
- end match;
+  if istrue then
+    fail();
+  end if;
 end failIfTrue;
+
+protected function tplCallHandleErrors
+  input Tpl_Fun inFun;
+  input output Text txt = emptyTxt;
+
+  partial function Tpl_Fun
+    input Text in_txt;
+    output Text out_txt;
+  end Tpl_Fun;
+protected
+  Integer nErr;
+algorithm
+  nErr := Error.getNumErrorMessages();
+  try
+  try
+    txt := inFun(txt);
+  else
+    addTemplateErrorFunc(inFun);
+    fail();
+  end try;
+  else
+    if StackOverflow.hasStacktraceMessages() then
+       Error.addInternalError("Stack overflow when evaluating function:\n"+ stringDelimitList(StackOverflow.readableStacktraceMessages(), "\n"), sourceInfo());
+    end if;
+    addTemplateErrorFunc(inFun);
+    fail();
+  end try annotation(__OpenModelica_stackOverflowCheckpoint=true);
+end tplCallHandleErrors;
 
 public function tplCallWithFailErrorNoArg
   input Tpl_Fun inFun;
@@ -2008,18 +2039,13 @@ public function tplCallWithFailErrorNoArg
     output Text out_txt;
   end Tpl_Fun;
 algorithm
-  try
-    txt := inFun(txt);
-  else
-    addTemplateErrorFunc(0, inFun);
-    fail();
-  end try;
+  txt := tplCallHandleErrors(inFun, txt);
 end tplCallWithFailErrorNoArg;
 
 public function tplCallWithFailError
   input Tpl_Fun inFun;
   input ArgType1 inArg;
-  output Text outTxt;
+  input output Text txt = emptyTxt;
 
   partial function Tpl_Fun
     input Text in_txt;
@@ -2028,25 +2054,15 @@ public function tplCallWithFailError
   end Tpl_Fun;
 protected
   ArgType1 arg;
-  Text txt;
 algorithm
-  outTxt := matchcontinue(inFun, inArg)
-    case(_, arg)
-      equation
-        txt = inFun(emptyTxt, arg);
-      then txt;
-    else
-      equation
-        addTemplateErrorFunc(1, inFun);
-      then fail();
-  end matchcontinue;
+  txt := tplCallHandleErrors(function inFun(inArgA=inArg), txt);
 end tplCallWithFailError;
 
 public function tplCallWithFailError2
   input Tpl_Fun inFun;
   input ArgType1 inArgA;
   input ArgType2 inArgB;
-  output Text outTxt;
+  input output Text txt = emptyTxt;
 
   partial function Tpl_Fun
     input Text in_txt;
@@ -2057,20 +2073,8 @@ public function tplCallWithFailError2
 protected
   ArgType1 argA;
   ArgType2 argB;
-  Text txt;
 algorithm
- outTxt := matchcontinue(inFun, inArgA, inArgB)
-    local
-      String file,symbol;
-    case(_, argA, argB)
-      equation
-        txt = inFun(emptyTxt, argA, argB);
-      then txt;
-    else
-      equation
-        addTemplateErrorFunc(2, inFun);
-      then fail();
-  end matchcontinue;
+  txt := tplCallHandleErrors(function inFun(inArgA=inArgA, inArgB=inArgB), txt);
 end tplCallWithFailError2;
 
 function tplCallWithFailError3
@@ -2088,12 +2092,7 @@ function tplCallWithFailError3
     output Text out_txt;
   end Tpl_Fun;
 algorithm
-  try
-    txt := inFun(txt, inArgA, inArgB, inArgC);
-  else
-    addTemplateErrorFunc(3, inFun);
-    fail();
-  end try;
+  txt := tplCallHandleErrors(function inFun(inArgA=inArgA, inArgB=inArgB, inArgC=inArgC), txt);
 end tplCallWithFailError3;
 
 function tplCallWithFailError4
@@ -2113,12 +2112,7 @@ function tplCallWithFailError4
     output Text out_txt;
   end Tpl_Fun;
 algorithm
-  try
-    txt := func(txt, argA, argB, argC, argD);
-  else
-    addTemplateErrorFunc(4, func);
-    fail();
-  end try;
+  txt := tplCallHandleErrors(function func(inArgA=argA, inArgB=argB, inArgC=argC, inArgD=argD), txt);
 end tplCallWithFailError4;
 
 public function tplString
@@ -2444,10 +2438,9 @@ end addSourceTemplateError;
 //for completeness
 protected function addTemplateErrorFunc<T>
  "Wraps call to Error.addMessage() funtion with Error.TEMPLATE_ERROR and one MessageToken."
-  input Integer numArg;
   input T func;
 algorithm
-  Error.addMessage(Error.TEMPLATE_ERROR_FUNC, {String(numArg), System.dladdr(func)});
+  Error.addMessage(Error.TEMPLATE_ERROR_FUNC, {System.dladdr(func)});
 end addTemplateErrorFunc;
 
 public function addTemplateError
@@ -2568,7 +2561,6 @@ end textFileTell;
 protected function handleTok "Handle a new token, for example separators"
   input Text txt;
 protected
-  // File.File file = File.File(getTextOpaqueFile(inText));
   StringToken septok;
   array<Option<StringToken>> aseptok;
 algorithm
@@ -2593,46 +2585,17 @@ algorithm
   end match;
 end handleTok;
 
-/*
-protected function handleSeparatorTextFile
-  input Text txt;
-  input IterOptions iopts;
-protected
-  File.File file = File.File(getTextOpaqueFile(inText));
-  Integer nchars, aind;
-  Boolean isstart;
+public function debugSusan
+  output Boolean b;
 algorithm
-  _ := match inText
-    case FILE_TEXT()
-    algorithm
-      nchars := arrayGet(inText.nchars, 1);
-      aind := arrayGet(inText.aind, 1);
-      isstart := arrayGet(inText.isstart, 1);
-      (nchars, isstart, aind) := handleSeparatorFile(file, iopts, nchars, isstart, aind);
-      arrayUpdate(inText.nchars, 1, nchars);
-      arrayUpdate(inText.aind, 1, aind);
-      arrayUpdate(inText.isstart, 1, isstart);
-    then ();
-  end match;
-end handleSeparatorTextFile;
+  b := Flags.isSet(Flags.SUSAN_MATCHCONTINUE_DEBUG);
+end debugSusan;
 
-protected function handleSeparatorFile
-  input File.File file;
-  input IterOptions iopts;
-  input output Integer nchars;
-  input output Boolean isstart;
-  input output Integer aind;
+public function fakeStackOverflow
 algorithm
-  (nchars,isstart,aind) := match (iopts.separator, iopts.alignNum, iopts.wrapWidth)
-    case (NONE(),_,_) then (nchars,isstart,aind);
-    case (SOME(septok),0,0) then (nchars,isstart,aind);
-    else
-    algorithm
-      Error.addInternalError("haveSeparatorFile failed", sourceInfo());
-    then fail();
-  end match;
-end handleSeparatorFile;
-*/
+  Error.addInternalError("Stack overflow:\n" + StackOverflow.generateReadableMessage(), sourceInfo());
+  StackOverflow.triggerStackOverflow();
+end fakeStackOverflow;
 
 annotation(__OpenModelica_Interface="susan");
 end Tpl;

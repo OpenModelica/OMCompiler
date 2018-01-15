@@ -223,7 +223,7 @@ class_specifier2 returns [void* ast, const char *s2]
     }
 | (lp = LPAR na=named_arguments rp=RPAR) cmtStr=string_comment c=composition id=END_IDENT
     {
-      modelicaParserAssert(optimica_enabled(),"Class attributes are currently allowed only for Optimica. Use +g=Optimica.", class_specifier2, $start->line, $start->charPosition+1, $lp->line, $lp->charPosition+2);
+      modelicaParserAssert(optimica_enabled(),"Class attributes are currently allowed only for Optimica. Use -g=Optimica.", class_specifier2, $start->line, $start->charPosition+1, $lp->line, $lp->charPosition+2);
       $ast = Absyn__PARTS(mmc_mk_nil(), na, $c.ast, $c.ann, mmc_mk_some_or_none(cmtStr));
     }
 | EQUALS attr=base_prefix path=type_specifier ( cm=class_modification )? cmt=comment
@@ -1383,16 +1383,6 @@ name_path2 returns [void* ast]
   ;
 
 name_path_star returns [void* ast, int unqual, void* lst]
-@init{ dot = 0; np.lst = 0; np.unqual = 0; } :
-  (dot=DOT)? np=name_path_star2
-  {
-    $ast = dot ? Absyn__FULLYQUALIFIED(np.ast) : np.ast;
-    $unqual = np.unqual;
-    $lst = np.lst;
-  }
-  ;
-
-name_path_star2 returns [void* ast, int unqual, void* lst]
 @init{ id = 0; uq = 0; mlst = 0; p.ast = 0; p.lst = 0; } :
     { LA(2) != DOT || LA(3) == LBRACE }? (id=IDENT|id=CODE) ( uq=STAR_EW | DOT LBRACE mlst=name_path_group RBRACE )?
     {
@@ -1400,7 +1390,7 @@ name_path_star2 returns [void* ast, int unqual, void* lst]
       $unqual = uq != 0;
       $lst = mlst;
     }
-  | (id=IDENT|id=CODE) DOT p=name_path_star2
+  | (id=IDENT|id=CODE) DOT p=name_path_star
     {
       $ast = Absyn__QUALIFIED(token_to_scon(id),p.ast);
       $unqual = p.unqual;
@@ -1676,19 +1666,23 @@ interactive_stmt returns [void* ast]
 @declarations { int last_sc = 0; }
 @init{ ss = 0; } :
   // A list of expressions or algorithms separated by semicolons and optionally ending with a semicolon
-  BOM? ss=interactive_stmt_list[&last_sc] EOF
+  BOM? ss=interactive_stmt_list (SEMICOLON {last_sc=1;})? EOF
     {
       ast = GlobalScript__ISTMTS(or_nil(ss), mmc_mk_bcon(last_sc));
     }
   ;
 
-interactive_stmt_list [int *last_sc] returns [void* ast]
-@init { a.ast = 0; $ast = 0; void *val; } :
-  a=top_algorithm ( (SEMICOLON ss=interactive_stmt_list[last_sc]) | (SEMICOLON { *last_sc = 1; }) | /* empty */ )
-    {
-      $ast = mmc_mk_cons(a.ast, or_nil(ss));
-    }
+interactive_stmt_list returns [void* ast]
+@init { a.ast = 0; $ast = mmc_mk_nil(); void *val; } :
+  a=top_algorithm {$ast = mmc_mk_cons(a.ast, $ast);} (SEMICOLON a=top_algorithm {$ast = mmc_mk_cons(a.ast, $ast);})*
+  {
+    /* We build the list using iteration instead of recursion to save
+     * stack space, so we need to reverse the result. */
+    $ast = listReverseInPlace($ast);
+  }
   ;
+
+
 
 /* MetaModelica */
 match_expression returns [void* ast]

@@ -31,6 +31,7 @@
 
 #include "boolean_array.h"
 #include "gc/omc_gc.h"
+#include "omc_error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -306,44 +307,20 @@ void simple_indexed_assign_boolean_array2(const boolean_array_t* source,
 void indexed_assign_boolean_array(const boolean_array_t source, boolean_array_t* dest,
                                   const index_spec_t* dest_spec)
 {
-    _index_t* idx_vec1;
-    _index_t* idx_size;
-    int i,j;
-
-    assert(base_array_ok(&source));
-    assert(base_array_ok(dest));
-    assert(index_spec_ok(dest_spec));
-    assert(index_spec_fit_base_array(dest_spec, dest));
-    for(i = 0,j = 0; i < dest_spec->ndims; ++i) {
-        if(dest_spec->dim_size[i] != 0) {
-            ++j;
-        }
-    }
-    assert(j == source.ndims);
-
-    idx_vec1 = size_alloc(dest->ndims);
-    idx_size = size_alloc(dest_spec->ndims);
-
-    for(i = 0; i < dest_spec->ndims; ++i) {
-        idx_vec1[i] = 0;
-
-        if(dest_spec->index[i] != NULL) { /* is 'S' or 'A' */
-            idx_size[i] = imax(dest_spec->dim_size[i],1);
-        } else { /* is 'W' */
-            idx_size[i] = dest->dim_size[i];
-        }
-    }
+    _index_t* idx_vec1, idx_size;
+    int j;
+    indexed_assign_base_array_size_alloc(&source, dest, dest_spec, &idx_vec1, &idx_size);
 
     j = 0;
     do {
         boolean_set(dest,
-                    calc_base_index_spec(dest->ndims, idx_vec1, dest, dest_spec),
-                    boolean_get(source, j));
+                 calc_base_index_spec(dest->ndims, idx_vec1, dest, dest_spec),
+                 boolean_get(source, j));
         j++;
 
     } while(0 == next_index(dest_spec->ndims, idx_vec1, idx_size));
 
-    assert(j == base_array_nr_of_elements(source));
+    omc_assert_macro(j == base_array_nr_of_elements(source));
 }
 
 /*
@@ -428,33 +405,7 @@ void index_alloc_boolean_array(const boolean_array_t* source,
                                const index_spec_t* source_spec,
                                boolean_array_t* dest)
 {
-    int i;
-    int j;
-
-    assert(base_array_ok(source));
-    assert(index_spec_ok(source_spec));
-    assert(index_spec_fit_base_array(source_spec, source));
-
-    for(i = 0, j = 0; i < source_spec->ndims; ++i) {
-         if(source_spec->dim_size[i] != 0) { /* is 'W' or 'A' */
-           ++j;
-         }
-    }
-    dest->ndims = j;
-    dest->dim_size = size_alloc(dest->ndims);
-
-    for(i = 0, j = 0; i < source_spec->ndims; ++i) {
-        if(source_spec->dim_size[i] != 0) { /* is 'W' or 'A' */
-            if(source_spec->index[i] != NULL) { /* is 'A' */
-                dest->dim_size[j] = source_spec->dim_size[i];
-            } else { /* is 'W' */
-                dest->dim_size[j] = source->dim_size[i];
-            }
-
-            ++j;
-        }
-    }
-
+    index_alloc_base_array_size(source, source_spec, dest);
     alloc_boolean_array_data(dest);
     index_boolean_array(source, source_spec, dest);
 }
@@ -635,13 +586,13 @@ m_boolean* boolean_array_element_addr(const boolean_array_t* source,int ndims,..
  * k is one based
  */
 void cat_boolean_array(int k, boolean_array_t* dest, int n,
-                    boolean_array_t* first,...)
+                    const boolean_array_t* first,...)
 {
     va_list ap;
     int i, j, r, c;
     int n_sub = 1, n_super = 1;
     int new_k_dim_size = 0;
-    boolean_array_t **elts = (boolean_array_t**)malloc(sizeof(boolean_array_t *) * n);
+    const boolean_array_t **elts = (const boolean_array_t**)malloc(sizeof(boolean_array_t *) * n);
 
     assert(elts);
     /* collect all array ptrs to simplify traversal.*/
@@ -649,7 +600,7 @@ void cat_boolean_array(int k, boolean_array_t* dest, int n,
     elts[0] = first;
 
     for(i = 1; i < n; i++) {
-        elts[i] = va_arg(ap,boolean_array_t*);
+        elts[i] = va_arg(ap,const boolean_array_t*);
     }
     va_end(ap);
 
@@ -697,13 +648,13 @@ void cat_boolean_array(int k, boolean_array_t* dest, int n,
  * k is one based
  */
 void cat_alloc_boolean_array(int k, boolean_array_t* dest, int n,
-                          boolean_array_t* first,...)
+                          const boolean_array_t* first,...)
 {
     va_list ap;
     int i, j, r, c;
     int n_sub = 1, n_super = 1;
     int new_k_dim_size = 0;
-    boolean_array_t **elts = (boolean_array_t**)malloc(sizeof(boolean_array_t *) * n);
+    const boolean_array_t **elts = (const boolean_array_t**)malloc(sizeof(boolean_array_t *) * n);
 
     assert(elts);
     /* collect all array ptrs to simplify traversal.*/
@@ -711,7 +662,7 @@ void cat_alloc_boolean_array(int k, boolean_array_t* dest, int n,
     elts[0] = first;
 
     for(i = 1; i < n; i++) {
-        elts[i] = va_arg(ap,boolean_array_t*);
+        elts[i] = va_arg(ap,const boolean_array_t*);
     }
     va_end(ap);
 

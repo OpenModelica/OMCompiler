@@ -63,7 +63,7 @@
  * - 2^(32-10) + 1 (header) on 32 bit systems
  * - 2^(64-10) + 1 (header) on 64 bit systems
  */
-#if defined(_LP64) || defined(_LLP64) || defined(_WIN64)
+#if defined(_LP64) || defined(_LLP64) || defined(_WIN64) || defined(__MINGW64__)
 #define MMC_MAX_SLOTS (18014398509481984) /* max words slots header */
 #else
 #define MMC_MAX_SLOTS (4194304)           /* max words slots header */
@@ -137,7 +137,7 @@ typedef int mmc_switch_type;
 /* RML-style tagged pointers */
 #define MMC_TAGPTR(p)             ((void*)((char*)(p) + 3))
 #define MMC_UNTAGPTR(x)           ((void*)((char*)(x) - 3))
-#define MMC_IS_INTEGER(X)         (0 == ((mmc_sint_t) X & 1))
+#define MMC_IS_INTEGER(X)         (0 == ((mmc_sint_t) (X) & 1))
 #define MMC_TAGFIXNUM(i)          (((i) << 1)+0)
 #define MMC_UNTAGFIXNUM(X)        (((mmc_sint_t) (X)) >> 1)
 
@@ -145,9 +145,9 @@ typedef int mmc_switch_type;
 
 #define MMC_TAGPTR(p)             ((void*)((char*)(p) + 0))
 #define MMC_UNTAGPTR(x)           ((void*)((char*)(x) - 0))
-#define MMC_IS_INTEGER(X)         (1 == ((mmc_sint_t) X & 1))
+#define MMC_IS_INTEGER(X)         (1 == ((mmc_sint_t) (X) & 1))
 #define MMC_TAGFIXNUM(i)          (((i) << 1)+1)
-#define MMC_UNTAGFIXNUM(X)        (((mmc_sint_t) (X-1)) >> 1)
+#define MMC_UNTAGFIXNUM(X)        (((mmc_sint_t) ((X)-1)) >> 1)
 
 #endif
 
@@ -175,7 +175,7 @@ typedef int mmc_switch_type;
 #define MMC_HDRISSTRING(hdr)      (((hdr) & (7)) == 5)
 #define MMC_HDRSTRLEN(hdr)        (((hdr) >> (3)) - MMC_SIZE_INT)
 #define MMC_STRINGDATA(x)         (((struct mmc_string*)MMC_UNTAGPTR(x))->data)
-#define MMC_HDRSTRINGSLOTS(hdr)   (hdr >> (3+MMC_LOG2_SIZE_INT))
+#define MMC_HDRSTRINGSLOTS(hdr)   ((hdr) >> (3+MMC_LOG2_SIZE_INT))
 
 #define MMC_HDRSLOTS(hdr)         ((MMC_HDRISSTRING(hdr)) ? (MMC_HDRSTRINGSLOTS(hdr)) : ((hdr) >> 10))
 #define MMC_HDRCTOR(hdr)          (((hdr) >> 2) & 255)
@@ -215,7 +215,7 @@ typedef int mmc_switch_type;
 #define MMC_DEFSTRINGLIT(NAME,LEN,VAL)  \
     struct {        \
       mmc_uint_t header;    \
-      const char data[LEN+1];    \
+      const char data[(LEN)+1];    \
     } NAME = { MMC_STRINGHDR(LEN), VAL }
 #define MMC_REFSTRINGLIT(NAME) MMC_TAGPTR(&(NAME).header)
 
@@ -243,6 +243,7 @@ void mmc_catch_dummy_fn();
 #define MMC_CATCH_INTERNAL(X) } threadData->X = old_jumper;}
 #endif
 #define MMC_CATCH() MMC_CATCH_INTERNAL(mmc_jumper)}
+#define MMC_RESTORE_INTERNAL(X) threadData->X = old_jumper;
 
 #define MMC_THROW_INTERNAL() {longjmp(*threadData->mmc_jumper,1);}
 #define MMC_THROW() {longjmp(*((threadData_t*)pthread_getspecific(mmc_thread_data_key))->mmc_jumper,1);}

@@ -920,6 +920,14 @@ algorithm
         (explist,_) = Types.matchTypes(explist, typelist, vt, true);
       then DAE.LIST(explist);
 
+    case (Values.META_ARRAY(vallist))
+      equation
+        explist = List.map(vallist, valueExp);
+        typelist = List.map(vallist, Types.typeOfValue);
+        vt = Types.boxIfUnboxedType(List.reduce(typelist,Types.superType));
+        (explist,_) = Types.matchTypes(explist, typelist, vt, true);
+      then Expression.makeBuiltinCall("listArrayLiteral", explist, DAE.T_METAARRAY(vt), false);
+
       /* MetaRecord */
     case (Values.RECORD(path,vallist,namelst,ix))
       equation
@@ -2337,6 +2345,17 @@ algorithm
     else outValue;
   end match;
 end typeConvertRecord;
+
+public function fixZeroSizeArray "Work-around for Values.ARRAY({}) becoming T_UNKNOWN in ValuesUtil.valueExp"
+  input output DAE.Exp e;
+  input DAE.Type ty;
+algorithm
+  e := match e
+    case DAE.ARRAY(ty=DAE.T_ARRAY(ty=DAE.T_UNKNOWN()), scalar=false, array={})
+      then DAE.ARRAY(ty, not Types.isArray(Types.unliftArray(ty)), {});
+    else e;
+  end match;
+end fixZeroSizeArray;
 
 annotation(__OpenModelica_Interface="frontend");
 end ValuesUtil;

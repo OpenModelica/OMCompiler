@@ -30,339 +30,333 @@
  */
 
 encapsulated package NFConnectEquations
-" file:        NFConnectEquations.mo
-  package:     NFConnectEquations
+" file:        ConnectEquations.mo
+  package:     ConnectEquations
   description: Functions that generate connect equations.
 
 "
 
-public import Absyn;
-public import NFConnect2;
-public import DAE;
-public import NFConnectionSets;
-public import NFInstTypes;
-public import Types;
+public
+import Connector = NFConnector;
+import DAE;
+import ConnectionSets = NFConnectionSets.ConnectionSets;
+import Equation = NFEquation;
 
-protected import NFConnectUtil2;
-protected import NFExpandableConnectors;
-protected import ComponentReference;
-protected import Config;
-protected import DAEUtil;
-protected import Debug;
-protected import Error;
-protected import Expression;
-protected import Flags;
-protected import List;
-protected import Util;
+protected
+import ComponentReference;
+import ComponentRef = NFComponentRef;
+import Config;
+import ElementSource;
+import Expression = NFExpression;
+import Face = NFConnector.Face;
+import List;
+import NFPrefixes.ConnectorType;
+import NFPrefixes.Variability;
+import Operator = NFOperator;
+import Type = NFType;
+import NFCall.Call;
+import NFBuiltinFuncs;
+import NFInstNode.InstNode;
+import NFClass.Class;
+import Binding = NFBinding;
+import NFFunction.Function;
 
-public type Connections = NFConnect2.Connections;
-public type Connection = NFConnect2.Connection;
-public type Connector = NFConnect2.Connector;
-public type ConnectorType = NFConnect2.ConnectorType;
-public type Face = NFConnect2.Face;
+constant Expression EQ_ASSERT_STR =
+  Expression.STRING("Connected constants/parameters must be equal");
 
-public type Equation = NFInstTypes.Equation;
-protected type DisjointSets = NFConnectionSets.DisjointSets;
+public
+function generateEquations
+  input array<list<Connector>> sets;
+  output list<Equation> equations = {};
+protected
+  partial function potFunc
+    input list<Connector> elements;
+    output list<Equation> equations;
+  end potFunc;
 
-public function generateEquations
-  input Connections inConnections;
-  input list<Connector> inFlowVariables;
-  output DAE.DAElist outEquations;
+  list<Equation> set_eql;
+  potFunc potfunc;
+  Expression flowThreshold;
 algorithm
-  outEquations := matchcontinue(inConnections, inFlowVariables)
-    local
-      DisjointSets disjoint_sets;
-      Integer set_size;
-      DAE.DAElist eql;
-      list<list<Connector>> sets;
-      list<Connector> flows;
-      list<Connection> connections, expconnl;
+  //potfunc := if Config.orderConnections() then
+  //  generatePotentialEquationsOrdered else generatePotentialEquations;
+  potfunc := generatePotentialEquations;
+  flowThreshold := Expression.REAL(Flags.getConfigReal(Flags.FLOW_THRESHOLD));
 
-    case (_, {}) guard NFConnectUtil2.isEmptyConnections(inConnections)
-      then
-        DAE.emptyDae;
+  for set in sets loop
+    set_eql := match getSetType(set)
+      case ConnectorType.POTENTIAL then potfunc(set);
+      case ConnectorType.FLOW then generateFlowEquations(set);
+      case ConnectorType.STREAM then generateStreamEquations(set, flowThreshold);
+    end match;
 
-    case (NFConnect2.CONNECTIONS(connections, expconnl, _, _), _)
-      equation
-        // Create set structure. TODO: Better set size?
-        set_size = NFConnectUtil2.connectionCount(inConnections) + listLength(inFlowVariables);
-        disjoint_sets = NFConnectionSets.emptySets(set_size);
-
-        // Add flow variables to the set structure.
-        flows = List.mapFlatReverse(inFlowVariables, NFConnectUtil2.expandConnector);
-        disjoint_sets = List.fold(flows, NFConnectionSets.add, disjoint_sets);
-
-        // Add connections to the set structure.
-        connections = listReverse(connections);
-        disjoint_sets = List.fold(connections, addConnectionToSet, disjoint_sets);
-
-        // Elaborate expandable connectors and add them to the set structure.
-        expconnl = NFExpandableConnectors.elaborate(expconnl);
-        /*-------------------------------------------------------------------*/
-        // TODO: Perhaps not use addConnectionToSet, since expansion might
-        // already have been done?
-        /*-------------------------------------------------------------------*/
-        disjoint_sets = List.fold(expconnl, addConnectionToSet, disjoint_sets);
-
-        // Extract the sets and generate equations for them.
-        sets = NFConnectionSets.extractSets(disjoint_sets);
-        eql = List.fold(sets, generateEquation, DAE.emptyDae);
-      then
-        eql;
-
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.traceln("- ConnectUtil.generateEquations failed to generate connect equations.");
-      then
-        fail();
-
-  end matchcontinue;
+    equations := listAppend(set_eql, equations);
+  end for;
 end generateEquations;
 
-protected function addConnectionToSet
-  input Connection inConnection;
-  input DisjointSets inSets;
-  output DisjointSets outSets;
+function evaluateOperators
+  input output Expression exp;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
 algorithm
-  outSets := match(inConnection, inSets)
-    local
-      DAE.VarKind var;
+  exp := Expression.map(exp, function evaluateOperatorExp(sets = sets, setsArray = setsArray));
+end evaluateOperators;
 
-    // Don't add parameter/constant connectors, asserts for them should already
-    // have been generated during typing.
-    case (NFConnect2.CONNECTION(lhs = NFConnect2.CONNECTOR(attr =
-        NFConnect2.CONN_ATTR(variability = var))), _)
-        // Variability should have been checked already, so should be enough to
-        // just check one since they should be the same.
-        guard DAEUtil.isParamOrConstVarKind(var)
-      then
-        inSets;
-
-    else
-      then NFConnectionSets.expandAddConnection(inConnection, inSets);
-
-  end match;
-end addConnectionToSet;
-
-protected function generateEquation
-  input list<Connector> inSet;
-  input DAE.DAElist inAccumEql;
-  output DAE.DAElist outEquations;
 protected
-  ConnectorType cty;
-  DAE.DAElist dae;
-algorithm
-  cty := getSetType(inSet);
-  dae := generateEquation_dispatch(inSet, cty);
-  outEquations := DAEUtil.joinDaes(inAccumEql, dae);
-end generateEquation;
-
-protected function getSetType
-  input list<Connector> inSet;
-  output ConnectorType outType;
+function getSetType
+  input list<Connector> set;
+  output ConnectorType cty;
 algorithm
   // All connectors in a set should have the same type, so pick the first.
-  NFConnect2.CONNECTOR(cty = outType) :: _ := inSet;
+  Connector.CONNECTOR(cty = cty) :: _ := set;
 end getSetType;
 
-protected function generateEquation_dispatch
-  input list<Connector> inSet;
-  input ConnectorType inType;
-  output DAE.DAElist outEquations;
+function generatePotentialEquations
+  "Generating the equations for a set of potential variables means equating all
+   the components. For n components, this will give n-1 equations. For example,
+   if the set contains the components X, Y.A and Z.B, the equations generated
+   will be X = Y.A and X = Z.B."
+  input list<Connector> elements;
+  output list<Equation> equations;
+protected
+  Connector c1;
 algorithm
-  outEquations := match(inSet, inType)
-    local
+  c1 := listHead(elements);
 
-    case (_, NFConnect2.POTENTIAL()) then generatePotentialEquations(inSet);
-    case (_, NFConnect2.FLOW()) then generateFlowEquations(inSet);
-    case (_, NFConnect2.STREAM(_)) then generateStreamEquations(inSet);
-    case (_, NFConnect2.NO_TYPE())
-      equation
-        Error.addMessage(Error.INTERNAL_ERROR,
-          {"ConnectUtil.generateEquation_dispatch failed because of unknown connector type."});
-      then
-        fail();
-
-  end match;
-end generateEquation_dispatch;
-
-protected function generatePotentialEquations
-  "A non-flow connection set contains a number of components. Generating the
-   equations from this set means equating all the components. For n components,
-   this will give n-1 equations. For example, if the set contains the components
-   X, Y.A and Z.B, the equations generated will be X = Y.A and X = Z.B. The
-   order of the equations depends on whether the compiler flag orderConnections
-   is true or false."
-  input list<Connector> inElements;
-  output DAE.DAElist outDae;
-algorithm
-  outDae := matchcontinue(inElements)
-    local
-      DAE.ComponentRef x, y;
-      list<Connector> rest_el;
-      Connector e1, e2;
-      list<DAE.Element> eq;
-      String str;
-      DAE.ElementSource src;
-
-    case ((e1 as NFConnect2.CONNECTOR(name = x)) ::
-          (e2 as NFConnect2.CONNECTOR(name = y)) :: rest_el)
-      equation
-        e1 = if Config.orderConnections() then e1 else e2;
-        DAE.DAE(eq) = generatePotentialEquations(e1 :: rest_el);
-        src = DAE.emptyElementSource;
-      then
-        DAE.DAE(DAE.EQUEQUATION(x, y, src) :: eq);
-
-    case {_} then DAE.emptyDae;
-
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        str = stringDelimitList(List.map(inElements, NFConnectUtil2.connectorStr), ", ");
-        Debug.traceln("- ConnectUtil.generatePotentialEquations failed on {" + str + "}");
-      then
-        fail();
-
-  end matchcontinue;
+  if Connector.variability(c1) > Variability.PARAMETER then
+    equations := list(makeEqualityEquation(c1.name, c1.source, c2.name, c2.source)
+      for c2 in listRest(elements));
+  else
+    equations := list(makeEqualityAssert(c1.name, c1.source, c2.name, c2.source)
+      for c2 in listRest(elements));
+  end if;
 end generatePotentialEquations;
 
-protected function generateFlowEquations
-  "Generating equations from a flow connection set is a little trickier that
-   from a non-flow set. Only one equation is generated, but it has to consider
-   whether the components were inside or outside connectors. This function
-   creates a sum expression of all components (some of which will be negated),
-   and then returns the equation where this sum is equal to 0.0."
-  input list<Connector> inElements;
-  output DAE.DAElist outDae;
+//function generatePotentialEquationsOrdered
+//  "Like generatePotentialEquations, but orders the connectors with
+//   shouldFlipPotentialEquation."
+//  input list<Connector> elements;
+//  output list<Equation> equations = {};
+//protected
+//  partial function eqFunc
+//    input ComponentRef lhsCref;
+//    input DAE.ElementSource lhsSource;
+//    input ComponentRef rhsCref;
+//    input DAE.ElementSource rhsSource;
+//    output Equation eq;
+//  end eqFunc;
+//
+//  Connector c1;
+//  ComponentRef cr1, cr2;
+//  DAE.ElementSource source;
+//  eqFunc eqfunc;
+//algorithm
+//  if listEmpty(elements) then
+//    return;
+//  end if;
+//
+//  c1 := listHead(elements);
+//  eqfunc := if Connector.variability(c1) > Variability.PARAMETER then
+//    makeEqualityEquation else makeEqualityAssert;
+//
+//  cr1 := c1.name;
+//
+//  for c2 in listRest(elements) loop
+//    cr2 := c2.name;
+//    (cr1, cr2) := Util.swap(shouldFlipPotentialEquation(cr1, c1.source), cr1, cr2);
+//    equations := eqfunc(cr1, c2.source, cr2, c2.source) :: equations;
+//    c1 := c2;
+//    cr1 := cr2;
+//  end for;
+//end generatePotentialEquationsOrdered;
+
+function makeEqualityEquation
+  input ComponentRef lhsCref;
+  input DAE.ElementSource lhsSource;
+  input ComponentRef rhsCref;
+  input DAE.ElementSource rhsSource;
+  output Equation equalityEq;
 protected
-  DAE.Exp sum;
-  DAE.ElementSource src;
+  DAE.ElementSource source;
 algorithm
-  sum := List.reduce(List.map(inElements, makeFlowExp), Expression.makeRealAdd);
-  src := DAE.emptyElementSource;
-  outDae := DAE.DAE({DAE.EQUATION(sum, DAE.RCONST(0.0), src)});
+  source := ElementSource.mergeSources(lhsSource, rhsSource);
+  //source := ElementSource.addElementSourceConnect(source, (lhsCref, rhsCref));
+  equalityEq := Equation.CREF_EQUALITY(lhsCref, rhsCref, source);
+end makeEqualityEquation;
+
+function makeEqualityAssert
+  input ComponentRef lhsCref;
+  input DAE.ElementSource lhsSource;
+  input ComponentRef rhsCref;
+  input DAE.ElementSource rhsSource;
+  output Equation equalityAssert;
+protected
+  //DAE.ElementSource source;
+  Expression lhs_exp, rhs_exp, exp;
+  Type ty;
+algorithm
+  //source := ElementSource.mergeSources(lhsSource, rhsSource);
+  //source := ElementSource.addElementSourceConnect(source, (lhsCref, rhsCref));
+
+  ty := ComponentRef.getType(lhsCref);
+  lhs_exp := Expression.fromCref(lhsCref);
+  rhs_exp := Expression.fromCref(rhsCref);
+
+  if Type.isReal(ty) then
+    // Modelica doesn't allow == for Reals, so to keep the flat Modelica
+    // somewhat valid we use 'abs(lhs - rhs) <= 0' instead.
+    exp := Expression.BINARY(lhs_exp, Operator.SUB(ty), rhs_exp);
+    exp := Expression.CALL(Call.makeBuiltinCall(NFBuiltinFuncs.ABS_REAL, {exp}));
+    exp := Expression.RELATION(exp, Operator.LESSEQ(ty), Expression.REAL(0.0));
+  else
+    // For any other type, generate assertion for 'lhs == rhs'.
+    exp := Expression.RELATION(lhs_exp, Operator.EQUAL(ty), rhs_exp);
+  end if;
+
+  equalityAssert := Equation.ASSERT(exp, EQ_ASSERT_STR, NFBuiltin.ASSERTIONLEVEL_ERROR, Absyn.dummyInfo);
+end makeEqualityAssert;
+
+//protected function shouldFlipPotentialEquation
+//  "If the flag +orderConnections=false is used, then we should keep the order of
+//   the connector elements as they occur in the connection (if possible). In that
+//   case we check if the cref of the first argument to the first connection
+//   stored in the element source is a prefix of the connector element cref. If
+//   it isn't, indicate that we should flip the generated equation."
+//  input DAE.ComponentRef lhsCref;
+//  input DAE.ElementSource lhsSource;
+//  output Boolean shouldFlip;
+//algorithm
+//  shouldFlip := match lhsSource
+//    local
+//      DAE.ComponentRef lhs;
+//
+//    case DAE.SOURCE(connectEquationOptLst = (lhs, _) :: _)
+//      then not ComponentReference.crefPrefixOf(lhs, lhsCref);
+//
+//    else false;
+//  end match;
+//end shouldFlipPotentialEquation;
+
+function generateFlowEquations
+  input list<Connector> elements;
+  output list<Equation> equations;
+protected
+  Connector c;
+  list<Connector> c_rest;
+  DAE.ElementSource src;
+  Expression sum;
+algorithm
+  c :: c_rest := elements;
+  src := c.source;
+
+  if listEmpty(c_rest) then
+    sum := Expression.fromCref(c.name);
+  else
+    sum := makeFlowExp(c);
+
+    for e in c_rest loop
+      sum := Expression.BINARY(sum, Operator.ADD(Type.REAL()), makeFlowExp(e));
+      src := ElementSource.mergeSources(src, e.source);
+    end for;
+  end if;
+
+  // TODO: Change equations to use ElementSource instead of SourceInfo.
+  equations := {Equation.EQUALITY(sum, Expression.REAL(0.0), Type.REAL(), Absyn.dummyInfo)};
 end generateFlowEquations;
 
-protected function makeFlowExp
+function makeFlowExp
   "Creates an expression from a connector element, which is the element itself
-   if it's an inside connector, or negated if it's outside."
-  input Connector inElement;
-  output DAE.Exp outExp;
+   if it's an inside connector, or the element negated if it's outside."
+  input Connector element;
+  output Expression exp;
+protected
+  Face face;
 algorithm
-  outExp := match(inElement)
-    local
-      DAE.ComponentRef name;
+  exp := Expression.fromCref(element.name);
 
-    case NFConnect2.CONNECTOR(name = name, face = NFConnect2.INSIDE())
-      then Expression.crefExp(name);
-
-    case NFConnect2.CONNECTOR(name = name, face = NFConnect2.OUTSIDE())
-      then Expression.negateReal(Expression.crefExp(name));
-
-  end match;
+  // TODO: Remove unnecessary variable 'face' once #4502 is fixed.
+  face := element.face;
+  if face == Face.OUTSIDE then
+    exp := Expression.UNARY(Operator.UMINUS(Type.REAL()), exp);
+  end if;
 end makeFlowExp;
 
-protected function generateStreamEquations
+function generateStreamEquations
   "Generates the equations for a stream connection set."
-  input list<Connector> inElements;
-  output DAE.DAElist outDae;
+  input list<Connector> elements;
+  input Expression flowThreshold;
+  output list<Equation> equations;
 algorithm
-  outDae := match(inElements)
+  equations := match elements
     local
-      DAE.ComponentRef cr1, cr2;
-      DAE.ElementSource src;
-      DAE.DAElist dae;
-      Face f1, f2;
-      DAE.Exp cref1, cref2, e1, e2;
+      ComponentRef cr1, cr2;
+      DAE.ElementSource src, src1, src2;
+      Expression cref1, cref2, e1, e2;
       list<Connector> inside, outside;
 
-    // Unconnected stream connector, do nothing!
-    case ({NFConnect2.CONNECTOR(face = NFConnect2.INSIDE())})
-      then DAE.emptyDae;
+    // Unconnected stream connector, do nothing.
+    case ({Connector.CONNECTOR(face = Face.INSIDE)}) then {};
 
-    // Both inside, do nothing!
-    case ({NFConnect2.CONNECTOR(face = NFConnect2.INSIDE()),
-           NFConnect2.CONNECTOR(face = NFConnect2.INSIDE())})
-      then DAE.emptyDae;
+    // Both inside, do nothing.
+    case ({Connector.CONNECTOR(face = Face.INSIDE),
+           Connector.CONNECTOR(face = Face.INSIDE)}) then {};
 
     // Both outside:
     // cr1 = inStream(cr2);
     // cr2 = inStream(cr1);
-    case ({NFConnect2.CONNECTOR(name = cr1, face = NFConnect2.OUTSIDE()),
-           NFConnect2.CONNECTOR(name = cr2, face = NFConnect2.OUTSIDE())})
-      equation
-        cref1 = Expression.crefExp(cr1);
-        cref2 = Expression.crefExp(cr2);
-        e1 = makeInStreamCall(cref2);
-        e2 = makeInStreamCall(cref1);
-        src = DAE.emptyElementSource;
-        dae = DAE.DAE({
-          DAE.EQUATION(cref1, e1, src),
-          DAE.EQUATION(cref2, e2, src)});
+    case ({Connector.CONNECTOR(name = cr1, face = Face.OUTSIDE, source = src1),
+           Connector.CONNECTOR(name = cr2, face = Face.OUTSIDE, source = src2)})
+      algorithm
+        cref1 := Expression.fromCref(cr1);
+        cref2 := Expression.fromCref(cr2);
+        e1 := makeInStreamCall(cref2);
+        e2 := makeInStreamCall(cref1);
+        //src := ElementSource.mergeSources(src1, src2);
       then
-        dae;
+        {Equation.EQUALITY(cref1, e1, Type.REAL(), Absyn.dummyInfo),
+         Equation.EQUALITY(cref2, e2, Type.REAL(), Absyn.dummyInfo)};
 
     // One inside, one outside:
     // cr1 = cr2;
-    case ({NFConnect2.CONNECTOR(name = cr1),
-           NFConnect2.CONNECTOR(name = cr2)})
-      equation
-        e1 = Expression.crefExp(cr1);
-        e2 = Expression.crefExp(cr2);
-        src = DAE.emptyElementSource;
-        dae = DAE.DAE({DAE.EQUATION(e1, e2, src)});
+    case ({Connector.CONNECTOR(name = cr1, source = src1),
+           Connector.CONNECTOR(name = cr2, source = src2)})
+      algorithm
+        src := ElementSource.mergeSources(src1, src2);
       then
-        dae;
+        {Equation.CREF_EQUALITY(cr1, cr2, src)};
 
     // The general case with N inside connectors and M outside:
-    case (_)
-      equation
-        (outside, inside) = List.splitOnTrue(inElements, isOutsideStream);
-        dae = List.fold2(outside, streamEquationGeneral,
-          outside, inside, DAE.emptyDae);
+    else
+      algorithm
+        (outside, inside) := List.splitOnTrue(elements, Connector.isOutside);
       then
-        dae;
+        streamEquationGeneral(outside, inside, flowThreshold);
 
   end match;
 end generateStreamEquations;
 
-protected function isOutsideStream
-  "Returns true if the stream connector element belongs to an outside connector."
-  input Connector inElement;
-  output Boolean isOutside;
-algorithm
-  isOutside := match(inElement)
-    case NFConnect2.CONNECTOR(face = NFConnect2.OUTSIDE()) then true;
-    else false;
-  end match;
-end isOutsideStream;
-
-protected function streamEquationGeneral
+function streamEquationGeneral
   "Generates an equation for an outside stream connector element."
-  input Connector inElement;
-  input list<Connector> inOutsideElements;
-  input list<Connector> inInsideElements;
-  input DAE.DAElist inDae;
-  output DAE.DAElist outDae;
+  input list<Connector> outsideElements;
+  input list<Connector> insideElements;
+  input Expression flowThreshold;
+  output list<Equation> equations = {};
 protected
-  list<Connector> outside;
-  DAE.ComponentRef stream_cr;
-  DAE.Exp cref_exp, outside_sum1, outside_sum2, inside_sum1, inside_sum2, res;
+  list<Connector> outside = outsideElements;
+  Expression cref_exp, res;
   DAE.ElementSource src;
-  DAE.DAElist dae;
 algorithm
-  NFConnect2.CONNECTOR(name = stream_cr) := inElement;
-  src := DAE.emptyElementSource;
-  cref_exp := Expression.crefExp(stream_cr);
-  outside := removeStreamSetElement(stream_cr, inOutsideElements);
-  res := streamSumEquationExp(outside, inInsideElements);
-  dae := DAE.DAE({DAE.EQUATION(cref_exp, res, src)});
-  outDae := DAEUtil.joinDaes(dae, inDae);
+  for e in outsideElements loop
+    cref_exp := Expression.fromCref(e.name);
+    //outside := listRest(outside);
+    outside := removeStreamSetElement(e.name, outsideElements);
+    res := streamSumEquationExp(outside, insideElements, flowThreshold);
+    //src := ElementSource.addAdditionalComment(e.source, " equation generated from stream connection");
+    equations := Equation.EQUALITY(cref_exp, res, Type.REAL(), Absyn.dummyInfo) :: equations;
+  end for;
 end streamEquationGeneral;
 
-protected function streamSumEquationExp
+function streamSumEquationExp
   "Generates the sum expression used by stream connector equations, given M
   outside connectors and N inside connectors:
 
@@ -370,398 +364,474 @@ protected function streamSumEquationExp
      sum(max( flow_exp[i], eps) * inStream(stream_exp[i]) for i in M)) /
     (sum(max(-flow_exp[i], eps) for i in N) +
      sum(max( flow_exp[i], eps) for i in M))
+
+  where eps = inFlowThreshold.
   "
-  input list<Connector> inOutsideElements;
-  input list<Connector> inInsideElements;
-  output DAE.Exp outSumExp;
+  input list<Connector> outsideElements;
+  input list<Connector> insideElements;
+  input Expression flowThreshold;
+  output Expression sumExp;
 protected
-  DAE.Exp outside_sum1, outside_sum2, inside_sum1, inside_sum2, res;
+  Expression outside_sum1, outside_sum2, inside_sum1, inside_sum2, res;
 algorithm
-  outSumExp := match(inOutsideElements, inInsideElements)
+  if listEmpty(outsideElements) then
     // No outside components.
-    case ({}, _)
-      equation
-        inside_sum1 = sumMap(inInsideElements, sumInside1);
-        inside_sum2 = sumMap(inInsideElements, sumInside2);
-        res = Expression.expDiv(inside_sum1, inside_sum2);
-      then
-        res;
+    inside_sum1 := sumMap(insideElements, sumInside1, flowThreshold);
+    inside_sum2 := sumMap(insideElements, sumInside2, flowThreshold);
+    sumExp := Expression.BINARY(inside_sum1, Operator.DIV(Type.REAL()), inside_sum2);
+  elseif listEmpty(insideElements) then
     // No inside components.
-    case (_, {})
-      equation
-        outside_sum1 = sumMap(inOutsideElements, sumOutside1);
-        outside_sum2 = sumMap(inOutsideElements, sumOutside2);
-        res = Expression.expDiv(outside_sum1, outside_sum2);
-      then
-        res;
+    outside_sum1 := sumMap(outsideElements, sumOutside1, flowThreshold);
+    outside_sum2 := sumMap(outsideElements, sumOutside2, flowThreshold);
+    sumExp := Expression.BINARY(outside_sum1, Operator.DIV(Type.REAL()), outside_sum2);
+  else
     // Both outside and inside components.
-    else
-      equation
-        outside_sum1 = sumMap(inOutsideElements, sumOutside1);
-        outside_sum2 = sumMap(inOutsideElements, sumOutside2);
-        inside_sum1 = sumMap(inInsideElements, sumInside1);
-        inside_sum2 = sumMap(inInsideElements, sumInside2);
-        res = Expression.expDiv(Expression.expAdd(outside_sum1, inside_sum1),
-                                Expression.expAdd(outside_sum2, inside_sum2));
-      then
-        res;
-  end match;
+    outside_sum1 := sumMap(outsideElements, sumOutside1, flowThreshold);
+    outside_sum2 := sumMap(outsideElements, sumOutside2, flowThreshold);
+    inside_sum1 := sumMap(insideElements, sumInside1, flowThreshold);
+    inside_sum2 := sumMap(insideElements, sumInside2, flowThreshold);
+    sumExp := Expression.BINARY(
+      Expression.BINARY(outside_sum1, Operator.ADD(Type.REAL()), inside_sum1),
+      Operator.DIV(Type.REAL()),
+      Expression.BINARY(outside_sum2, Operator.ADD(Type.REAL()), inside_sum2));
+  end if;
 end streamSumEquationExp;
 
-protected function sumMap
+function sumMap
   "Creates a sum expression by applying the given function on the list of
   elements and summing up the resulting expressions."
-  input list<SetElement> inElements;
-  input FuncType inFunc;
-  output DAE.Exp outExp;
-
-  replaceable type SetElement subtypeof Any;
+  input list<Connector> elements;
+  input FuncType func;
+  input Expression flowThreshold;
+  output Expression exp;
 
   partial function FuncType
-    input SetElement inElement;
-    output DAE.Exp outExp;
+    input Connector element;
+    input Expression flowThreshold;
+    output Expression exp;
   end FuncType;
 algorithm
-  outExp := match(inElements, inFunc)
-    local
-      SetElement elem;
-      list<SetElement> rest_elem;
-      DAE.Exp e1, e2;
-
-    case ({elem}, _)
-      equation
-        e1 = inFunc(elem);
-      then
-        e1;
-
-    case (elem :: rest_elem, _)
-      equation
-        e1 = inFunc(elem);
-        e2 = sumMap(rest_elem, inFunc);
-      then
-        Expression.expAdd(e1, e2);
-  end match;
+  exp := func(listHead(elements), flowThreshold);
+  for e in listRest(elements) loop
+    exp := Expression.BINARY(func(e, flowThreshold), Operator.ADD(Type.REAL()), exp);
+  end for;
 end sumMap;
 
-protected function streamFlowExp
+function streamFlowExp
   "Returns the stream and flow component in a stream set element as expressions."
-  input Connector inElement;
-  output DAE.Exp outStreamExp;
-  output DAE.Exp outFlowExp;
+  input Connector element;
+  output Expression streamExp;
+  output Expression flowExp;
 protected
-  DAE.ComponentRef stream_cr, flow_cr;
+  ComponentRef flow_cr;
 algorithm
-  NFConnect2.CONNECTOR(name = stream_cr, cty = NFConnect2.STREAM(SOME(flow_cr))) := inElement;
-  outStreamExp := Expression.crefExp(stream_cr);
-  outFlowExp := Expression.crefExp(flow_cr);
+  Connector.CONNECTOR(associatedFlow = SOME(flow_cr)) := element;
+  streamExp := Expression.fromCref(element.name);
+  flowExp := Expression.fromCref(flow_cr);
 end streamFlowExp;
 
-protected function flowExp
+function flowExp
   "Returns the flow component in a stream set element as an expression."
-  input Connector inElement;
-  output DAE.Exp outFlowExp;
+  input Connector element;
+  output Expression flowExp;
 protected
-  DAE.ComponentRef flow_cr;
+  ComponentRef flow_cr;
 algorithm
-  NFConnect2.CONNECTOR(cty = NFConnect2.STREAM(SOME(flow_cr))) := inElement;
-  outFlowExp := Expression.crefExp(flow_cr);
+  Connector.CONNECTOR(associatedFlow = SOME(flow_cr)) := element;
+  flowExp := Expression.fromCref(flow_cr);
 end flowExp;
 
-protected function sumOutside1
+function sumOutside1
   "Helper function to streamSumEquationExp. Returns the expression
     max(flow_exp, eps) * inStream(stream_exp)
-  given a stream set element."
-  input Connector inElement;
-  output DAE.Exp outExp;
+   given a stream set element."
+  input Connector element;
+  input Expression flowThreshold;
+  output Expression exp;
 protected
-  DAE.Exp stream_exp, flow_exp;
+  Expression stream_exp, flow_exp;
 algorithm
-  (stream_exp, flow_exp) := streamFlowExp(inElement);
-  outExp := Expression.expMul(makePositiveMaxCall(flow_exp),
-                              makeInStreamCall(stream_exp));
+  (stream_exp, flow_exp) := streamFlowExp(element);
+  exp := Expression.BINARY(makePositiveMaxCall(flow_exp, flowThreshold),
+    Operator.MUL(Type.REAL()), makeInStreamCall(stream_exp));
 end sumOutside1;
 
-protected function sumInside1
+function sumInside1
   "Helper function to streamSumEquationExp. Returns the expression
     max(-flow_exp, eps) * stream_exp
-  given a stream set element."
-  input Connector inElement;
-  output DAE.Exp outExp;
+   given a stream set element."
+  input Connector element;
+  input Expression flowThreshold;
+  output Expression exp;
 protected
-  DAE.Exp stream_exp, flow_exp;
+  Expression stream_exp, flow_exp, flow_threshold;
 algorithm
-  (stream_exp, flow_exp) := streamFlowExp(inElement);
-  flow_exp := DAE.UNARY(DAE.UMINUS(DAE.T_REAL_DEFAULT), flow_exp);
-  outExp := Expression.expMul(makePositiveMaxCall(flow_exp), stream_exp);
+  (stream_exp, flow_exp) := streamFlowExp(element);
+  flow_exp := Expression.UNARY(Operator.UMINUS(Type.REAL()), flow_exp);
+  exp := Expression.BINARY(makePositiveMaxCall(flow_exp, flowThreshold),
+    Operator.MUL(Type.REAL()), stream_exp);
 end sumInside1;
 
-protected function sumOutside2
+function sumOutside2
   "Helper function to streamSumEquationExp. Returns the expression
     max(flow_exp, eps)
-  given a stream set element."
-  input Connector inElement;
-  output DAE.Exp outExp;
+   given a stream set element."
+  input Connector element;
+  input Expression flowThreshold;
+  output Expression exp;
 protected
-  DAE.Exp flow_exp;
+  Expression flow_exp;
 algorithm
-  flow_exp := flowExp(inElement);
-  outExp := makePositiveMaxCall(flow_exp);
+  flow_exp := flowExp(element);
+  exp := makePositiveMaxCall(flow_exp, flowThreshold);
 end sumOutside2;
 
-protected function sumInside2
+function sumInside2
   "Helper function to streamSumEquationExp. Returns the expression
     max(-flow_exp, eps)
-  given a stream set element."
-  input Connector inElement;
-  output DAE.Exp outExp;
+   given a stream set element."
+  input Connector element;
+  input Expression flowThreshold;
+  output Expression exp;
 protected
-  DAE.Exp flow_exp;
+  Expression flow_exp;
 algorithm
-  flow_exp := flowExp(inElement);
-  flow_exp := DAE.UNARY(DAE.UMINUS(DAE.T_REAL_DEFAULT), flow_exp);
-  outExp := makePositiveMaxCall(flow_exp);
+  flow_exp := flowExp(element);
+  flow_exp := Expression.UNARY(Operator.UMINUS(Type.REAL()), flow_exp);
+  exp := makePositiveMaxCall(flow_exp, flowThreshold);
 end sumInside2;
 
-protected function makeInStreamCall
+function makeInStreamCall
   "Creates an inStream call expression."
-  input DAE.Exp inStreamExp;
-  output DAE.Exp outInStreamCall;
+  input Expression streamExp;
+  output Expression inStreamCall;
   annotation(__OpenModelica_EarlyInline = true);
 algorithm
-  outInStreamCall := DAE.CALL(Absyn.IDENT("inStream"), {inStreamExp},
-    DAE.CALL_ATTR(DAE.T_UNKNOWN_DEFAULT, false, false, false, false, DAE.NO_INLINE(), DAE.NO_TAIL()));
+  inStreamCall := Expression.CALL(Call.makeBuiltinCall(NFBuiltinFuncs.IN_STREAM, {streamExp}));
 end makeInStreamCall;
 
-protected function makePositiveMaxCall
+function makePositiveMaxCall
   "Generates a max(flow_exp, eps) call."
-  input DAE.Exp inFlowExp;
-  output DAE.Exp outPositiveMaxCall;
-  annotation(__OpenModelica_EarlyInline = true);
+  input Expression flowExp;
+  input Expression flowThreshold;
+  output Expression positiveMaxCall;
+protected
+  InstNode flow_node;
+  Option<Expression> nominal_oexp;
+  Expression nominal_exp, flow_threshold;
 algorithm
-  outPositiveMaxCall := DAE.CALL(Absyn.IDENT("max"),
-    {inFlowExp, DAE.RCONST(1e-15)}, DAE.CALL_ATTR(DAE.T_REAL_DEFAULT, false, true, false, false, DAE.NO_INLINE(), DAE.NO_TAIL()));
+  flow_node := ComponentRef.node(Expression.toCref(flowExp));
+  nominal_oexp := Class.lookupAttributeValue("nominal", InstNode.getClass(flow_node));
+
+  if isSome(nominal_oexp) then
+    SOME(nominal_exp) := nominal_oexp;
+    flow_threshold := Expression.BINARY(flowThreshold, Operator.MUL(Type.REAL()), nominal_exp);
+  else
+    flow_threshold := flowThreshold;
+  end if;
+
+  positiveMaxCall := Expression.CALL(Call.makeBuiltinCall(NFBuiltinFuncs.MAX_REAL,
+    {flowExp, flow_threshold}));
 end makePositiveMaxCall;
 
+function evaluateOperatorExp
+  input Expression exp;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
+  output Expression evalExp;
+algorithm
+  evalExp := match exp
+    local
+      Call call;
+
+    case Expression.CALL(call = call as Call.TYPED_CALL())
+      then match Function.name(call.fn)
+        case Absyn.IDENT("inStream")
+          then evaluateInStream(Expression.toCref(listHead(call.arguments)), sets, setsArray);
+        //case Absyn.IDENT("actualStream")
+        //  then evaluateActualStream(Expression.toCref(listHead(call.arguments)), sets, setsArray);
+        else exp;
+      end match;
+
+    else exp;
+  end match;
+end evaluateOperatorExp;
+
+function evaluateInStream
+  "Evaluates the inStream operator with the given cref as argument."
+  input ComponentRef cref;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
+  output Expression exp;
+protected
+  Connector c;
+  list<Connector> sl;
+  Integer set;
+algorithm
+  c := Connector.CONNECTOR(cref, Type.UNKNOWN(), Face.INSIDE,
+    ConnectorType.STREAM, NONE(), DAE.emptyElementSource);
+
+  try
+    set := ConnectionSets.findSetArrayIndex(c, sets);
+    sl := arrayGet(setsArray, set);
+  else
+    sl := {c};
+  end try;
+
+  exp := generateInStreamExp(cref, sl, sets, setsArray,
+    Flags.getConfigReal(Flags.FLOW_THRESHOLD));
+end evaluateInStream;
+
+function generateInStreamExp
+  "Helper function to evaluateInStream. Generates an expression for inStream
+   given a connection set."
+  input ComponentRef streamCref;
+  input list<Connector> streams;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
+  input Real flowThreshold;
+  output Expression exp;
+protected
+  list<Connector> reducedStreams, inside, outside;
+  ComponentRef cr;
+  Face f1, f2;
+algorithm
+  reducedStreams := list(s for s guard not isZeroFlowMinMax(s, streamCref) in streams);
+
+  exp := match reducedStreams
+    // Unconnected stream connector:
+    //   inStream(c) = c;
+    case {Connector.CONNECTOR(face = Face.INSIDE)}
+      then Expression.fromCref(streamCref);
+
+    // Two inside connected stream connectors:
+    //   inStream(c1) = c2;
+    //   inStream(c2) = c1;
+    case {Connector.CONNECTOR(face = Face.INSIDE),
+          Connector.CONNECTOR(face = Face.INSIDE)}
+      algorithm
+        {Connector.CONNECTOR(name = cr)} :=
+          removeStreamSetElement(streamCref, reducedStreams);
+      then
+        Expression.fromCref(cr);
+
+    // One inside, one outside connected stream connector:
+    //   inStream(c1) = inStream(c2);
+    case {Connector.CONNECTOR(face = f1),
+          Connector.CONNECTOR(face = f2)} guard f1 <> f2
+      algorithm
+        {Connector.CONNECTOR(name = cr)} :=
+          removeStreamSetElement(streamCref, reducedStreams);
+      then
+        evaluateInStream(cr, sets, setsArray);
+
+    // The general case:
+    else
+      algorithm
+        (outside, inside) := List.splitOnTrue(reducedStreams, Connector.isOutside);
+        inside := removeStreamSetElement(streamCref, inside);
+        exp := streamSumEquationExp(outside, inside, Expression.REAL(flowThreshold));
+        // Evaluate any inStream calls that were generated.
+        exp := evaluateOperatorExp(exp, sets, setsArray);
+      then
+        exp;
+
+  end match;
+end generateInStreamExp;
+
+function isZeroFlowMinMax
+  "Returns true if the given flow attribute of a connector is zero."
+  input Connector conn;
+  input ComponentRef streamCref;
+  output Boolean isZero;
+algorithm
+  if ComponentRef.isEqual(streamCref, conn.name) then
+    isZero := false;
+  elseif Connector.isOutside(conn) then
+    isZero := isZeroFlow(conn, "max");
+  else
+    isZero := isZeroFlow(conn, "min");
+  end if;
+end isZeroFlowMinMax;
+
+function isZeroFlow
+  "Returns true if the given flow attribute of a connector is zero."
+  input Connector element;
+  input String attr;
+  output Boolean isZero;
+protected
+  Option<Expression> attr_oexp;
+  Expression flow_exp, attr_exp;
+  InstNode flow_node;
+algorithm
+  flow_exp := flowExp(element);
+  flow_node := ComponentRef.node(Expression.toCref(flow_exp));
+  attr_oexp := Class.lookupAttributeValue(attr, InstNode.getClass(flow_node));
+
+  if isSome(attr_oexp) then
+    SOME(attr_exp) := attr_oexp;
+    isZero := Expression.isZero(attr_exp);
+  else
+    isZero := false;
+  end if;
+end isZeroFlow;
+
+//protected function evaluateActualStream
+//  "This function evaluates the actualStream operator for a component reference,
+//  given the connection sets."
+//  input DAE.ComponentRef streamCref;
+//  input ConnectionSets.Sets sets;
+//  input array<list<Connector>> setsArray;
+//  input Expression flowThreshold;
+//  output DAE.Exp exp;
+//protected
+//  DAE.ComponentRef flow_cr;
+//  DAE.Exp e, flow_exp, stream_exp, instream_exp, rel_exp;
+//  DAE.Type ety;
+//  Integer flow_dir;
+//algorithm
+//  //flow_cr := getStreamFlowAssociation(streamCref, sets);
+//  //ety := ComponentReference.crefLastType(flow_cr);
+//  //flow_dir := evaluateFlowDirection(ety);
+//
+//  //// Select a branch if we know the flow direction, otherwise generate the whole
+//  //// if-equation.
+//  //if flow_dir == 1 then
+//  //  rel_exp := evaluateInStream(streamCref, sets, setsArray, flowThreshold);
+//  //elseif flow_dir == -1 then
+//  //  rel_exp := Expression.crefExp(streamCref);
+//  //else
+//  //  flow_exp := Expression.crefExp(flow_cr);
+//  //  stream_exp := Expression.crefExp(streamCref);
+//  //  instream_exp := evaluateInStream(streamCref, sets, setsArray, flowThreshold);
+//  //  rel_exp := DAE.IFEXP(
+//  //    DAE.RELATION(flow_exp, DAE.GREATER(ety), DAE.RCONST(0.0), -1, NONE()),
+//  //    instream_exp, stream_exp);
+//  //end if;
+//
+//  //// actualStream(stream_var) = smooth(0, if flow_var > 0 then inStream(stream_var)
+//  ////                                                      else stream_var);
+//  //exp := DAE.CALL(Absyn.IDENT("smooth"), {DAE.ICONST(0), rel_exp},
+//  //  DAE.callAttrBuiltinReal);
+//
+//  exp := DAE.ICONST(0);
+//end evaluateActualStream;
+//
+//protected function evaluateFlowDirection
+//  "Checks the min/max attributes of a flow variables type to try and determine
+//   the flow direction. If the flow is positive 1 is returned, if it is negative
+//   -1, otherwise 0 if the direction can't be decided."
+//  input DAE.Type ty;
+//  output Integer direction = 0;
+//protected
+//  list<DAE.Var> attr;
+//  Option<Values.Value> min_oval, max_oval;
+//  Real min_val, max_val;
+//algorithm
+//  attr := Types.getAttributes(ty);
+//  if listEmpty(attr) then return; end if;
+//
+//  min_oval := Types.lookupAttributeValue(attr, "min");
+//  max_oval := Types.lookupAttributeValue(attr, "max");
+//
+//  direction := match (min_oval, max_oval)
+//    // No attributes, flow direction can't be decided.
+//    case (NONE(), NONE()) then 0;
+//    // Flow is positive if min is positive.
+//    case (SOME(Values.REAL(min_val)), NONE())
+//      then if min_val >= 0 then 1 else 0;
+//    // Flow is negative if max is negative.
+//    case (NONE(), SOME(Values.REAL(max_val)))
+//      then if max_val <= 0 then -1 else 0;
+//    // Flow is positive if both min and max are positive, negative if they are
+//    // both negative, otherwise undecideable.
+//    case (SOME(Values.REAL(min_val)), SOME(Values.REAL(max_val)))
+//      then
+//        if min_val >= 0 and max_val >= min_val then 1
+//        elseif max_val <= 0 and min_val <= max_val then -1
+//        else 0;
+//    else 0;
+//  end match;
+//end evaluateFlowDirection;
+//
+//function evaluateCardinality
+//  input DAE.ComponentRef cref;
+//  input ConnectionSets.Sets sets;
+//  output DAE.Exp exp;
+//algorithm
+//  // TODO: Implement this.
+//  //exp := DAE.ICONST(getConnectCount(cref, sets.sets));
+//  exp := DAE.Exp.ICONST(0);
+//end evaluateCardinality;
+//
+//function simplifyDAEElements
+//"run this only if we have cardinality"
+//  input Boolean hasCardinality;
+//  input output list<DAE.Element> daeElements;
+//protected
+//  list<DAE.Element> accum = {};
+//algorithm
+//  if not hasCardinality then
+//    return;
+//  end if;
+//
+//  for e in daeElements loop
+//    accum := matchcontinue e
+//      case DAE.IF_EQUATION()
+//        then listAppend(simplifyDAEIfEquation(e.condition1, e.equations2, e.equations3), accum);
+//      case DAE.INITIAL_IF_EQUATION()
+//        then listAppend(simplifyDAEIfEquation(e.condition1, e.equations2, e.equations3), accum);
+//      case DAE.ASSERT(condition = DAE.BCONST(true)) then accum;
+//      else e :: accum;
+//    end matchcontinue;
+//  end for;
+//
+//  daeElements := listReverse(accum);
+//end simplifyDAEElements;
+//
+//protected function simplifyDAEIfEquation
+//  input list<DAE.Exp> conditions;
+//  input list<list<DAE.Element>> branches;
+//  input list<DAE.Element> elseBranch;
+//  output list<DAE.Element> elements;
+//protected
+//  Boolean cond_value;
+//  list<list<DAE.Element>> rest_branches = branches;
+//algorithm
+//  for cond in conditions loop
+//    DAE.BCONST(cond_value) := cond;
+//
+//    // Condition is true, substitute the if-equation with the branch contents.
+//    if cond_value == true then
+//      elements := listReverse(listHead(rest_branches));
+//      return;
+//    end if;
+//
+//    // Condition is false, discard the branch and continue with the other branches.
+//    rest_branches := listRest(rest_branches);
+//  end for;
+//
+//  // All conditions were false, substitute if-equation with else-branch contents.
+//  elements := listReverse(elseBranch);
+//end simplifyDAEIfEquation;
+//
 protected function removeStreamSetElement
   "This function removes the given cref from a connection set."
-  input DAE.ComponentRef inCref;
-  input list<Connector> inElements;
-  output list<Connector> outElements;
+  input ComponentRef cref;
+  input output list<Connector> elements;
 algorithm
-  (outElements, _) := List.deleteMemberOnTrue(inCref, inElements, compareCrefStreamSet);
+  elements := List.deleteMemberOnTrue(cref, elements, compareCrefStreamSet);
 end removeStreamSetElement;
 
 protected function compareCrefStreamSet
   "Helper function to removeStreamSetElement. Checks if the cref in a stream set
   element matches the given cref."
-  input DAE.ComponentRef inCref;
-  input Connector inElement;
-  output Boolean outRes;
+  input ComponentRef cref;
+  input Connector element;
+  output Boolean matches;
 algorithm
-  outRes := match(inCref, inElement)
-    local
-      DAE.ComponentRef cr;
-    case (_, NFConnect2.CONNECTOR(name = cr)) guard ComponentReference.crefEqualNoStringCompare(inCref, cr)
-      then
-        true;
-    else false;
-  end match;
+  matches := ComponentRef.isEqual(cref, element.name);
 end compareCrefStreamSet;
-
-public function generateAssertion
-  input Connector inLhsConnector;
-  input Connector inRhsConnector;
-  input SourceInfo inInfo;
-  input list<Equation> inEquations;
-  output list<Equation> outEquations;
-  output Boolean outIsOnlyConst;
-algorithm
-  (outEquations, outIsOnlyConst) := matchcontinue(inLhsConnector, inRhsConnector,
-      inInfo, inEquations)
-    local
-      DAE.ComponentRef lhs, rhs;
-      DAE.Exp lhs_exp, rhs_exp;
-      list<Equation> eql;
-      Boolean is_only_const;
-      DAE.Type lhs_ty, rhs_ty, ty;
-
-    // Variable simple connection, nothing to do.
-    case (NFConnect2.CONNECTOR(), NFConnect2.CONNECTOR(), _, _)
-      equation
-        false = NFConnectUtil2.isConstOrComplexConnector(inLhsConnector);
-        false = NFConnectUtil2.isConstOrComplexConnector(inRhsConnector);
-      then
-        (inEquations, false);
-
-    // One or both of the connectors are constant/parameter or complex,
-    // generate assertion or error message.
-    case (NFConnect2.CONNECTOR(name = lhs, ty = lhs_ty),
-          NFConnect2.CONNECTOR(name = rhs, ty = rhs_ty), _, _)
-      equation
-        /* ------------------------------------------------------------------*/
-        // TODO: If we have mixed Real/Integer, one of these expression might
-        // need to be typecast. ty should be the common type.
-        /* ------------------------------------------------------------------*/
-        lhs_exp = DAE.CREF(lhs, lhs_ty);
-        rhs_exp = DAE.CREF(rhs, rhs_ty);
-        ty = lhs_ty;
-
-        (eql, is_only_const) = generateAssertion2(lhs_exp, rhs_exp,
-          ty, inInfo, inEquations);
-      then
-        (eql, is_only_const);
-
-  end matchcontinue;
-end generateAssertion;
-
-protected function generateAssertion2
-  input DAE.Exp inLhsExp;
-  input DAE.Exp inRhsExp;
-  input DAE.Type inType;
-  input SourceInfo inInfo;
-  input list<Equation> inEquations;
-  output list<Equation> outEquations;
-  output Boolean outIsOnlyConst;
-algorithm
-  (outEquations, outIsOnlyConst) :=
-  matchcontinue(inLhsExp, inRhsExp, inType, inInfo, inEquations)
-    local
-      DAE.Exp bin_exp, abs_exp, cond_exp;
-      Equation assertion;
-      list<DAE.Var> lhs_vars, lhs_rest, rhs_vars, rhs_rest;
-      DAE.ComponentRef lhs_cref, rhs_cref;
-      list<Equation> eql;
-      Boolean ioc;
-      String ty_str;
-
-    // One or both of the connectors are scalar Reals.
-    case (_, _, _, _, _)
-      equation
-        true = Types.isScalarReal(inType);
-        // Generate an 'abs(lhs - rhs) <= 0' assertion, to keep the flat Modelica
-        // somewhat similar to Modelica (which doesn't allow == for Reals).
-        bin_exp = DAE.BINARY(inLhsExp, DAE.SUB(inType), inRhsExp);
-        abs_exp = DAE.CALL(Absyn.IDENT("abs"), {bin_exp}, DAE.callAttrBuiltinReal);
-        cond_exp = DAE.RELATION(abs_exp, DAE.LESSEQ(inType), DAE.RCONST(0.0), 0, NONE());
-        assertion = makeAssertion(cond_exp, inInfo);
-      then
-        (assertion :: inEquations, true);
-
-    // Array connectors.
-    case (_, _, DAE.T_ARRAY(), _, _)
-      equation
-        /* ------------------------------------------------------------------*/
-        // TODO: Implement this.
-        /* ------------------------------------------------------------------*/
-        Error.addSourceMessage(Error.INTERNAL_ERROR,
-          {"Generating assertions for connections not yet implemented for arrays."},
-          inInfo);
-      then
-        fail();
-
-    // Complex connectors.
-    case (DAE.CREF(lhs_cref, DAE.T_COMPLEX(varLst = lhs_vars)),
-          DAE.CREF(rhs_cref, DAE.T_COMPLEX(varLst = rhs_vars)), _, _, _)
-      equation
-        (lhs_vars, lhs_rest) = List.splitOnTrue(lhs_vars, DAEUtil.isParamConstOrComplexVar);
-        (rhs_vars, rhs_rest) = List.splitOnTrue(rhs_vars, DAEUtil.isParamConstOrComplexVar);
-
-        ioc = listEmpty(lhs_rest) and listEmpty(rhs_rest);
-
-        (eql, ioc) = generateAssertion3(lhs_vars, rhs_vars,
-          lhs_cref, rhs_cref, inInfo, inEquations, ioc);
-      then
-        (eql, ioc);
-
-    // Other scalar types.
-    case (_, _, _, _, _)
-      equation
-        true = Types.isSimpleType(inType);
-        // Generate an 'lhs = rhs' assertion.
-        cond_exp = DAE.RELATION(inLhsExp, DAE.EQUAL(inType), inRhsExp, 0, NONE());
-        assertion = makeAssertion(cond_exp, inInfo);
-      then
-        (assertion :: inEquations, true);
-
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.trace("- ConnectUtil.generateConnectAssertion2 failed on unknown type ");
-        ty_str = Types.unparseType(inType);
-        Debug.traceln(ty_str);
-      then
-        fail();
-
-  end matchcontinue;
-end generateAssertion2;
-
-protected function makeAssertion
-  input DAE.Exp inCondition;
-  input SourceInfo inInfo;
-  output Equation outAssert;
-protected
-  DAE.Exp cond_exp, msg_exp;
-algorithm
-  /* ------------------------------------------------------------------*/
-  // TODO: Change this to a better message. Kept like this for now to be
-  // as close to the old instantiation as possible.
-  /* ------------------------------------------------------------------*/
-  msg_exp := DAE.SCONST("automatically generated from connect");
-  outAssert := NFInstTypes.ASSERT_EQUATION(inCondition, msg_exp,
-    DAE.ASSERTIONLEVEL_ERROR, inInfo);
-end makeAssertion;
-
-protected function generateAssertion3
-  input list<DAE.Var> inLhsVar;
-  input list<DAE.Var> inRhsVar;
-  input DAE.ComponentRef inLhsCref;
-  input DAE.ComponentRef inRhsCref;
-  input SourceInfo inInfo;
-  input list<Equation> inEquations;
-  input Boolean inIsOnlyConst;
-  output list<Equation> outEquations;
-  output Boolean outIsOnlyConst;
-algorithm
-  (outEquations, outIsOnlyConst) := match(inLhsVar, inRhsVar,
-      inLhsCref, inRhsCref, inInfo, inEquations, inIsOnlyConst)
-    local
-      DAE.Var lhs_var, rhs_var;
-      list<DAE.Var> lhs_rest, rhs_rest;
-      list<Equation> eql;
-      Boolean ioc;
-
-    case (lhs_var :: lhs_rest, rhs_var :: rhs_rest, _, _, _, eql, _)
-      equation
-        (eql, ioc) = generateAssertion4(lhs_var, rhs_var,
-          inLhsCref, inRhsCref, inInfo, eql);
-        ioc = ioc and inIsOnlyConst;
-        (eql, ioc) = generateAssertion3(lhs_rest, rhs_rest,
-          inLhsCref, inRhsCref, inInfo, eql, ioc);
-      then
-        (eql, ioc);
-
-    case ({}, {}, _ ,_, _, _, _) then (inEquations, inIsOnlyConst);
-
-  end match;
-end generateAssertion3;
-
-protected function generateAssertion4
-  input DAE.Var inLhsVar;
-  input DAE.Var inRhsVar;
-  input DAE.ComponentRef inLhsCref;
-  input DAE.ComponentRef inRhsCref;
-  input SourceInfo inInfo;
-  input list<Equation> inEquations;
-  output list<Equation> outEquations;
-  output Boolean outIsOnlyConst;
-protected
-  Connector lhs_conn, rhs_conn;
-algorithm
-  lhs_conn := NFConnectUtil2.varToConnector(inLhsVar, inLhsCref, NFConnect2.INSIDE());
-  rhs_conn := NFConnectUtil2.varToConnector(inRhsVar, inRhsCref, NFConnect2.INSIDE());
-  (outEquations, outIsOnlyConst) := generateAssertion(lhs_conn, rhs_conn,
-    inInfo, inEquations);
-end generateAssertion4;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFConnectEquations;

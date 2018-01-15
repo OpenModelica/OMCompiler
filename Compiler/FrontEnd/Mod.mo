@@ -166,6 +166,9 @@ algorithm
         (cache,subs_1) = elabSubmods(cache, env, ih, pre, subs, impl, inModScope, info);
         // print("Mod.elabMod: calling elabExp on mod exp: " + Dump.printExpStr(e) + " in env: " + FGraph.printGraphPathStr(env) + "\n");
         (cache,e_1,prop,_) = Static.elabExp(cache, env, e, impl, NONE(), Config.splitArrays(), pre, info); // Vectorize only if arrays are expanded
+        // Modifiers always apply to single components, so if the expression is
+        // a tuple (i.e. from a function call) select the first tuple element.
+        (e_1, prop) = Expression.tupleHead(e_1, prop);
         (cache, e_1, prop) = Ceval.cevalIfConstant(cache, env, e_1, prop, impl, info);
         (e_val, cache) = elabModValue(cache, env, e_1, prop, impl, info);
         (cache,e_2) = PrefixUtil.prefixExp(cache, env, ih, e_1, pre)
@@ -237,6 +240,46 @@ algorithm
     else false; // Redeclarations, etc
   end match;
 end isInvariantMod;
+
+public function isInvariantDAEMod "Is the modification one that does not depend on the scope it is evaluated in?"
+  input DAE.Mod mod;
+  output Boolean b;
+protected
+  DAE.Exp e;
+  Absyn.Exp exp;
+  SCode.Mod mods;
+algorithm
+  b := match mod
+    case DAE.NOMOD() then true;
+    case DAE.MOD(binding=NONE())
+      algorithm
+        b := match mod.binding
+          case SOME(DAE.TYPED(modifierAsExp = e))
+            algorithm
+              (_, b) := Expression.traverseExpBottomUp(e, Expression.isInvariantExpNoTraverse, true);
+            then b;
+          case SOME(DAE.UNTYPED(exp))
+            algorithm
+              (_, b) := Absyn.traverseExp(exp, Absyn.isInvariantExpNoTraverse, true);
+            then b;
+          else true;
+        end match;
+        if not b then
+          return;
+        end if;
+        for sm in mod.subModLst loop
+          if not isInvariantDAEMod(sm.mod) then
+            b := false;
+            return;
+          end if;
+        end for;
+      then true;
+    // operator record ComplexCurrent = Complex(redeclare Modelica.SIunits.Current re, redeclare Modelica.SIunits.Current im)
+    case DAE.Mod.REDECL(element=SCode.Element.COMPONENT(modifications=mods,typeSpec=Absyn.TypeSpec.TPATH(path=Absyn.Path.FULLYQUALIFIED(),arrayDim=NONE())))
+      then isInvariantMod(mods);
+    else false; // Redeclarations, etc
+  end match;
+end isInvariantDAEMod;
 
 public function elabModForBasicType "
   Same as elabMod, but if a named Mod is not part of a basic type, fail instead."
@@ -2221,7 +2264,6 @@ algorithm
     case((DAE.NAMEMOD(id,m))::_,_)
       equation
         s2  = prettyPrintMod(m,depth+1);
-        s2 = if stringLength(s2) == 0 then "" else s2;
         s2 = "(" + id + s2 + "), class or component " + id;
       then
         s2;
@@ -2254,7 +2296,6 @@ algorithm
     case DAE.NAMEMOD(id,m)
       equation
         s2  = prettyPrintMod(m,0);
-        s2 = if stringLength(s2) == 0 then "" else s2;
         s2 = id + s2;
       then
         s2;

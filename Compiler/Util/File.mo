@@ -33,47 +33,15 @@ encapsulated package File
 
 class File
   extends ExternalObject;
-  function constructor
-    input Option<Integer> fromID = NONE() "If we should restore from another pointer. Note: Option<Integer> is an opaque pointer, not an actual Option.";
+  function constructor<T> "File constructor."
+    input Option<Integer> fromID = noReference() "Never pass this an actual Option<Integer>. Only use File.getReference(file) or File.noReference(). Determines if we should restore from another File object or create a new File.";
     output File file;
-  external "C" file=om_file_new(fromID) annotation(Include="
-#ifndef __OMC_FILE_NEW
-#define __OMC_FILE_NEW
-#include <stdio.h>
-#include <gc.h>
-static inline void* om_file_new(void *fromID)
-{
-  if (isNone(fromID)) {
-    FILE **res = (FILE**) GC_malloc(sizeof(FILE*));
-    res[0] = NULL;
-    res[1] = 0;
-    return res;
-  } else {
-    ((long**)fromID)[1]++; /* Increase reference count */
-    return fromID;
-  }
-}
-#endif
-");
-end constructor;
+  external "C" file=om_file_new(fromID) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
+  end constructor;
+
   function destructor
     input File file;
-  external "C" om_file_free(file) annotation(Include="
-#ifndef __OMC_FILE_FREE
-#define __OMC_FILE_FREE
-#include <stdio.h>
-static inline void om_file_free(FILE **file)
-{
-  if (file[1] /* reference count */) {
-    ((long**)file)[1]--;
-    return;
-  }
-  fclose(*file);
-  *file = 0;
-  GC_free(file);
-}
-#endif
-");
+  external "C" om_file_free(file) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
   end destructor;
 end File;
 
@@ -83,92 +51,27 @@ function open
   input File file;
   input String filename;
   input Mode mode = Mode.Read;
-external "C" om_file_open(file,filename,mode) annotation(Include="
-#ifndef __OMC_FILE_OPEN
-#define __OMC_FILE_OPEN
-#include <stdio.h>
-#include <errno.h>
-#include \"ModelicaUtilities.h\"
-static inline void om_file_open(FILE **file,const char *filename,int mode)
-{
-  if (*file) {
-    fclose(*file);
-  }
-  *file = fopen(filename, mode == 1 ? \"rb\" : \"wb\");
-  if (0 == *file) {
-    ModelicaFormatError(\"Failed to open file %s with mode %d: %s\\n\", filename, mode, strerror(errno));
-  }
-}
-#endif
-");
+external "C" om_file_open(file,filename,mode) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end open;
 
 function write
   input File file;
   input String data;
-external "C" om_file_write(file,data) annotation(Include="
-#ifndef __OMC_FILE_WRITE
-#define __OMC_FILE_WRITE
-#include <stdio.h>
-#include <errno.h>
-#include \"ModelicaUtilities.h\"
-static inline void om_file_write(FILE **file,const char *data)
-{
-  if (!*file) {
-    ModelicaError(\"Failed to write to file (not open)\");
-  }
-  if (EOF == fputs(data,*file)) {
-    ModelicaFormatError(\"Failed to write to file: %s\\n\", strerror(errno));
-  }
-}
-#endif
-");
+external "C" om_file_write(file,data) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end write;
 
 function writeInt
   input File file;
   input Integer data;
   input String format="%d";
-external "C" om_file_write_int(file,data,format) annotation(Include="
-#ifndef __OMC_FILE_WRITE_INT
-#define __OMC_FILE_WRITE_INT
-#include <stdio.h>
-#include <errno.h>
-#include \"ModelicaUtilities.h\"
-static inline void om_file_write_int(FILE **file,int data,const char *format)
-{
-  if (!*file) {
-    ModelicaError(\"Failed to write to file (not open)\");
-  }
-  if (EOF == fprintf(*file,format,data)) {
-    ModelicaFormatError(\"Failed to write to file: %s\\n\", strerror(errno));
-  }
-}
-#endif
-");
+external "C" om_file_write_int(file,data,format) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end writeInt;
 
 function writeReal
   input File file;
   input Real data;
   input String format="%.15g";
-external "C" om_file_write_real(file,data,format) annotation(Include="
-#ifndef __OMC_FILE_WRITE_REAL
-#define __OMC_FILE_WRITE_REAL
-#include <stdio.h>
-#include <errno.h>
-#include \"ModelicaUtilities.h\"
-static inline void om_file_write_real(FILE **file,double data,const char *format)
-{
-  if (!*file) {
-    ModelicaError(\"Failed to write to file (not open)\");
-  }
-  if (EOF == fprintf(*file,format,data)) {
-    ModelicaFormatError(\"Failed to write to file: %s\\n\", strerror(errno));
-  }
-}
-#endif
-");
+external "C" om_file_write_real(file,data,format) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end writeReal;
 
 type Escape = enumeration(None "No escape string",
@@ -180,82 +83,7 @@ function writeEscape
   input File file;
   input String data;
   input Escape escape;
-external "C" om_file_write_escape(file,data,escape) annotation(Include="
-#ifndef __OMC_FILE_WRITE_ESCAPE
-#define __OMC_FILE_WRITE_ESCAPE
-#include <stdio.h>
-#include <errno.h>
-#include \"ModelicaUtilities.h\"
-enum escape_t {
-  None=1,
-  C,
-  JSON,
-  XML
-};
-#define ERROR_WRITE() ModelicaFormatError(\"Failed to write to file: %s\\n\", strerror(errno))
-static inline void om_file_write_escape(FILE **file,const char *data,enum escape_t escape)
-{
-  if (!*file) {
-    ModelicaError(\"Failed to write to file (not open)\\n\");
-  }
-  switch (escape) {
-  case None:
-    if (EOF == fputs(data, *file)) {
-      ModelicaFormatError(\"Failed to write to file: %s\\n\", strerror(errno));
-    }
-    break;
-  case C:
-    while (*data) {
-      if (*data == '\\n') {
-        if (fputs(\"\\\\n\",*file)<0) ERROR_WRITE();
-      } else if (*data == '\"') {
-        if (fputs(\"\\\\\\\"\",*file)<0) ERROR_WRITE();
-      } else {
-        if (putc(*data,*file)<0) ERROR_WRITE();
-      }
-      data++;
-    }
-    break;
-  case JSON:
-    while (*data) {
-      switch (*data) {
-      case '\\\"': if (fputs(\"\\\\\\\"\",*file)<0) ERROR_WRITE();break;
-      case '\\\\': if (fputs(\"\\\\\\\\\",*file)<0) ERROR_WRITE();break;
-      case '\\n': if (fputs(\"\\\\n\",*file)<0) ERROR_WRITE();break;
-      case '\\b': if (fputs(\"\\\\b\",*file)<0) ERROR_WRITE();break;
-      case '\\f': if (fputs(\"\\\\f\",*file)<0) ERROR_WRITE();break;
-      case '\\r': if (fputs(\"\\\\r\",*file)<0) ERROR_WRITE();break;
-      case '\\t': if (fputs(\"\\\\t\",*file)<0) ERROR_WRITE();break;
-      default:
-        if (*data < ' ') { /* Escape other control characters */
-          if (fprintf(*file, \"\\\\u%04x\",*data)<0) ERROR_WRITE();
-        } else {
-          if (putc(*data,*file)<0) ERROR_WRITE();
-        }
-      }
-      data++;
-    }
-    break;
-  case XML:
-    while (*data) {
-      switch (*data) {
-      case '<': if (fputs(\"&lt;\",*file)<0) ERROR_WRITE();break;
-      case '>': if (fputs(\"&gt;\",*file)<0) ERROR_WRITE();break;
-      case '\"': if (fputs(\"&#34;\",*file)<0) ERROR_WRITE();break;
-      case '&': if (fputs(\"&amp;\",*file)<0) ERROR_WRITE();break;
-      case '\\'': if (fputs(\"&#39;\",*file)<0) ERROR_WRITE();break;
-      default:
-        if (putc(*data,*file)<0) ERROR_WRITE();
-      }
-      data++;
-    }
-    break;
-  default:
-    ModelicaFormatError(\"No such escape enumeration: %d\\n\", escape);
-  }
-}
-#endif
-");
+external "C" om_file_write_escape(file,data,escape) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end writeEscape;
 
 type Whence = enumeration(Set "SEEK_SET 0=start of file",Current "SEEK_CUR 0=current byte",End "SEEK_END 0=end of file");
@@ -265,74 +93,35 @@ function seek
   input Integer offset;
   input Whence whence = Whence.Set;
   output Boolean success;
-external "C" success = om_file_seek(file,offset,whence) annotation(Include="
-#ifndef __OMC_FILE_SEEK
-#define __OMC_FILE_SEEK
-#include <stdio.h>
-#include \"ModelicaUtilities.h\"
-enum whence_t {
-  OMC_SEEK_SET=1,
-  OMC_SEEK_CURRENT,
-  OMC_SEEK_END
-};
-static inline int om_file_seek(FILE **file,int offset,enum whence_t whence)
-{
-  if (!*file) {
-    return 0;
-  }
-  return 0==fseek(*file,offset,whence == OMC_SEEK_SET ? SEEK_SET : whence == OMC_SEEK_CURRENT ? OMC_SEEK_CURRENT : SEEK_END);
-}
-#endif
-");
+external "C" success = om_file_seek(file,offset,whence) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end seek;
 
 function tell
   input File file;
   output Integer pos;
-external "C" pos = om_file_tell(file) annotation(Include="
-#ifndef __OMC_FILE_TELL
-#define __OMC_FILE_TELL
-#include <stdio.h>
-static inline int om_file_tell(FILE **file)
-{
-  if (!*file) {
-    return -1;
-  }
-  return ftell(*file);
-}
-#endif
-");
+external "C" pos = om_file_tell(file) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end tell;
 
-function getReference
+function getFilename
+  input Option<Integer> file;
+  output String fileName;
+external "C" fileName = om_file_get_filename(file) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
+end getFilename;
+
+function noReference "Returns NULL (an opaque pointer; not actually Option<Integer>)"
+  output Option<Integer> reference;
+external "C" reference = om_file_no_reference() annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
+end noReference;
+
+function getReference "Returns an opaque pointer (not actually Option<Integer>)"
   input File file;
   output Option<Integer> reference;
-external "C" reference = om_file_get_reference(file) annotation(Include="
-#ifndef __OMC_FILE_REFERENCE
-#define __OMC_FILE_REFERENCE
-#include <stdio.h>
-static inline void* om_file_get_reference(FILE **file)
-{
-  ((long**)file)[1]++;
-  return file;
-}
-#endif
-");
+external "C" reference = om_file_get_reference(file) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end getReference;
 
 function releaseReference
   input File file;
-external "C" om_file_release_reference(file) annotation(Include="
-#ifndef __OMC_FILE_RELEASE_REFERENCE
-#define __OMC_FILE_RELEASE_REFERENCE
-#include <stdio.h>
-static inline void* om_file_release_reference(FILE **file)
-{
-  ((long**)file)[1]--;
-  return file;
-}
-#endif
-");
+external "C" om_file_release_reference(file) annotation(IncludeDirectory="modelica://File/", Include="#include \"omc_file.h\"");
 end releaseReference;
 
 function writeSpace

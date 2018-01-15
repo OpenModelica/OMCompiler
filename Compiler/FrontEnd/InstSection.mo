@@ -293,7 +293,7 @@ protected function instEquationCommonWork
 algorithm
   (outDae, outState) := matchcontinue inEEquation
     local
-      Absyn.ComponentRef lhs_acr, rhs_acr;
+      Absyn.ComponentRef lhs_acr, rhs_acr, acr;
       SourceInfo info;
       Absyn.Exp lhs_aexp, rhs_aexp, range_aexp;
       SCode.Comment comment;
@@ -514,7 +514,11 @@ algorithm
             inEEquation.level, inImpl, DAE.T_ASSERTIONLEVEL, "assert", "level", 3, info);
 
         source := makeEqSource(info, inEnv, inPrefix, inFlattenOp);
-        outDae := DAE.DAE({DAE.ASSERT(cond_exp, msg_exp, level_exp, source)});
+        if SCode.isInitial(inInitial) then
+          outDae := DAE.DAE({DAE.INITIAL_ASSERT(cond_exp, msg_exp, level_exp, source)});
+        else
+          outDae := DAE.DAE({DAE.ASSERT(cond_exp, msg_exp, level_exp, source)});
+        end if;
       then
         (outDae, inState);
 
@@ -524,15 +528,19 @@ algorithm
             inEEquation.message, inImpl, DAE.T_STRING_DEFAULT, "terminate", "message", 1, info);
 
         source := makeEqSource(info, inEnv, inPrefix, inFlattenOp);
-        outDae := DAE.DAE({DAE.TERMINATE(msg_exp, source)});
+        if SCode.isInitial(inInitial) then
+          outDae := DAE.DAE({DAE.INITIAL_TERMINATE(msg_exp, source)});
+        else
+          outDae := DAE.DAE({DAE.TERMINATE(msg_exp, source)});
+        end if;
       then
         (outDae, inState);
 
-    case SCode.EQ_REINIT(info = info)
+    case SCode.EQ_REINIT(cref = Absyn.CREF(componentRef = acr), info = info)
       algorithm
         // Elaborate the cref.
         (outCache, cr_exp as DAE.CREF(cr, ty), cr_prop, _) :=
-          Static.elabCrefNoEval(outCache, inEnv, inEEquation.cref, inImpl, false, inPrefix, info);
+          Static.elabCrefNoEval(outCache, inEnv, acr, inImpl, false, inPrefix, info);
         true := checkReinitType(ty, cr_prop, cr, info);
 
         // Elaborate the reinit expression.
@@ -545,7 +553,7 @@ algorithm
         exp := Types.matchProp(exp, prop, cr_prop, true);
 
         (outCache, cr_exp, exp, cr_prop) := condenseArrayEquation(outCache,
-          inEnv, Absyn.CREF(inEEquation.cref), inEEquation.expReinit, cr_exp,
+          inEnv, inEEquation.cref, inEEquation.expReinit, cr_exp,
           exp, cr_prop, prop, inImpl, inPrefix, info);
         (outCache, cr_exp) := PrefixUtil.prefixExp(outCache, inEnv, inIH, cr_exp, inPrefix);
         (outCache, exp) := PrefixUtil.prefixExp(outCache, inEnv, inIH, exp, inPrefix);
@@ -2301,14 +2309,14 @@ algorithm
       then
         Algorithm.makeIf(cond_exp, cond_prop, if_branch, else_if_branches, else_branch, source);
 
-    case SCode.ALG_FOR(info=_)
+    case SCode.ALG_FOR()
       algorithm
         (outCache, outStatements) := instForStatement(outCache, inEnv, inIH,
           inPrefix, inState, inStatement, inSource, inInitial, inImpl, inUnrollLoops);
       then
         outStatements;
 
-    case SCode.ALG_PARFOR(info=_)
+    case SCode.ALG_PARFOR()
       algorithm
         (outCache, outStatements) := instParForStatement(outCache, inEnv, inIH,
           inPrefix, inState, inStatement, inSource, inInitial, inImpl, inUnrollLoops);
@@ -2375,7 +2383,7 @@ algorithm
     case SCode.ALG_REINIT(info = info)
       algorithm
         (outCache, cr_exp, cr_prop) := instExp(outCache, inEnv, inIH, inPrefix,
-          Absyn.CREF(inStatement.cref), inImpl, info);
+          inStatement.cref, inImpl, info);
         (outCache, exp, prop) := instExp(outCache, inEnv, inIH, inPrefix,
           inStatement.newValue, inImpl, info);
         source := ElementSource.addElementSourceFileInfo(inSource, info);
@@ -5059,7 +5067,7 @@ algorithm
           Static.elabCrefNoEval(cache, inEnv, cr, inImpl, false, inPre, info);
         Static.checkAssignmentToInput(var, attr, inEnv, false, info);
         (cache, ce_1) = Static.canonCref(cache, inEnv, ce, inImpl);
-        (cache, ce_1) = PrefixUtil.prefixCref(cache, inEnv, inIH, inPre, ce_1);
+        (cache, ce_1) = PrefixUtil.prefixCrefInnerOuter(cache, inEnv, inIH, ce_1, inPre);
 
         (cache, t) = PrefixUtil.prefixExpressionsInType(cache, inEnv, inIH, inPre, t);
 

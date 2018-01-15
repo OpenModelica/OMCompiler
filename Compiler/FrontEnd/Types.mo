@@ -427,24 +427,19 @@ algorithm
       Type at;
       DAE.Dimensions ad;
       DAE.Dimension dim;
-      Integer ll;
       list<DAE.Var> vars;
       ClassInf.State CIS;
       DAE.EqualityConstraint ec;
 
     // convert just the array!
-    case DAE.T_ARRAY(at,dim::ad)
-      equation
-        ll = listLength(ad);
-        true = (ll == 0);
+    case DAE.T_ARRAY(at,{dim})
+  equation
         ty = expTypetoTypesType(at);
         tty = DAE.T_ARRAY(ty,{dim});
       then
         tty;
     case DAE.T_ARRAY(at,dim::ad)
       equation
-        ll = listLength(ad);
-        true = (ll > 0);
         ty = expTypetoTypesType(DAE.T_ARRAY(at,ad));
         tty = DAE.T_ARRAY(ty,{dim});
       then
@@ -3439,13 +3434,6 @@ algorithm
       DAE.Dimension dim;
 
     // Array type
-    case DAE.T_ARRAY(dims = {dim})
-      equation
-        (ty, dims) = flattenArrayType(inType.ty);
-      then
-        (ty, dim :: dims);
-
-    // Array type
     case DAE.T_ARRAY()
       equation
         (ty, dims) = flattenArrayType(inType.ty);
@@ -4139,7 +4127,7 @@ algorithm
 
     case(e, _, _, true)
       equation
-        // activate on +d=types flag
+        // activate on -d=types flag
         true = Flags.isSet(Flags.TYPES);
         Debug.traceln("- Types.matchProp failed on exp: " + ExpressionDump.printExpStr(e));
         Debug.traceln(printPropStr(inActualType) + " != ");
@@ -4842,7 +4830,7 @@ algorithm
   end matchcontinue;
 end typeConvert;
 
-protected function liftExpType "help funciton to typeConvert. Changes the DAE.Type stored
+protected function liftExpType "help function to typeConvert. Changes the DAE.Type stored
 in expression (which is typically a CAST) by adding a dimension to it, making it into an array
 type."
  input DAE.Exp ie;
@@ -7296,27 +7284,6 @@ algorithm
     else false;
   end match;
 end varHasMetaRecordType;
-
-public function scalarSuperType
-  "Checks that the givens types are scalar and that one is subtype of the other (in the case of integers)."
-  input DAE.Type ity1;
-  input DAE.Type ity2;
-  output DAE.Type ty;
-algorithm
-  ty := match (ity1,ity2)
-    local Type ty1, ty2;
-    case (DAE.T_INTEGER(),DAE.T_INTEGER()) then DAE.T_INTEGER_DEFAULT;
-    case (DAE.T_REAL(),DAE.T_REAL())       then DAE.T_REAL_DEFAULT;
-    case (DAE.T_INTEGER(),DAE.T_REAL())    then DAE.T_REAL_DEFAULT;
-    case (DAE.T_REAL(),DAE.T_INTEGER())    then DAE.T_REAL_DEFAULT;
-    case (DAE.T_SUBTYPE_BASIC(complexType = ty1),ty2)          then scalarSuperType(ty1,ty2);
-    case (ty1,DAE.T_SUBTYPE_BASIC(complexType = ty2))          then scalarSuperType(ty1,ty2);
-
-    case (DAE.T_BOOL(),DAE.T_BOOL())       then DAE.T_BOOL_DEFAULT;
-    // adrpo: TODO? Why not string here?
-    // case (DAE.T_STRING(varLst = _),DAE.T_STRING(varLst = _))   then DAE.T_STRING_DEFAULT;
-  end match;
-end scalarSuperType;
 
 protected function optInteger
   input Option<Integer> inInt;

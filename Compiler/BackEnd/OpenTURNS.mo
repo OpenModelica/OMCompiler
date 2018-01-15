@@ -80,18 +80,14 @@ public function generateOpenTURNSInterface "generates the dll and the python scr
   input Absyn.Program inProgram;
   input String templateFile "the filename to the template file (python script)";
   output String scriptFile "the name of the generated file";
-
-  protected
+protected
   String cname_str,fileNamePrefix,fileDir,cname_last_str;
   list<String> libs;
   BackendDAE.BackendDAE dae,strippedDae;
   SimCode.SimulationSettings simSettings;
   BackendDAE.BackendDAE initDAE;
   Option<BackendDAE.BackendDAE> initDAE_lambda0;
-  Boolean useHomotopy "true if homotopy(...) is used during initialization";
   list<BackendDAE.Equation> removedInitialEquationLst;
-  list<BackendDAE.Var> primaryParameters "already sorted";
-  list<BackendDAE.Var> allPrimaryParameters "already sorted";
 algorithm
   cname_str := Absyn.pathString(inPath);
   cname_last_str := Absyn.pathLastIdent(inPath);
@@ -112,13 +108,13 @@ algorithm
  // Strip correlation vector from dae to be able to compile (bug in OpenModelica with vectors of records )
   strippedDae := stripCorrelationFromDae(inDaelow);
 
-  (strippedDae, initDAE, _, useHomotopy, initDAE_lambda0, removedInitialEquationLst, primaryParameters, allPrimaryParameters) := BackendDAEUtil.getSolvedSystem(strippedDae,"");
+  (strippedDae, initDAE, initDAE_lambda0, _, removedInitialEquationLst) := BackendDAEUtil.getSolvedSystem(strippedDae,"");
 
   //print("strippedDae :");
   //BackendDump.dump(strippedDae);
   _ := System.realtimeTock(ClockIndexes.RT_CLOCK_BACKEND); // Is this necessary?
 
-  (libs, fileDir, _, _) := SimCodeMain.generateModelCode(strippedDae, initDAE, NONE(), useHomotopy, initDAE_lambda0, removedInitialEquationLst, primaryParameters, allPrimaryParameters,inProgram, inPath, cname_str, SOME(simSettings), Absyn.FUNCTIONARGS({}, {}));
+  (libs, fileDir, _, _) := SimCodeMain.generateModelCode(strippedDae, initDAE, initDAE_lambda0, NONE(), removedInitialEquationLst,inProgram, inPath, cname_str, SOME(simSettings), Absyn.FUNCTIONARGS({}, {}));
 
   //print("..compiling, fileNamePrefix = "+fileNamePrefix+"\n");
   CevalScript.compileModel(fileNamePrefix , libs);
@@ -510,7 +506,7 @@ protected
   BackendDAE.Variables vars;
 algorithm
   BackendDAE.EQSYSTEM(orderedVars = vars, orderedEqs=eqns) := eqs;
-  notZero := BackendVariable.varsSize(vars) > 0 and BackendDAEUtil.equationArraySize(eqns) > 0;
+  notZero := BackendVariable.varsSize(vars) > 0 and BackendEquation.getNumberOfEquations(eqns) > 0;
 end eqnSystemNotZero;
 
 protected function stripCorrelationVarsAndEqns " help function "

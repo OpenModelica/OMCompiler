@@ -384,7 +384,7 @@ end stringContainsChar;
 
 public function stringDelimitListPrintBuf "
 Author: BZ, 2009-11
-Same funcitonality as stringDelimitListPrint, but writes to print buffer instead of string variable.
+Same functionality as stringDelimitListPrint, but writes to print buffer instead of string variable.
 Usefull for heavy string operations(causes malloc error on some models when generating init file).
 "
   input list<String> inStringLst;
@@ -496,7 +496,7 @@ protected
    algorithm
        lst:=stringSplitAtChar(inString,delim);
        lst2:=List.map(lst, stringInt);
-       if(intGt(listLength(lst2), 0)) then
+       if not listEmpty(lst2) then
          i := List.fold(lst2,intMul,1);
        else
          i := 0;
@@ -912,6 +912,21 @@ public function intCompare
   output Integer outResult = if inN == inM then 0 elseif inN > inM then 1 else -1;
 end intCompare;
 
+public function intPow
+  "Performs integer exponentiation."
+  input Integer base;
+  input Integer exponent;
+  output Integer result = 1;
+algorithm
+  if exponent >= 0 then
+    for i in 1:exponent loop
+      result := result * base;
+    end for;
+  else
+    fail();
+  end if;
+end intPow;
+
 public function realCompare
   "Compares two reals and return -1 if the first is smallest, 1 if the second
    is smallest, or 0 if they are equal."
@@ -927,12 +942,6 @@ public function boolCompare
   input Boolean inM;
   output Integer outResult = if inN == inM then 0 elseif inN > inM then 1 else -1;
 end boolCompare;
-
-public function isEmptyString
-  "Returns true if string is the empty string."
-  input String inString;
-  output Boolean outIsEmpty = stringLength(inString) == 0;
-end isEmptyString;
 
 public function isNotEmptyString "Returns true if string is not the empty string."
   input String inString;
@@ -1077,7 +1086,7 @@ algorithm
   end match;
 end mulListIntegerOpt;
 
-public type StatefulBoolean = array<Boolean> "A single boolean value that can be updated (a destructive operation)";
+public type StatefulBoolean = array<Boolean> "A single boolean value that can be updated (a destructive operation). NOTE: Use Mutable<Boolean> instead. This implementation is kept since Susan cannot use that type.";
 
 public function makeStatefulBoolean
 "Create a boolean with state (that is, it is mutable)"

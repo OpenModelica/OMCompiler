@@ -141,7 +141,7 @@ algorithm
 
           if isSome(ocls) then
             SOME(cls) := ocls;
-            SCode.CLASS(name = cn, encapsulatedPrefix = encf, restriction = _) := cls;
+            SCode.CLASS(name = cn, encapsulatedPrefix = encf) := cls;
           else
             // Base class could not be found, print an error unless --permissive
             // is used.
@@ -501,7 +501,7 @@ algorithm
         SCode.CLASS(_,prefixes2,encapsulatedPrefix2,partialPrefix2,restriction2,SCode.PARTS(els2,nEqn2,inEqn2,nAlg2,inAlg2,inCons2,clats,externalDecl2),comment2,info2) = cl;
 
         SCode.CLASS(_, prefixes1, encapsulatedPrefix1, partialPrefix1, restriction1, classExtendsCdef, comment1, info1) = classExtendsElt;
-        SCode.CLASS_EXTENDS(_,mods,SCode.PARTS(els1,nEqn1,inEqn1,nAlg1,inAlg1,inCons1,_,externalDecl1)) = classExtendsCdef;
+        SCode.CLASS_EXTENDS(mods,SCode.PARTS(els1,nEqn1,inEqn1,nAlg1,inAlg1,inCons1,_,externalDecl1)) = classExtendsCdef;
 
         classDef = SCode.PARTS(els2,nEqn2,inEqn2,nAlg2,inAlg2,inCons2,clats,externalDecl2);
         compelt = SCode.CLASS(name2,prefixes2,encapsulatedPrefix2,partialPrefix2,restriction2,classDef,comment2,info2);
@@ -524,7 +524,7 @@ algorithm
         SCode.CLASS(_,prefixes2,encapsulatedPrefix2,partialPrefix2,restriction2,SCode.DERIVED(derivedTySpec, derivedMod, attrs),comment2,info2) = cl;
 
         SCode.CLASS(_, prefixes1, encapsulatedPrefix1, partialPrefix1, restriction1, classExtendsCdef, comment1, info1) = classExtendsElt;
-        SCode.CLASS_EXTENDS(_,mods,SCode.PARTS(els1,nEqn1,inEqn1,nAlg1,inAlg1,inCons1,_,externalDecl1)) = classExtendsCdef;
+        SCode.CLASS_EXTENDS(mods,SCode.PARTS(els1,nEqn1,inEqn1,nAlg1,inAlg1,inCons1,_,externalDecl1)) = classExtendsCdef;
 
         classDef = SCode.DERIVED(derivedTySpec, derivedMod, attrs);
         compelt = SCode.CLASS(name2,prefixes2,encapsulatedPrefix2,partialPrefix2,restriction2,classDef,comment2,info2);
@@ -1025,7 +1025,6 @@ algorithm
       Option<SCode.Comment> c;
       Absyn.TypeSpec ts,ts_1;
       SCode.Attributes attr;
-      String name;
       SCode.Mod mod,mod_1;
       FCore.Graph env;
       SCode.ClassDef cd,cd_1;
@@ -1042,7 +1041,7 @@ algorithm
       then if referenceEq(elts,elts_1) and referenceEq(ne,ne_1) and referenceEq(ie,ie_1) and referenceEq(na,na_1) and referenceEq(ia,ia_1) and referenceEq(nc,nc_1)
            then inCd else SCode.PARTS(elts_1,ne_1,ie_1,na_1,ia_1,nc_1,clats,ed);
 
-    case (env,SCode.CLASS_EXTENDS(name,mod,cd as SCode.PARTS(elts,ne,ie,na,ia,nc,clats,ed)))
+    case (env,SCode.CLASS_EXTENDS(mod,cd as SCode.PARTS(elts,ne,ie,na,ia,nc,clats,ed)))
       equation
         mod_1 = fixModifications(cache,env,mod,inTree);
         elts_1 = fixList(cache,env,elts,tree,fixElement);
@@ -1054,7 +1053,7 @@ algorithm
         cd_1 = if referenceEq(elts,elts_1) and referenceEq(ne,ne_1) and referenceEq(ie,ie_1) and referenceEq(na,na_1) and referenceEq(ia,ia_1) and referenceEq(nc,nc_1)
              then cd else SCode.PARTS(elts_1,ne_1,ie_1,na_1,ia_1,nc_1,clats,ed);
       then if referenceEq(cd,cd_1) and referenceEq(mod,mod_1)
-           then inCd else SCode.CLASS_EXTENDS(name,mod_1,cd_1);
+           then inCd else SCode.CLASS_EXTENDS(mod_1,cd_1);
 
     case (env,SCode.DERIVED(ts,mod,attr))
       equation
@@ -1171,11 +1170,11 @@ algorithm
       equation
         exp = fixExp(cache,inEnv,exp,tree);
       then (SCode.EQ_TERMINATE(exp,comment,info));
-    case SCode.EQ_REINIT(cref,exp,comment,info)
+    case SCode.EQ_REINIT(exp1,exp,comment,info)
       equation
-        cref = fixCref(cache,inEnv,cref,tree);
+        exp1 = fixExp(cache,inEnv,exp1,tree);
         exp = fixExp(cache,inEnv,exp,tree);
-      then (SCode.EQ_REINIT(cref,exp,comment,info));
+      then (SCode.EQ_REINIT(exp1,exp,comment,info));
     case SCode.EQ_NORETCALL(exp,comment,info)
       equation
         exp = fixExp(cache,inEnv,exp,tree);
@@ -1264,7 +1263,7 @@ algorithm
       Option<Absyn.Exp> optExp1,optExp2;
       String iter;
       list<tuple<Absyn.Exp, list<SCode.Statement>>> elseifbranch1,elseifbranch2,whenlst;
-      list<SCode.Statement> truebranch1,truebranch2,elsebranch1,elsebranch2,forbody1,forbody2,whilebody1,whilebody2;
+      list<SCode.Statement> truebranch1,truebranch2,elsebranch1,elsebranch2,body1,body2;
       SCode.Comment comment;
       SourceInfo info;
       SCode.Statement stmt;
@@ -1284,23 +1283,23 @@ algorithm
         elsebranch2 = fixList(cache,inEnv,elsebranch1,tree,fixStatement);
       then if referenceEq(exp1,exp2) and referenceEq(truebranch1,truebranch2) and referenceEq(elseifbranch1,elseifbranch2) and referenceEq(elsebranch1,elsebranch2) then inStmt else SCode.ALG_IF(exp2,truebranch2,elseifbranch2,elsebranch2,comment,info);
 
-    case SCode.ALG_FOR(iter,optExp1,forbody1,comment,info)
+    case SCode.ALG_FOR(iter,optExp1,body1,comment,info)
       equation
         optExp2 = fixOption(cache,inEnv,optExp1,tree,fixExp);
-        forbody2 = fixList(cache,inEnv,forbody1,tree,fixStatement);
-      then if referenceEq(optExp1,optExp2) and referenceEq(forbody1,forbody2) then inStmt else SCode.ALG_FOR(iter,optExp2,forbody2,comment,info);
+        body2 = fixList(cache,inEnv,body1,tree,fixStatement);
+      then if referenceEq(optExp1,optExp2) and referenceEq(body1,body2) then inStmt else SCode.ALG_FOR(iter,optExp2,body2,comment,info);
 
-    case SCode.ALG_PARFOR(iter,optExp1,forbody1,comment,info)
+    case SCode.ALG_PARFOR(iter,optExp1,body1,comment,info)
       equation
         optExp2 = fixOption(cache,inEnv,optExp1,tree,fixExp);
-        forbody2 = fixList(cache,inEnv,forbody1,tree,fixStatement);
-      then if referenceEq(optExp1,optExp2) and referenceEq(forbody1,forbody2) then inStmt else SCode.ALG_PARFOR(iter,optExp2,forbody2,comment,info);
+        body2 = fixList(cache,inEnv,body1,tree,fixStatement);
+      then if referenceEq(optExp1,optExp2) and referenceEq(body1,body2) then inStmt else SCode.ALG_PARFOR(iter,optExp2,body2,comment,info);
 
-    case SCode.ALG_WHILE(exp1,whilebody1,comment,info)
+    case SCode.ALG_WHILE(exp1,body1,comment,info)
       equation
         exp2 = fixExp(cache,inEnv,exp1,tree);
-        whilebody2 = fixList(cache,inEnv,whilebody1,tree,fixStatement);
-      then if referenceEq(exp1,exp2) and referenceEq(whilebody1,whilebody2) then inStmt else SCode.ALG_WHILE(exp2,whilebody2,comment,info);
+        body2 = fixList(cache,inEnv,body1,tree,fixStatement);
+      then if referenceEq(exp1,exp2) and referenceEq(body1,body2) then inStmt else SCode.ALG_WHILE(exp2,body2,comment,info);
 
     case SCode.ALG_WHEN_A(whenlst,comment,info)
       equation
@@ -1319,11 +1318,11 @@ algorithm
         exp2 := fixExp(cache, inEnv, exp1, tree);
       then if referenceEq(exp1,exp2) then inStmt else SCode.ALG_TERMINATE(exp2, comment, info);
 
-    case SCode.ALG_REINIT(cr1, exp1, comment, info)
+    case SCode.ALG_REINIT(exp1, exp2, comment, info)
       algorithm
-        cr2 := fixCref(cache, inEnv, cr1, tree);
-        exp2 := fixExp(cache, inEnv, exp1, tree);
-      then if referenceEq(cr1,cr2) and referenceEq(exp1,exp2) then inStmt else SCode.ALG_REINIT(cr2, exp2, comment, info);
+        exp1_1 := fixExp(cache, inEnv, exp1, tree);
+        exp2_1 := fixExp(cache, inEnv, exp2, tree);
+      then if referenceEq(exp1, exp1_1) and referenceEq(exp2, exp2_1) then inStmt else SCode.ALG_REINIT(exp1_1, exp2_1, comment, info);
 
     case SCode.ALG_NORETCALL(exp1,comment,info)
       equation
@@ -1331,8 +1330,23 @@ algorithm
       then if referenceEq(exp1,exp2) then inStmt else SCode.ALG_NORETCALL(exp2,comment,info);
 
     case SCode.ALG_RETURN() then inStmt;
-
     case SCode.ALG_BREAK() then inStmt;
+
+    case SCode.ALG_FAILURE(body1, comment, info)
+      algorithm
+        body2 := fixList(cache, inEnv, body1, tree, fixStatement);
+      then
+        if referenceEq(body1, body2) then inStmt else SCode.ALG_FAILURE(body2, comment, info);
+
+    case SCode.ALG_TRY(truebranch1, elsebranch1, comment, info)
+      algorithm
+        truebranch2 := fixList(cache, inEnv, truebranch1, tree, fixStatement);
+        elsebranch2 := fixList(cache, inEnv, elsebranch1, tree, fixStatement);
+      then
+        if referenceEq(truebranch1, truebranch2) and referenceEq(elsebranch1, elsebranch2) then
+          inStmt else SCode.ALG_TRY(truebranch2, elsebranch2, comment, info);
+
+    case SCode.ALG_CONTINUE() then inStmt;
 
     else
       equation
@@ -1500,6 +1514,12 @@ algorithm
       Absyn.ComponentRef cref;
       SCode.Element c;
       Boolean isOutside;
+
+    case (env, Absyn.CREF_FULLYQUALIFIED())
+      algorithm
+        env := FGraph.topScope(inEnv);
+      then
+        fixCref(cache, env, inCref.componentRef, tree);
 
     case (env,cref)
       algorithm

@@ -78,6 +78,21 @@ extern const char* System_stringReplace(const char* str, const char* source, con
   return res;
 }
 
+extern const char* System_makeC89Identifier(const char* str)
+{
+  int i=0, len=strlen(str);
+  char *res = omc_alloc_interface.malloc_strdup(str);
+  if (!((res[0]>='a' && res[0]<='z') || (res[0]>='A' && res[0]<='Z'))) {
+    res[0] = '_';
+  }
+  for (i=1; i<len; i++) {
+    if (!((res[i]>='a' && res[i]<='z') || (res[i]>='A' && res[i]<='Z') || (res[i]>='0' && res[i]<='9'))) {
+      res[i] = '_';
+    }
+  }
+  return res;
+}
+
 extern int System_stringFind(const char* str, const char* searchStr)
 {
   const char *found = strstr(str, searchStr);
@@ -790,26 +805,23 @@ extern void* System_launchParallelTasks(threadData_t *threadData, int numThreads
 {
   int len = listLength(dataLst), i;
   void *result = mmc_mk_nil();
-  thread_data data;
+  thread_data data = {0};
 #if !defined(_MSC_VER)
   void *commands[len];
   void *status[len];
-  int ids[len];
   pthread_t th[numThreads];
   int isInteger = 0;
-  memset(th, 0, numThreads*sizeof(pthread_t)); /* Make sure we get nothing unexpected here */
 
 #if defined(__MINGW32__)
-  /* adrpo: set thread stack size on Windows to 2MB */
+  /* adrpo: set thread stack size on Windows to 4MB */
   pthread_attr_t attr;
   pthread_attr_init(&attr);
-  pthread_attr_setstacksize(&attr, 2097152);
+  pthread_attr_setstacksize(&attr, 4194304);
 #endif
 
-#else
+#else /* MSVC */
   void **commands = (void**) omc_alloc_interface.malloc(sizeof(void*)*len);
   void **status = (void**) omc_alloc_interface.malloc(sizeof(void*)*len);
-  int *ids = (int*) omc_alloc_interface.malloc_atomic(sizeof(int)*len);
   pthread_t *th = (pthread_t*) omc_alloc_interface.malloc(sizeof(pthread_t)*numThreads);
 #endif
   if (len == 0) {
@@ -817,6 +829,12 @@ extern void* System_launchParallelTasks(threadData_t *threadData, int numThreads
   } else if (numThreads == 1 || len == 1) {
     return System_launchParallelTasksSerial(threadData,dataLst,fn);
   }
+
+  /* Make sure we get nothing unexpected here */
+  memset(commands, 0, len*sizeof(void*));
+  memset(status, 0, len*sizeof(void*));
+  memset(th, 0, numThreads*sizeof(pthread_t));
+
   pthread_mutex_init(&data.mutex,NULL);
   data.fn = fn;
   data.current = 0;

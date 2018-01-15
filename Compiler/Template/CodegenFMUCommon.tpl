@@ -58,12 +58,28 @@ template ModelExchange(SimCode simCode)
 match simCode
 case SIMCODE(__) then
   let modelIdentifier = modelNamePrefix(simCode)
+  let pdd = providesDirectionalDerivative(simCode)
   <<
   <ModelExchange
-    modelIdentifier="<%modelIdentifier%>"<% if Flags.isSet(FMU_EXPERIMENTAL) then ' providesDirectionalDerivative="true"'%>>
+    modelIdentifier="<%modelIdentifier%>"<% if not pdd then '>' %>
+    <% if pdd then 'providesDirectionalDerivative="' + pdd + '">' %>
   </ModelExchange>
   >>
 end ModelExchange;
+
+template providesDirectionalDerivative(SimCode simCode)
+ "Returns true if Jacobian is present, returns nothing otherwise"
+::=
+match simCode
+case SIMCODE(__) then
+  let result = if isSome(modelStructure) then
+    match modelStructure
+    case SOME(FMIMODELSTRUCTURE(continuousPartialDerivatives=SOME(__)))
+      then "true"
+      else ""
+    else ""
+  '<%result%>'
+end providesDirectionalDerivative;
 
 template fmiModelVariables(SimCode simCode, String FMUVersion)
  "Generates code for ModelVariables file for FMU target."
@@ -318,26 +334,24 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
       case REAL_CLOCK(interval=baseInterval as RCONST(real=bi)) then
         (subPartitions |> subPartition =>
           match subPartition
-          case SUBPARTITION(subClock=SUBCLOCK(factor=RATIONAL(nom=fnom, denom=fres), shift=RATIONAL(nom=snom, denom=sres))) then
+          case SUBPARTITION(subClock=SUBCLOCK(factor=RATIONAL(nom=fsub, denom=fsuper), shift=RATIONAL(nom=snom, denom=sres))) then
           <<
           <Clock><Periodic
-                  baseInterval="<%bi%>"
-                  <%if intGt(fnom, 1) then 'subSampleFactor="'+fnom+'"'%>
-                  <%if intGt(fres, 1) then 'superSampleFactor="'+fres+'"'%>
+                  interval="<%realMul(bi, realDiv(intReal(fsub), intReal(fsuper)))%>"
                   <%if intGt(snom, 0) then 'shiftCounter="'+snom+'"'%>
+                  <%if intGt(sres, 1) then 'resolution="'+sres+'"'%>
                   /></Clock>
           >>
         ; separator="\n")
       case INTEGER_CLOCK(intervalCounter=ic as ICONST(integer=bic), resolution=res as ICONST(integer=resi)) then
         (subPartitions |> subPartition =>
           match subPartition
-          case SUBPARTITION(subClock=SUBCLOCK(factor=RATIONAL(nom=fnom, denom=fres), shift=RATIONAL(nom=snom, denom=sres))) then
+          case SUBPARTITION(subClock=SUBCLOCK(factor=RATIONAL(nom=fsub, denom=fsuper), shift=RATIONAL(nom=snom, denom=sres))) then
           <<
           <Clock><Periodic
-                  intervalCounter="<%bic%>"
-                  resolution="<%resi%>"
-                  <%if intGt(fnom, 1) then 'subSampleFactor="'+fnom+'"'%>
-                  <%if intGt(snom, 0) then 'shiftCounter="'+snom+'"'%>
+                  intervalCounter="<%intMul(intMul(bic, fsub), sres)%>"
+                  <%if intGt(snom, 0) then 'shiftCounter="'+intMul(intMul(snom, resi), fsuper)+'"'%>
+                  resolution="<%intMul(intMul(resi, sres), fsuper)%>"
                   /></Clock>
           >>
         ; separator="\n")
@@ -548,9 +562,7 @@ match variability
 end getInitialType2;
 
 template ScalarVariableType2(SimVar simvar, list<SimVar> stateVars)
- "Generates code for ScalarVariable Type file for FMU 2.0 target.
-  - Don't generate the units for now since it is wrong. If you generate a unit attribute here then we must add the UnitDefinitions tag section also.
- "
+ "Generates code for ScalarVariable Type file for FMU 2.0 target."
 ::=
 match simvar
 case SIMVAR(__) then
@@ -568,10 +580,11 @@ template ScalarVariableTypeCommonAttribute2(SimVar simvar, list<SimVar> stateVar
 ::=
 match simvar
 case SIMVAR(varKind = varKind, isValueChangeable = isValueChangeable, index = index) then
-  match varKind
-  case STATE_DER(__) then ' derivative="<%getStateSimVarIndexFromIndex(stateVars, index)%>"'
-  case PARAM(__) then if isValueChangeable then '<%StartString2(simvar)%><%MinString2(simvar)%><%MaxString2(simvar)%><%NominalString2(simvar)%>' else '<%MinString2(simvar)%><%MaxString2(simvar)%><%NominalString2(simvar)%>'
-  else '<%StartString2(simvar)%><%MinString2(simvar)%><%MaxString2(simvar)%><%NominalString2(simvar)%>'
+  let extraAttributes = match varKind
+    case STATE_DER(__) then ' derivative="<%getStateSimVarIndexFromIndex(stateVars, index)%>"'
+    case PARAM(__) then if isValueChangeable then '<%StartString2(simvar)%>' else ''
+    else '<%StartString2(simvar)%>'
+  '<%extraAttributes%><%MinString2(simvar)%><%MaxString2(simvar)%><%NominalString2(simvar)%><%UnitString2(simvar)%>'
 end ScalarVariableTypeCommonAttribute2;
 
 template StartString2(SimVar simvar)
@@ -628,6 +641,16 @@ case SIMVAR(nominalValue = nominalValue) then
     case SOME(e as RCONST(__)) then ' nominal="<%initValXml(e)%>"'
     else ''
 end NominalString2;
+
+template UnitString2(SimVar simvar)
+::=
+match simvar
+case SIMVAR(unit = unit, displayUnit = displayUnit) then
+  let unitString = if unit then ' unit="<%unit%>"'
+  let displayUnitString = if displayUnit then ' displayUnit="<%displayUnit%>"'
+  //'<%unitString%><%displayUnitString%>' skip displayUnit because FMI2XML fails for e.g. bar
+  '<%unitString%>'
+end UnitString2;
 
 template statesnumwithDummy(list<SimVar> vars)
 " return number of states without dummy vars"

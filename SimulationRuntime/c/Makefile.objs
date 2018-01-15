@@ -59,7 +59,7 @@ else
 SOLVER_OBJS_MIXED_SYSTEMS=mixedSystem$(OBJ_EXT) mixedSearchSolver$(OBJ_EXT)
 endif
 
-SOLVER_OBJS_FMU=delay$(OBJ_EXT) $(SOLVER_OBJS_LINEAR_SYSTEMS) $(SOLVER_OBJS_MIXED_SYSTEMS) $(SOLVER_OBJS_NONLINEAR_SYSTEMS) omc_math$(OBJ_EXT) model_help$(OBJ_EXT) stateset$(OBJ_EXT) synchronous$(OBJ_EXT)
+SOLVER_OBJS_FMU=delay$(OBJ_EXT) $(SOLVER_OBJS_LINEAR_SYSTEMS) $(SOLVER_OBJS_MIXED_SYSTEMS) $(SOLVER_OBJS_NONLINEAR_SYSTEMS) fmi_events$(OBJ_EXT) omc_math$(OBJ_EXT) model_help$(OBJ_EXT) stateset$(OBJ_EXT) synchronous$(OBJ_EXT)
 ifeq ($(OMC_FMI_RUNTIME),)
 SOLVER_OBJS_MINIMAL=$(SOLVER_OBJS_FMU) events$(OBJ_EXT) external_input$(OBJ_EXT) solver_main$(OBJ_EXT) real_time_sync$(OBJ_EXT) embedded_server$(OBJ_EXT)
 
@@ -71,7 +71,7 @@ SOLVER_OBJS=$(SOLVER_OBJS_MINIMAL) kinsolSolver$(OBJ_EXT) linearSolverKlu$(OBJ_E
 else
 SOLVER_OBJS=$(SOLVER_OBJS_MINIMAL)
 endif
-SOLVER_HFILES = dassl.h delay.h epsilon.h events.h external_input.h ida_solver.h linearSystem.h mixedSystem.h model_help.h nonlinearSystem.h nonlinearValuesList.h radau.h sym_solver_ssc.h solver_main.h stateset.h
+SOLVER_HFILES = dassl.h delay.h epsilon.h events.h external_input.h fmi_events.h ida_solver.h linearSystem.h mixedSystem.h model_help.h nonlinearSystem.h nonlinearValuesList.h radau.h sym_solver_ssc.h solver_main.h stateset.h
 
 INITIALIZATION_OBJS = initialization$(OBJ_EXT)
 INITIALIZATION_HFILES = initialization.h
@@ -84,14 +84,14 @@ OPTIMIZATION_OBJS=
 OPTIMIZATION_HFILES=
 endif
 
-RESULTS_OBJS_MINIMAL=simulation_result$(OBJ_EXT) simulation_result_csv$(OBJ_EXT) simulation_result_mat$(OBJ_EXT)
+RESULTS_OBJS_MINIMAL=simulation_result$(OBJ_EXT) simulation_result_csv$(OBJ_EXT) simulation_result_mat4$(OBJ_EXT) MatVer4$(OBJ_EXT)
 ifeq ($(OMC_MINIMAL_RUNTIME),)
 RESULTS_OBJS=$(RESULTS_OBJS_MINIMAL) simulation_result_ia$(OBJ_EXT) simulation_result_plt$(OBJ_EXT) simulation_result_wall$(OBJ_EXT)
 else
 RESULTS_OBJS=$(RESULTS_OBJS_MINIMAL)
 endif
-RESULTS_HFILES = simulation_result_ia.h simulation_result.h simulation_result_csv.h simulation_result_mat.h simulation_result_plt.h simulation_result_wall.h
-RESULTS_FILES = simulation_result_ia.cpp simulation_result_csv.cpp simulation_result_mat.cpp simulation_result_plt.cpp simulation_result_wall.cpp
+RESULTS_HFILES = simulation_result_ia.h simulation_result.h simulation_result_csv.h simulation_result_mat4.h MatVer4.h simulation_result_plt.h simulation_result_wall.h
+RESULTS_FILES = simulation_result_ia.cpp simulation_result_csv.cpp simulation_result_mat4.cpp MatVer4.cpp simulation_result_plt.cpp simulation_result_wall.cpp
 
 SIM_OBJS = simulation_runtime$(OBJ_EXT) ../linearization/linearize$(OBJ_EXT) socket$(OBJ_EXT)
 ifeq ($(OMC_FMI_RUNTIME),)
