@@ -843,6 +843,12 @@ algorithm
           fail();
         end if;
         SimCodeUtil.resetFunctionIndex();
+        /* Adeel: Adding the following block avoids OMEdit crash when exporting a FMU on Windows.
+         * Don't ask me why this makes it work.
+         */
+        if System.os() == "Windows_NT" then
+          SimCodeUtil.getFunctionIndex();
+        end if;
         Tpl.tplNoret3(CodegenFMU.translateModel, simCode, FMUVersion, FMUType);
         Tpl.closeFile(Tpl.tplCallWithFailError4(CodegenFMU.fmuMakefile,Config.simulationCodeTarget(),simCode,FMUVersion,SimCodeUtil.getFunctionIndex(),txt=Tpl.redirectToFile(Tpl.emptyTxt, simCode.fileNamePrefix+".fmutmp/sources/Makefile.in")));
       then ();
