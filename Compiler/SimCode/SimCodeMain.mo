@@ -92,6 +92,7 @@ import SimCodeUtil;
 import StackOverflow;
 import StringUtil;
 import SymbolicJacobian;
+import SymbolTable;
 import System;
 import Util;
 
@@ -653,7 +654,7 @@ algorithm
   setGlobalRoot(Global.optionSimCode, SOME(simCode));
   _ := match (simCode,target)
     local
-      String str;
+      String str, newdir, newpath, resourcesDir;
       String fmutmp;
       Boolean b;
     case (SimCode.SIMCODE(),"C")
@@ -666,6 +667,20 @@ algorithm
           end if;
         end if;
         Util.createDirectoryTree(fmutmp + "/sources/include/");
+        resourcesDir := fmutmp + "/resources/";
+        for path in simCode.modelInfo.resourcePaths loop
+          newdir := resourcesDir + System.dirname(path);
+          newpath := resourcesDir + path;
+          if System.regularFileExists(newpath) or System.directoryExists(newpath) then
+            /* Already copied. Maybe one resource loaded a library and this one only a file in the directory */
+            continue;
+          end if;
+          Util.createDirectoryTree(newdir);
+          // copy the file or directory
+          if 0 <> System.systemCall("cp -rf \"" + path + "\" \"" + newdir + "/\"") then
+            Error.addInternalError("Failed to copy path " + path + " to " + fmutmp + "/resources/" + System.dirname(path), sourceInfo());
+          end if;
+        end for;
         SerializeModelInfo.serialize(simCode, Flags.isSet(Flags.INFO_XML_OPERATIONS));
         str := fmutmp + "/sources/" + simCode.fileNamePrefix;
         b := System.covertTextFileToCLiteral(simCode.fileNamePrefix+"_info.json", str+"_info.c", Flags.getConfigString(Flags.TARGET));
@@ -711,7 +726,6 @@ public function translateModel "
   input output FCore.Cache cache;
   input FCore.Graph inEnv;
   input Absyn.Path className "path for the model";
-  input output GlobalScript.SymbolTable st;
   input String inFileNamePrefix;
   input Boolean addDummy "if true, add a dummy state";
   input Option<SimCode.SimulationSettings> inSimSettingsOpt;
@@ -751,7 +765,7 @@ algorithm
       // calculate stuff that we need to create SimCode data structure
       System.realtimeTick(ClockIndexes.RT_CLOCK_FRONTEND);
       ExecStat.execStatReset();
-      (cache, graph, odae, st) := CevalScriptBackend.runFrontEnd(cache, graph, className, st, false);
+      (cache, graph, odae) := CevalScriptBackend.runFrontEnd(cache, graph, className, false);
       ExecStat.execStat("FrontEnd");
       SOME(dae) := odae;
 
@@ -759,7 +773,7 @@ algorithm
         serializeNotify(dae, filenameprefix, "dae");
         serializeNotify(graph, filenameprefix, "graph");
         serializeNotify(cache, filenameprefix, "cache");
-        serializeNotify(st, filenameprefix, "st");
+        serializeNotify(SymbolTable.get(), filenameprefix, "st");
         ExecStat.execStat("Serialize FrontEnd");
       end if;
 
@@ -825,15 +839,15 @@ algorithm
       (libs, file_dir, timeSimCode, timeTemplates) := match kind
         case TranslateModelKind.NORMAL()
           algorithm
-            (libs, file_dir, timeSimCode, timeTemplates) := generateModelCode(dlow, initDAE, initDAE_lambda0, inlineData, removedInitialEquationLst, st.ast, className, filenameprefix, inSimSettingsOpt, args);
+            (libs, file_dir, timeSimCode, timeTemplates) := generateModelCode(dlow, initDAE, initDAE_lambda0, inlineData, removedInitialEquationLst, SymbolTable.getAbsyn(), className, filenameprefix, inSimSettingsOpt, args);
           then (libs, file_dir, timeSimCode, timeTemplates);
         case TranslateModelKind.FMU()
           algorithm
-            (libs,file_dir,timeSimCode,timeTemplates) := generateModelCodeFMU(dlow, initDAE, initDAE_lambda0, fmiDer, removedInitialEquationLst, st.ast, className, kind.version, kind.kind, filenameprefix, kind.targetName, inSimSettingsOpt);
+            (libs,file_dir,timeSimCode,timeTemplates) := generateModelCodeFMU(dlow, initDAE, initDAE_lambda0, fmiDer, removedInitialEquationLst, SymbolTable.getAbsyn(), className, kind.version, kind.kind, filenameprefix, kind.targetName, inSimSettingsOpt);
           then (libs, file_dir, timeSimCode, timeTemplates);
         case TranslateModelKind.XML()
           algorithm
-            (libs, file_dir, timeSimCode, timeTemplates) := generateModelCodeXML(dlow, initDAE, initDAE_lambda0, removedInitialEquationLst, st.ast, className, filenameprefix, inSimSettingsOpt);
+            (libs, file_dir, timeSimCode, timeTemplates) := generateModelCodeXML(dlow, initDAE, initDAE_lambda0, removedInitialEquationLst, SymbolTable.getAbsyn(), className, filenameprefix, inSimSettingsOpt);
           then (libs, file_dir, timeSimCode, timeTemplates);
         else
           algorithm

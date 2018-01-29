@@ -213,7 +213,9 @@ uniontype ModelInfo "Container for metadata about a Modelica model."
     SimCodeVar.SimVars vars;
     list<SimCodeFunction.Function> functions;
     list<String> labels;
-    //Files files "all the files from SourceInfo and DAE.ELementSource";
+    list<String> resourcePaths "Paths of all resources used by the model. Used in FMI2 to package resources in the FMU.";
+    list<Absyn.Class> sortedClasses;
+    //Files files "all the files from SourceInfo and DAE.ElementSource";
     Integer nClocks;
     Integer nSubClocks;
     Boolean hasLargeLinearEquationSystems; // True if model has large linear eq. systems that are crucial for performance.

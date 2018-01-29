@@ -42,7 +42,6 @@ import Absyn;
 import ClassInf;
 import DAE;
 import FCore;
-import GlobalScript;
 import InnerOuter;
 import InstTypes;
 import Mod;
@@ -212,7 +211,7 @@ algorithm
     case (_,DAE.INITIAL_IF_EQUATION(condition1 = conds, equations2=tbs, equations3=fb),cache,_)
       equation
         //print(" (Initial if)To ceval: " + stringDelimitList(List.map(conds,ExpressionDump.printExpStr),", ") + "\n");
-        (_,valList,_) = Ceval.cevalList(cache,env, conds, true, NONE(), Absyn.NO_MSG(),0);
+        (_,valList) = Ceval.cevalList(cache,env, conds, true, Absyn.NO_MSG(),0);
         //print(" Ceval res: ("+stringDelimitList(List.map(valList,ValuesUtil.printValStr),",")+")\n");
 
         blist = List.map(valList,ValuesUtil.valueBool);
@@ -716,7 +715,7 @@ algorithm
     try
       SCode.CLASS(name = "equalityConstraint", restriction = SCode.R_FUNCTION(), classDef = SCode.PARTS(elementLst = els)) := el;
       dimension := equalityConstraintOutputDimension(els);
-      inlineType := isInlineFunc(el);
+      inlineType := classIsInlineFunc(el);
       outResult := SOME((path, dimension, inlineType));
       return;
     else
@@ -3321,7 +3320,7 @@ algorithm
         owncref = Absyn.CREF_IDENT(id,{});
         ad_1 = getOptionArraydim(ad);
         // Absyn.IDENT("Integer") used as a dummie
-        (cache,dim1) = elabArraydim(cache,env, owncref, Absyn.IDENT("Integer"), ad_1,NONE(), impl,NONE(),true, false,pre,info,dims);
+        (cache,dim1) = elabArraydim(cache,env, owncref, Absyn.IDENT("Integer"), ad_1,NONE(),impl,true,false,pre,info,dims);
       then
         (cache,dim1,cl,DAE.NOMOD());
 
@@ -3359,7 +3358,7 @@ algorithm
         (cache,mod_1) = Mod.elabMod(cache, env, ih, pre, mod, impl, Mod.DERIVED(cn), info);
         eq = Mod.modEquation(mod_1);
         (cache,dim1,cl,type_mods) = getUsertypeDimensions(cache, cenv, ih, pre, cl, dims, impl);
-        (cache,dim2) = elabArraydim(cache, env, owncref, cn, ad_1, eq, impl, NONE(), true, false, pre, info, dims);
+        (cache,dim2) = elabArraydim(cache, env, owncref, cn, ad_1, eq, impl, true, false, pre, info, dims);
         type_mods = Mod.addEachIfNeeded(type_mods, dim2);
         // do not add each to mod_1, it should have it already!
         // mod_1 = Mod.addEachIfNeeded(mod_1, dim2);
@@ -3940,7 +3939,7 @@ algorithm
       equation
         (cache,_,SCode.COMPONENT(attributes = SCode.ATTR(arrayDims = ad)),_,_,_)
           = Lookup.lookupIdent(cache,env, id);
-        (cache, subs, _) = Static.elabSubscripts(cache, env, ad, true, Prefix.NOPRE(), info);
+        (cache, subs) = Static.elabSubscripts(cache, env, ad, true, Prefix.NOPRE(), info);
         dims = Expression.subscriptDimensions(subs);
       then
         (cache,dims);
@@ -3996,7 +3995,6 @@ public function elabArraydimOpt
   input Option<Absyn.ArrayDim> inAbsynArrayDimOption;
   input Option<DAE.EqMod> inTypesEqModOption;
   input Boolean inBoolean;
-  input Option<GlobalScript.SymbolTable> inST;
   input Boolean performVectorization;
   input Prefix.Prefix inPrefix;
   input SourceInfo info;
@@ -4005,7 +4003,7 @@ public function elabArraydimOpt
   output DAE.Dimensions outDimensionLst;
 algorithm
   (outCache,outDimensionLst) :=
-  match (inCache,inEnv,inComponentRef,path,inAbsynArrayDimOption,inTypesEqModOption,inBoolean,inST,performVectorization,inPrefix,info,inInstDims)
+  match (inCache,inEnv,inComponentRef,path,inAbsynArrayDimOption,inTypesEqModOption,inBoolean,performVectorization,inPrefix,info,inInstDims)
     local
       DAE.Dimensions res;
       FCore.Graph env;
@@ -4013,17 +4011,16 @@ algorithm
       list<Absyn.Subscript> ad;
       Option<DAE.EqMod> eq;
       Boolean impl;
-      Option<GlobalScript.SymbolTable> st;
       FCore.Cache cache;
       Boolean doVect;
       Prefix.Prefix pre;
       InstDims inst_dims;
-    case (cache,env,owncref,_,SOME(ad),eq,impl,st,doVect,pre,_,inst_dims)
+    case (cache,env,owncref,_,SOME(ad),eq,impl,doVect,pre,_,inst_dims)
       equation
-        (cache,res) = elabArraydim(cache,env, owncref, path,ad, eq, impl, st,doVect, false,pre,info,inst_dims);
+        (cache,res) = elabArraydim(cache,env, owncref, path,ad, eq, impl, doVect, false,pre,info,inst_dims);
       then
         (cache,res);
-    case (cache,_,_,_,NONE(),_,_,_,_,_,_,_) then (cache,{});
+    case (cache,_,_,_,NONE(),_,_,_,_,_,_) then (cache,{});
   end match;
 end elabArraydimOpt;
 
@@ -4046,7 +4043,6 @@ public function elabArraydim
   input Absyn.ArrayDim inArrayDim;
   input Option<DAE.EqMod> inTypesEqModOption;
   input Boolean inBoolean;
-  input Option<GlobalScript.SymbolTable> inST;
   input Boolean performVectorization;
   input Boolean isFunctionInput;
   input Prefix.Prefix inPrefix;
@@ -4057,7 +4053,7 @@ public function elabArraydim
 algorithm
   (outCache,outDimensionLst) :=
   matchcontinue
-    (inCache,inEnv,inComponentRef,path,inArrayDim,inTypesEqModOption,inBoolean,inST,performVectorization,isFunctionInput,inPrefix,inInfo,inInstDims)
+    (inCache,inEnv,inComponentRef,path,inArrayDim,inTypesEqModOption,inBoolean,performVectorization,isFunctionInput,inPrefix,inInfo,inInstDims)
     local
       DAE.Dimensions dim,dim1,dim2;
       DAE.Dimensions dim3;
@@ -4065,7 +4061,6 @@ algorithm
       Absyn.ComponentRef cref;
       list<Absyn.Subscript> ad;
       Boolean impl;
-      Option<GlobalScript.SymbolTable> st;
       DAE.Exp e,e_1;
       DAE.Type t;
       String e_str,t_str,dim_str;
@@ -4081,48 +4076,48 @@ algorithm
     // The size of function input arguments should not be set here, since they
     // may vary depending on the inputs. So we ignore any modifications on input
     // variables here.
-    case (cache, env, cref, _, ad, _, _, st, doVect, true, pre, info, _)
+    case (cache, env, cref, _, ad, _, _, doVect, true, pre, info, _)
       equation
-        (cache, dim) = Static.elabArrayDims(cache, env, cref, ad, true, st, doVect, pre, info);
+        (cache, dim) = Static.elabArrayDims(cache, env, cref, ad, true, doVect, pre, info);
       then
         (cache, dim);
 
-    case (cache,_,_,_,{},_,_,_,_,_,_,_,_) then (cache, {});
+    case (cache,_,_,_,{},_,_,_,_,_,_,_) then (cache, {});
 
-    case (cache,env,cref,_,ad,NONE(),impl,st,doVect,_,pre,info,_) /* impl */
+    case (cache,env,cref,_,ad,NONE(),impl,doVect,_,pre,info,_) /* impl */
       equation
-        (cache,dim) = Static.elabArrayDims(cache,env, cref, ad, impl, st,doVect,pre,info);
+        (cache,dim) = Static.elabArrayDims(cache,env, cref, ad, impl,doVect,pre,info);
       then
         (cache,dim);
 
-    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,prop,_)),impl,st,doVect,_ ,pre,info,inst_dims) /* Untyped expressions must be elaborated. */
+    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,prop,_)),impl,doVect,_ ,pre,info,inst_dims) /* Untyped expressions must be elaborated. */
       equation
         t = Types.getPropType(prop);
-        (cache,dim1) = Static.elabArrayDims(cache,env, cref, ad, impl, st,doVect,pre,info);
+        (cache,dim1) = Static.elabArrayDims(cache,env, cref, ad, impl,doVect,pre,info);
         dim2 = elabArraydimType(t, ad, e, path, pre, cref, info,inst_dims);
         //Debug.traceln("TYPED: " + ExpressionDump.printExpStr(e) + " s: " + FGraph.printGraphPathStr(env));
         dim3 = List.threadMap(dim1, dim2, compatibleArraydim);
       then
         (cache,dim3);
 
-    case (cache,env,cref,_,ad,SOME(DAE.UNTYPED(aexp)),impl,st,doVect, _,pre,info,inst_dims)
+    case (cache,env,cref,_,ad,SOME(DAE.UNTYPED(aexp)),impl,doVect, _,pre,info,inst_dims)
       equation
-        (cache,e_1,prop,_) = Static.elabExp(cache,env, aexp, impl, st,doVect,pre,info);
+        (cache,e_1,prop) = Static.elabExp(cache,env, aexp, impl,doVect,pre,info);
         (cache, e_1, prop) = Ceval.cevalIfConstant(cache, env, e_1, prop, impl, info);
         t = Types.getPropType(prop);
-        (cache,dim1) = Static.elabArrayDims(cache,env, cref, ad, impl, st, doVect ,pre, info);
+        (cache,dim1) = Static.elabArrayDims(cache,env, cref, ad, impl, doVect ,pre, info);
         dim2 = elabArraydimType(t, ad, e_1, path, pre, cref, info,inst_dims);
         //Debug.traceln("UNTYPED");
         dim3 = List.threadMap(dim1, dim2, compatibleArraydim);
       then
         (cache,dim3);
 
-    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,DAE.PROP(t,_),_,info2)),impl,st,doVect, _,pre,info,inst_dims)
+    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,DAE.PROP(t,_),_,info2)),impl,doVect, _,pre,info,inst_dims)
       equation
         // adrpo: do not display error when running checkModel
         //        TODO! FIXME! check if this doesn't actually get rid of useful error messages
         false = Flags.getConfigBool(Flags.CHECK_MODEL);
-        (_,dim1) = Static.elabArrayDims(cache, env, cref, ad, impl, st,doVect,pre,info);
+        (_,dim1) = Static.elabArrayDims(cache, env, cref, ad, impl, doVect,pre,info);
         dim2 = elabArraydimType(t, ad, e, path, pre, cref, info,inst_dims);
         failure(_ = List.threadMap(dim1, dim2, compatibleArraydim));
         e_str = ExpressionDump.printExpStr(e);
@@ -4133,7 +4128,7 @@ algorithm
         fail();
 
     // print some failures
-    case (_,_,cref,_,ad,eq,_,_,_,_,_,_,_)
+    case (_,_,cref,_,ad,eq,_,_,_,_,_,_)
       equation
         // only display when the failtrace flag is on
         true = Flags.isSet(Flags.FAILTRACE);
@@ -4644,20 +4639,30 @@ algorithm
   end match;
 end setFullyQualifiedTypename;
 
-public function isInlineFunc
-  input SCode.Element inClass;
+public function classIsInlineFunc
+  input SCode.Element elt;
   output DAE.InlineType outInlineType;
 algorithm
-  outInlineType := matchcontinue(inClass)
+  outInlineType := match elt
+    case SCode.CLASS() then commentIsInlineFunc(elt.cmt);
+    else DAE.DEFAULT_INLINE();
+  end match;
+end classIsInlineFunc;
+
+public function commentIsInlineFunc
+  input SCode.Comment cmt;
+  output DAE.InlineType outInlineType;
+algorithm
+  outInlineType := matchcontinue(cmt)
     local
       list<SCode.SubMod> smlst;
 
-    case SCode.CLASS(cmt=SCode.COMMENT(annotation_=SOME(SCode.ANNOTATION(SCode.MOD(subModLst = smlst)))))
+    case SCode.COMMENT(annotation_=SOME(SCode.ANNOTATION(SCode.MOD(subModLst = smlst))))
       then isInlineFunc2(smlst);
 
     else DAE.DEFAULT_INLINE();
   end matchcontinue;
-end isInlineFunc;
+end commentIsInlineFunc;
 
 protected function isInlineFunc2
   input list<SCode.SubMod> inSubModList;
@@ -5068,19 +5073,16 @@ protected function elabExpListExt
   input FCore.Graph inEnv;
   input list<Absyn.Exp> inAbsynExpLst;
   input Boolean inBoolean;
-  input Option<GlobalScript.SymbolTable> inST;
   input Prefix.Prefix inPrefix;
   input SourceInfo info;
   output FCore.Cache outCache;
   output list<DAE.Exp> outExpExpLst;
   output list<DAE.Properties> outTypesPropertiesLst;
-  output Option<GlobalScript.SymbolTable> outInteractiveInteractiveSymbolTableOption;
 algorithm
-  (outCache,outExpExpLst,outTypesPropertiesLst,outInteractiveInteractiveSymbolTableOption):=
-  match (inCache,inEnv,inAbsynExpLst,inBoolean,inST,inPrefix,info)
+  (outCache,outExpExpLst,outTypesPropertiesLst):=
+  match (inCache,inEnv,inAbsynExpLst,inBoolean,inPrefix,info)
     local
       Boolean impl;
-      Option<GlobalScript.SymbolTable> st,st_1,st_2;
       DAE.Exp exp;
       DAE.Properties p;
       list<DAE.Exp> exps;
@@ -5091,13 +5093,13 @@ algorithm
       FCore.Cache cache;
       Prefix.Prefix pre;
       DAE.ComponentRef cr;
-    case (cache,_,{},_,st,_,_) then (cache,{},{},st);
-    case (cache,env,(e :: rest),impl,st,pre,_)
+    case (cache,_,{},_,_,_) then (cache,{},{});
+    case (cache,env,(e :: rest),impl,pre,_)
       equation
-        (cache,exp,p,st_1) = elabExpExt(cache,env, e, impl, st,pre,info);
-        (cache,exps,props,st_2) = elabExpListExt(cache,env, rest, impl, st_1,pre,info);
+        (cache,exp,p) = elabExpExt(cache,env, e, impl,pre,info);
+        (cache,exps,props) = elabExpListExt(cache,env, rest, impl,pre,info);
       then
-        (cache,(exp :: exps),(p :: props),st_2);
+        (cache,(exp :: exps),(p :: props));
   end match;
 end elabExpListExt;
 
@@ -5110,16 +5112,14 @@ protected function elabExpExt
   input FCore.Graph inEnv;
   input Absyn.Exp inExp;
   input Boolean inBoolean;
-  input Option<GlobalScript.SymbolTable> inST;
   input Prefix.Prefix inPrefix;
   input SourceInfo info;
   output FCore.Cache outCache;
   output DAE.Exp outExp;
   output DAE.Properties outProperties;
-  output Option<GlobalScript.SymbolTable> outInteractiveInteractiveSymbolTableOption;
 algorithm
-  (outCache,outExp,outProperties,outInteractiveInteractiveSymbolTableOption):=
-  matchcontinue (inCache,inEnv,inExp,inBoolean,inST,inPrefix,info)
+  (outCache,outExp,outProperties):=
+  matchcontinue (inCache,inEnv,inExp,inBoolean,inPrefix,info)
     local
       DAE.Exp dimp,arraycrefe,exp,e;
       DAE.Type dimty;
@@ -5129,29 +5129,28 @@ algorithm
       list<Absyn.Exp> args;
       list<Absyn.NamedArg> nargs;
       Boolean impl;
-      Option<GlobalScript.SymbolTable> st;
       FCore.Cache cache;
       Absyn.Exp absynExp;
       Prefix.Prefix pre;
 
     // special case for  size
     case (cache,env,(Absyn.CALL(function_ = Absyn.CREF_IDENT(name = "size"),
-          functionArgs = Absyn.FUNCTIONARGS(args = {arraycr,dim}))),impl,st,pre,_)
+          functionArgs = Absyn.FUNCTIONARGS(args = {arraycr,dim}))),impl,pre,_)
       equation
-        (cache,dimp,prop as DAE.PROP(_,_),_) = Static.elabExp(cache, env, dim, impl,NONE(),false,pre,info);
+        (cache,dimp,prop as DAE.PROP(_,_)) = Static.elabExp(cache, env, dim, impl,false,pre,info);
         (cache, dimp, prop) = Ceval.cevalIfConstant(cache, env, dimp, prop, impl, info);
-        (cache,arraycrefe,arraycrprop,_) = Static.elabExp(cache, env, arraycr, impl,NONE(),false,pre,info);
-        (cache, arraycrefe, arraycrprop) = Ceval.cevalIfConstant(cache, env, arraycrefe, arraycrprop, impl, info);
+        (cache,arraycrefe,arraycrprop) = Static.elabExp(cache, env, arraycr, impl,false,pre,info);
+        (cache,arraycrefe,arraycrprop) = Ceval.cevalIfConstant(cache, env, arraycrefe, arraycrprop, impl, info);
         exp = DAE.SIZE(arraycrefe,SOME(dimp));
       then
-        (cache,exp,DAE.PROP(DAE.T_INTEGER_DEFAULT,DAE.C_VAR()),st);
+        (cache,exp,DAE.PROP(DAE.T_INTEGER_DEFAULT,DAE.C_VAR()));
     // For all other expressions, use normal elaboration
-    case (cache,env,absynExp,impl,st,pre,_)
+    case (cache,env,absynExp,impl,pre,_)
       equation
-        (cache,e,prop,st) = Static.elabExp(cache, env, absynExp, impl, st,false,pre,info);
-        (cache, e, prop) = Ceval.cevalIfConstant(cache, env, e, prop, impl, info);
+        (cache,e,prop) = Static.elabExp(cache, env, absynExp, impl,false,pre,info);
+        (cache, e, prop) = Ceval.cevalIfConstant(cache, env, e, prop, impl,  info);
       then
-        (cache,e,prop,st);
+        (cache,e,prop);
     else
       equation
         true = Flags.isSet(Flags.FAILTRACE);
@@ -5188,7 +5187,7 @@ algorithm
       Prefix.Prefix pre;
     case (cache,env,SCode.EXTERNALDECL(lang = lang,args = absexps),impl,pre,_)
       equation
-        (cache,exps,props,_) = elabExpListExt(cache,env, absexps, impl,NONE(),pre,info);
+        (cache,exps,props) = elabExpListExt(cache,env, absexps, impl, pre, info);
         (cache,extargs) = instExtGetFargs2(cache, env, absexps, exps, props, lang, info);
       then
         (cache,extargs);
@@ -5303,7 +5302,7 @@ algorithm
     // adrpo: these can be non-local if they are constants or parameters!
     case (cache,env,_,_,DAE.PROP(type_ = ty,constFlag = DAE.C_CONST()),_,_)
       equation
-        (cache, exp,_) = Ceval.cevalIfConstant(cache, env, inExp, inProperties, false, info);
+        (cache, exp) = Ceval.cevalIfConstant(cache, env, inExp, inProperties, false, info);
         true = Expression.isScalarConst(exp);
       then
         (cache,SOME(DAE.EXTARGEXP(exp, ty)));
@@ -5447,6 +5446,7 @@ public function mktype
   input Option<DAE.Type> inTypesTypeOption;
   input DAE.EqualityConstraint inEqualityConstraint;
   input SCode.Element inClass;
+  input SCode.Comment inheritedComment;
   output DAE.Type outType;
 algorithm
   outType := matchcontinue (inPath,inState,inTypesVarLst,inTypesTypeOption,inEqualityConstraint,inClass)
@@ -5488,7 +5488,7 @@ algorithm
     // Insert function type construction here after checking input/output arguments? see Types.mo T_FUNCTION
     case (p,(ClassInf.FUNCTION()),vl,_,_,cl)
       equation
-        funcattr = getFunctionAttributes(cl,vl);
+        funcattr = getFunctionAttributes(cl, vl, inheritedComment);
         functype = Types.makeFunctionType(p, vl, funcattr);
       then
         functype;
@@ -5503,7 +5503,7 @@ algorithm
     case (_, ClassInf.TYPE(), _, SOME(DAE.T_ARRAY(ty = arrayType)), NONE(), _)
       equation
         classState = arrayTTypeToClassInfState(arrayType);
-        resType = mktype(inPath, classState, inTypesVarLst, inTypesTypeOption, inEqualityConstraint, inClass);
+        resType = mktype(inPath, classState, inTypesVarLst, inTypesTypeOption, inEqualityConstraint, inClass, inheritedComment);
       then
         resType;
 
@@ -5511,7 +5511,7 @@ algorithm
     case (_, ClassInf.TYPE(), _, SOME(DAE.T_ARRAY(ty = arrayType)), SOME(_), _)
       equation
         classState = arrayTTypeToClassInfState(arrayType);
-        resType = mktype(inPath, classState, inTypesVarLst, inTypesTypeOption, inEqualityConstraint, inClass);
+        resType = mktype(inPath, classState, inTypesVarLst, inTypesTypeOption, inEqualityConstraint, inClass, inheritedComment);
         resType = DAE.T_SUBTYPE_BASIC(inState,{},resType,inEqualityConstraint);
       then
         resType;
@@ -5578,6 +5578,7 @@ public function mktypeWithArrays
   input list<DAE.Var> inTypesVarLst;
   input Option<DAE.Type> inTypesTypeOption;
   input SCode.Element inClass;
+  input SCode.Comment inheritedComment;
   output DAE.Type outType;
 algorithm
   outType := matchcontinue (inPath,inState,inTypesVarLst,inTypesTypeOption,inClass)
@@ -5622,7 +5623,7 @@ algorithm
     // Insert function type construction here after checking input/output arguments? see Types.mo T_FUNCTION
     case (p,(ClassInf.FUNCTION()),vl,_,cl)
       equation
-        funcattr = getFunctionAttributes(cl,vl);
+        funcattr = getFunctionAttributes(cl,vl,inheritedComment);
         functype = Types.makeFunctionType(p, vl, funcattr);
       then
         functype;
@@ -6764,8 +6765,8 @@ protected
   Values.Value val;
 algorithm
   // Elaborate the conditional expression.
-  (outCache, e, DAE.PROP(type_ = t, constFlag = c), _) :=
-    Static.elabExp(inCache, inEnv, inCondition, false, NONE(), false, inPrefix, inInfo);
+  (outCache, e, DAE.PROP(type_ = t, constFlag = c)) :=
+    Static.elabExp(inCache, inEnv, inCondition, false, false, inPrefix, inInfo);
 
   // The expression must be of boolean type.
   if not Types.isBoolean(t) then
@@ -6780,7 +6781,7 @@ algorithm
   end if;
 
   // If it is a boolean parameter expression, try to evaluate it.
-  (outCache, val, _) := Ceval.ceval(outCache, inEnv, e, false, NONE(), Absyn.MSG(inInfo), 0);
+  (outCache, val) := Ceval.ceval(outCache, inEnv, e, false, Absyn.MSG(inInfo), 0);
 
   outIsConditional := match(val)
     case Values.BOOL(b) then b;
@@ -7129,31 +7130,21 @@ algorithm
   end match;
 end isFunctionInput;
 
-public function extractClassDefComment
-  "This function extracts the comment section from a class definition."
-  input FCore.Cache cache;
-  input FCore.Graph env;
-  input SCode.ClassDef classDef;
-  input SCode.Comment inComment;
-  input SourceInfo inInfo;
-  output SCode.Comment comment;
+public function extractComment
+  "This function extracts the comment section from a list of elements."
+  input list<DAE.Element> elts;
+  output SCode.Comment cmt=SCode.COMMENT(NONE(),NONE());
 algorithm
-  comment := matchcontinue classDef
-    local
-      list<SCode.Annotation> al;
-      Absyn.Path p;
-      SCode.ClassDef cd;
-      SCode.Comment cmt;
-
-    case SCode.DERIVED(typeSpec = Absyn.TPATH(path = p))
-      equation
-        (_, SCode.CLASS(cmt=cmt), _) = Lookup.lookupClass(cache, env, p, SOME(inInfo));
-        cmt = mergeClassComments(inComment, cmt);
-      then cmt;
-
-    else inComment;
-  end matchcontinue;
-end extractClassDefComment;
+  for elt in elts loop
+    _ := match elt
+      case DAE.COMMENT(cmt=cmt)
+        algorithm
+          return;
+        then fail();
+      else ();
+    end match;
+  end for;
+end extractComment;
 
 protected function mergeClassComments
   "This function merges two comments together. The rule is that the string
@@ -7198,14 +7189,15 @@ algorithm
   end match;
 end makeNonExpSubscript;
 
-public function getFunctionAttributes
+protected function getFunctionAttributes
 "Looks at the annotations of an SCode.Element to create the function attributes,
 i.e. Inline and Purity"
   input SCode.Element cl;
   input list<DAE.Var> vl;
+  input SCode.Comment inheritedComment;
   output DAE.FunctionAttributes attr;
 algorithm
-  attr := matchcontinue (cl,vl)
+  attr := matchcontinue cl
     local
       SCode.Restriction restriction;
       Boolean isOpenModelicaPure, isImpure, hasOutVars, unboxArgs;
@@ -7214,48 +7206,48 @@ algorithm
       String name;
       list<DAE.Var> inVars,outVars;
 
-    case (SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_EXTERNAL_FUNCTION(isImpure))),_)
+    case SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_EXTERNAL_FUNCTION(isImpure)))
       equation
         inVars = List.select(vl,Types.isInputVar);
         outVars = List.select(vl,Types.isOutputVar);
         name = SCode.isBuiltinFunction(cl,List.map(inVars,Types.varName),List.map(outVars,Types.varName));
-        inlineType = isInlineFunc(cl);
-        isOpenModelicaPure = not SCode.hasBooleanNamedAnnotationInClass(cl,"__OpenModelica_Impure");
-        isImpure = if isImpure then true else SCode.hasBooleanNamedAnnotationInClass(cl,"__ModelicaAssociation_Impure");
-        unboxArgs = SCode.hasBooleanNamedAnnotationInClass(cl, "__OpenModelica_UnboxArguments");
+        inlineType = commentIsInlineFunc(inheritedComment);
+        isOpenModelicaPure = not SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__OpenModelica_Impure");
+        isImpure = if isImpure then true else SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__ModelicaAssociation_Impure");
+        unboxArgs = SCode.commentHasBooleanNamedAnnotation(inheritedComment, "__OpenModelica_UnboxArguments");
       then (DAE.FUNCTION_ATTRIBUTES(inlineType,isOpenModelicaPure,isImpure,false,DAE.FUNCTION_BUILTIN(SOME(name), unboxArgs),DAE.FP_NON_PARALLEL()));
 
     //parallel functions: There are some builtin functions.
-    case (SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_PARALLEL_FUNCTION())),_)
+    case SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_PARALLEL_FUNCTION()))
       equation
         inVars = List.select(vl,Types.isInputVar);
         outVars = List.select(vl,Types.isOutputVar);
         name = SCode.isBuiltinFunction(cl,List.map(inVars,Types.varName),List.map(outVars,Types.varName));
-        inlineType = isInlineFunc(cl);
-        isOpenModelicaPure = not SCode.hasBooleanNamedAnnotationInClass(cl,"__OpenModelica_Impure");
-        unboxArgs = SCode.hasBooleanNamedAnnotationInClass(cl, "__OpenModelica_UnboxArguments");
+        inlineType = commentIsInlineFunc(inheritedComment);
+        isOpenModelicaPure = not SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__OpenModelica_Impure");
+        unboxArgs = SCode.commentHasBooleanNamedAnnotation(inheritedComment, "__OpenModelica_UnboxArguments");
       then (DAE.FUNCTION_ATTRIBUTES(inlineType,isOpenModelicaPure,false,false,DAE.FUNCTION_BUILTIN(SOME(name), unboxArgs),DAE.FP_PARALLEL_FUNCTION()));
 
     //parallel functions: non-builtin
-    case (SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_PARALLEL_FUNCTION())),_)
+    case SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_PARALLEL_FUNCTION()))
       equation
-        inlineType = isInlineFunc(cl);
-        isBuiltin = if SCode.hasBooleanNamedAnnotationInClass(cl,"__OpenModelica_BuiltinPtr") then DAE.FUNCTION_BUILTIN_PTR() else DAE.FUNCTION_NOT_BUILTIN();
-        isOpenModelicaPure = not SCode.hasBooleanNamedAnnotationInClass(cl,"__OpenModelica_Impure");
+        inlineType = commentIsInlineFunc(inheritedComment);
+        isBuiltin = if SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__OpenModelica_BuiltinPtr") then DAE.FUNCTION_BUILTIN_PTR() else DAE.FUNCTION_NOT_BUILTIN();
+        isOpenModelicaPure = not SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__OpenModelica_Impure");
       then DAE.FUNCTION_ATTRIBUTES(inlineType,isOpenModelicaPure,false,false,isBuiltin,DAE.FP_PARALLEL_FUNCTION());
 
     //kernel functions: never builtin and never inlined.
-    case (SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_KERNEL_FUNCTION())),_)
+    case SCode.CLASS(restriction=SCode.R_FUNCTION(SCode.FR_KERNEL_FUNCTION()))
       then DAE.FUNCTION_ATTRIBUTES(DAE.NO_INLINE(), true, false, false, DAE.FUNCTION_NOT_BUILTIN(),DAE.FP_KERNEL_FUNCTION());
 
-    case (SCode.CLASS(restriction=restriction),_)
+    case SCode.CLASS(restriction=restriction)
       equation
-        inlineType = isInlineFunc(cl);
+        inlineType = commentIsInlineFunc(inheritedComment);
         hasOutVars = List.exist(vl,Types.isOutputVar);
-        isBuiltin = if SCode.hasBooleanNamedAnnotationInClass(cl,"__OpenModelica_BuiltinPtr") then DAE.FUNCTION_BUILTIN_PTR() else DAE.FUNCTION_NOT_BUILTIN();
-        isOpenModelicaPure = not SCode.hasBooleanNamedAnnotationInClass(cl,"__OpenModelica_Impure");
+        isBuiltin = if SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__OpenModelica_BuiltinPtr") then DAE.FUNCTION_BUILTIN_PTR() else DAE.FUNCTION_NOT_BUILTIN();
+        isOpenModelicaPure = not SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__OpenModelica_Impure");
         // In Modelica 3.2 and before, external functions with side-effects are not marked
-        isImpure = SCode.hasBooleanNamedAnnotationInClass(cl,"__ModelicaAssociation_Impure") or SCode.isRestrictionImpure(restriction,hasOutVars or Config.languageStandardAtLeast(Config.LanguageStandard.'3.3'));
+        isImpure = SCode.commentHasBooleanNamedAnnotation(inheritedComment,"__ModelicaAssociation_Impure") or SCode.isRestrictionImpure(restriction,hasOutVars or Config.languageStandardAtLeast(Config.LanguageStandard.'3.3'));
       then DAE.FUNCTION_ATTRIBUTES(inlineType,isOpenModelicaPure,isImpure,false,isBuiltin,DAE.FP_NON_PARALLEL());
   end matchcontinue;
 end getFunctionAttributes;
@@ -7282,6 +7274,8 @@ algorithm
       then ();
 
     case (DAE.ALGORITHM(), false, _) then ();
+
+    case (DAE.COMMENT(), _, _) then ();
 
     else
       equation
@@ -7581,14 +7575,19 @@ algorithm
       DAE.MatchType matchType;
       list<DAE.MatchCase> cases;
       list<list<String>> aliases;
-    case (path1,DAE.CALL(path=path2,expLst=es,attr=DAE.CALL_ATTR(tp,b1,b2,b3,b4,i,DAE.NO_TAIL())),_,_)
+      DAE.CallAttributes attr;
+      DAE.Exp call;
+
+    case (path1,call as DAE.CALL(path=path2,attr=attr as DAE.CALL_ATTR(tailCall=DAE.NO_TAIL())),_,_)
       equation
         true = Absyn.pathEqual(path1,path2);
         str = "Tail recursion of: " + ExpressionDump.printExpStr(rhs) + " with input vars: " + stringDelimitList(vars,",");
         if Flags.isSet(Flags.TAIL) then
           Error.addSourceMessage(Error.COMPILER_NOTIFICATION,{str},ElementSource.getElementSourceFileInfo(source));
         end if;
-      then (DAE.CALL(path2,es,DAE.CALL_ATTR(tp,b1,b2,b3,b4,i,DAE.TAIL(vars))),true);
+        attr.tailCall = DAE.TAIL(vars);
+        call.attr = attr;
+      then (call,true);
     case (_,DAE.IFEXP(e1,e2,e3),_,_)
       equation
         (e2,b1) = optimizeStatementTail3(path,e2,vars,source);
@@ -7655,8 +7654,7 @@ algorithm
       AvlSetCR.Tree ht;
       list<list<DAE.ComponentRef>> crs;
       Absyn.Path p;
-      Absyn.Program program;
-    case FCore.CACHE(ie,f,(ht,crs),p,program) then FCore.CACHE(ie,f,(ht,{}::crs),p,program);
+    case FCore.CACHE(ie,f,(ht,crs),p) then FCore.CACHE(ie,f,(ht,{}::crs),p);
     else cache;
   end match;
 end pushStructuralParameters;
@@ -7676,11 +7674,11 @@ algorithm
       list<list<DAE.ComponentRef>> crss;
       Absyn.Path p;
       Absyn.Program program;
-    case (FCore.CACHE(ie,f,(ht,crs::crss),p,program),_)
+    case (FCore.CACHE(ie,f,(ht,crs::crss),p),_)
       equation
         ht = prefixAndAddCrefsToHt(cache,ht,pre,crs);
-      then FCore.CACHE(ie,f,(ht,crss),p,program);
-    case (FCore.CACHE(_,_,(_,{}),_,_),_) then cache;
+      then FCore.CACHE(ie,f,(ht,crss),p);
+    case (FCore.CACHE(_,_,(_,{}),_),_) then cache;
     case (FCore.NO_CACHE(),_) then cache;
   end match;
 end popStructuralParameters;

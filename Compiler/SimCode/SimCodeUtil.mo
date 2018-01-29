@@ -60,6 +60,7 @@ import Values;
 // protected imports
 protected
 import Array;
+import AvlSetString;
 import BackendDAEOptimize;
 import BackendDAETransform;
 import BackendDAEUtil;
@@ -395,7 +396,7 @@ algorithm
     if debug then execStat("simCode: createStateSets"); end if;
 
     // create model info
-    modelInfo := createModelInfo(inClassName, dlow, inInitDAE, functions, {}, numStateSets, inFileDir, listLength(clockedSysts), tempvars);
+    modelInfo := createModelInfo(inClassName, program, dlow, inInitDAE, functions, {}, numStateSets, inFileDir, listLength(clockedSysts), tempvars);
     if debug then execStat("simCode: createModelInfo and variables"); end if;
 
     //build labels
@@ -6826,6 +6827,7 @@ end createVarAsserts;
 
 public function createModelInfo
   input Absyn.Path class_;
+  input Absyn.Program program;
   input BackendDAE.BackendDAE dlow "simulation";
   input BackendDAE.BackendDAE inInitDAE "initialization";
   input list<SimCodeFunction.Function> functions;
@@ -6879,14 +6881,17 @@ algorithm
     hasLargeEqSystems := hasLargeEquationSystems(dlow, inInitDAE);
     if debug then execStat("simCode: hasLargeEquationSystems"); end if;
     modelInfo := SimCode.MODELINFO(class_, dlow.shared.info.description, directory, varInfo, vars, functions,
-                                   labels, arrayLength(dlow.shared.partitionsInfo.basePartitions),
-                                   arrayLength(dlow.shared.partitionsInfo.subPartitions), hasLargeEqSystems, {}, {});
+                                   labels,
+                                   if Flags.getConfigBool(Flags.BUILDING_FMU) then getResources(program.classes, dlow, inInitDAE) else {},
+                                   List.sort(program.classes, Absyn.classNameGreater),
+                                   arrayLength(dlow.shared.partitionsInfo.basePartitions),
+                                   arrayLength(dlow.shared.partitionsInfo.subPartitions),
+                                   hasLargeEqSystems, {}, {});
   else
     Error.addInternalError("createModelInfo failed", sourceInfo());
     fail();
   end try;
 end createModelInfo;
-
 
 protected function createVarInfo
   input BackendDAE.BackendDAE dlow;
@@ -6949,12 +6954,12 @@ algorithm
           local DAE.Exp startValue1;
           case(DAE.CALL(expLst=exps)) guard Expression.isConstWorkList(exps)
             equation
-             (_,value,_) = Ceval.ceval(cache, graph, startValue, false, NONE(), Absyn.NO_MSG(),0);
+             (_,value) = Ceval.ceval(cache, graph, startValue, false, Absyn.NO_MSG(),0);
              startValue1 = ValuesUtil.valueExp(value);
            then startValue1;
           case(DAE.ASUB(DAE.CALL(expLst=exps),_)) guard Expression.isConstWorkList(exps)
             equation
-             (_,value,_) = Ceval.ceval(cache, graph, startValue, false, NONE(), Absyn.NO_MSG(),0);
+             (_,value) = Ceval.ceval(cache, graph, startValue, false, Absyn.NO_MSG(),0);
              startValue1 = ValuesUtil.valueExp(value);
            then startValue1;
           else startValue;
@@ -6999,12 +7004,12 @@ algorithm
         local DAE.Exp exp1;
         case(DAE.CALL(expLst=exps)) guard Expression.isConstWorkList(exps)
           equation
-           (_,value,_) = Ceval.ceval(cache, graph, exp, false, NONE(), Absyn.NO_MSG(),0);
+           (_,value) = Ceval.ceval(cache, graph, exp, false, Absyn.NO_MSG(),0);
            exp1 = ValuesUtil.valueExp(value);
          then exp1;
         case(DAE.ASUB(DAE.CALL(expLst=exps),_)) guard Expression.isConstWorkList(exps)
           equation
-           (_,value,_) = Ceval.ceval(cache, graph, exp, false, NONE(), Absyn.NO_MSG(),0);
+           (_,value) = Ceval.ceval(cache, graph, exp, false, Absyn.NO_MSG(),0);
            exp1 = ValuesUtil.valueExp(value);
          then exp1;
         else exp;
@@ -13557,6 +13562,54 @@ algorithm
   end for;
 end getValueReferenceMapping2;
 
+function getResources
+  input list<Absyn.Class> classes;
+  input BackendDAE.BackendDAE dlow1, dlow2;
+  output list<String> resources;
+protected
+  AvlSetString.Tree tree;
+  list<DAE.Function> fns;
+  Mutable<Boolean> unknownUri;
+partial function Func
+  input output DAE.Exp e;
+  input output AvlSetString.Tree tree;
+end Func;
+  Func f1, f2;
+  String file;
+algorithm
+  fns := DAEUtil.getFunctionList(dlow1.shared.functionTree);
+  tree := AvlSetString.EMPTY();
+  unknownUri := Mutable.create(false);
+  f1 := function findResources(unknownUri=unknownUri);
+  f2 := function Expression.traverseSubexpressions(func=f1);
+  (_,tree) := DAEUtil.traverseDAEFunctions(fns, f2, tree);
+  tree := BackendDAEUtil.traverseBackendDAEExpsNoCopyWithUpdate(dlow1, f2, tree);
+  tree := BackendDAEUtil.traverseBackendDAEExpsNoCopyWithUpdate(dlow2, f2, tree);
+  resources := AvlSetString.listKeys(tree);
+  if Mutable.access(unknownUri) then
+    for cl in classes loop
+      file := cl.info.fileName;
+      if System.basename(file)=="package.mo" then
+        resources:=System.dirname(file)::resources;
+      end if;
+    end for;
+  end if;
+end getResources;
+
+function findResources
+  "Finds all literal expressions in the DAE"
+  input output DAE.Exp e;
+  input output AvlSetString.Tree tree;
+  input Mutable<Boolean> unknownUri;
+protected
+  String f;
+algorithm
+  tree := match e
+    case DAE.CALL(path=Absyn.IDENT("OpenModelica_fmuLoadResource"), expLst={DAE.SCONST(f)}) then AvlSetString.add(tree, f);
+    case DAE.CALL(path=Absyn.IDENT("OpenModelica_uriToFilename")) algorithm Mutable.update(unknownUri, true); then tree;
+    else tree;
+  end match;
+end findResources;
 
 annotation(__OpenModelica_Interface="backend");
 end SimCodeUtil;

@@ -1771,6 +1771,16 @@ algorithm
   end match;
 end isFunctionRefVar;
 
+function isComment
+  input DAE.Element elt;
+  output Boolean b;
+algorithm
+  b := match elt
+    case DAE.COMMENT(__) then true;
+    else false;
+  end match;
+end isComment;
+
 public function isAlgorithm "author: LS
   Succeeds if Element is an algorithm."
   input DAE.Element inElement;
@@ -2241,7 +2251,7 @@ algorithm
       equation
         // fprintln(Flags.FAILTRACE, "- DAEUtil.daeToRecordValue typeOfRHS: " + ExpressionDump.typeOfString(rhs));
         info = ElementSource.getElementSourceFileInfo(source);
-        (cache, value,_) = Ceval.ceval(cache, env, rhs, impl, NONE(), Absyn.MSG(info),0);
+        (cache, value) = Ceval.ceval(cache, env, rhs, impl, Absyn.MSG(info),0);
         (cache, Values.RECORD(cname,vals,names,ix)) = daeToRecordValue(cache, env, cname, rest, impl);
         cr_str = ComponentReference.printComponentRefStr(cr);
       then
@@ -2304,7 +2314,6 @@ algorithm
       list<list<DAE.Element>> trueBranches, trueBranches_1;
       Boolean partialPrefix;
       list<DAE.FunctionDefinition> derFuncs;
-      DAE.InlineType inlineType;
       DAE.ElementSource source "the element origin";
       DAE.Algorithm alg;
 
@@ -3614,7 +3623,7 @@ algorithm
         true = intEq(i,0);
         // evalute expression
         (e1,(ht,_,_)) = Expression.traverseExpBottomUp(e,evaluateAnnotationTraverse,(ht,0,0));
-        (cache, value,_) = Ceval.ceval(inCache, env, e1, false,NONE(),Absyn.NO_MSG(),0);
+        (cache, value) = Ceval.ceval(inCache, env, e1, false, Absyn.NO_MSG(),0);
          e1 = ValuesUtil.valueExp(value);
         // e1 = e;
         ht1 = BaseHashTable.add((cr,e1),ht);
@@ -3788,30 +3797,25 @@ end traverseDAEList;
 
 public function getFunctionList
   input DAE.FunctionTree ft;
+  input Boolean failOnError=false;
   output list<DAE.Function> fns;
+protected
+  list<tuple<DAE.AvlTreePathFunction.Key,DAE.AvlTreePathFunction.Value>> lst, lstInvalid;
+  String str;
 algorithm
-  fns := matchcontinue ft
-    local
-      list<tuple<DAE.AvlTreePathFunction.Key,DAE.AvlTreePathFunction.Value>> lst, lstInvalid;
-      String str;
-
-    case _
-      equation
-        lst = DAE.AvlTreePathFunction.toList(ft);
-        fns = List.mapMap(lst, Util.tuple22, Util.getOption);
-        // fns = List.mapMap(List.select(lst, isValidFunctionEntry), Util.tuple22, Util.getOption);
-      then fns;
-    case _
-      equation
-        lst = DAE.AvlTreePathFunction.toList(ft);
-        lstInvalid = List.select(lst, isInvalidFunctionEntry);
-        str = stringDelimitList(list(Absyn.pathString(p) for p in List.map(lstInvalid, Util.tuple21)), "\n ");
-        str = "\n " + str + "\n";
-        Error.addMessage(Error.NON_INSTANTIATED_FUNCTION, {str});
-        fns = List.mapMap(List.select(lst, isValidFunctionEntry), Util.tuple22, Util.getOption);
-      then
-        fns;
-  end matchcontinue;
+  try
+    fns := List.map(DAE.AvlTreePathFunction.listValues(ft), Util.getOption);
+  else
+    lst := DAE.AvlTreePathFunction.toList(ft);
+    lstInvalid := List.select(lst, isInvalidFunctionEntry);
+    str := stringDelimitList(list(Absyn.pathString(p) for p in List.map(lstInvalid, Util.tuple21)), "\n ");
+    str := "\n " + str + "\n";
+    Error.addMessage(Error.NON_INSTANTIATED_FUNCTION, {str});
+    if failOnError then
+      fail();
+    end if;
+    fns := List.mapMap(List.select(lst, isValidFunctionEntry), Util.tuple22, Util.getOption);
+  end try;
 end getFunctionList;
 
 public function getFunctionNames
@@ -4288,6 +4292,8 @@ algorithm
       then
         ();
 
+    case DAE.COMMENT()
+      then ();
     else
       equation
         Error.addMessage(Error.INTERNAL_ERROR,
@@ -5101,6 +5107,7 @@ public function splitElements
   output list<DAE.Element> constraints = {};
   output list<DAE.Element> externalObjects = {};
   output list<DAEDump.compWithSplitElements> stateMachineComps = {};
+  output list<SCode.Comment> comments = {};
 protected
   DAEDump.compWithSplitElements split_comp;
 algorithm
@@ -5175,6 +5182,10 @@ algorithm
           stateMachineComps := split_comp :: stateMachineComps;
         then
           ();
+
+      case DAE.COMMENT()
+        algorithm comments := e.cmt :: comments; then ();
+
       else
         algorithm
           Error.addInternalError("DAEUtil.splitElements got unknown element.", Absyn.dummyInfo);
@@ -6031,25 +6042,11 @@ public function replaceCallAttrType  "replaces the type in the geiven DAE.CALL_A
   input DAE.Type typeIn;
   output DAE.CallAttributes caOut;
 algorithm
-  caOut := match(caIn,typeIn)
-    local
-      Boolean tpl,bi,impure_,isFunctionPointerCall;
-      DAE.CallAttributes ca;
-      DAE.InlineType iType;
-      DAE.Type ty;
-      DAE.TailCall tailCall;
-    case(DAE.CALL_ATTR(builtin=bi, isImpure=impure_, isFunctionPointerCall=isFunctionPointerCall, inlineType=iType,tailCall=tailCall),DAE.T_TUPLE(_,_))
-      equation
-        ca = DAE.CALL_ATTR(typeIn,true,bi,impure_,isFunctionPointerCall,iType,tailCall);
-      then
-        ca;
-    else
-      equation
-        DAE.CALL_ATTR(tuple_=tpl, builtin=bi, isImpure=impure_, inlineType=iType, isFunctionPointerCall=isFunctionPointerCall, tailCall=tailCall) = caIn;
-        ca = DAE.CALL_ATTR(typeIn,tpl,bi,impure_,isFunctionPointerCall,iType,tailCall);
-      then
-        ca;
-  end match;
+  caOut := caIn;
+  caOut.ty := typeIn;
+  if Types.isTuple(typeIn) then
+    caOut.tuple_ := true;
+  end if;
 end replaceCallAttrType;
 
 public function funcIsRecord

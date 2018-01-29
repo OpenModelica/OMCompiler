@@ -620,7 +620,7 @@ algorithm
         dae = ConnectUtil.equations(callscope_1, csets, dae1_1, graph, Absyn.pathString(Absyn.makeNotFullyQualified(fq_class)));
         //System.stopTimer();
         //print("\nConnect and Overconstrained: " + realString(System.getTimerIntervalTime()) + "\n");
-        ty = InstUtil.mktype(fq_class, ci_state_1, tys, bc_ty, equalityConstraint, c);
+        ty = InstUtil.mktype(fq_class, ci_state_1, tys, bc_ty, equalityConstraint, c, InstUtil.extractComment(dae.elementLst));
         dae = InstUtil.updateDeducedUnits(callscope_1,store,dae);
 
         // Fixes partial functions.
@@ -711,7 +711,7 @@ algorithm
         (cache,fq_class) = makeFullyQualifiedIdent(cache,env_3, n);
         dae1_1 = DAEUtil.addComponentType(dae1, fq_class);
         dae = dae1_1;
-        ty = InstUtil.mktypeWithArrays(fq_class, ci_state_1, tys, bc_ty, c);
+        ty = InstUtil.mktypeWithArrays(fq_class, ci_state_1, tys, bc_ty, c, InstUtil.extractComment(dae.elementLst));
       then
         (cache,env_3,ih,store,dae,csets,ty,tys,ci_state_1);
 
@@ -1097,7 +1097,7 @@ algorithm
         ty2 = DAE.T_ENUMERATION(NONE(), fq_class, names, tys1, tys);
         bc = arrayBasictypeBaseclass(inst_dims, ty2);
         bc = if isSome(bc) then bc else SOME(ty2);
-        ty = InstUtil.mktype(fq_class, ci_state_1, tys1, bc, eqConstraint, c);
+        ty = InstUtil.mktype(fq_class, ci_state_1, tys1, bc, eqConstraint, c, SCode.noComment);
         // update Enumerationtypes in environment
         (cache,env_3) = InstUtil.updateEnumerationEnvironment(cache,env_2,ty,c,ci_state_1);
         tys2 = listAppend(tys, tys1); // <--- this is wrong as the tys belong to the component variable not the Enumeration Class!
@@ -1440,7 +1440,7 @@ algorithm
       equation
         false = valueEq(c,DAE.C_VAR());
         (bind1,t_1) = Types.matchType(bind,bindTp,expectedTp,true);
-        (cache,v,_) = Ceval.ceval(cache, env, bind1, false, NONE(), Absyn.NO_MSG(), 0);
+        (cache,v) = Ceval.ceval(cache, env, bind1, false, Absyn.NO_MSG(), 0);
       then DAE.TYPES_VAR(id,DAE.dummyAttrParam,t_1,
         DAE.EQBOUND(bind1,SOME(v),DAE.C_PARAM(),DAE.BINDING_FROM_DEFAULT_VALUE()),NONE());
 
@@ -1450,7 +1450,7 @@ algorithm
         true = Flags.getConfigBool(Flags.CHECK_MODEL);
         expectedTp = Types.liftArray(expectedTp, d);
         (bind1,t_1) = Types.matchType(bind,bindTp,expectedTp,true);
-        (cache,v,_) = Ceval.ceval(cache,env, bind1, false,NONE(), Absyn.NO_MSG(), 0);
+        (cache,v) = Ceval.ceval(cache,env, bind1, false, Absyn.NO_MSG(), 0);
       then DAE.TYPES_VAR(id,DAE.dummyAttrParam,t_1,
         DAE.EQBOUND(bind1,SOME(v),DAE.C_PARAM(),DAE.BINDING_FROM_DEFAULT_VALUE()),NONE());
 
@@ -1577,7 +1577,7 @@ algorithm
   // Check that we don't have an instantiation loop.
   if numIter >= Global.recursionDepthLimit then
     Error.addSourceMessage(Error.RECURSION_DEPTH_REACHED,
-      {FGraph.printGraphPathStr(env)}, SCode.elementInfo(cls));
+      {String(Global.recursionDepthLimit), FGraph.printGraphPathStr(env)}, SCode.elementInfo(cls));
     fail();
   end if;
 
@@ -1875,7 +1875,7 @@ algorithm
       FCore.Graph env1,env2,env3,env,env5,cenv,cenv_2,env_2,parentEnv,parentClassEnv;
       list<tuple<SCode.Element, DAE.Mod>> cdefelts_1,extcomps,compelts_1,compelts_2, comp_cond, derivedClassesWithConstantMods;
       Connect.Sets csets,csets1,csets2,csets3,csets4,csets5,csets_1;
-      DAE.DAElist dae1,dae2,dae3,dae4,dae5,dae6,dae7,dae;
+      DAE.DAElist dae1,dae2,dae3,dae4,dae5,dae6,dae7,dae8,dae;
       ClassInf.State ci_state1,ci_state,ci_state2,ci_state3,ci_state4,ci_state5,ci_state6,ci_state7,new_ci_state,ci_state_1;
       list<DAE.Var> vars;
       Option<DAE.Type> bc;
@@ -1903,6 +1903,7 @@ algorithm
       SCode.Mod mod;
       FCore.Cache cache;
       Option<SCode.Attributes> oDA;
+      list<SCode.Comment> comments;
       DAE.EqualityConstraint eqConstraint;
       InstTypes.CallingScope callscope;
       ConnectionGraph.ConnectionGraph graph;
@@ -1957,7 +1958,7 @@ algorithm
         (cdefelts,extendsclasselts,extendselts as _::_,{}) = InstUtil.splitElts(els);
         extendselts = SCodeUtil.addRedeclareAsElementsToExtends(extendselts, List.select(els, SCodeUtil.isRedeclareElement));
         (cache,env1,ih) = InstUtil.addClassdefsToEnv(cache, env, ih, pre, cdefelts, impl, SOME(mods));
-        (cache,_,_,_,extcomps,{},{},{},{}) =
+        (cache,_,_,_,extcomps,{},{},{},{},_) =
         InstExtends.instExtendsAndClassExtendsList(cache, env1, ih, mods, pre, extendselts, extendsclasselts, els, ci_state, className, impl, false);
 
         compelts_2_elem = List.map(extcomps,Util.tuple21);
@@ -2027,7 +2028,7 @@ algorithm
         // if a record -> components ok
         // checkRestrictionsOnTheKindOfBaseClass(cache, env, ih, re, extendselts);
 
-        (cache,env2,ih,emods,extcomps,eqs2,initeqs2,alg2,initalg2) =
+        (cache,env2,ih,emods,extcomps,eqs2,initeqs2,alg2,initalg2,comments) =
         InstExtends.instExtendsAndClassExtendsList(cache, env1, ih, mods, pre, extendselts, extendsclasselts, els, ci_state, className, impl, false)
         "2. EXTENDS Nodes inst_extends_list only flatten inhteritance structure. It does not perform component instantiations.";
 
@@ -2146,13 +2147,15 @@ algorithm
         (cache,env5,dae7,_) =
           instConstraints(cache,env5, pre, ci_state6, constrs, impl);
 
+        dae8 = instFunctionAnnotations(comment::comments, ci_state6);
+
         // BTH: Relate state machine components to the flat state machine that they are part of
         smCompToFlatSM = InstStateMachineUtil.createSMNodeToFlatSMGroupTable(dae2);
         // BTH: Wrap state machine components (including transition statements) into corresponding flat state machine containers
         (dae1,dae2) = InstStateMachineUtil.wrapSMCompsInFlatSMs(ih, dae1, dae2, smCompToFlatSM, smInitialCrefs);
 
         //Collect the DAE's
-        dae = DAEUtil.joinDaeLst({dae1,dae2,dae3,dae4,dae5,dae6,dae7});
+        dae = DAEUtil.joinDaeLst({dae1,dae2,dae3,dae4,dae5,dae6,dae7,dae8});
 
         //Change outer references to corresponding inner reference
         // adrpo: TODO! FIXME! very very very expensive function, try to get rid of it!
@@ -2211,7 +2214,7 @@ algorithm
 
         mods_1 = Mod.merge(mods, mod_1, className);
         eq = Mod.modEquation(mods_1) "instantiate array dimensions" ;
-        (cache,dims) = InstUtil.elabArraydimOpt(cache,cenv_2, Absyn.CREF_IDENT("",{}),cn, ad, eq, impl,NONE(),true,pre,info,inst_dims) "owncref not valid here" ;
+        (cache,dims) = InstUtil.elabArraydimOpt(cache,cenv_2, Absyn.CREF_IDENT("",{}),cn, ad, eq, impl,true,pre,info,inst_dims) "owncref not valid here" ;
         // inst_dims2 = InstUtil.instDimExpLst(dims, impl);
         inst_dims_1 = List.appendLastList(inst_dims, dims);
 
@@ -2251,7 +2254,7 @@ algorithm
         mods_1 = Mod.merge(mods, mod_1, className);
 
         eq = Mod.modEquation(mods_1) "instantiate array dimensions";
-        (cache,dims) = InstUtil.elabArraydimOpt(cache, parentEnv, Absyn.CREF_IDENT("",{}), cn, ad, eq, impl, NONE(), true, pre, info, inst_dims) "owncref not valid here" ;
+        (cache,dims) = InstUtil.elabArraydimOpt(cache, parentEnv, Absyn.CREF_IDENT("",{}), cn, ad, eq, impl, true, pre, info, inst_dims) "owncref not valid here" ;
         // inst_dims2 = InstUtil.instDimExpLst(dims, impl);
         inst_dims_1 = List.appendLastList(inst_dims, dims);
 
@@ -2352,7 +2355,7 @@ algorithm
         (cache,mod_1) = Mod.elabMod(cache, parentEnv, ih, pre, mod, impl, Mod.DERIVED(cn), info);
         mods_1 = Mod.merge(mods, mod_1, className);
         eq = Mod.modEquation(mods_1) "instantiate array dimensions" ;
-        (cache,dims) = InstUtil.elabArraydimOpt(cache, parentEnv, Absyn.CREF_IDENT("",{}), cn, ad, eq, impl, NONE(), true, pre, info, inst_dims) "owncref not valid here" ;
+        (cache,dims) = InstUtil.elabArraydimOpt(cache, parentEnv, Absyn.CREF_IDENT("",{}), cn, ad, eq, impl, true, pre, info, inst_dims) "owncref not valid here" ;
         inst_dims_1 = List.appendLastList(inst_dims, dims);
         (cache,env_2,ih,store,dae,csets_1,ci_state_1,vars,bc,oDA,eqConstraint,graph) = instClassIn(cache, cenv_2, ih, store, mods_1, pre, new_ci_state, c, vis, inst_dims_1, impl, callscope, graph, inSets, instSingleCref) "instantiate class in opened scope. " ;
         ClassInf.assertValid(ci_state_1, re, info) "Check for restriction violations" ;
@@ -2923,7 +2926,7 @@ algorithm
           cls := SCode.setClassName(class_name, cls);
           eq := Mod.modEquation(mod);
           (outCache, dims) := InstUtil.elabArraydimOpt(outCache, parent_env,
-            Absyn.CREF_IDENT("", {}), class_path, class_dims, eq, false, NONE(),
+            Absyn.CREF_IDENT("", {}), class_path, class_dims, eq, false,
             true, inPrefix, info, inInstDims);
           inst_dims := List.appendLastList(inInstDims, dims);
         else
@@ -3450,7 +3453,7 @@ algorithm
         // The variable declaration and the (optional) equation modification are inspected for array dimensions.
         is_function_input = InstUtil.isFunctionInput(ci_state, dir);
         (cache, dims) = InstUtil.elabArraydim(cache, env2, own_cref, t, ad, eq, impl,
-          NONE(), true, is_function_input, pre, info, inst_dims);
+          true, is_function_input, pre, info, inst_dims);
 
         //PDEModelica:
         if intEq(Flags.getConfigEnum(Flags.GRAMMAR), Flags.PDEMODELICA) then
@@ -3570,7 +3573,7 @@ algorithm
         // Gather all the dimensions
         // (Absyn.IDENT("Integer") is used as a dummy)
         (cache, dims) = InstUtil.elabArraydim(cache, env, own_cref, Absyn.IDENT("Integer"),
-          ad, NONE(), impl, NONE(), true, false, pre, info, inst_dims);
+          ad, NONE(), impl, true, false, pre, info, inst_dims);
 
         // Instantiate the component
         (cache, comp_env, ih, store, dae, csets, ty, graph_new) =
@@ -4288,7 +4291,7 @@ algorithm
 
     own_cref := Absyn.CREF_IDENT(inName, {});
     (outCache, dims) := InstUtil.elabArraydim(outCache, outEnv, own_cref, inPath,
-      inSubscripts, eq, inImpl, NONE(), true, false, inPrefix, inInfo, {});
+      inSubscripts, eq, inImpl, true, false, inPrefix, inInfo, {});
 
     // Instantiate the component.
     (cls_env, cls, outIH) :=
@@ -4732,7 +4735,7 @@ algorithm
     case (cache,env,pre,(na :: rest),impl,_,clsAttrs)
       equation
         Absyn.NAMEDARG(attrName, attrExp) = na;
-        (cache,outExp,_,_) = Static.elabExp(cache, env, attrExp, impl, NONE(), false /*vectorize*/, pre, inInfo);
+        (cache,outExp,_) = Static.elabExp(cache, env, attrExp, impl, false /*vectorize*/, pre, inInfo);
         (clsAttrs) = insertClassAttribute(clsAttrs,attrName,outExp);
         (cache,env_2,clsAttrs) = instClassAttributes2(cache, env, pre, rest, impl, inInfo,clsAttrs);
       then
@@ -4999,7 +5002,7 @@ algorithm
         ErrorExt.setCheckpoint("Inst.removeSelfReferenceAndUpdate");
         cl2 = InstUtil.removeCrefFromCrefs(cl1, c1);
         (cache,c,cenv) = Lookup.lookupClass(cache,env, sty, SOME(info));
-        (cache,dims) = InstUtil.elabArraydim(cache,cenv, c1, sty, ad, NONE(), impl, NONE(), true, false, pre, info, inst_dims);
+        (cache,dims) = InstUtil.elabArraydim(cache,cenv, c1, sty, ad, NONE(), impl, true, false, pre, info, inst_dims);
 
         // we really need to keep at least the redeclare modifications here!!
         smod = SCodeUtil.removeSelfReferenceFromMod(scodeMod, c1);
@@ -5037,7 +5040,7 @@ algorithm
         ErrorExt.setCheckpoint("Inst.removeSelfReferenceAndUpdate");
         cl2 = InstUtil.removeCrefFromCrefs(cl1, c1);
         (cache,c,cenv) = Lookup.lookupClass(cache,env, sty, SOME(info));
-        (cache,dims) = InstUtil.elabArraydim(cache, cenv, c1, sty, ad, NONE(), impl, NONE(), true, false, pre, info, inst_dims);
+        (cache,dims) = InstUtil.elabArraydim(cache, cenv, c1, sty, ad, NONE(), impl, true, false, pre, info, inst_dims);
 
         // we really need to keep at least the redeclare modifications here!!
         smod = SCodeUtil.removeNonConstantBindingsKeepRedeclares(scodeMod, false);
@@ -5075,7 +5078,7 @@ algorithm
         ErrorExt.setCheckpoint("Inst.removeSelfReferenceAndUpdate");
         cl2 = InstUtil.removeCrefFromCrefs(cl1, c1);
         (cache,c,cenv) = Lookup.lookupClass(cache,env, sty, SOME(info));
-        (cache,dims) = InstUtil.elabArraydim(cache,cenv, c1, sty, ad, NONE(), impl, NONE(), true, false, pre, info, inst_dims);
+        (cache,dims) = InstUtil.elabArraydim(cache,cenv, c1, sty, ad, NONE(), impl, true, false, pre, info, inst_dims);
 
         // we really need to keep at least the redeclare modifications here!!
         smod = SCodeUtil.removeNonConstantBindingsKeepRedeclares(scodeMod, true);
@@ -5113,7 +5116,7 @@ algorithm
         ErrorExt.setCheckpoint("Inst.removeSelfReferenceAndUpdate");
         cl2 = InstUtil.removeCrefFromCrefs(cl1, c1);
         (cache,c,cenv) = Lookup.lookupClass(cache,env, sty, SOME(info));
-        (cache,dims) = InstUtil.elabArraydim(cache,cenv, c1, sty, ad, NONE(), impl, NONE(), true, false, pre, info, inst_dims);
+        (cache,dims) = InstUtil.elabArraydim(cache,cenv, c1, sty, ad, NONE(), impl, true, false, pre, info, inst_dims);
 
         // we really need to keep at least the redeclare modifications here!!
         // smod = SCodeUtil.removeNonConstantBindingsKeepRedeclares(scodeMod, true);
@@ -5593,6 +5596,37 @@ algorithm
     print(inMsg + Absyn.pathString(inPath) + "\n");
   end if;
 end showCacheInfo;
+
+function instFunctionAnnotations "Merges the function's comments from inherited classes"
+  input list<SCode.Comment> comments;
+  input ClassInf.State state;
+  output DAE.DAElist dae=DAE.emptyDae;
+protected
+  Option<String> comment=NONE();
+  SCode.Mod mod=SCode.NOMOD(), mod2;
+algorithm
+  if not ClassInf.isFunction(state) then
+    return;
+  end if;
+
+  for cmt in comments loop
+
+    if isNone(comment) then
+      comment := cmt.comment;
+    end if;
+
+    mod := match cmt
+      case SCode.COMMENT(annotation_=SOME(SCode.ANNOTATION(modification=mod2)))
+        then SCode.mergeModifiers(mod2, mod);
+      else mod;
+    end match;
+
+  end for;
+  dae := match mod
+    case SCode.NOMOD() then if isNone(comment) then dae else DAE.DAE({DAE.COMMENT(SCode.COMMENT(NONE(),comment))});
+    else DAE.DAE({DAE.COMMENT(SCode.COMMENT(SOME(SCode.ANNOTATION(mod)), comment))});
+  end match;
+end instFunctionAnnotations;
 
 annotation(__OpenModelica_Interface="frontend");
 end Inst;

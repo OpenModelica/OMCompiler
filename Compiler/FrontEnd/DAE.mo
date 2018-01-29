@@ -377,6 +377,9 @@ public uniontype Element
     list<Element> dAElist "a component with subelements";
   end SM_COMP;
 
+  record COMMENT
+    SCode.Comment cmt "Functions store the inherited class annotations in the DAE";
+  end COMMENT;
 
 end Element;
 
@@ -1538,6 +1541,7 @@ public constant CallAttributes callAttrBuiltinOther = CALL_ATTR(T_UNKNOWN_DEFAUL
 public constant CallAttributes callAttrBuiltinImpureBool = CALL_ATTR(T_BOOL_DEFAULT,false,true,true,false,NO_INLINE(),NO_TAIL());
 public constant CallAttributes callAttrBuiltinImpureInteger = CALL_ATTR(T_INTEGER_DEFAULT,false,true,true,false,NO_INLINE(),NO_TAIL());
 public constant CallAttributes callAttrBuiltinImpureReal = CALL_ATTR(T_REAL_DEFAULT,false,true,true,false,NO_INLINE(),NO_TAIL());
+public constant CallAttributes callAttrOther = CALL_ATTR(T_UNKNOWN_DEFAULT,false,false,false,false,NO_INLINE(),NO_TAIL());
 
 public
 uniontype CallAttributes
