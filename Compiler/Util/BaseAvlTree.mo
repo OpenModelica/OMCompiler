@@ -107,6 +107,20 @@ function addConflictKeep
   output Value value = oldValue;
 end addConflictKeep;
 
+function hasKey
+  "Gets a value from the tree given a key."
+  input Tree inTree;
+  input Key inKey;
+  output Boolean outB;
+algorithm
+  try
+    _ := get(inTree, inKey);
+    outB := true;
+  else
+    outB := false;
+  end try;
+end hasKey;
+
 redeclare function add
   "Inserts a new node in the tree."
   input Tree inTree;
