@@ -307,7 +307,7 @@ void simple_indexed_assign_boolean_array2(const boolean_array_t* source,
 void indexed_assign_boolean_array(const boolean_array_t source, boolean_array_t* dest,
                                   const index_spec_t* dest_spec)
 {
-    _index_t* idx_vec1, idx_size;
+    _index_t *idx_vec1, *idx_size;
     int j;
     indexed_assign_base_array_size_alloc(&source, dest, dest_spec, &idx_vec1, &idx_size);
 
@@ -520,22 +520,6 @@ void array_alloc_boolean_array(boolean_array_t* dest, int n,
         }
     }
     free(elts);
-}
-
-void array_scalar_boolean_array(boolean_array_t* dest, int n,
-                                m_boolean first, ...)
-{
-    int i;
-    va_list ap;
-    assert(base_array_ok(dest));
-    assert(dest->ndims == 1);
-    assert(dest->dim_size[0] == n);
-    put_boolean_element(first, 0, dest);
-    va_start(ap,first);
-    for(i = 0; i < n; ++i) {
-        put_boolean_element((m_boolean) va_arg(ap, int),i,dest);
-    }
-    va_end(ap);
 }
 
 /* array_alloc_scalar_boolean_array

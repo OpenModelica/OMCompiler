@@ -302,7 +302,7 @@ void simple_indexed_assign_integer_array2(const integer_array_t * source,
 void indexed_assign_integer_array(const integer_array_t source, integer_array_t* dest,
                                   const index_spec_t* dest_spec)
 {
-    _index_t* idx_vec1, idx_size;
+    _index_t *idx_vec1, *idx_size;
     int j;
     indexed_assign_base_array_size_alloc(&source, dest, dest_spec, &idx_vec1, &idx_size);
 
@@ -519,22 +519,6 @@ void array_alloc_integer_array(integer_array_t* dest,int n,
         }
     }
     free(elts);
-}
-
-void array_scalar_integer_array(integer_array_t* dest,int n,
-                                modelica_integer first,...)
-{
-    int i;
-    va_list ap;
-    omc_assert_macro(base_array_ok(dest));
-    omc_assert_macro(dest->ndims == 1);
-    omc_assert_macro(dest->dim_size[0] == n);
-    put_integer_element(first, 0, dest);
-    va_start(ap,first);
-    for(i = 0; i < n; ++i) {
-        put_integer_element(va_arg(ap, modelica_integer),i,dest);
-    }
-    va_end(ap);
 }
 
 /* array_alloc_scalar_integer_array
