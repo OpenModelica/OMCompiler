@@ -44,7 +44,7 @@
  ** sets all fields in a base_array, i.e. data, ndims and dim_size.
  **/
 
-void base_array_create(base_array_t *dest, void *data, int ndims, va_list ap)
+void base_array_create(threadData_t *threadData, base_array_t *dest, void *data, int ndims, va_list ap)
 {
     int i;
 
@@ -66,7 +66,7 @@ void base_array_create(base_array_t *dest, void *data, int ndims, va_list ap)
     */
 }
 
-int base_array_ok(const base_array_t *a)
+int base_array_ok(threadData_t *threadData, const base_array_t *a)
 {
     int i;
     if(a == NULL) {
@@ -94,7 +94,7 @@ int base_array_ok(const base_array_t *a)
  * Checks that all arrays have the same number of dimensions and same
  * dimension sizes.
  */
-void check_base_array_dim_sizes(const base_array_t *elts, int n)
+void check_base_array_dim_sizes(threadData_t *threadData, const base_array_t *elts, int n)
 {
     int i, curdim;
     int ndims = elts[0].ndims;
@@ -114,7 +114,7 @@ void check_base_array_dim_sizes(const base_array_t *elts, int n)
  * Checks that all arrays have the same number of dimensions and same
  * dimension sizes  for all sizes except for dimension k.
  */
-void check_base_array_dim_sizes_except(int k, const base_array_t *elts, int n)
+void check_base_array_dim_sizes_except(threadData_t *threadData, int k, const base_array_t *elts, int n)
 {
     int i, curdim, dimsize;
     int k_loc = k - 1;
@@ -136,7 +136,7 @@ void check_base_array_dim_sizes_except(int k, const base_array_t *elts, int n)
     }
 }
 
-int base_array_shape_eq(const base_array_t *a, const base_array_t *b)
+int base_array_shape_eq(threadData_t *threadData, const base_array_t *a, const base_array_t *b)
 {
     int i;
 
@@ -156,7 +156,7 @@ int base_array_shape_eq(const base_array_t *a, const base_array_t *b)
     return 1;
 }
 
-int base_array_one_element_ok(const base_array_t *a)
+int base_array_one_element_ok(threadData_t *threadData, const base_array_t *a)
 {
     int i;
 
@@ -168,7 +168,7 @@ int base_array_one_element_ok(const base_array_t *a)
     return 1;
 }
 
-int index_spec_fit_base_array(const index_spec_t *s, const base_array_t *a)
+int index_spec_fit_base_array(threadData_t *threadData, const index_spec_t *s, const base_array_t *a)
 {
     int i, j;
 
@@ -203,7 +203,7 @@ int index_spec_fit_base_array(const index_spec_t *s, const base_array_t *a)
     return 1;
 }
 
-void simple_alloc_1d_base_array(base_array_t *dest, int n, void *data)
+void simple_alloc_1d_base_array(threadData_t *threadData, base_array_t *dest, int n, void *data)
 {
     dest->ndims = 1;
     dest->dim_size = size_alloc(1);
@@ -211,7 +211,7 @@ void simple_alloc_1d_base_array(base_array_t *dest, int n, void *data)
     dest->data = data;
 }
 
-void simple_alloc_2d_base_array(base_array_t *dest, int r, int c, void *data)
+void simple_alloc_2d_base_array(threadData_t *threadData, base_array_t *dest, int r, int c, void *data)
 {
     dest->ndims = 2;
     dest->dim_size = size_alloc(2);
@@ -220,7 +220,7 @@ void simple_alloc_2d_base_array(base_array_t *dest, int r, int c, void *data)
     dest->data = data;
 }
 
-size_t alloc_base_array(base_array_t *dest, int ndims, va_list ap)
+size_t alloc_base_array(threadData_t *threadData, base_array_t *dest, int ndims, va_list ap)
 {
     int i;
     size_t nr_of_elements = 1;
@@ -244,10 +244,10 @@ size_t alloc_base_array(base_array_t *dest, int ndims, va_list ap)
     return nr_of_elements;
 }
 
-void clone_base_array_spec(const base_array_t *source, base_array_t *dest)
+void clone_base_array_spec(threadData_t *threadData, const base_array_t *source, base_array_t *dest)
 {
     int i;
-    assert(base_array_ok(source));
+    assert(base_array_ok(threadData, source));
 
     dest->ndims = source->ndims;
     dest->dim_size = size_alloc(dest->ndims);
@@ -262,7 +262,7 @@ void clone_base_array_spec(const base_array_t *source, base_array_t *dest)
  a[1:3] := b;
 */
 
-size_t calc_base_index_spec(int ndims, const _index_t *idx_vec,
+size_t calc_base_index_spec(threadData_t *threadData, int ndims, const _index_t *idx_vec,
                             const base_array_t *arr, const index_spec_t *spec)
 {
     /* idx_vec is zero based */
@@ -271,9 +271,9 @@ size_t calc_base_index_spec(int ndims, const _index_t *idx_vec,
     int d2;
     size_t index = 0;
 
-    assert(base_array_ok(arr));
+    assert(base_array_ok(threadData, arr));
     assert(index_spec_ok(spec));
-    assert(index_spec_fit_base_array(spec, arr));
+    assert(index_spec_fit_base_array(threadData, spec, arr));
     assert((ndims == arr->ndims) && (ndims == spec->ndims));
 
     index = 0;
@@ -291,7 +291,7 @@ size_t calc_base_index_spec(int ndims, const _index_t *idx_vec,
 }
 
 /* Uses zero based indexing */
-size_t calc_base_index(int ndims, const _index_t *idx_vec, const base_array_t *arr)
+size_t calc_base_index(threadData_t *threadData, int ndims, const _index_t *idx_vec, const base_array_t *arr)
 {
     int i;
     size_t index = 0;
@@ -337,7 +337,7 @@ size_t calc_base_index_dims_subs(threadData_t *threadData, int ndims,...)
 }
 
 /* 0-based index*/
-size_t calc_base_index_va(const base_array_t *source, int ndims, va_list ap)
+size_t calc_base_index_va(threadData_t *threadData, const base_array_t *source, int ndims, va_list ap)
 {
     int i;
     size_t index;
@@ -346,8 +346,7 @@ size_t calc_base_index_va(const base_array_t *source, int ndims, va_list ap)
     for(i = 0; i < ndims; ++i) {
         int sub_i = va_arg(ap, _index_t) - 1;
         if (sub_i < 0 || sub_i >= source->dim_size[i]) {
-          FILE_INFO info = omc_dummyFileInfo;
-          omc_assert(NULL, info, "Dimension %d has bounds 1..%d, got array subscript %d", i+1, source->dim_size[i], sub_i+1);
+          threadData->assert->error(threadData, NULL, "Dimension %d has bounds 1..%d, got array subscript %d", i+1, source->dim_size[i], sub_i+1);
         }
         index = (index * source->dim_size[i]) + sub_i;
     }
@@ -355,16 +354,16 @@ size_t calc_base_index_va(const base_array_t *source, int ndims, va_list ap)
     return index;
 }
 
-int ndims_base_array(const base_array_t* a)
+int ndims_base_array(threadData_t *threadData, const base_array_t* a)
 {
-    assert(base_array_ok(a));
+    assert(base_array_ok(threadData, a));
     return a->ndims;
 }
 
-void clone_reverse_base_array_spec(const base_array_t* source, base_array_t* dest)
+void clone_reverse_base_array_spec(threadData_t *threadData, const base_array_t* source, base_array_t* dest)
 {
     int i;
-    assert(base_array_ok(source));
+    assert(base_array_ok(threadData, source));
 
     dest->ndims = source->ndims;
     dest->dim_size = size_alloc(dest->ndims);
@@ -375,16 +374,16 @@ void clone_reverse_base_array_spec(const base_array_t* source, base_array_t* des
     }
 }
 
-void index_alloc_base_array_size(const real_array_t * source,
+void index_alloc_base_array_size(threadData_t *threadData, const real_array_t * source,
                                  const index_spec_t* source_spec,
                                  base_array_t* dest)
 {
     int i;
     int j;
 
-    omc_assert_macro(base_array_ok(source));
+    omc_assert_macro(base_array_ok(threadData, source));
     omc_assert_macro(index_spec_ok(source_spec));
-    omc_assert_macro(index_spec_fit_base_array(source_spec, source));
+    omc_assert_macro(index_spec_fit_base_array(threadData, source_spec, source));
 
     for(i = 0, j = 0; i < source_spec->ndims; ++i) {
          if(source_spec->dim_size[i] != 0) { /* is 'W' or 'A' */
@@ -407,15 +406,15 @@ void index_alloc_base_array_size(const real_array_t * source,
     }
 }
 
-void indexed_assign_base_array_size_alloc(const base_array_t *source, base_array_t *dest, const index_spec_t *dest_spec, _index_t** _idx_vec1, _index_t** _idx_size)
+void indexed_assign_base_array_size_alloc(threadData_t *threadData, const base_array_t *source, base_array_t *dest, const index_spec_t *dest_spec, _index_t** _idx_vec1, _index_t** _idx_size)
 {
     _index_t* idx_vec1;
     _index_t* idx_size;
     int i, j;
-    omc_assert_macro(base_array_ok(source));
-    omc_assert_macro(base_array_ok(dest));
+    omc_assert_macro(base_array_ok(threadData, source));
+    omc_assert_macro(base_array_ok(threadData, dest));
     omc_assert_macro(index_spec_ok(dest_spec));
-    omc_assert_macro(index_spec_fit_base_array(dest_spec, dest));
+    omc_assert_macro(index_spec_fit_base_array(threadData, dest_spec, dest));
     for(i = 0,j = 0; i < dest_spec->ndims; ++i) {
         if(dest_spec->dim_size[i] != 0) {
             ++j;
