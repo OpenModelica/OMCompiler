@@ -2754,185 +2754,46 @@ template daeExpRelationSimXml(Exp exp, Context context, Text &preExp /*BUFP*/,
 ::=
 match exp
 case rel as RELATION(__) then
-  match context
-  case SIMULATION_CONTEXT(genDiscrete=false) then
-     match rel.optionExpisASUB
-     case NONE() then
-        let e1 = daeExpXml(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let e2 = daeExpXml(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let res = tempDeclXml("modelica_boolean", &varDecls /*BUFC*/)
-        match rel.operator
-        case LESS(__) then
-          let &preExp +=
-          <<
-          <exp:LogLt>
-            <%e1%>
-            <%e2%>
-          </exp:LogLt> <%\n%>
-          >>
-          res
-        case LESSEQ(__) then
-          let &preExp +=
-          <<
-          <exp:LogLeq>
-            <%e1%>
-            <%e2%>
-          </exp:LogLeq> <%\n%>
-          >>
-          res
-        case GREATER(__) then
-          let &preExp +=
-          <<
-          <exp:LogGt>
-            <%e1%>
-            <%e2%>
-          </exp:LogGt> <%\n%>
-          >>
-          res
-        case GREATEREQ(__) then
-          let &preExp +=
-          <<
-          <exp:LogGeq>
-            <%e1%>
-            <%e2%>
-          </exp:LogGeq> <%\n%>
-          >>
-          res
-        end match
-    case SOME((exp,i,j)) then
-      let e1 = daeExpXml(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-      let e2 = daeExpXml(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-      let iterator = daeExpXml(exp, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-      let res = tempDeclXml("modelica_boolean", &varDecls /*BUFC*/)
-      //let e3 = daeExp(createArray(i), context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-      match rel.operator
-      case LESS(__) then
-        let &preExp +=
-        <<
-          <exp:LogLt>
-            <%e1%>
-            <%e2%>
-          </exp:LogLt><%\n%>
-        >>
-        res
-      case LESSEQ(__) then
-        let &preExp +=
-        <<
-          <exp:LogLeq>
-            <%e1%>
-            <%e2%>
-          <exp:LogLeq> <%\n%>
-        >>
-        res
-      case GREATER(__) then
-        let &preExp +=
-        <<
-          <exp:LogGt>
-            <%e1%>
-            <%e2%>
-          </exp:LogGt><%\n%>
-        >>
-        res
-      case GREATEREQ(__) then
-        let &preExp +=
-        <<
-          <exp:LogGeq>
-            <%e1%>
-            <%e2%>
-          </exp:LogGeq><%\n%>
-        >>
-        res
-        end match
-      end match
-   case SIMULATION_CONTEXT(genDiscrete=true) then
-     match rel.optionExpisASUB
-     case NONE() then
-        let e1 = daeExpXml(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let e2 = daeExpXml(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let res = tempDeclXml("modelica_boolean", &varDecls /*BUFC*/)
-       match rel.operator
-        case LESS(__) then
-          let &preExp +=
-          <<
-          <exp:LogLt>
-            <%e1%>
-            <%e2%>
-          </exp:LogLt><%\n%>
-          >>
-          res
-        case LESSEQ(__) then
-          let &preExp +=
-          <<
-          <exp:LogLeq>
-            <%e1%>
-            <%e2%>
-          </exp:LogLeq> <%\n%>
-          >>
-          res
-        case GREATER(__) then
-          let &preExp +=
-          <<
-          <exp:LogGt>
-            <%e1%>
-            <%e2%>
-          </exp:LogGt><%\n%>
-          >>
-          res
-        case GREATEREQ(__) then
-          let &preExp +=
-          <<
-          <exp:LogGeq>
-            <%e1%>
-            <%e2%>
-          </exp:LogGeq><%\n%>
-          >>
-          res
-        end match
-    case SOME((exp,i,j)) then
-         let e1 = daeExpXml(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-         let e2 = daeExpXml(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-         let res = tempDeclXml("modelica_boolean", &varDecls /*BUFC*/)
-         //let e3 = daeExp(createArray(i), context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-         let iterator = daeExpXml(exp, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-     match rel.operator
-     case LESS(__) then
-        let &preExp +=
-        <<
-            <exp:LogLt>
-              <%e1%>
-              <%e2%>
-            </exp:LogLt><%\n%>
-        >>
-        res
-     case LESSEQ(__) then
-        let &preExp +=
-        <<
-            <exp:LogLeq>
-              <%e1%>
-              <%e2%>
-            </exp:LogLeq> <%\n%>
-        >>
-        res
-     case GREATER(__) then
-        let &preExp +=
-        <<
-            <exp:LogGt>
-              <%e1%>
-              <%e2%>
-            </exp:LogGt><%\n%>
-        >>
-        res
-     case GREATEREQ(__) then
-        let &preExp +=
-        <<
-            <exp:LogGeq>
-              <%e1%>
-              <%e2%>
-            </exp:LogGeq><%\n%>
-        >>
-        res
-          end match
-        end match
+  let e1 = daeExpXml(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
+  let e2 = daeExpXml(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
+  let res = tempDeclXml("modelica_boolean", &varDecls /*BUFC*/)
+  match rel.operator
+  case LESS(__) then
+    let &preExp +=
+    <<
+    <exp:LogLt>
+      <%e1%>
+      <%e2%>
+    </exp:LogLt> <%\n%>
+    >>
+    res
+  case LESSEQ(__) then
+    let &preExp +=
+    <<
+    <exp:LogLeq>
+      <%e1%>
+      <%e2%>
+    </exp:LogLeq> <%\n%>
+    >>
+    res
+  case GREATER(__) then
+    let &preExp +=
+    <<
+    <exp:LogGt>
+      <%e1%>
+      <%e2%>
+    </exp:LogGt> <%\n%>
+    >>
+    res
+  case GREATEREQ(__) then
+    let &preExp +=
+    <<
+    <exp:LogGeq>
+      <%e1%>
+      <%e2%>
+    </exp:LogGeq> <%\n%>
+    >>
+    res
   end match
 end match
 end daeExpRelationSimXml;
@@ -2945,12 +2806,10 @@ match exp
 case rel as RELATION(__) then
   match context
    case SIMULATION_CONTEXT(genDiscrete=true) then
-     match rel.optionExpisASUB
-     case NONE() then
-        let e1 = daeExpXml(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let e2 = daeExpXml(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
-        let res = tempDeclXml("modelica_boolean", &varDecls /*BUFC*/)
-       match rel.operator
+      let e1 = daeExpXml(rel.exp1, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
+      let e2 = daeExpXml(rel.exp2, context, &preExp /*BUFC*/, &varDecls /*BUFC*/)
+      let res = tempDeclXml("modelica_boolean", &varDecls /*BUFC*/)
+      match rel.operator
         case EQUAL(__) then
           <<
           <opt:ConstraintEqu>
@@ -2976,8 +2835,7 @@ case rel as RELATION(__) then
           <<
             "The XML schema does only support =, >= , <=  operators for constraints"
           >>
-        end match
-        end match
+      end match
   end match
 end match
 end daeExpConstraintXml;
