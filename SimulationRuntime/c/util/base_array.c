@@ -305,7 +305,7 @@ size_t calc_base_index(int ndims, const _index_t *idx_vec, const base_array_t *a
     return index;
 }
 
-size_t calc_base_index_dims_subs(int ndims,...)
+size_t calc_base_index_dims_subs(threadData_t *threadData, int ndims,...)
 {
 
     int i;
@@ -327,8 +327,7 @@ size_t calc_base_index_dims_subs(int ndims,...)
     index = 0;
     for(i = 0; i < ndims; ++i) {
         if (subs[i] < 0 || subs[i] >= dims[i]) {
-          FILE_INFO info = omc_dummyFileInfo;
-          omc_assert(NULL, info, "Dimension %d has bounds 1..%d, got array subscript %d", i+1, dims[i], subs[i]+1);
+          threadData->assert->error(threadData, NULL, "Dimension %d has bounds 1..%d, got array subscript %d", i+1, dims[i], subs[i]+1);
         }
         index = (index * dims[i]) + subs[i];
     }
