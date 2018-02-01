@@ -3376,6 +3376,7 @@ algorithm
       end if;
       ExecStat.execStat("buildModelFMU: Generate C++ for platform " + platform);
     end for;
+    System.systemCall("make -f " + filenameprefix + "_FMU.makefile clean");
     return;
   end if;
 
