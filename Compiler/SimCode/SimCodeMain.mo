@@ -820,6 +820,14 @@ algorithm
       // FMI 2.0: enable postOptModule to create alias variables for output states
       strOptPostOptModules := if isFMI2 then SOME("createAliasVarsForOutputStates"::BackendDAEUtil.getPostOptModulesString()) else NONE();
 
+      // CPP runtime: if matrix format dense is selected by the user
+      // the threshold of skip tearing is too small 
+      if (stringEqual(Config.simCodeTarget(), "Cpp") and
+          stringEqual(Flags.getConfigString(Flags.MATRIX_FORMAT), "dense") ) 
+         then
+         Flags.setConfigInt(Flags.MAX_SIZE_LINEAR_TEARING, 4000);
+      end if;
+
       //BackendDump.printBackendDAE(dlow);
       (dlow, initDAE, initDAE_lambda0, inlineData, removedInitialEquationLst) := BackendDAEUtil.getSolvedSystem(dlow,inFileNamePrefix,strPostOptModules=strOptPostOptModules);
 
