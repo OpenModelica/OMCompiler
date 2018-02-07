@@ -199,7 +199,7 @@ public uniontype Element
     VarVisibility protection "if protected or public";
     Type ty "Full type information required";
     Option<Exp> binding "Binding expression e.g. for parameters ; value of start attribute";
-    InstDims  dims "dimensions";
+    InstDims dims "dimensions";
     ConnectorType connectorType "The connector type: flow, stream, no prefix, or not a connector element.";
     ElementSource source "the origins of the component/equation/algorithm";
     Option<VariableAttributes> variableAttributesOption;
@@ -526,6 +526,9 @@ uniontype VariableAttributes
     Option<Exp> startOrigin "where did start=X came from? NONE()|SOME(DAE.SCONST binding|type|undefined)";
   end VAR_ATTR_ENUMERATION;
 end VariableAttributes;
+
+public constant VariableAttributes emptyVarAttrReal = VAR_ATTR_REAL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
+public constant VariableAttributes emptyVarAttrBool = VAR_ATTR_BOOL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
 
 public uniontype StateSelect
   record NEVER end NEVER;
