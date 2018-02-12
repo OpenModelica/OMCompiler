@@ -102,6 +102,11 @@ algorithm
   if Type.isArray(var.ty) then
     Variable.VARIABLE(name, ty, binding, vis, attr, ty_attr, cmt, info) := var;
     crefs := ComponentRef.scalarize(name);
+
+    if listEmpty(crefs) then
+      return;
+    end if;
+
     ty := Type.arrayElementType(ty);
     (ty_attr_names, ty_attr_iters) := scalarizeTypeAttributes(ty_attr);
 
@@ -130,17 +135,19 @@ function scalarizeTypeAttributes
   output list<String> names = {};
   output array<ExpressionIterator> iters;
 protected
-  Integer i = 1;
+  Integer len, i;
   String name;
   Binding binding;
 algorithm
-  iters := arrayCreateNoInit(listLength(attrs), ExpressionIterator.NONE_ITERATOR());
+  len := listLength(attrs);
+  iters := arrayCreateNoInit(len, ExpressionIterator.NONE_ITERATOR());
+  i := len;
 
   for attr in attrs loop
     (name, binding) := attr;
     names := name :: names;
     arrayUpdate(iters, i, ExpressionIterator.fromBinding(binding));
-    i := i + 1;
+    i := i - 1;
   end for;
 end scalarizeTypeAttributes;
 
