@@ -683,8 +683,11 @@ end interactivemodeCorba;
 protected function interactivemodeZMQ
 "Initiate the interactive mode using ZMQ communication."
   input GlobalScript.SymbolTable symbolTable;
+protected
+  String suffix;
 algorithm
-  serverLoopZMQ(true, ZeroMQ.initialize(Flags.getConfigString(Flags.ZEROMQ_FILE_SUFFIX)), symbolTable);
+  suffix := Flags.getConfigString(Flags.ZEROMQ_FILE_SUFFIX);
+  serverLoopZMQ(true, ZeroMQ.initialize(if suffix=="" then "" else ("."+suffix)), symbolTable);
 end interactivemodeZMQ;
 
 protected function serverLoopCorba
