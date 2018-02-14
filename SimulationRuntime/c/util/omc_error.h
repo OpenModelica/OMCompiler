@@ -32,6 +32,8 @@
 #ifndef OMC_ERROR_H
 #define OMC_ERROR_H
 
+typedef struct threadData_s threadData_t;
+
 #include "openmodelica.h"
 #include "omc_msvc.h"
 
@@ -56,10 +58,13 @@ typedef struct _FILE_INFO
 #define omc_dummyFileInfo {"",0,0,0,0,0}
 
 DLLExport extern void printInfo(FILE *stream, FILE_INFO info);
-DLLExport extern void (*omc_assert)(threadData_t*, FILE_INFO, const char*, ...) __attribute__ ((noreturn));
-DLLExport extern void (*omc_assert_warning)(FILE_INFO, const char*, ...);
-DLLExport extern void (*omc_terminate)(FILE_INFO, const char*, ...);
-DLLExport extern void (*omc_throw)(threadData_t*) __attribute__ ((noreturn));
+
+typedef struct assertions_s {
+ void (*error)(threadData_t*, FILE_INFO*, const char*, ...) __attribute__ ((noreturn));
+ void (*warning)(threadData_t*, FILE_INFO*, const char*, ...);
+ void (*terminate)(threadData_t*, FILE_INFO*, const char*, ...);
+ void (*mmc_throw)(threadData_t*) __attribute__ ((noreturn));
+} assertions_t;
 
 DLLExport extern void (*omc_assert_withEquationIndexes)(threadData_t*,FILE_INFO, const int*, const char*, ...) __attribute__ ((noreturn));
 DLLExport extern void (*omc_assert_warning_withEquationIndexes)(FILE_INFO, const int*, const char*, ...);

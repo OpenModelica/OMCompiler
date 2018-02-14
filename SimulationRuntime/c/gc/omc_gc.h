@@ -52,6 +52,7 @@ extern "C" {
 #if defined(_MSC_VER)
 #include "omc_inline.h"
 #endif
+typedef struct assertions_s assertions_t;
 
 typedef struct {
   void (*init)(void);
@@ -138,6 +139,7 @@ typedef struct threadData_s {
   void *plotClassPointer;
   PlotCallback plotCB;
   void *stackBottom; /* Actually offset 64 kB from bottom, just to never reach the bottom */
+  assertions_t *assert;
 } threadData_t;
 
 typedef threadData_t* OpenModelica_threadData_ThreadData;

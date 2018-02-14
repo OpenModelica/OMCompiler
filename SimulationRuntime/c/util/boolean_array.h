@@ -37,53 +37,48 @@
 #include "omc_msvc.h"
 #include <stdarg.h>
 
-static OMC_INLINE modelica_boolean boolean_get(const boolean_array_t a, size_t i)
+static OMC_INLINE modelica_boolean boolean_get(threadData_t *threadData, const boolean_array_t a, size_t i)
 {
     return ((modelica_boolean *) a.data)[i];
 }
 
-static OMC_INLINE modelica_boolean boolean_get_2D(const boolean_array_t a, size_t i, size_t j)
+static OMC_INLINE modelica_boolean boolean_get_2D(threadData_t *threadData, const boolean_array_t a, size_t i, size_t j)
 {
     return boolean_get(a, getIndex_2D(a.dim_size,i,j));
 }
 
-static OMC_INLINE modelica_boolean boolean_get_3D(const boolean_array_t a, size_t i, size_t j, size_t k)
+static OMC_INLINE modelica_boolean boolean_get_3D(threadData_t *threadData, const boolean_array_t a, size_t i, size_t j, size_t k)
 {
     return boolean_get(a, getIndex_3D(a.dim_size,i,j,k));
 }
 
-static OMC_INLINE modelica_boolean boolean_get_4D(const boolean_array_t a, size_t i, size_t j, size_t k, size_t l)
+static OMC_INLINE modelica_boolean boolean_get_4D(threadData_t *threadData, const boolean_array_t a, size_t i, size_t j, size_t k, size_t l)
 {
     return boolean_get(a, getIndex_4D(a.dim_size,i,j,k,l));
 }
 
 /* Setting the fields of a boolean_array */
-extern void boolean_array_create(boolean_array_t *dest, modelica_boolean *data, int ndims, ...);
+extern void boolean_array_create(threadData_t *threadData, boolean_array_t *dest, modelica_boolean *data, int ndims, ...);
 
 /* Allocation of a vector */
-extern void simple_alloc_1d_boolean_array(boolean_array_t* dest, int n);
+extern void simple_alloc_1d_boolean_array(threadData_t *threadData, boolean_array_t* dest, int n);
 
 /* Allocation of a matrix */
-extern void simple_alloc_2d_boolean_array(boolean_array_t *dest, int r, int c);
+extern void simple_alloc_2d_boolean_array(threadData_t *threadData, boolean_array_t *dest, int r, int c);
 
-extern void alloc_boolean_array(boolean_array_t *dest, int ndims, ...);
+extern void alloc_boolean_array(threadData_t *threadData, boolean_array_t *dest, int ndims, ...);
 
 /* Allocation of boolean data */
-extern void alloc_boolean_array_data(boolean_array_t* a);
+extern void alloc_boolean_array_data(threadData_t *threadData, boolean_array_t* a);
 
 /* Frees memory*/
-extern void free_boolean_array_data(boolean_array_t* a);
-
-/* Clones data*/
-static inline void clone_boolean_array_spec(const boolean_array_t* src,
-                                            boolean_array_t* dst)
-{ clone_base_array_spec(src, dst); }
+extern void free_boolean_array_data(threadData_t *threadData, boolean_array_t* a);
 
 /* Copy boolean data*/
-extern void copy_boolean_array_data(const boolean_array_t source, boolean_array_t* dest);
+extern void copy_boolean_array_data(threadData_t *threadData, const boolean_array_t source, boolean_array_t* dest);
 
 /* Copy boolean data given memory ptr*/
-extern void copy_boolean_array_data_mem(const boolean_array_t source, modelica_boolean* dest);
+extern void copy_boolean_array_data_mem(threadData_t *threadData, const boolean_array_t source, modelica_boolean* dest);
 
 /* Copy boolean array*/
 extern void copy_boolean_array(const boolean_array_t source, boolean_array_t* dest);
@@ -97,8 +92,8 @@ void or_boolean_array(const boolean_array_t *source1, const boolean_array_t *sou
 /* 'not' a boolean array*/
 void not_boolean_array(const boolean_array_t source, boolean_array_t *dest);
 
-extern modelica_boolean* calc_boolean_index(int ndims, const _index_t* idx_vec, const boolean_array_t* arr);
-extern modelica_boolean* calc_boolean_index_va(const boolean_array_t* source,int ndims,va_list ap);
+extern modelica_boolean* calc_boolean_index(threadData_t *threadData, int ndims, const _index_t* idx_vec, const boolean_array_t* arr);
+extern modelica_boolean* calc_boolean_index_va(threadData_t *threadData, const boolean_array_t* source,int ndims,va_list ap);
 
 extern void put_boolean_element(m_boolean value,int i1,boolean_array_t* dest);
 extern void put_boolean_matrix_element(m_boolean value, int r, int c, boolean_array_t* dest);

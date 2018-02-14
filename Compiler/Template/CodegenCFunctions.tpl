@@ -4780,7 +4780,7 @@ template indexSubs(list<Dimension> dims, list<Subscript> subs, Context context, 
 ::=
   if intNe(listLength(dims),listLength(subs)) then
     error(sourceInfo(),'indexSubs got different number of dimensions and subscripts')
-  else '[calc_base_index_dims_subs(<%listLength(dims)%><%
+  else '[calc_base_index_dims_subs(threadData, <%listLength(dims)%><%
     dims |> dim => ', <%dimension(dim)%>'%><%
     subs |> INDEX(__) => ', <%daeSubscriptExp(exp, context, &preExp, &varDecls, &auxFunction)%>'
     %>)]'

@@ -36,24 +36,24 @@
 #include <stdarg.h>
 #include "omc_msvc.h"
 
-static OMC_INLINE size_t getIndex_2D(_index_t *dim, int i, int j) {return i*dim[1]+j;}
-static OMC_INLINE size_t getIndex_3D(_index_t *dim, int i, int j, int k) {return i*dim[1]*dim[2]+j*dim[2]+k;}
-static OMC_INLINE size_t getIndex_4D(_index_t *dim, int i, int j, int k, int l) {return i*dim[1]*dim[2]*dim[3]+j*dim[2]*dim[3]+k*dim[3]+l;}
+static OMC_INLINE size_t getIndex_2D(threadData_t *threadData, _index_t *dim, int i, int j) {return i*dim[1]+j;}
+static OMC_INLINE size_t getIndex_3D(threadData_t *threadData, _index_t *dim, int i, int j, int k) {return i*dim[1]*dim[2]+j*dim[2]+k;}
+static OMC_INLINE size_t getIndex_4D(threadData_t *threadData, _index_t *dim, int i, int j, int k, int l) {return i*dim[1]*dim[2]*dim[3]+j*dim[2]*dim[3]+k*dim[3]+l;}
 
 /* Settings the fields of a base_array */
-void base_array_create(base_array_t *dest, void *data, int ndims, va_list ap);
+void base_array_create(threadData_t *threadData, base_array_t *dest, void *data, int ndims, va_list ap);
 
 /* Allocation of a vector */
-void simple_alloc_1d_base_array(base_array_t *dest, int n, void *data);
+void simple_alloc_1d_base_array(threadData_t *threadData, base_array_t *dest, int n, void *data);
 
 /* Allocation of a matrix */
-void simple_alloc_2d_base_array(base_array_t *dest, int r, int c, void *data);
+void simple_alloc_2d_base_array(threadData_t *threadData, base_array_t *dest, int r, int c, void *data);
 
 /* Allocate array */
-size_t alloc_base_array(base_array_t *dest, int ndims, va_list ap);
+size_t alloc_base_array(threadData_t *threadData, base_array_t *dest, int ndims, va_list ap);
 
 /* Number of elements in array. */
-static OMC_INLINE size_t base_array_nr_of_elements(const base_array_t a)
+static OMC_INLINE size_t base_array_nr_of_elements(threadData_t *threadData, const base_array_t a)
 {
   int i;
   size_t nr_of_elements = 1;
@@ -64,12 +64,12 @@ static OMC_INLINE size_t base_array_nr_of_elements(const base_array_t a)
 }
 
 /* Clones fields */
-void clone_base_array_spec(const base_array_t *source, base_array_t *dest);
+void clone_base_array_spec(threadData_t *threadData, const base_array_t *source, base_array_t *dest);
 
-void clone_reverse_base_array_spec(const base_array_t* source, base_array_t* dest);
+void clone_reverse_base_array_spec(threadData_t *threadData, const base_array_t* source, base_array_t* dest);
 
-int ndims_base_array(const base_array_t* a);
-static OMC_INLINE int size_of_dimension_base_array(const base_array_t a, int i)
+int ndims_base_array(threadData_t *threadData, const base_array_t* a);
+static OMC_INLINE int size_of_dimension_base_array(threadData_t *threadData, const base_array_t a, int i)
 {
   /* assert(base_array_ok(&a)); */
   if ((i > 0) && (i <= a.ndims)) {
@@ -89,24 +89,24 @@ static OMC_INLINE int size_of_dimension_base_array(const base_array_t a, int i)
 }
 
 /* Helper functions */
-int base_array_ok(const base_array_t *a);
-void check_base_array_dim_sizes(const base_array_t *elts, int n);
-void check_base_array_dim_sizes_except(int k, const base_array_t *elts, int n);
-int base_array_shape_eq(const base_array_t *a, const base_array_t *b);
-int base_array_one_element_ok(const base_array_t *a);
+int base_array_ok(threadData_t *threadData, const base_array_t *a);
+void check_base_array_dim_sizes(threadData_t *threadData, const base_array_t *elts, int n);
+void check_base_array_dim_sizes_except(threadData_t *threadData, int k, const base_array_t *elts, int n);
+int base_array_shape_eq(threadData_t *threadData, const base_array_t *a, const base_array_t *b);
+int base_array_one_element_ok(threadData_t *threadData, const base_array_t *a);
 
-size_t calc_base_index_spec(int ndims, const _index_t* idx_vec,
+size_t calc_base_index_spec(threadData_t *threadData, int ndims, const _index_t* idx_vec,
                             const base_array_t *arr, const index_spec_t *spec);
-size_t calc_base_index(int ndims, const _index_t *idx_vec, const base_array_t *arr);
-size_t calc_base_index_va(const base_array_t *source, int ndims, va_list ap);
+size_t calc_base_index(threadData_t *threadData, int ndims, const _index_t *idx_vec, const base_array_t *arr);
+size_t calc_base_index_va(threadData_t *threadData, const base_array_t *source, int ndims, va_list ap);
 
-size_t calc_base_index_dims_subs(int ndims,...);
+size_t calc_base_index_dims_subs(threadData_t *threadData, int ndims, ...);
 
-int index_spec_fit_base_array(const index_spec_t *s, const base_array_t *a);
+int index_spec_fit_base_array(threadData_t *threadData, const index_spec_t *s, const base_array_t *a);
 
 /* Helper function for index_alloc_TYPE_array; allocates the ndims and dim_size */
-void index_alloc_base_array_size(const base_array_t * source, const index_spec_t* source_spec, base_array_t* dest);
+void index_alloc_base_array_size(threadData_t *threadData, const base_array_t * source, const index_spec_t* source_spec, base_array_t* dest);
 /* Helper function for indexed_assign_TYPE_array; allocates the ndims and dim_size */
-void indexed_assign_base_array_size_alloc(const base_array_t *source, base_array_t *dest, const index_spec_t *dest_spec, _index_t** _idx_vec1, _index_t** _idx_size);
+void indexed_assign_base_array_size_alloc(threadData_t *threadData, const base_array_t *source, base_array_t *dest, const index_spec_t *dest_spec, _index_t** _idx_vec1, _index_t** _idx_size);
 
 #endif /* BASE_ARRAY_H_ */
