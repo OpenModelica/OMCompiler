@@ -38,11 +38,13 @@ BOOST_PATH = $(OMDEVMSYS)/tools/msys/mingw32/include
 IS_MINGW32 = -DIS_MINGW32=ON
 IS_MINGW64 = -DIS_MINGW64=OFF
 MINGW_FMIL_FLAGS=-DFMILIB_FMI_PLATFORM=win32
+LVE_EXE_SUFFIX=win32
 else # mingw64
 BOOST_PATH = $(OMDEVMSYS)/tools/msys/mingw64/include
 IS_MINGW32 = -DIS_MINGW32=OFF
 IS_MINGW64 = -DIS_MINGW64=ON
 MINGW_FMIL_FLAGS=-DFMILIB_FMI_PLATFORM=win64
+LVE_EXE_SUFFIX=win64
 endif
 BOOST_PATH_MSVC = $(OMDEVMSYS)/lib/3rdParty/boost-1_55/
 WROOT=$(shell cygpath $$SYSTEMROOT)
@@ -59,6 +61,7 @@ LIBCMINPACKLIB=libcminpack.a
 LIBZMQLIB=libzmq.dll
 MODELICA_SPEC_PLATFORM=win32
 SHREXT=.dll
+EXE=.exe
 IPOPT_TARGET=ipopt
 UMFPACK_TARGET=umfpack
 UMFPACK_SHARED=OFF
@@ -262,7 +265,11 @@ copycppmsvcheader: getMSVCversion
 	(cp -puf $(BOOST_PATH_MSVC)/boost/*.hpp              $(OMBUILDDIR)/include/omc/cpp/3rdParty/boost/msvc/boost)
 	(cp -pufr $(BOOST_PATH_MSVC)/boost/*                 $(OMBUILDDIR)/include/omc/cpp/3rdParty/boost/msvc/boost)
 
+ifeq ($(OMENCRYPTION),ON)
 omc: mkbuilddirs interactive fmil omdev_extra_dlls breakprocess opencl_rt CMinpack metis Cdaskr $(IPOPT_TARGET) graphstream
+else
+omc: mkbuilddirs interactive fmil omdev_extra_dlls breakprocess opencl_rt CMinpack metis Cdaskr $(IPOPT_TARGET) graphstream semla
+endif
 	(time $(MAKE) -f $(defaultMakefileTarget) CFLAGS="$(CFLAGS)" omc-bootstrapped OMBUILDDIR=$(OMBUILDDIR))
 
 boehm-gc-lib: $(OMBUILDDIR)/lib/omc/libomcgc.a
