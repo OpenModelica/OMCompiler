@@ -37,27 +37,29 @@ encapsulated package SynchronousFeatures
                - sub-clock partitioning"
 
 
-public import Absyn;
-public import BackendDAE;
-public import DAE;
+import Absyn;
+import BackendDAE;
+import DAE;
 
-protected import BackendDAEOptimize;
-protected import BackendDAEUtil;
-protected import BackendDump;
-protected import ExpressionDump;
-protected import BackendEquation;
-protected import BackendVariable;
-protected import ComponentReference;
-protected import DAEUtil;
-protected import DAEDump;
-protected import Error;
-protected import Flags;
-protected import List;
-protected import Util;
-protected import Types;
-protected import Expression;
-protected import HashTable;
-protected import MMath;
+protected
+import BackendDAEOptimize;
+import BackendDAEUtil;
+import BackendDump;
+import ExpressionDump;
+import BackendEquation;
+import BackendVariable;
+import ComponentReference;
+import DAEUtil;
+import DAEDump;
+import Error;
+import Expression;
+import Flags;
+import Global;
+import HashTable;
+import List;
+import MMath;
+import Types;
+import Util;
 
 // =============================================================================
 // clock partitioning
@@ -68,7 +70,14 @@ public function clockPartitioning
   "Finds independent partitions of the equation system by base-clock partitioning and TLM."
   input BackendDAE.BackendDAE inDAE;
   output BackendDAE.BackendDAE outDAE;
+protected
+  Option<Boolean> isSynchronous;
 algorithm
+  isSynchronous := getGlobalRoot(Global.isSynchronous);
+  if isNone(isSynchronous) then
+    outDAE := inDAE;
+    return;
+  end if;
   outDAE := match inDAE
     local
       BackendDAE.EqSystem syst;
