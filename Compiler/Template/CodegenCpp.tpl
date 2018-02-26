@@ -10944,10 +10944,7 @@ template algloopcppfilenames2(SimEqSystem eq, Context context, Text &varDecls, S
        >>
    else
      ""
- end algloopcppfilenames2;
-
-
-
+end algloopcppfilenames2;
 
 
 template equationArrayCallAssign(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode, Text& extraFuncs,
@@ -10960,54 +10957,54 @@ match eq
 case eqn as SES_ARRAY_CALL_ASSIGN(lhs=lhs as CREF(__)) then
   let &preExp = buffer "" /*BUFD*/
   let expPart = daeExp(exp, context, &preExp /*BUF  let &preExp = buffer "" /*BUFD*/
-  let &helpInits = buffer "" /*BUFD*/
-  let helpIf = (conditions |> (e, hidx) =>
+    let &helpInits = buffer "" /*BUFD*/
+    let helpIf = (conditions |> (e, hidx) =>
       let helpInit = daeExp(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, useFlatArrayNotation)
       let &helpInits += 'localData->helpVars[<%hidx%>] = <%helpInit%>;'
       'localData->helpVars[<%hidx%>] && !localData->helpVars_saved[<%hidx%>] /* edge */'
     ;separator=" || ")C*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
   match expTypeFromExpShort(eqn.exp)
-  case "boolean" then
-
-
-    <<
-    <%preExp%>
-    <%cref1(lhs.componentRef,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, context, varDeclsCref, stateDerVectorName, useFlatArrayNotation)%>=<%expPart%>;
-    >>
+  case "boolean"
   case "int" then
-
     <<
     <%preExp%>
-
     <%cref1(lhs.componentRef,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, context, varDeclsCref, stateDerVectorName, useFlatArrayNotation)%>=<%expPart%>;
     >>
   case "double" then
     <<
     <%preExp%>
-    <%assignDerArray(context,expPart,lhs.componentRef,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
+    <%assignDerArray(context, expPart, lhs, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
     >>
 end equationArrayCallAssign;
 
-template assignDerArray(Context context, String arr, ComponentRef c,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
+template assignDerArray(Context context, String arr, Exp lhs_ecr, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
+ "Assign array considering special treatment of states and Jacobian vars"
 ::=
-  cref2simvar(c, simCode ) |> var as SIMVAR(__) =>
-   match varKind
-    case STATE(__)        then
-     let &varDeclsCref = buffer "" /*BUFD*/
-     <<
-     /*<%cref(c,useFlatArrayNotation)%>*/
-     memcpy(&<%cref1(c,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, context, varDeclsCref, stateDerVectorName, useFlatArrayNotation)%>,<%arr%>.getData(),<%arr%>.getNumElems()*sizeof(double));
-     >>
-    case STATE_DER(__)   then
-     let &varDeclsCref = buffer "" /*BUFD*/
-    <<
-    memcpy(&<%cref1(c,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, context, varDeclsCref, stateDerVectorName, useFlatArrayNotation)%>,<%arr%>.getData(),<%arr%>.getNumElems()*sizeof(double));
-    >>
+match lhs_ecr
+case CREF(componentRef=c, ty=ty as DAE.T_ARRAY(ty=elty, dims=dims)) then
+  let &varDeclsCref = buffer "" /*BUFD*/
+  let lhsStr = cref1(c, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, context, varDeclsCref, stateDerVectorName, useFlatArrayNotation)
+  match cref2simvar(c, simCode)
+  case SIMVAR(varKind=varKind) then
+    match varKind
+    case STATE()
+    case STATE_DER() then
+      //STATE vars are flat vectors
+      <<
+      /*assign to <%cref(c,useFlatArrayNotation)%>*/
+      memcpy(&<%lhsStr%>, <%arr%>.getData(), <%arr%>.getNumElems()*sizeof(double));
+      >>
+    case JAC_VAR()
+    case JAC_DIFF_VAR()
+    case SEED_VAR() then
+      <<
+      <%assignJacArray(lhsStr, arr, ty)%>
+      >>
     else
-     let &varDeclsCref = buffer "" /*BUFD*/
-    <<
-    <%cref1(c,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, context, varDeclsCref, stateDerVectorName, useFlatArrayNotation)%>.assign(<%arr%>);
-    >>
+      <<
+      /*default array assign*/
+      <%lhsStr%>.assign(<%arr%>);
+      >>
 end assignDerArray;
 
 template equationWhen(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl,

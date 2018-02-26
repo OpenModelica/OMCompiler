@@ -486,10 +486,11 @@ template daeExpCrefRhsArrayBox2(Text var,DAE.Type type, Context context, Text &p
     //let size = (dims |> dim => dimension(dim) ;separator="+")
    // let arrayassign =  '<%arrayVar%>.assign(&<%var%>,&<%var%>+(<%size%>));<%\n%>'
     let arrayassign =  '<%arrayVar%>.assign(&<%var%>);<%\n%>'
-    let &preExp += '
-          //tmp array3
-          <%boostExtents%>
-         <%arrayassign%>'
+    let &preExp +=
+      <<
+      <%boostExtents%>
+      <%arrayassign%>
+      >>
     arrayVar
   else
     var
@@ -2743,6 +2744,20 @@ template encloseInParantheses(String expStr)
 if intEq(stringGet(expStr, 1), stringGet("(", 1)) then '<%expStr%>' else '(<%expStr%>)'
 end encloseInParantheses;
 
+template assignJacArray(String lhsStr, String rhsStr, DAE.Type ty)
+ "Assign array to JAC/DIFF/SEED vars that are flat vectors with row major odering"
+::=
+  match ty
+  case DAE.T_ARRAY(ty=elty, dims=dims) then
+    let dimstr = listDimsFlat(dims, elty)
+    let arrayWrapper = 'tmp<%System.tmpTick()%>'
+    <<
+    /*assign through wrapper array*/
+    StatArrayDim<%nDimsFlat(dims, elty, 0)%><<%expTypeShort(elty)%>, <%dimstr%>, true> <%arrayWrapper%>(&<%lhsStr%>);
+    assignRowMajorData(<%rhsStr%>.getData(), <%arrayWrapper%>);
+    >>
+end assignJacArray;
+
 template writeLhsCref(Exp exp, String rhsStr, Context context, Text &preExp, Text &varDecls, SimCode simCode,
                       Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName, Boolean useFlatArrayNotation)
  "Generates code for writing a returnStructur to var."
@@ -2750,11 +2765,23 @@ template writeLhsCref(Exp exp, String rhsStr, Context context, Text &preExp, Tex
 match exp
 case ecr as CREF(componentRef=WILD(__)) then
   ''
-case ecr as CREF(ty= t as DAE.T_ARRAY(__)) then
-  let lhsStr = scalarLhsCref(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-  <<
-  <%lhsStr%>.assign(<%rhsStr%>);
-  >>
+case ecr as CREF(componentRef=cr, ty=ty as DAE.T_ARRAY()) then
+  let lhsStr = scalarLhsCref(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+  match cref2simvar(cr, simCode)
+  case SIMVAR(varKind=varKind) then
+    match varKind
+    case JAC_VAR()
+    case JAC_DIFF_VAR()
+    case SEED_VAR() then
+      <<
+      <%assignJacArray(lhsStr, rhsStr, ty)%>
+      >>
+    else
+      <<
+      <%lhsStr%>.assign(<%rhsStr%>);
+      >>
+    end match
+  end match
 case UNARY(exp = e as CREF(ty= t as DAE.T_ARRAY(__))) then
   let lhsStr = scalarLhsCref(e, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
   match context
