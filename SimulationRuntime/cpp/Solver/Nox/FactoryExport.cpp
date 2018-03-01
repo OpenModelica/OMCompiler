@@ -11,7 +11,7 @@
 #include <Solver/Nox/Nox.h>
 #include <Solver/Nox/NoxSettings.h>
 
-extern "C" IAlgLoopSolver* createNox(INonLinearAlgLoop* algLoop, INonLinSolverSettings* settings)
+extern "C" IAlgLoopSolver* createNox( shared_ptr<INonLinearAlgLoop> algLoop, INonLinSolverSettings* settings)
 {
     return new Nox(algLoop, settings);
 }
@@ -32,7 +32,7 @@ extern "C" INonLinSolverSettings* createNoxSettings()
 using boost::extensions::factory;
 
 BOOST_EXTENSION_TYPE_MAP_FUNCTION {
-  types.get<std::map<std::string, factory<IAlgLoopSolver,INonLinearAlgLoop*, INonLinSolverSettings*> > >()
+  types.get<std::map<std::string, factory<IAlgLoopSolver, shared_ptr<INonLinearAlgLoop>, INonLinSolverSettings*> > >()
     ["nox"].set<Nox>();
   types.get<std::map<std::string, factory<INonLinSolverSettings> > >()
     ["noxSettings"].set<NoxSettings>();
@@ -51,7 +51,7 @@ shared_ptr<INonLinSolverSettings> createNoxSettings()
 {
  throw ModelicaSimulationError(ALGLOOP_SOLVER,"Nox was disabled during build");
 }
-shared_ptr<IAlgLoopSolver> createNoxSolver(INonLinearAlgLoop* algLoop, shared_ptr<INonLinSolverSettings> solver_settings)
+shared_ptr<IAlgLoopSolver> createNoxSolver(shared_ptr<INonLinearAlgLoop> algLoop, shared_ptr<INonLinSolverSettings> solver_settings)
 {
  throw ModelicaSimulationError(ALGLOOP_SOLVER,"Nox was disabled during build");
 }

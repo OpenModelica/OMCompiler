@@ -13,8 +13,8 @@
 #include <Core/Utils/numeric/bindings/ublas.hpp>
 #include <Core/Utils/numeric/utils.h>
 
-LinearSolver::LinearSolver(ILinearAlgLoop* algLoop, ILinSolverSettings* settings)
-  : _algLoop            (algLoop)
+LinearSolver::LinearSolver(ILinSolverSettings* settings)
+  : _algLoop            (NULL)
   , _dimSys             (0)
 
   , _yNames             (NULL)
@@ -46,7 +46,7 @@ LinearSolver::LinearSolver(ILinearAlgLoop* algLoop, ILinSolverSettings* settings
   , _generateoutput     (false)
   , _fNominal           (NULL)
 {
-  _sparse = _algLoop->getUseSparseFormat();
+
 }
 
 LinearSolver::~LinearSolver()
@@ -86,8 +86,11 @@ void LinearSolver::initialize()
 {
   _firstCall = false;
   //(Re-) Initialization of algebraic loop
-  _algLoop->initialize();
-
+  if(_algLoop)
+       _algLoop->initialize();
+    else
+	 throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
+  _sparse = _algLoop->getUseSparseFormat();
   int dimDouble=_algLoop->getDimReal();
   int ok=0;
 
@@ -179,12 +182,15 @@ void LinearSolver::initialize()
   LOGGER_WRITE_END(LC_LS, LL_DEBUG);
 }
 
-void LinearSolver::solve()
+void LinearSolver::solve(shared_ptr<ILinearAlgLoop> algLoop,bool restart)
 {
-  if (_firstCall) {
+  if (!restart)
+  {
+	_algLoop = algLoop;
     initialize();
   }
-
+  if(!_algLoop)
+    throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
   _iterationStatus = CONTINUE;
 
   LOGGER_WRITE_BEGIN("LinearSolver: eq" + to_string(_algLoop->getEquationIndex()) +
@@ -377,7 +383,7 @@ void LinearSolver::solve()
   LOGGER_WRITE_END(LC_LS, LL_DEBUG);
 }
 
-IAlgLoopSolver::ITERATIONSTATUS LinearSolver::getIterationStatus()
+ILinearAlgLoopSolver::ITERATIONSTATUS LinearSolver::getIterationStatus()
 {
   return _iterationStatus;
 }

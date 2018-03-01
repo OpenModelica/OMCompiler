@@ -23,7 +23,7 @@ class IAlgLoopSolverFactory
 public:
   IAlgLoopSolverFactory() {};
   virtual ~IAlgLoopSolverFactory() {};
-  virtual  shared_ptr<IAlgLoopSolver> createLinearAlgLoopSolver(ILinearAlgLoop* algLoop) = 0;
-  virtual  shared_ptr<IAlgLoopSolver> createNonLinearAlgLoopSolver(INonLinearAlgLoop* algLoop) = 0;
+  virtual  shared_ptr<ILinearAlgLoopSolver> createLinearAlgLoopSolver() = 0;
+  virtual  shared_ptr<INonLinearAlgLoopSolver> createNonLinearAlgLoopSolver() = 0;
 };
 /** @} */ // end of coreSystem

@@ -2,21 +2,21 @@
 
 #include <Core/System/ILinearAlgLoop.h>              // Interface to AlgLoo
 #include <Core/System/INonLinearAlgLoop.h>              // Interface to AlgLoo
-#include <Core/Solver/IAlgLoopSolver.h>        // Export function from dll
+#include <Core/Solver/ILinearAlgLoopSolver.h>        // Export function from dll
 #include <Core/Solver/ILinSolverSettings.h>
 #include <Solver/UmfPack/UmfPackSettings.h>
 
 
-class UmfPack : public IAlgLoopSolver
+class UmfPack : public ILinearAlgLoopSolver
 {
 public:
-  UmfPack(ILinearAlgLoop* algLoop,ILinSolverSettings* settings);
+  UmfPack(ILinSolverSettings* settings);
   virtual ~UmfPack();
 
     virtual void initialize();
 
     /// Solution of a (non-)linear system of equations
-    virtual void solve();
+    virtual void solve(shared_ptr<ILinearAlgLoop> algLoop,bool restart = false);
 
     /// Returns the status of iteration
     virtual ITERATIONSTATUS getIterationStatus();

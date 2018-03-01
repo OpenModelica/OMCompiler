@@ -106,8 +106,8 @@ int kin_DlsDenseJacFn(long int N, N_Vector u, N_Vector fu,DlsMat J, void *user_d
 }
 */
 
-Kinsol::Kinsol(INonLinearAlgLoop* algLoop, INonLinSolverSettings* settings)
-	: _algLoop            (algLoop)
+Kinsol::Kinsol(INonLinSolverSettings* settings)
+	: _algLoop            (NULL)
 	, _kinsolSettings     ((INonLinSolverSettings*)settings)
 	, _y                  (NULL)
 	, _y0                 (NULL)
@@ -145,7 +145,7 @@ Kinsol::Kinsol(INonLinearAlgLoop* algLoop, INonLinSolverSettings* settings)
   , _solverErrorNotificationGiven(false)
 {
 	_data = ((void*)this);
-	_sparse = _algLoop->getUseSparseFormat();
+
 }
 
 Kinsol::~Kinsol()
@@ -204,17 +204,18 @@ void Kinsol::initialize()
 	_firstCall = false;
 
 	//(Re-) Initialization of algebraic loop
-	_algLoop->initialize();
-
+	 if(_algLoop)
+      _algLoop->initialize();
+    else
+	  throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
+	 _sparse = _algLoop->getUseSparseFormat();
 	// Dimension of the system (number of variables)
 	int
 		dimDouble  = _algLoop->getDimReal(),
 		dimInt    = 0,
 		dimBool    = 0;
 
-	// Check system dimension
-	if (dimDouble != _dimSys)
-	{
+
 		_dimSys = dimDouble;
 
 		if(_dimSys > 0)
@@ -348,27 +349,27 @@ void Kinsol::initialize()
 
 			_counter = 0;
 
-		}
-		else
-		{
-			_iterationStatus = SOLVERERROR;
-		}
 	}
 	LOGGER_WRITE("Kinsol: initialized",LC_NLS,LL_DEBUG);
 }
 
 
-void Kinsol::solve()
+void Kinsol::solve( shared_ptr<INonLinearAlgLoop> algLoop,bool restart)
 {
-	if (_firstCall)
+	if (!restart)
+	{
+		_algLoop = algLoop;
 		initialize();
-
+	}
+	if(!_algLoop)
+      throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
 	_iterationStatus = CONTINUE;
 
 	int idid;
 	_counter++;
 	_eventRetry = false;
 	_iterationStatus = CONTINUE;
+
 
 
 	// Try Dense first
@@ -558,7 +559,7 @@ void Kinsol::solve()
 	}
 }
 
-IAlgLoopSolver::ITERATIONSTATUS Kinsol::getIterationStatus()
+INonLinearAlgLoopSolver::ITERATIONSTATUS Kinsol::getIterationStatus()
 {
 	return _iterationStatus;
 }
@@ -566,6 +567,9 @@ IAlgLoopSolver::ITERATIONSTATUS Kinsol::getIterationStatus()
 
 void Kinsol::calcFunction(const double *y, double *residual)
 {
+
+	if(!_algLoop)
+      throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
 	_fValid = true;
 	_algLoop->setReal(y);
 	try
@@ -587,6 +591,7 @@ void Kinsol::calcFunction(const double *y, double *residual)
 
 int Kinsol::kin_f(N_Vector y,N_Vector fval, void *user_data)
 {
+
 	((Kinsol*) user_data)->calcFunction(NV_DATA_S(y),NV_DATA_S(fval));
 
 	if(((Kinsol*) user_data)->_fValid)
@@ -876,6 +881,8 @@ void Kinsol::restoreNewValues()
 
 void Kinsol::check4EventRetry(double* y)
 {
+	if(!_algLoop)
+      throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
 	_algLoop->setReal(y);
 	if(!(_algLoop->isConsistent()) && !_eventRetry)
 	{

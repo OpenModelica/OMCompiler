@@ -4,17 +4,17 @@
  *  @{
  */
 
-class DgesvSolver : public IAlgLoopSolver
+class DgesvSolver : public ILinearAlgLoopSolver
 {
  public:
-  DgesvSolver(ILinearAlgLoop* algLoop, ILinSolverSettings* settings);
+  DgesvSolver(ILinSolverSettings* settings);
   virtual ~DgesvSolver();
 
   /// (Re-) initialize the solver
   virtual void initialize();
 
   /// Solution of a (non-)linear system of equations
-  virtual void solve();
+  virtual void solve(shared_ptr<ILinearAlgLoop> algLoop,bool restart = false);
 
   /// Returns the status of iteration
   virtual ITERATIONSTATUS getIterationStatus();
@@ -26,8 +26,7 @@ class DgesvSolver : public IAlgLoopSolver
   // Member variables
   //---------------------------------------------------------------
 
-  ILinearAlgLoop
-    *_algLoop;            ///< Algebraic loop to be solved
+  shared_ptr<ILinearAlgLoop> _algLoop;            ///< Algebraic loop to be solved
 
   ITERATIONSTATUS
     _iterationStatus;     ///< Output   - Denotes the status of iteration

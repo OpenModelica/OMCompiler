@@ -5751,7 +5751,8 @@ case SIMCODE(modelInfo = MODELINFO(__),makefileParams = MAKEFILE_PARAMS(__))  th
       _discrete_events = _event_handling->initialize(this,getSimVars());
 
       //create and initialize Algloopsolvers
-      <%generateAlgloopsolvers(listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)%>
+      <%generateAlgloopSolvers(modelInfo)%>
+      <%generateAlgloopSystems(listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)%>
 
       //initialize Algloop variables
       initializeAlgloopSolverVariables();
@@ -5860,9 +5861,6 @@ case SIMCODE(modelInfo = MODELINFO(__),makefileParams = MAKEFILE_PARAMS(__))  th
 
       //init equations
       initEquations();
-
-      //init alg loop solvers
-      <%initAlgloopSolvers%>
 
       for(int i = 0; i < _dimZeroFunc; i++)
       {
@@ -6855,9 +6853,10 @@ match simCode
 case SIMCODE(modelInfo = MODELINFO(__)) then
 
 let friendclasses = generatefriendAlgloops(listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
-let algloopsolver = generateAlgloopsolverVariables(listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace )
-let jacalgloopsolver =  (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
-                        (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopsolverVariables(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
+let algloopsolvers = generateAlgloopsolverVariables(modelInfo)
+let algloopsystems = generateAlgloopsSystemVariables(listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace )
+let jacalgloopsystems =  (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
+                        (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopsSystemVariables(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
                         ;separator="")
 
 let memberfuncs = generateEquationMemberFuncDecls(allEquations,"evaluate")
@@ -6958,9 +6957,9 @@ match modelInfo
 
       shared_ptr<IPropertyReader> _reader;
       shared_ptr<IAlgLoopSolverFactory> _algLoopSolverFactory;    ///< Factory that provides an appropriate solver
-
-      <%algloopsolver%>
-      <%jacalgloopsolver%>
+      <%algloopsolvers%>
+      <%algloopsystems%>
+      <%jacalgloopsystems%>
       <% if boolNot(stringEq(getConfigString(PROFILING_LEVEL),"none")) then
       <<
       #ifdef MEASURETIME_PROFILEBLOCKS
@@ -9658,7 +9657,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
               <<
               try
               {
-                _algLoopSolver<%ls.index%>->initialize();
+
                 _algLoop<%ls.index%>->evaluate();
                 for(int i=0; i<_dimZeroFunc; i++)
                 {
@@ -9666,7 +9665,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                 }
                 IContinuous::UPDATETYPE calltype = _callType;
                 _callType = IContinuous::CONTINUOUS;
-                _algLoopSolver<%ls.index%>->solve();
+                _algLoopLinearSolver->solve(_algLoop<%ls.index%>);
                 _callType = calltype;
               }
               catch (ModelicaSimulationError& ex)
@@ -9691,7 +9690,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                        {
                          getConditions(_conditions0<%ls.index%>);
                          _callType = IContinuous::CONTINUOUS;
-                         _algLoopSolver<%ls.index%>->solve();
+                         _algLoopLinearSolver->solve(_algLoop<%ls.index%>,!(iterations<%ls.index%>==1));
                          _callType = IContinuous::DISCRETE;
                          for(int i=0;i<_dimZeroFunc;i++)
                          {
@@ -9702,7 +9701,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                        }
                     }
                     else
-                       _algLoopSolver<%ls.index%>->solve();
+                       _algLoopLinearSolver->solve(_algLoop<%ls.index%>);
                 }
                 catch(ModelicaSimulationError &ex)
                 {
@@ -9716,7 +9715,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                           IContinuous::UPDATETYPE calltype = _callType;
                          _callType = IContinuous::DISCRETE;
                            _algLoop<%ls.index%>->setReal(_algloop<%ls.index%>Vars );
-                          _algLoopSolver<%ls.index%>->solve();
+                          _algLoopLinearSolver->solve(_algLoop<%ls.index%>,true);
                          _callType = calltype;
                        }
                        catch (ModelicaSimulationError& ex)
@@ -9737,7 +9736,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
               <<
               try
               {
-                _algLoopSolver<%nls.index%>->initialize();
+
                 _algLoop<%nls.index%>->evaluate();
                 for(int i=0; i<_dimZeroFunc; i++)
                 {
@@ -9745,7 +9744,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                 }
                 IContinuous::UPDATETYPE calltype = _callType;
                 _callType = IContinuous::CONTINUOUS;
-                _algLoopSolver<%nls.index%>->solve();
+                _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>);
                 _callType = calltype;
               }
               catch(ModelicaSimulationError& ex)
@@ -9770,7 +9769,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                        {
                          getConditions(_conditions0<%nls.index%>);
                          _callType = IContinuous::CONTINUOUS;
-                         _algLoopSolver<%nls.index%>->solve();
+                            _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>,!(iterations<%nls.index%>==1));
                          _callType = IContinuous::DISCRETE;
                          for(int i=0;i<_dimZeroFunc;i++)
                          {
@@ -9781,7 +9780,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                        }
                     }
                     else
-                       _algLoopSolver<%nls.index%>->solve();
+                          _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>);
                 }
                 catch(ModelicaSimulationError &ex)
                 {
@@ -9795,7 +9794,7 @@ template equationString(SimEqSystem eq, Context context, Text &varDecls, SimCode
                           IContinuous::UPDATETYPE calltype = _callType;
                          _callType = IContinuous::DISCRETE;
                            _algLoop<%nls.index%>->setReal(_algloop<%nls.index%>Vars );
-                          _algLoopSolver<%nls.index%>->solve();
+                           _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>);
                          _callType = calltype;
                        }
                        catch(ModelicaSimulationError& ex)
@@ -9971,7 +9970,7 @@ let store_delay_expr = functionStoreDelay(delayedExps, simCode ,&extraFuncs ,&ex
   <<
   bool <%lastIdentOfPath(modelInfo.name)%>::stepCompleted(double time)
   {
-  <%algloopsolver%>
+
   <%store_delay_expr%>
 
   <%outputBounds%>
@@ -9995,7 +9994,7 @@ template generateRestoreOldValues(list<SimEqSystem> allEquations,SimCode simCode
   <<
   void <%lastIdentOfPath(modelInfo.name)%>::restoreOldValues()
   {
-    <%algloopsolver%>
+
   }
   >>
 
@@ -10060,25 +10059,13 @@ template generateRestoreNewValues(list<SimEqSystem> allEquations,SimCode simCode
   <<
   void <%lastIdentOfPath(modelInfo.name)%>::restoreNewValues()
   {
-    <%algloopsolver%>
+
   }
   >>
 
 end generateRestoreNewValues;
 
 
-template generateRestoreNewValues2(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
-::=
-  let &varDecls = buffer "" /*BUFD*/
-  let algloopsolver = (allEquations |> eqs => (eqs |> eq =>
-      generateRestoreNewValues3(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
-    ;separator="\n")
-
-  <<
-  <%algloopsolver%>
-  >>
-
-end generateRestoreNewValues2;
 
 
 template generateRestoreNewValues3(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
@@ -10256,18 +10243,40 @@ template generateStepCompleted3(SimEqSystem eq, Context context, Text &varDecls,
 
 
 
-template generateAlgloopsolvers(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+template generateAlgloopSolvers(ModelInfo modelInfo)
+::=
+  match modelInfo
+  case MODELINFO(linearSystems=ls,nonLinearSystems=nls)
+  then
+   let linearSolver = match(listLength(ls))
+   case 0
+   then ""
+    else "_algLoopLinearSolver= shared_ptr<ILinearAlgLoopSolver>(_algLoopSolverFactory->createLinearAlgLoopSolver());"
+   end match
+   let nonlinearSolver = match(listLength(nls))
+   case 0
+   then ""
+    else "_algLoopNonLinearSolver= shared_ptr<INonLinearAlgLoopSolver>(_algLoopSolverFactory->createNonLinearAlgLoopSolver());"
+    end match
+  <<
+   <%linearSolver%>
+   <%nonlinearSolver%>
+  >>
+end generateAlgloopSolvers;
+
+
+template generateAlgloopSystems(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
 ::=
   let &varDecls = buffer "" /*BUFD*/
   let algloopsolver = (allEquations |> eqs => (eqs |> eq =>
-      generateAlgloopsolvers2(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
+      generateAlgloopSystems2(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
     ;separator="\n")
 
    <<
    <%algloopsolver%>
    >>
 
-end generateAlgloopsolvers;
+end generateAlgloopSystems;
 
 
 template generatefriendAlgloops(list<SimEqSystem> allEquations, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
@@ -10313,7 +10322,7 @@ template generatefriendAlgloops(list<SimEqSystem> allEquations, SimCode simCode 
 
 
 
-template generateAlgloopsolvers2(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+template generateAlgloopSystems2(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
  "Generates an equation.
   This template should not be used for a SES_RESIDUAL.
   Residual equations are handled differently."
@@ -10326,7 +10335,6 @@ template generateAlgloopsolvers2(SimEqSystem eq, Context context, Text &varDecls
       case SIMCODE(modelInfo = MODELINFO(__)) then
       <<
       _algLoop<%num%> =  shared_ptr<ILinearAlgLoop>(new <%lastIdentOfPath(modelInfo.name)%>Algloop<%num%>(this,__z,__zDot,_conditions,_discrete_events));
-      _algLoopSolver<%num%> = shared_ptr<IAlgLoopSolver>(_algLoopSolverFactory->createLinearAlgLoopSolver(_algLoop<%num%>.get()));
       >>
       end match
   case e as SES_NONLINEAR(nlSystem = nls as NONLINEARSYSTEM(__))
@@ -10336,39 +10344,62 @@ template generateAlgloopsolvers2(SimEqSystem eq, Context context, Text &varDecls
       case SIMCODE(modelInfo = MODELINFO(__)) then
       <<
       _algLoop<%num%> =  shared_ptr<INonLinearAlgLoop>(new <%lastIdentOfPath(modelInfo.name)%>Algloop<%num%>(this,__z,__zDot,_conditions,_discrete_events));
-      _algLoopSolver<%num%> = shared_ptr<IAlgLoopSolver>(_algLoopSolverFactory->createNonLinearAlgLoopSolver(_algLoop<%num%>.get()));
       >>
       end match
   case e as SES_MIXED(cont = eq_sys)
   then
    <<
-   <%generateAlgloopsolvers2(eq_sys,context,varDecls,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
+   <%generateAlgloopSystems2(eq_sys,context,varDecls,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
    >>
   else
     ""
- end generateAlgloopsolvers2;
+ end generateAlgloopSystems2;
 /*
 let jacAlgloopsolver = (jacobianMatrixes |> (mat, _, _, _, _, _, _) hasindex index0 =>
-       (mat |> (eqs,_,_) =>  generateAlgloopsolverVariables(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
+       (mat |> (eqs,_,_) =>  generateAlgloopsSystemVariables(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
      ;separator="")
 */
-template generateAlgloopsolverVariables(list<SimEqSystem> allEquationsPlusWhen,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+
+template generateAlgloopsolverVariables(ModelInfo modelInfo)
+::=
+  match modelInfo
+  case MODELINFO(linearSystems=ls,nonLinearSystems=nls)
+  then
+   let linearSolver = match(listLength(ls))
+   case 0
+   then ""
+    else "shared_ptr<ILinearAlgLoopSolver>   _algLoopLinearSolver;        ///< Solver for linear algebraic loop */"
+   end match
+   let nonlinearSolver = match(listLength(nls))
+   case 0
+   then ""
+    else "shared_ptr<INonLinearAlgLoopSolver>   _algLoopNonLinearSolver;        ///< Solver for nonlinear algebraic loop */"
+    end match
+  <<
+   <%linearSolver%>
+   <%nonlinearSolver%>
+  >>
+end generateAlgloopsolverVariables;
+
+
+
+template generateAlgloopsSystemVariables(list<SimEqSystem> allEquationsPlusWhen,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
 ::=
   let &varDecls = buffer "" /*BUFD*/
-  let algloopsolver = (allEquationsPlusWhen |> eqs => (eqs |> eq =>
-      generateAlgloopsolverVariables2(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace);separator="\n")
+  let algloopsystems = (allEquationsPlusWhen |> eqs => (eqs |> eq =>
+      generateAlgloopsSystemVariables2(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace);separator="\n")
     ;separator="\n")
 
 
 
   <<
-  <%algloopsolver%>
+  <%algloopsystems%>
 
   >>
-end generateAlgloopsolverVariables;
+end generateAlgloopsSystemVariables;
 
 
-template generateAlgloopsolverVariables2(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+template generateAlgloopsSystemVariables2(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
  "Generates an equation.
   This template should not be used for a SES_RESIDUAL.
   Residual equations are handled differently."
@@ -10382,8 +10413,6 @@ template generateAlgloopsolverVariables2(SimEqSystem eq, Context context, Text &
         <<
         shared_ptr<ILinearAlgLoop>  //Algloop  which holds equation system
              _algLoop<%num%>;
-        shared_ptr<IAlgLoopSolver>
-             _algLoopSolver<%num%>;        ///< Solver for algebraic loop */
          bool* _conditions0<%num%>;
          bool* _conditions1<%num%>;
          double* _algloop<%num%>Vars;
@@ -10397,8 +10426,7 @@ template generateAlgloopsolverVariables2(SimEqSystem eq, Context context, Text &
         <<
         shared_ptr<INonLinearAlgLoop>  //Algloop  which holds equation system
              _algLoop<%num%>;
-        shared_ptr<IAlgLoopSolver>
-             _algLoopSolver<%num%>;        ///< Solver for algebraic loop */
+
          bool* _conditions0<%num%>;
          bool* _conditions1<%num%>;
          double* _algloop<%num%>Vars;
@@ -10407,11 +10435,11 @@ template generateAlgloopsolverVariables2(SimEqSystem eq, Context context, Text &
    case e as SES_MIXED(cont = eq_sys)
      then
        <<
-       <%generateAlgloopsolverVariables2(eq_sys,context,varDecls,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
+       <%generateAlgloopsSystemVariables2(eq_sys,context,varDecls,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
        >>
     else
       ""
-end generateAlgloopsolverVariables2;
+end generateAlgloopsSystemVariables2;
 
 template generateInitAlgloopsolverVariables(list<JacobianMatrix> jacobianMatrixes,list<SimEqSystem> allEquationsPlusWhen,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text className)
 ::=
@@ -11324,14 +11352,14 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
            <<
            try
            {
-               _algLoopSolver<%ls.index%>->initialize();
+
                _algLoop<%ls.index%>->evaluate();
                for(int i=0; i<_dimZeroFunc; i++) {
                    getCondition(i);
                }
                IContinuous::UPDATETYPE calltype = _callType;
                _callType = IContinuous::CONTINUOUS;
-               _algLoopSolver<%ls.index%>->solve();
+               _algLoopLinearSolver->solve(_algLoop<%ls.index%>);
                _callType = calltype;
            }
            catch(ModelicaSimulationError&  ex)
@@ -11356,7 +11384,7 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
                   {
                       getConditions(_conditions0<%ls.index%>);
                       _callType = IContinuous::CONTINUOUS;
-                      _algLoopSolver<%ls.index%>->solve();
+                      _algLoopLinearSolver->solve(_algLoop<%ls.index%>,!(iterations<%ls.index%>==1));
                       _callType = IContinuous::DISCRETE;
                       for(int i=0;i<_dimZeroFunc;i++)
                       {
@@ -11368,7 +11396,7 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
                   }
               }
               else
-              _algLoopSolver<%ls.index%>->solve();
+               _algLoopLinearSolver->solve(_algLoop<%ls.index%>);
 
           }
           catch(ModelicaSimulationError &ex)
@@ -11382,7 +11410,7 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
               {  //workaround: try to solve algoop discrete (evaluate all zero crossing conditions) since we do not have the information which zercrossing contains a algloop var
                   _callType = IContinuous::DISCRETE;
                   _algLoop<%ls.index%>->setReal(_algloop<%ls.index%>Vars );
-                  _algLoopSolver<%ls.index%>->solve();
+                   _algLoopLinearSolver->solve(_algLoop<%ls.index%>,true);
                   _callType = calltype;
               }
               catch(ModelicaSimulationError& ex)
@@ -11401,14 +11429,14 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
            <<
            try
            {
-               _algLoopSolver<%nls.index%>->initialize();
+
                _algLoop<%nls.index%>->evaluate();
                for(int i=0; i<_dimZeroFunc; i++) {
                    getCondition(i);
                }
                IContinuous::UPDATETYPE calltype = _callType;
                _callType = IContinuous::CONTINUOUS;
-               _algLoopSolver<%nls.index%>->solve();
+                _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>);
                _callType = calltype;
            }
            catch(ModelicaSimulationError&  ex)
@@ -11433,7 +11461,7 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
                   {
                       getConditions(_conditions0<%nls.index%>);
                       _callType = IContinuous::CONTINUOUS;
-                      _algLoopSolver<%nls.index%>->solve();
+                      _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>,!(iterations<%nls.index%>==1));
                       _callType = IContinuous::DISCRETE;
                       for(int i=0;i<_dimZeroFunc;i++)
                       {
@@ -11445,7 +11473,7 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
                   }
               }
               else
-              _algLoopSolver<%nls.index%>->solve();
+             _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>);
 
           }
           catch(ModelicaSimulationError &ex)
@@ -11459,7 +11487,7 @@ template equationLinearOrNonLinear(SimEqSystem eq, Context context,Text &varDecl
               {  //workaround: try to solve algoop discrete (evaluate all zero crossing conditions) since we do not have the information which zercrossing contains a algloop var
                   _callType = IContinuous::DISCRETE;
                   _algLoop<%nls.index%>->setReal(_algloop<%nls.index%>Vars );
-                  _algLoopSolver<%nls.index%>->solve();
+                  _algLoopNonLinearSolver->solve(_algLoop<%nls.index%>,true);
                   _callType = calltype;
               }
               catch(ModelicaSimulationError& ex)
@@ -12940,7 +12968,7 @@ void <%classname%>Jacobian::initialize()
 {
    //create Algloopsolver for analytical Jacobians
       <% (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
-       (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopsolvers(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="")
+       (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopSystems(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="")
       ;separator="")
       %>
 
