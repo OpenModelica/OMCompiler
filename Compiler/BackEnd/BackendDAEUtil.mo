@@ -7669,6 +7669,7 @@ end allPostOptimizationModules;
 protected function allInitOptimizationModules
   "This list contains all back end init-optimization modules."
   output list<tuple<BackendDAEFunc.optimizationModule, String>> allInitOptimizationModules = {
+    (BackendInline.lateInlineFunction, "lateInlineFunction"),
     (Initialization.replaceHomotopyWithSimplified, "replaceHomotopyWithSimplified"),
     (SymbolicJacobian.constantLinearSystem, "constantLinearSystem"),
     (BackendDAEOptimize.inlineHomotopy, "inlineHomotopy"),

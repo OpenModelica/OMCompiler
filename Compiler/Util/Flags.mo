@@ -1231,6 +1231,7 @@ constant Util.TranslatableContent collapseArrayExpressionsText = Util.gettext("S
 
 constant ConfigFlag INIT_OPT_MODULES = CONFIG_FLAG(77, "initOptModules",
   NONE(), EXTERNAL(), STRING_LIST_FLAG({
+    "lateInlineFunction",
     "simplifyComplexFunction",
     "tearingSystem",
     "solveSimpleEquations",
@@ -1255,7 +1256,8 @@ constant ConfigFlag INIT_OPT_MODULES = CONFIG_FLAG(77, "initOptModules",
     ("simplifyLoops", Util.notrans("Simplifies algebraic loops. This modules requires +simplifyLoops.")),
     ("solveSimpleEquations", Util.notrans("Solves simple equations")),
     ("tearingSystem", Util.notrans("For method selection use flag tearingMethod.")),
-    ("wrapFunctionCalls", Util.gettext("This module introduces variables for each function call and substitutes all these calls with the newly introduced variables."))
+    ("wrapFunctionCalls", Util.gettext("This module introduces variables for each function call and substitutes all these calls with the newly introduced variables.")),
+    ("lateInlineFunction", Util.gettext("Perform function inlining for function with annotation LateInline=true."))
     })),
   Util.gettext("Sets the initialization optimization modules to use in the back end. See --help=optmodules for more info."));
 
