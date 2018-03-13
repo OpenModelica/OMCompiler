@@ -66,6 +66,7 @@ import BackendDAEEXT;
 import BackendInline;
 import BackendVarTransform;
 import BackendVariable;
+import BaseHashSet;
 import BinaryTree;
 import Causalize;
 import CheckModel;
@@ -96,6 +97,7 @@ import FindZeroCrossings;
 import Flags;
 import FMI;
 import Global;
+import HashSet;
 import HpcOmEqSystems;
 import IndexReduction;
 import Initialization;
@@ -1709,10 +1711,11 @@ algorithm
   end match;
 end reduceEqSystem;
 
-public function createAliasVarsForOutputStates
+protected function createAliasVarsForOutputStates
 " creates for every state that is also output an
-  alias variable $outputStateAlias.stateName and
-  the corresponding equation"
+  alias variable $outputStateAlias.stateName,
+  the corresponding equation and replace the state
+  var every where in the system."
   input BackendDAE.BackendDAE inBDAE;
   output BackendDAE.BackendDAE outBDAE = inBDAE;
 protected
@@ -1720,9 +1723,11 @@ protected
   BackendDAE.Variables vars;
   BackendDAE.EquationArray eqs;
   list<BackendDAE.Var> states;
+  list<BackendDAE.Equation> newEqns = {};
   DAE.ComponentRef newCref;
   BackendDAE.Var newVar;
   BackendDAE.Equation newEqn;
+  HashSet.HashSet ht = HashSet.emptyHashSet();
 algorithm
   systems := inBDAE.eqs;
   for system in systems loop
@@ -1734,21 +1739,34 @@ algorithm
     end if;
     for v in states loop
       if BackendVariable.isVarOnTopLevelAndOutput(v) then
-        // generate new output var and add it
-        newCref := ComponentReference.prependStringCref(BackendDAE.outputStateAliasPrefix, BackendVariable.varCref(v));
+        // generate new state var and add it
+        newCref := ComponentReference.prependStringCref(BackendDAE.outputStateAliasPrefix, v.varName);
         newVar := BackendVariable.copyVarNewName(newCref, v);
-        newVar := BackendVariable.setVarKind(newVar, BackendDAE.VARIABLE());
+        newVar := BackendVariable.setVarDirection(newVar, DAE.BIDIR());
         vars := BackendVariable.addVar(newVar, vars);
 
-        //update states to remove the output direction
-        v := BackendVariable.setVarDirection(v, DAE.BIDIR());
+        // update states to remove the output direction
+        v := BackendVariable.setVarKind(v, BackendDAE.VARIABLE());
         vars := BackendVariable.addVar(v, vars);
 
-        // generate new equation and add it
-        newEqn := BackendEquation.generateEquation(Expression.crefToExp(newCref), Expression.crefToExp(BackendVariable.varCref(v)), DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_BINDING);
-        eqs := BackendEquation.add(newEqn, eqs);
+        // generate new equation and collect it to push ot afterwards to the system
+        newEqn := BackendEquation.generateEquation(Expression.crefToExp(v.varName), Expression.crefToExp(newCref), DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_BINDING);
+        newEqns := newEqn::newEqns;
+
+        // collect all crefs to replace them in the equations
+        ht := BaseHashSet.add(v.varName, ht);
       end if;
     end for;
+    // replace all der(cr) && (cr == output) => der(outputAlias.cr)
+    _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(eqs, traverserStateOutputAlias, ht);
+    // also replace cref in the initial equations and removed equations
+    _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(system.removedEqs, traverserStateOutputAlias, ht);
+    _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(inBDAE.shared.removedEqs, traverserStateOutputAlias, ht);
+    _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(inBDAE.shared.removedEqs, traverserStateOutputAlias, ht);
+
+    // now add also the new equations cr = outputAlias.cr
+    eqs := BackendEquation.addList(newEqns, eqs);
+
     system.orderedVars := vars;
     system.orderedEqs := eqs;
     system := BackendDAEUtil.clearEqSyst(system);
@@ -1758,6 +1776,48 @@ algorithm
   outBDAE.eqs := returnSysts;
   outBDAE := BackendDAEUtil.transformBackendDAE(outBDAE, SOME((BackendDAE.NO_INDEX_REDUCTION(), BackendDAE.EXACT())), NONE(), NONE());
 end createAliasVarsForOutputStates;
+
+protected function traverserStateOutputAlias
+"Helper function to traverse all equation for state outputs"
+  input output DAE.Exp e;
+  input output HashSet.HashSet hashSet;
+algorithm
+  (e,hashSet) := Expression.traverseExpTopDown(e,traverserReplaceStateOutputAlias,hashSet);
+end traverserStateOutputAlias;
+
+protected function traverserReplaceStateOutputAlias
+"Helper function to traverse all equations for state outputs"
+  input output DAE.Exp exp;
+  input HashSet.HashSet inHashSet;
+  output Boolean cont;
+  output HashSet.HashSet hs = inHashSet;
+algorithm
+  (exp, cont) := matchcontinue (exp)
+    local
+      DAE.Exp e, arg;
+      DAE.Type tp;
+      BackendDAE.Var v;
+      DAE.ComponentRef cr, newcr;
+
+    // der(cr) && cr is output => der(outputAlias.cr)
+    case (e as DAE.CALL(path=Absyn.IDENT(name = "der"), expLst={DAE.CREF(cr, tp)}))
+      guard (BaseHashSet.has(cr, hs))
+      equation
+        newcr = ComponentReference.prependStringCref(BackendDAE.outputStateAliasPrefix, cr);
+        e.expLst = { DAE.CREF(newcr, tp) };
+      then (e, false);
+
+    // cr is state && cr is output => outputAlias.cr
+    case (e as DAE.CREF(cr, tp))
+      guard (BaseHashSet.has(cr, hs))
+      equation
+        newcr = ComponentReference.prependStringCref(BackendDAE.outputStateAliasPrefix, cr);
+        e.componentRef = newcr;
+      then (e, false);
+
+    else (exp, true);
+  end matchcontinue;
+end traverserReplaceStateOutputAlias;
 
 protected function translateArrayList
   input Integer inElement;
@@ -6804,6 +6864,7 @@ public function getSolvedSystem "Run the equation system pipeline."
   input Option<String> strmatchingAlgorithm = NONE();
   input Option<String> strdaeHandler = NONE();
   input Option<list<String>> strPostOptModules = NONE();
+  input Boolean isFMI2 = false;
   output BackendDAE.BackendDAE outSimDAE;
   output BackendDAE.BackendDAE outInitDAE;
   output Option<BackendDAE.BackendDAE> outInitDAE_lambda0_option;
@@ -6848,6 +6909,9 @@ algorithm
   if Flags.isSet(Flags.OPT_DAE_DUMP) then
     BackendDump.dumpBackendDAE(dae, "synchronousFeatures");
   end if;
+
+  // if FMI 2.0 for all output-state variables we introduce alias state variables
+  dae := if isFMI2 then BackendDAEUtil.createAliasVarsForOutputStates(dae) else dae;
 
   if Flags.isSet(Flags.GRAPHML) then
     BackendDump.dumpBipartiteGraphDAE(dae, fileNamePrefix);
@@ -7629,7 +7693,6 @@ end allPreOptimizationModules;
 public function allPostOptimizationModules
   "This list contains all back end sim-optimization modules."
   output list<tuple<BackendDAEFunc.optimizationModule, String>> allPostOptimizationModules = {
-    (BackendDAEUtil.createAliasVarsForOutputStates, "createAliasVarsForOutputStates"),
     (BackendInline.lateInlineFunction, "lateInlineFunction"),
     (DynamicOptimization.simplifyConstraints, "simplifyConstraints"),
     (CommonSubExpression.wrapFunctionCalls, "wrapFunctionCalls"),
