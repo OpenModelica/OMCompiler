@@ -369,8 +369,9 @@ void Kinsol::solve( shared_ptr<INonLinearAlgLoop> algLoop,bool restart)
 	_counter++;
 	_eventRetry = false;
 	_iterationStatus = CONTINUE;
-
-
+	//get variables vectors for last accepted step
+	_algLoop->getReal(_y);
+	_algLoop->getReal(_y0);
 
 	// Try Dense first
 	////////////////////////////
