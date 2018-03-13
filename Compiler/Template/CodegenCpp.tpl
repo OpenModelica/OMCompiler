@@ -12974,11 +12974,7 @@ void <%classname%>Jacobian::initialize()
 
 
 
-   //initialize Algloopsolver for analytical Jacobians
-      <% (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
-       (mat |> JAC_COLUMN(columnEqns=eqs) =>  initAlgloopsolver(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="")
-       ;separator="")
-      %>
+
       <% (JacobianMatrixes |> JAC_MATRIX(columns=mat) =>
           ( mat |> JAC_COLUMN(columnEqns=eqs) => (eqs |> eq => initAlgloopVars2(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)
           ) ;separator="\n")
