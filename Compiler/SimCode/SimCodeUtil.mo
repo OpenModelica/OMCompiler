@@ -5353,9 +5353,8 @@ algorithm
       list<DAE.ComponentRef> crefs;
       list<DAE.Exp> expLst;
 
-    case (DAE.CREF(componentRef=cr), _)
+    case (DAE.CREF(componentRef=cr), _) guard BaseHashSet.has(cr, iht)
       equation
-        _ = BaseHashSet.get(cr, iht);
         ht = BaseHashSet.delete(cr, iht);
       then
         (true, ht);
