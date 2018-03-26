@@ -3031,6 +3031,7 @@ protected function runFrontEndWork
   output FCore.Graph env;
   output DAE.DAElist dae;
 algorithm
+  setGlobalRoot(Global.isSynchronous, NONE());
   (cache,env,dae) := matchcontinue (inCache,inEnv,className)
     local
       Absyn.Restriction restriction;

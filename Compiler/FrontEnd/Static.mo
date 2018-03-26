@@ -6475,6 +6475,8 @@ public function elabBuiltinHandler
     output DAE.Exp outExp;
     output DAE.Properties outProperties;
   end HandlerFunc;
+protected
+  Boolean isSynchronous=false;
 algorithm
   outHandler := match (inIdent)
     case "smooth" then elabBuiltinSmooth;
@@ -6518,42 +6520,52 @@ algorithm
     case "Clock"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinClock;
     case "hold"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinHold;
     case "shiftSample"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinShiftSample;
     case "backSample"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinBackSample;
     case "noClock"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinNoClock;
     case "transition"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinTransition;
     case "initialState"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinInitialState;
     case "activeState"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinActiveState;
     case "ticksInState"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinTicksInState;
     case "timeInState"
       equation
         true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        isSynchronous = true;
       then elabBuiltinTimeInState;
     case "sourceInfo"
       equation
@@ -6572,6 +6584,9 @@ algorithm
         true = Config.acceptMetaModelicaGrammar();
       then elabBuiltinIsPresent;
   end match;
+  if isSynchronous then
+    setGlobalRoot(Global.isSynchronous, SOME(true));
+  end if;
 end elabBuiltinHandler;
 
 public function isBuiltinFunc "Returns true if the function name given as argument
