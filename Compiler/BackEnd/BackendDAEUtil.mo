@@ -6893,6 +6893,9 @@ algorithm
   simDAE := sortGlobalKnownVarsInDAE(simDAE);
   execStat("sort global known variables");
 
+  // tag "Simple Shared Equations"
+  simDAE := tagSimpleSharedEquations(simDAE);
+
   // remove unused functions
   funcTree := BackendDAEOptimize.copyRecordConstructorAndExternalObjConstructorDestructor(BackendDAEUtil.getFunctions(simDAE.shared));
   funcTree := BackendDAEOptimize.removeUnusedFunctions(outInitDAE.eqs, outInitDAE.shared, outRemovedInitialEquationLst, BackendDAEUtil.getFunctions(simDAE.shared), funcTree);
@@ -7270,6 +7273,40 @@ algorithm
   //bcall(Flags.isSet(Flags.DUMP_BACKENDDAE_INFO) or Flags.isSet(Flags.DUMP_STATESELECTION_INFO) or Flags.isSet(Flags.DUMP_DISCRETEVARS_INFO), BackendDump.dumpCompShort, outDAE);
   //fcall2(Flags.DUMP_EQNINORDER, BackendDump.dumpEqnsSolved, outDAE, "system for jacobians");
 end getSolvedSystemforJacobians;
+
+protected function tagSimpleSharedEquations "author: lochel"
+  input output BackendDAE.BackendDAE backendDAE;
+protected
+  BackendDAE.EquationArray removedEqs;
+algorithm
+  removedEqs := backendDAE.shared.removedEqs;
+  BackendEquation.traverseEquationArray_WithUpdate(removedEqs, tagSimpleSharedEquation, backendDAE.shared.globalKnownVars);
+end tagSimpleSharedEquations;
+
+protected function tagSimpleSharedEquation
+  input output BackendDAE.Equation eq;
+  input output BackendDAE.Variables globalKnownVars;
+protected
+  list<DAE.ComponentRef> crefs;
+  Boolean parameterOnly = true;
+  BackendDAE.Var v;
+algorithm
+  crefs := BackendEquation.equationCrefs(eq);
+
+  try
+    for cref in crefs loop
+      (v, _) := BackendVariable.getVar2(cref, globalKnownVars);
+    end for;
+  else
+    parameterOnly := false;
+  end try;
+
+  if (parameterOnly) then
+    eq := BackendEquation.setEquationKind(eq, BackendDAE.INITIAL_EQUATION());
+  else
+    eq := BackendEquation.setEquationKind(eq, BackendDAE.DYNAMIC_EQUATION());
+  end if;
+end tagSimpleSharedEquation;
 
 public function sortGlobalKnownVarsInDAE "
 author: ptaeuber

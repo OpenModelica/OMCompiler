@@ -1874,6 +1874,17 @@ algorithm
   end match;
 end setEquationAttributes;
 
+public function setEquationKind
+  input output BackendDAE.Equation eq;
+  input BackendDAE.EquationKind inEqKind;
+protected
+  BackendDAE.EquationAttributes attr;
+algorithm
+  attr := getEquationAttributes(eq);
+  attr.kind := inEqKind;
+  eq := setEquationAttributes(eq, attr);
+end setEquationKind;
+
 public function setEquationLHS
 "
   sets the left hand side expression of an equation.
