@@ -2244,7 +2244,7 @@ public function typeof "Retrieves the Type of the Expression"
   input DAE.Exp inExp;
   output DAE.Type outType;
 algorithm
-  outType := matchcontinue (inExp)
+  outType := match (inExp)
     local
       Type tp;
       Operator op;
@@ -2296,8 +2296,9 @@ algorithm
     case (DAE.CODE(ty = tp)) then tp;
       /* array reduction with known size */
     case (DAE.REDUCTION(iterators={DAE.REDUCTIONITER(exp=iterExp,guardExp=NONE())},expr = operExp, reductionInfo=DAE.REDUCTIONINFO(exprType=DAE.T_ARRAY(dims=dim::_),path = Absyn.IDENT("array"))))
+      guard
+        not dimensionKnown(dim)
       equation
-        false = dimensionKnown(dim);
         iterTp = typeof(iterExp);
         operTp = typeof(operExp);
         DAE.T_ARRAY(dims=iterdims) = iterTp;
@@ -2337,7 +2338,7 @@ algorithm
         msg = "- Expression.typeof failed for " + ExpressionDump.printExpStr(e);
         Error.addMessage(Error.INTERNAL_ERROR, {msg});
       then fail();
-  end matchcontinue;
+  end match;
 end typeof;
 
 protected function typeofRelation
