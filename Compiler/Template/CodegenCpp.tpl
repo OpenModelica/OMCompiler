@@ -3792,6 +3792,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
             {
               _useSparseFormat=false;
               <%initAlgloopDimension(eq,varDecls)%>
+               _x0= new double[_dimAEq];
             >>
           case ("sparse") then
             <<
@@ -3802,6 +3803,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
             {
               _useSparseFormat=true;
               <%initAlgloopDimension(eq,varDecls)%>
+                 _x0= new double[_dimAEq];
             >>
           else "A matrix type is not supported"
           end match
@@ -3862,7 +3864,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
    {
      _useSparseFormat=false;
      <%initAlgloopDimension(eq,varDecls)%>
-
+     _x0= new double[_dimAEq];
      <%initAlgloopVarAttributes(eq, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, context, stateDerVectorName, useFlatArrayNotation)%>
    }
 
@@ -5970,9 +5972,13 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
      void <%modelname%>Algloop<%nls.index%>::initialize()
      {
        <%if intGt(clockIndex, 0) then 'const int clockIndex = <%clockIndex%>;'%>
-       <%initAlgloopEquation(eq,simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, context, stateDerVectorName, useFlatArrayNotation)%>
-       // Don't update the equations once before start of simulation
-       // evaluate();
+
+      if(_firstcall)
+      {
+         getReal(_x0);
+        _firstcall=false;
+       }
+
      }
      >>
  case SES_LINEAR(lSystem = ls as LINEARSYSTEM(__)) then
@@ -5983,7 +5989,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
         void <%modelname%>Algloop<%ls.index%>::initialize()
         {
           <%if intGt(clockIndex, 0) then 'const int clockIndex = <%clockIndex%>;'%>
-          <%initAlgloopEquation(eq, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, context, stateDerVectorName, useFlatArrayNotation)%>
+
         }
         >>
    else
@@ -7457,7 +7463,15 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
   {
     <%setAlgloopVars(eq,simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, context, stateDerVectorName, useFlatArrayNotation)%>
   }
-
+   /// Set start values
+  void <%modelname%>Algloop<%index%>::setRealStartValues()
+  {
+     getReal(_x0);
+  }
+  void <%modelname%>Algloop<%index%>::getRealStartValues(double* vars) const
+  {
+     LinearAlgLoopDefaultImplementation::getRealStartValues(vars);
+  }
   >>
   else
   error(sourceInfo(), 'Unsupported equation system type')
@@ -7536,7 +7550,15 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
   {
     <%setAlgloopVars(eq,simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, context, stateDerVectorName, useFlatArrayNotation)%>
   }
-
+   /// Set start values
+  void <%modelname%>Algloop<%index%>::setRealStartValues()
+  {
+     getReal(_x0);
+  }
+   void <%modelname%>Algloop<%index%>::getRealStartValues(double* vars) const
+  {
+      NonLinearAlgLoopDefaultImplementation::getRealStartValues(vars);
+  }
   >>
   else
   error(sourceInfo(), 'Unsupported equation system type')
@@ -7714,7 +7736,8 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
     virtual void getReal(double* vars) const;
     /// Set variables with given index to the system
     virtual void setReal(const double* vars);
-
+    virtual void getRealStartValues(double* vars) const;
+    virtual void setRealStartValues();
     /// Evaluate equations for given variables
     virtual void evaluate();
     virtual bool isLinearTearing();
@@ -9946,7 +9969,7 @@ end equationMixed;
 template generateStepCompleted(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
 ::=
   let &varDecls = buffer "" /*BUFD*/
-  let algloopsolver =   generateStepCompleted2(allEquations,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)
+  let save_algloop_start_values =   generateStepCompleted2(allEquations,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)
   match simCode
 case SIMCODE(modelInfo = MODELINFO(__))
 then
@@ -9972,7 +9995,7 @@ let store_delay_expr = functionStoreDelay(delayedExps, simCode ,&extraFuncs ,&ex
   {
 
   <%store_delay_expr%>
-
+  <%save_algloop_start_values%>
   <%outputBounds%>
 
   saveAll();
@@ -10197,12 +10220,12 @@ end generateTimeEvent;
 template generateStepCompleted2(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
 ::=
   let &varDecls = buffer "" /*BUFD*/
-  let algloopsolver = (allEquations |> eqs => (eqs |> eq =>
+  let save_algloop_start_values = (allEquations |> eqs => (eqs |> eq =>
       generateStepCompleted3(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
     ;separator="\n")
 
   <<
-  <%algloopsolver%>
+  <%save_algloop_start_values%>
   >>
 
 end generateStepCompleted2;
@@ -10220,7 +10243,7 @@ template generateStepCompleted3(SimEqSystem eq, Context context, Text &varDecls,
       match simCode
       case SIMCODE(modelInfo = MODELINFO(__)) then
        <<
-        _algLoopSolver<%num%>->stepCompleted(_simTime);
+        _algLoop<%num%>->setRealStartValues();
        >>
        end match
   case e as SES_NONLINEAR(nlSystem = nls as NONLINEARSYSTEM(__))
@@ -10229,7 +10252,7 @@ template generateStepCompleted3(SimEqSystem eq, Context context, Text &varDecls,
       match simCode
       case SIMCODE(modelInfo = MODELINFO(__)) then
        <<
-        _algLoopSolver<%num%>->stepCompleted(_simTime);
+         _algLoop<%num%>->setRealStartValues();
        >>
        end match
   case e as SES_MIXED(cont = eq_sys)

@@ -86,10 +86,9 @@ void LinearSolver::initialize()
 {
   _firstCall = false;
   //(Re-) Initialization of algebraic loop
-  if(_algLoop)
-       _algLoop->initialize();
-    else
-	 throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
+  if(!_algLoop)
+     throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
+
   _sparse = _algLoop->getUseSparseFormat();
   int dimDouble=_algLoop->getDimReal();
   int ok=0;
@@ -187,6 +186,7 @@ void LinearSolver::solve(shared_ptr<ILinearAlgLoop> algLoop,bool restart)
   if (!restart)
   {
 	_algLoop = algLoop;
+	_algLoop->initialize();
     initialize();
   }
   if(!_algLoop)

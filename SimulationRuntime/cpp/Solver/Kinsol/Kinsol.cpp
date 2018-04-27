@@ -203,12 +203,11 @@ void Kinsol::initialize()
 
 	_firstCall = false;
 
-	//(Re-) Initialization of algebraic loop
-	 if(_algLoop)
-      _algLoop->initialize();
-    else
-	  throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
+     if(!_algLoop)
+        throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
+
 	 _sparse = _algLoop->getUseSparseFormat();
+
 	// Dimension of the system (number of variables)
 	int
 		dimDouble  = _algLoop->getDimReal(),
@@ -264,6 +263,19 @@ void Kinsol::initialize()
 					_yScale[i] = 1/_yScale[i];
 				else
 					_yScale[i] = 1;
+
+
+			if (_Kin_y)
+
+				N_VDestroy_Serial(_Kin_y);
+			if (_Kin_y0)
+				N_VDestroy_Serial(_Kin_y0);
+			if (_Kin_yScale)
+				N_VDestroy_Serial(_Kin_yScale);
+			if (_Kin_fScale)
+				N_VDestroy_Serial(_Kin_fScale);
+			if (_kinMem)
+				KINFree(&_kinMem);
 
 			_Kin_y = N_VMake_Serial(_dimSys, _y);
 			_Kin_y0 = N_VMake_Serial(_dimSys, _y0);
@@ -359,7 +371,9 @@ void Kinsol::solve( shared_ptr<INonLinearAlgLoop> algLoop,bool restart)
 	if (!restart)
 	{
 		_algLoop = algLoop;
+		_algLoop->initialize();
 		initialize();
+
 	}
 	if(!_algLoop)
       throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
@@ -371,7 +385,7 @@ void Kinsol::solve( shared_ptr<INonLinearAlgLoop> algLoop,bool restart)
 	_iterationStatus = CONTINUE;
 	//get variables vectors for last accepted step
 	_algLoop->getReal(_y);
-	_algLoop->getReal(_y0);
+	_algLoop->getRealStartValues(_y0);
 
 	// Try Dense first
 	////////////////////////////

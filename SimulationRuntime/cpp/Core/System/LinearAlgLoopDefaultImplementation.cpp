@@ -12,6 +12,8 @@ LinearAlgLoopDefaultImplementation::LinearAlgLoopDefaultImplementation()
   ,_b(NULL)
   ,_AData(NULL)
   ,_Ax(NULL)
+  ,_x0(NULL)
+ , _firstcall(true)
 {
 }
 
@@ -52,7 +54,10 @@ bool LinearAlgLoopDefaultImplementation::getUseSparseFormat(){
 void LinearAlgLoopDefaultImplementation::setUseSparseFormat(bool value){
   _useSparseFormat = value;
 }
-
+void LinearAlgLoopDefaultImplementation::getRealStartValues(double* vars) const
+{
+    memcpy(vars, _x0, sizeof(double) * _dimAEq);
+}
 
 
 //void LinearAlgLoopDefaultImplementation::getSparseAdata(double* data, int nonzeros)
