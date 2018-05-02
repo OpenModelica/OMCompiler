@@ -1095,7 +1095,6 @@ algorithm
     case "max" then cevalBuiltinMax;
     case "min" then cevalBuiltinMin;
     case "rem" then cevalBuiltinRem;
-    case "sum" then cevalBuiltinSum;
     case "diagonal" then cevalBuiltinDiagonal;
     case "sign" then cevalBuiltinSign;
     case "exp" then cevalBuiltinExp;
@@ -3359,46 +3358,6 @@ algorithm
         fail();
   end matchcontinue;
 end cevalBuiltinMod;
-
-protected function cevalBuiltinSum "Evaluates the builtin sum function."
-  input FCore.Cache inCache;
-  input FCore.Graph inEnv;
-  input list<DAE.Exp> inExpExpLst;
-  input Boolean inBoolean;
-  input Absyn.Msg inMsg;
-  input Integer numIter;
-  output FCore.Cache outCache;
-  output Values.Value outValue;
-algorithm
-  (outCache,outValue):=
-  match (inCache,inEnv,inExpExpLst,inBoolean,inMsg,numIter)
-    local
-      Values.Value v;
-      list<Values.Value> vals;
-      FCore.Graph env;
-      DAE.Exp arr;
-      Boolean impl;
-      Absyn.Msg msg;
-      FCore.Cache cache;
-    case (cache,env,{arr},impl,msg,_)
-      algorithm
-        (cache, Values.ARRAY(valueLst = vals)) := ceval(cache,env, arr, impl, msg, numIter+1);
-        if Types.isInteger(Expression.typeof(arr)) then
-          if listEmpty(vals) then
-            v := Values.INTEGER(0);
-          else
-            (v as Values.INTEGER()) := ValuesUtil.sumArrayelt(vals);
-          end if;
-        else
-          if listEmpty(vals) then
-            v := Values.REAL(0.0);
-          else
-            (v as Values.REAL()) := ValuesUtil.sumArrayelt(vals);
-          end if;
-        end if;
-      then (cache,v);
-  end match;
-end cevalBuiltinSum;
 
 protected function cevalBuiltinMax "author: LP
   Evaluates the builtin max function."

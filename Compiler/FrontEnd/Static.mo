@@ -3924,7 +3924,7 @@ protected function elabBuiltinSum "This function elaborates the builtin operator
   The input is the arguments to fill as Absyn.Exp expressions and the environment FCore.Graph"
   input FCore.Cache inCache;
   input FCore.Graph inEnv;
-  input list<Absyn.Exp> inAbsynExpLst;
+  input list<Absyn.Exp> exps;
   input list<Absyn.NamedArg> inNamedArg;
   input Boolean inBoolean;
   input Prefix.Prefix inPrefix;
@@ -3933,40 +3933,15 @@ protected function elabBuiltinSum "This function elaborates the builtin operator
   output DAE.Exp outExp;
   output DAE.Properties outProperties;
 algorithm
-  (outCache,outExp,outProperties) := match (inCache,inEnv,inAbsynExpLst,inBoolean,inPrefix)
-    local
-      DAE.Exp exp_1,exp_2;
-      DAE.Type t,tp;
-      DAE.Const c;
-      FCore.Graph env;
-      Absyn.Exp arrexp;
-      Boolean impl,b;
-      FCore.Cache cache;
-      Prefix.Prefix pre;
-      String estr,tstr;
-      DAE.Type etp;
-
-    case (cache,env,{arrexp},impl,pre)
-      equation
-        (cache,exp_1,DAE.PROP(t,c)) = elabExpInExpression(cache,env,arrexp,impl,true,pre,info);
-        tp = Types.arrayElementType(t);
-        etp = Types.simplifyType(tp);
-        b = Types.isArray(t);
-        b = b and Types.isSimpleType(tp);
-        estr = Dump.printExpStr(arrexp);
-        tstr = Types.unparseType(t);
-        Error.assertionOrAddSourceMessage(b,Error.SUM_EXPECTED_ARRAY,{estr,tstr},info);
-        exp_2 = Expression.makePureBuiltinCall("sum", {exp_1}, etp);
-      then
-        (cache,exp_2,DAE.PROP(tp,c));
-  end match;
+  (outCache,outExp,outProperties) := elabBuiltinProductOrSum(inCache, inEnv,
+    Absyn.CREF_IDENT("sum", {}), exps, inNamedArg, inBoolean, inPrefix, info);
 end elabBuiltinSum;
 
 protected function elabBuiltinProduct "This function elaborates the builtin operator product.
   The input is the arguments to fill as Absyn.Exp expressions and the environment FCore.Graph"
   input FCore.Cache inCache;
   input FCore.Graph inEnv;
-  input list<Absyn.Exp> inAbsynExpLst;
+  input list<Absyn.Exp> exps;
   input list<Absyn.NamedArg> inNamedArg;
   input Boolean inBoolean;
   input Prefix.Prefix inPrefix;
@@ -3975,71 +3950,48 @@ protected function elabBuiltinProduct "This function elaborates the builtin oper
   output DAE.Exp outExp;
   output DAE.Properties outProperties;
 algorithm
-  (outCache,outExp,outProperties):=
-  matchcontinue (inCache,inEnv,inAbsynExpLst,inBoolean,inPrefix)
-    local
-      DAE.Exp exp_1,exp_2;
-      DAE.Dimension dim;
-      DAE.Type t,tp;
-      DAE.Const c;
-      FCore.Graph env;
-      Absyn.Exp arrexp;
-      Boolean impl;
-      DAE.Type ty,ty2;
-      FCore.Cache cache;
-      Prefix.Prefix pre;
-      String str_exp,str_pre;
-      DAE.Type etp;
-
-    case (cache,env,{arrexp},impl,pre)
-      equation
-        (cache,exp_1,DAE.PROP(ty,c)) = elabExpInExpression(cache,env,arrexp,impl,true,pre,info);
-        (exp_1,_) = Types.matchType(exp_1, ty, DAE.T_INTEGER_DEFAULT, true);
-        str_exp = "product(" + Dump.printExpStr(arrexp) + ")";
-        str_pre = PrefixUtil.printPrefixStr3(pre);
-        Error.addSourceMessage(Error.BUILTIN_FUNCTION_PRODUCT_HAS_SCALAR_PARAMETER, {str_exp, str_pre}, info);
-      then
-         (cache,exp_1,DAE.PROP(DAE.T_INTEGER_DEFAULT,c));
-
-    case (cache,env,{arrexp},impl,pre)
-      equation
-        (cache,exp_1,DAE.PROP(ty,c)) = elabExpInExpression(cache,env, arrexp, impl,true,pre,info);
-        (exp_1,_) = Types.matchType(exp_1, ty, DAE.T_REAL_DEFAULT, true);
-        str_exp = "product(" + Dump.printExpStr(arrexp) + ")";
-        str_pre = PrefixUtil.printPrefixStr3(pre);
-        Error.addSourceMessage(Error.BUILTIN_FUNCTION_PRODUCT_HAS_SCALAR_PARAMETER, {str_exp, str_pre}, info);
-      then
-         (cache,exp_1,DAE.PROP(DAE.T_REAL_DEFAULT,c));
-
-    case (cache,env,{arrexp},impl,pre)
-      equation
-        (cache,exp_1,DAE.PROP(t as DAE.T_ARRAY(dims = {_}, ty = tp),c)) = elabExpInExpression(cache,env, arrexp, impl,true,pre,info);
-        tp = Types.arrayElementType(t);
-        etp = Types.simplifyType(tp);
-        exp_2 = Expression.makePureBuiltinCall("product", {exp_1}, etp);
-        exp_2 = elabBuiltinProduct2(exp_2);
-      then
-        (cache,exp_2,DAE.PROP(tp,c));
-  end matchcontinue;
+  (outCache,outExp,outProperties) := elabBuiltinProductOrSum(inCache, inEnv,
+    Absyn.CREF_IDENT("product", {}), exps, inNamedArg, inBoolean, inPrefix, info);
 end elabBuiltinProduct;
 
-protected function elabBuiltinProduct2
-  "Replaces product({a1,a2,...an}) with a1*a2*...*an} and
-   product([a11,a12,...,a1n;...,am1,am2,..amn]) with a11*a12*...*amn"
-  input DAE.Exp inExp;
+protected function elabBuiltinProductOrSum
+  input FCore.Cache inCache;
+  input FCore.Graph inEnv;
+  input Absyn.ComponentRef name;
+  input list<Absyn.Exp> exps;
+  input list<Absyn.NamedArg> inNamedArg;
+  input Boolean inBoolean;
+  input Prefix.Prefix inPrefix;
+  input SourceInfo info;
+  output FCore.Cache outCache;
   output DAE.Exp outExp;
+  output DAE.Properties outProperties;
+protected
+  String tmpVar;
+  Absyn.Exp vectorExp;
 algorithm
-  outExp := matchcontinue(inExp)
-    local
-      DAE.Exp array_exp;
-      list<DAE.Exp> expl;
+  if 0 <> listLength(inNamedArg) or 1 <> listLength(exps) then
+    Error.addSourceMessage(Error.WRONG_NO_OF_ARGS, {Dump.printComponentRefStr(name)}, info);
+    fail();
+  end if;
+  tmpVar := Util.getTempVariableIndex();
+  // Create a call reduction instead of a call to sum or product
+  // This reduces the number of functions that need to be supported and
+  // avoids the need for special cases since reductions handle sums for
+  // all types (not only Real/Integer).
 
-    case DAE.CALL(expLst = {array_exp})
-      then Expression.makeProductLst(Expression.arrayElements(array_exp));
-
-    else inExp;
-  end matchcontinue;
-end elabBuiltinProduct2;
+  // sum(A) = A[1,...,1]+...A[end,...,end] = sum(tmpVar for tmpVar in vector(A))
+  vectorExp := Absyn.CALL(Absyn.CREF_FULLYQUALIFIED(Absyn.CREF_IDENT("vector",{})), Absyn.FUNCTIONARGS(exps, {}));
+  (outCache,outExp,outProperties) := elabCallReduction(inCache,
+          inEnv, name,
+          Absyn.CREF(Absyn.CREF_IDENT(tmpVar, {})),
+          Absyn.COMBINE(),
+          {Absyn.ITERATOR(tmpVar, NONE(), SOME(vectorExp))},
+          inBoolean,
+          false,
+          inPrefix,
+          info);
+end elabBuiltinProductOrSum;
 
 protected function elabBuiltinPre "This function elaborates the builtin operator pre.
   Input is the arguments to the pre operator and the environment, FCore.Graph."

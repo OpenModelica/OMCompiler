@@ -1326,49 +1326,6 @@ algorithm
         e = Expression.makeImpureBuiltinCall("delay",{e,e3,e4},tp);
       then DAE.UNARY(op,e);
 
-    // The sum of an empty array is simply the sum of its elements
-    case DAE.CALL(path=Absyn.IDENT("sum"),expLst={DAE.ARRAY(array={})}, attr=DAE.CALL_ATTR(ty=tp1))
-      then Expression.makeConstZero(tp1);
-
-    // To calculate sums, first try matrix concatenation
-    case DAE.CALL(path=Absyn.IDENT("sum"),expLst={DAE.MATRIX(ty=tp1,matrix=mexpl)},attr=DAE.CALL_ATTR(ty=tp2))
-      equation
-        es = List.flatten(mexpl);
-        tp1 = Expression.unliftArray(Expression.unliftArray(tp1));
-        sc = not Expression.isArrayType(tp1);
-        tp1 = if sc then Expression.unliftArray(tp1) else tp1;
-        tp1 = if sc then Expression.liftArrayLeft(tp1,DAE.DIM_UNKNOWN()) else tp1;
-        dim = listLength(es);
-        tp1 = Expression.liftArrayLeft(tp1,DAE.DIM_INTEGER(dim));
-        e = DAE.ARRAY(tp1,sc,es);
-        e = Expression.makePureBuiltinCall("sum",{e},tp2);
-        // print("Matrix sum: " + boolString(sc) + Types.unparseType(tp1) + " " + ExpressionDump.printExpStr(e) + "\n");
-      then e;
-    // Then try array concatenation
-    case DAE.CALL(path=Absyn.IDENT("sum"),expLst={DAE.ARRAY(array=es,ty=tp1,scalar=false)},attr=DAE.CALL_ATTR(ty=tp2))
-      equation
-        es = simplifyCat(1,es);
-        tp1 = Expression.unliftArray(tp1);
-        sc = not Expression.isArrayType(tp1);
-        tp1 = if sc then Expression.unliftArray(tp1) else tp1;
-        tp1 = if sc then Expression.liftArrayLeft(tp1,DAE.DIM_UNKNOWN()) else tp1;
-        dim = listLength(es);
-        tp1 = Expression.liftArrayLeft(tp1,DAE.DIM_INTEGER(dim));
-        e = DAE.ARRAY(tp1,sc,es);
-        e = Expression.makePureBuiltinCall("sum",{e},tp2);
-        // print("Array sum: " + boolString(sc) + Types.unparseType(tp1) + " " + ExpressionDump.printExpStr(e) + "\n");
-      then e;
-    // Try to reduce the number of dimensions
-    case DAE.CALL(path=Absyn.IDENT("sum"),expLst={DAE.ARRAY(array={e},scalar=false)},attr=DAE.CALL_ATTR(ty=tp2))
-      equation
-        e = Expression.makePureBuiltinCall("sum",{e},tp2);
-      then e;
-    // The sum of a single array is simply the sum of its elements
-    case DAE.CALL(path=Absyn.IDENT("sum"),expLst={DAE.ARRAY(array=es,scalar=true)})
-      equation
-        e = Expression.makeSum(es);
-      then e;
-
     case DAE.CALL(path=Absyn.IDENT("cat"),expLst=_::{e1}) then e1;
 
     case DAE.CALL(path=Absyn.IDENT("cat"),expLst=DAE.ICONST(i)::es,attr=DAE.CALL_ATTR(ty=tp))
@@ -1455,6 +1412,10 @@ algorithm
         es = List.flatten(mexpl);
         es = List.map1(es, Expression.makeVectorCall, tp);
         e = Expression.makePureBuiltinCall("cat", DAE.ICONST(1)::es, tp);
+      then e;
+
+    case DAE.CALL(path=Absyn.IDENT("vector"),expLst={e},attr=DAE.CALL_ATTR())
+      guard Types.numberOfDimensions(Expression.typeof(e))==1
       then e;
 
     case DAE.CALL(path=Absyn.IDENT("vector"),expLst=DAE.ARRAY(array=es)::{},attr=DAE.CALL_ATTR(ty=tp))

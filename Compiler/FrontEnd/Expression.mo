@@ -12300,6 +12300,8 @@ algorithm
     case DAE.DIM_BOOLEAN()
       then DAE.INDEX(DAE.BCONST(false))::DAE.INDEX(DAE.BCONST(true))::{};
 
+    case DAE.DIM_UNKNOWN() then fail();
+
     else {};
   end match;
 end expandDimension;
