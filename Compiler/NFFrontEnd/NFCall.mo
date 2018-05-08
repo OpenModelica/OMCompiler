@@ -605,7 +605,7 @@ uniontype Call
     list<TypedArg> typed_args;
     MatchedFunction matchedFunc;
     InstNode scope;
-    Variability var, arg_var;
+    Variability var, arg_var, const_var;
     Type ty;
     Expression arg_exp;
   algorithm
@@ -613,15 +613,21 @@ uniontype Call
     matchedFunc := checkMatchingFunctions(call,info);
 
     func := matchedFunc.func;
+    typed_args := matchedFunc.args;
     // Don't evaluate structural parameters for external functions, the code generation can't handle it in
     // some cases (see bug #4904). For constants we'll get issues no matter if we evaluate them or not,
-    // but evaluating them will probably cause the last amount of issues.
-    typed_args := matchedFunc.args;
+    // but evaluating them will probably cause the least amount of issues.
+    const_var := if Function.isExternal(func) then Variability.CONSTANT else Variability.STRUCTURAL_PARAMETER;
 
     args := {};
     var := Variability.CONSTANT;
     for a in typed_args loop
       (arg_exp, _, arg_var) := a;
+
+      if arg_var <= const_var then
+        arg_exp := Ceval.evalExp(arg_exp);
+      end if;
+
       args := arg_exp :: args;
       var := Prefixes.variabilityMax(var, arg_var);
     end for;
