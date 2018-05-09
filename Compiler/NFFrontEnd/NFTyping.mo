@@ -1829,7 +1829,8 @@ algorithm
     fail();
   end if;
 
-  if cond_var <= Variability.STRUCTURAL_PARAMETER then
+  if cond_var <= Variability.STRUCTURAL_PARAMETER and
+    not Expression.contains(cond, isNonConstantIfCondition) then
     // If the condition is constant, always do branch selection.
     if evaluateCondition(cond, info) then
       (ifExp, ty, var) := typeExp(tb, next_origin, info);

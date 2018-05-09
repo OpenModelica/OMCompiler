@@ -2167,7 +2167,7 @@ algorithm
       expl := evalReduction2(exp, el_ty, ranges_rest, iters_rest) :: expl;
     end while;
 
-    result := Expression.ARRAY(el_ty, listReverseInPlace(expl));
+    result := Expression.ARRAY(ty, listReverseInPlace(expl));
   end if;
 end evalReduction2;
 
