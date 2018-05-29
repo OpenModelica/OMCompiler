@@ -60,6 +60,7 @@ import Subscript = NFSubscript;
 import Connector = NFConnector;
 import Connection = NFConnection;
 import Algorithm = NFAlgorithm;
+import ExpOrigin = NFTyping.ExpOrigin;
 
 protected
 import Array;
@@ -96,8 +97,6 @@ import FlatModel = NFFlatModel;
 import ElementSource;
 import SimplifyModel = NFSimplifyModel;
 import Record = NFRecord;
-
-type EquationScope = enumeration(NORMAL, INITIAL, WHEN);
 
 public
 function instClassInProgram
@@ -136,7 +135,8 @@ algorithm
   execStat("NFInst.instExpressions("+ name +")");
 
   // Mark structural parameters.
-  markStructuralParams(inst_cls);
+  updateImplicitVariability(inst_cls);
+  execStat("NFInst.updateImplicitVariability");
 
   // Type the class.
   Typing.typeClass(inst_cls, name);
@@ -1794,7 +1794,7 @@ algorithm
         InstNode.updateClass(cls, node);
 
         // Instantiate local equation/algorithm sections.
-        sections := instSections(node, scope, sections);
+        sections := instSections(node, scope, sections, Restriction.isFunction(cls.restriction));
 
         ty := makeComplexType(cls.restriction, node);
         inst_cls := Class.INSTANCED_CLASS(ty, cls.elements, sections, cls.restriction);
@@ -2247,16 +2247,17 @@ function instSections
   input InstNode node;
   input InstNode scope;
   input output Sections sections;
+  input Boolean isFunction;
 protected
   SCode.Element el = InstNode.definition(node);
   SCode.ClassDef def;
 algorithm
   sections := match el
     case SCode.CLASS(classDef = SCode.PARTS())
-      then instSections2(el.classDef, scope, sections);
+      then instSections2(el.classDef, scope, sections, isFunction);
 
     case SCode.CLASS(classDef = SCode.CLASS_EXTENDS(composition = def as SCode.PARTS()))
-      then instSections2(def, scope, sections);
+      then instSections2(def, scope, sections, isFunction);
 
     else sections;
   end match;
@@ -2266,12 +2267,14 @@ function instSections2
   input SCode.ClassDef parts;
   input InstNode scope;
   input output Sections sections;
+  input Boolean isFunction;
 algorithm
   sections := match (parts, sections)
     local
       list<Equation> eq, ieq;
       list<Algorithm> alg, ialg;
       SCode.ExternalDecl ext_decl;
+      ExpOrigin.Type origin, iorigin;
 
     case (_, Sections.EXTERNAL())
       algorithm
@@ -2285,10 +2288,13 @@ algorithm
 
     case (SCode.PARTS(), _)
       algorithm
-        eq := instEquations(parts.normalEquationLst, scope, EquationScope.NORMAL);
-        ieq := instEquations(parts.initialEquationLst, scope, EquationScope.INITIAL);
-        alg := instAlgorithmSections(parts.normalAlgorithmLst, scope);
-        ialg := instAlgorithmSections(parts.initialAlgorithmLst, scope);
+        origin := if isFunction then ExpOrigin.FUNCTION else ExpOrigin.CLASS;
+        iorigin := intBitOr(origin, ExpOrigin.INITIAL);
+
+        eq := instEquations(parts.normalEquationLst, scope, origin);
+        ieq := instEquations(parts.initialEquationLst, scope, iorigin);
+        alg := instAlgorithmSections(parts.normalAlgorithmLst, scope, origin);
+        ialg := instAlgorithmSections(parts.initialAlgorithmLst, scope, iorigin);
       then
         Sections.join(Sections.new(eq, ieq, alg, ialg), sections);
 
@@ -2350,37 +2356,37 @@ end checkExternalDeclLanguage;
 function instEquations
   input list<SCode.Equation> scodeEql;
   input InstNode scope;
-  input EquationScope eqScope;
+  input ExpOrigin.Type origin;
   output list<Equation> instEql;
 algorithm
-  instEql := list(instEquation(eq, scope, eqScope) for eq in scodeEql);
+  instEql := list(instEquation(eq, scope, origin) for eq in scodeEql);
 end instEquations;
 
 function instEquation
   input SCode.Equation scodeEq;
   input InstNode scope;
-  input EquationScope eqScope;
+  input ExpOrigin.Type origin;
   output Equation instEq;
 protected
   SCode.EEquation eq;
 algorithm
   SCode.EQUATION(eEquation = eq) := scodeEq;
-  instEq := instEEquation(eq, scope, eqScope);
+  instEq := instEEquation(eq, scope, origin);
 end instEquation;
 
 function instEEquations
   input list<SCode.EEquation> scodeEql;
   input InstNode scope;
-  input EquationScope eqScope;
+  input ExpOrigin.Type origin;
   output list<Equation> instEql;
 algorithm
-  instEql := list(instEEquation(eq, scope, eqScope) for eq in scodeEql);
+  instEql := list(instEEquation(eq, scope, origin) for eq in scodeEql);
 end instEEquations;
 
 function instEEquation
   input SCode.EEquation scodeEq;
   input InstNode scope;
-  input EquationScope eqScope;
+  input ExpOrigin.Type origin;
   output Equation instEq;
 algorithm
   instEq := match scodeEq
@@ -2393,13 +2399,14 @@ algorithm
       SourceInfo info;
       InstNode for_scope, iter;
       ComponentRef lhs_cr, rhs_cr;
+      ExpOrigin.Type next_origin;
 
     case SCode.EEquation.EQ_EQUALS(info = info)
       algorithm
         exp1 := instExp(scodeEq.expLeft, scope, info);
         exp2 := instExp(scodeEq.expRight, scope, info);
 
-        if eqScope == EquationScope.WHEN and not checkLhsInWhen(exp1) then
+        if intBitAnd(origin, ExpOrigin.WHEN) > 0 and not checkLhsInWhen(exp1) then
           Error.addSourceMessage(Error.WHEN_EQ_LHS, {Expression.toString(exp1)}, info);
           fail();
         end if;
@@ -2408,7 +2415,7 @@ algorithm
 
     case SCode.EEquation.EQ_CONNECT(info = info)
       algorithm
-        if eqScope == EquationScope.WHEN then
+        if intBitAnd(origin, ExpOrigin.WHEN) > 0 then
           Error.addSourceMessage(Error.CONNECT_IN_WHEN,
             {Dump.printComponentRefStr(scodeEq.crefLeft),
              Dump.printComponentRefStr(scodeEq.crefRight)}, info);
@@ -2424,7 +2431,8 @@ algorithm
       algorithm
         oexp := instExpOpt(scodeEq.range, scope, info);
         (for_scope, iter) := addIteratorToScope(scodeEq.index, scope, scodeEq.info);
-        eql := instEEquations(scodeEq.eEquationLst, for_scope, eqScope);
+        next_origin := intBitOr(origin, ExpOrigin.FOR);
+        eql := instEEquations(scodeEq.eEquationLst, for_scope, next_origin);
       then
         Equation.FOR(iter, oexp, eql, makeSource(scodeEq.comment, info));
 
@@ -2434,9 +2442,10 @@ algorithm
         expl := list(instExp(c, scope, info) for c in scodeEq.condition);
 
         // Instantiate each branch and pair it up with a condition.
+        next_origin := intBitOr(origin, ExpOrigin.IF);
         branches := {};
         for branch in scodeEq.thenBranch loop
-          eql := instEEquations(branch, scope, eqScope);
+          eql := instEEquations(branch, scope, next_origin);
           exp1 :: expl := expl;
           branches := (exp1, eql) :: branches;
         end for;
@@ -2444,7 +2453,7 @@ algorithm
         // Instantiate the else-branch, if there is one, and make it a branch
         // with condition true (so we only need a simple list of branches).
         if not listEmpty(scodeEq.elseBranch) then
-          eql := instEEquations(scodeEq.elseBranch, scope, eqScope);
+          eql := instEEquations(scodeEq.elseBranch, scope, next_origin);
           branches := (Expression.BOOLEAN(true), eql) :: branches;
         end if;
       then
@@ -2452,19 +2461,20 @@ algorithm
 
     case SCode.EEquation.EQ_WHEN(info = info)
       algorithm
-        if eqScope == EquationScope.WHEN then
+        if intBitAnd(origin, ExpOrigin.WHEN) > 0 then
           Error.addSourceMessageAndFail(Error.NESTED_WHEN, {}, info);
-        elseif eqScope == EquationScope.INITIAL then
+        elseif intBitAnd(origin, ExpOrigin.INITIAL) > 0 then
           Error.addSourceMessageAndFail(Error.INITIAL_WHEN, {}, info);
         end if;
 
+        next_origin := intBitOr(origin, ExpOrigin.WHEN);
         exp1 := instExp(scodeEq.condition, scope, info);
-        eql := instEEquations(scodeEq.eEquationLst, scope, EquationScope.WHEN);
+        eql := instEEquations(scodeEq.eEquationLst, scope, next_origin);
         branches := {(exp1, eql)};
 
         for branch in scodeEq.elseBranches loop
           exp1 := instExp(Util.tuple21(branch), scope, info);
-          eql := instEEquations(Util.tuple22(branch), scope, EquationScope.WHEN);
+          eql := instEEquations(Util.tuple22(branch), scope, next_origin);
           branches := (exp1, eql) :: branches;
         end for;
       then
@@ -2486,7 +2496,7 @@ algorithm
 
     case SCode.EEquation.EQ_REINIT(info = info)
       algorithm
-        if eqScope <> EquationScope.WHEN then
+        if intBitAnd(origin, ExpOrigin.WHEN) == 0 then
           Error.addSourceMessage(Error.REINIT_NOT_IN_WHEN, {}, info);
           fail();
         end if;
@@ -2522,31 +2532,35 @@ end makeSource;
 function instAlgorithmSections
   input list<SCode.AlgorithmSection> algorithmSections;
   input InstNode scope;
+  input ExpOrigin.Type origin;
   output list<Algorithm> algs;
 algorithm
-  algs := list(instAlgorithmSection(alg, scope) for alg in algorithmSections);
+  algs := list(instAlgorithmSection(alg, scope, origin) for alg in algorithmSections);
 end instAlgorithmSections;
 
 function instAlgorithmSection
   input SCode.AlgorithmSection algorithmSection;
   input InstNode scope;
+  input ExpOrigin.Type origin;
   output Algorithm alg;
 algorithm
-  alg := Algorithm.ALGORITHM(instStatements(algorithmSection.statements, scope),
+  alg := Algorithm.ALGORITHM(instStatements(algorithmSection.statements, scope, origin),
                              DAE.emptyElementSource);
 end instAlgorithmSection;
 
 function instStatements
   input list<SCode.Statement> scodeStmtl;
   input InstNode scope;
+  input ExpOrigin.Type origin;
   output list<Statement> statements;
 algorithm
-  statements := list(instStatement(stmt, scope) for stmt in scodeStmtl);
+  statements := list(instStatement(stmt, scope, origin) for stmt in scodeStmtl);
 end instStatements;
 
 function instStatement
   input SCode.Statement scodeStmt;
   input InstNode scope;
+  input ExpOrigin.Type origin;
   output Statement statement;
 algorithm
   statement := match scodeStmt
@@ -2557,6 +2571,7 @@ algorithm
       list<tuple<Expression, list<Statement>>> branches;
       SourceInfo info;
       InstNode for_scope, iter;
+      ExpOrigin.Type next_origin;
 
     case SCode.Statement.ALG_ASSIGN(info = info)
       algorithm
@@ -2569,21 +2584,24 @@ algorithm
       algorithm
         oexp := instExpOpt(scodeStmt.range, scope, info);
         (for_scope, iter) := addIteratorToScope(scodeStmt.index, scope, info);
-        stmtl := instStatements(scodeStmt.forBody, for_scope);
+        next_origin := intBitOr(origin, ExpOrigin.FOR);
+        stmtl := instStatements(scodeStmt.forBody, for_scope, next_origin);
       then
         Statement.FOR(iter, oexp, stmtl, makeSource(scodeStmt.comment, info));
 
     case SCode.Statement.ALG_IF(info = info)
       algorithm
         branches := {};
+        next_origin := intBitOr(origin, ExpOrigin.FOR);
+
         for branch in (scodeStmt.boolExpr, scodeStmt.trueBranch) :: scodeStmt.elseIfBranch loop
           exp1 := instExp(Util.tuple21(branch), scope, info);
-          stmtl := instStatements(Util.tuple22(branch), scope);
+          stmtl := instStatements(Util.tuple22(branch), scope, next_origin);
           branches := (exp1, stmtl) :: branches;
         end for;
 
         if not listEmpty(scodeStmt.elseBranch) then
-          stmtl := instStatements(scodeStmt.elseBranch, scope);
+          stmtl := instStatements(scodeStmt.elseBranch, scope, next_origin);
           branches := (Expression.BOOLEAN(true), stmtl) :: branches;
         end if;
       then
@@ -2591,10 +2609,21 @@ algorithm
 
     case SCode.Statement.ALG_WHEN_A(info = info)
       algorithm
+        if origin > 0 then
+          if intBitAnd(origin, ExpOrigin.WHEN) > 0 then
+            Error.addSourceMessageAndFail(Error.NESTED_WHEN, {}, info);
+          elseif intBitAnd(origin, ExpOrigin.INITIAL) > 0 then
+            Error.addSourceMessageAndFail(Error.INITIAL_WHEN, {}, info);
+          else
+            Error.addSourceMessageAndFail(Error.INVALID_WHEN_STATEMENT_CONTEXT, {}, info);
+          end if;
+        end if;
+
         branches := {};
         for branch in scodeStmt.branches loop
           exp1 := instExp(Util.tuple21(branch), scope, info);
-          stmtl := instStatements(Util.tuple22(branch), scope);
+          next_origin := intBitOr(origin, ExpOrigin.WHEN);
+          stmtl := instStatements(Util.tuple22(branch), scope, next_origin);
           branches := (exp1, stmtl) :: branches;
         end for;
       then
@@ -2629,7 +2658,8 @@ algorithm
     case SCode.Statement.ALG_WHILE(info = info)
       algorithm
         exp1 := instExp(scodeStmt.boolExpr, scope, info);
-        stmtl := instStatements(scodeStmt.whileBody, scope);
+        next_origin := intBitOr(origin, ExpOrigin.WHILE);
+        stmtl := instStatements(scodeStmt.whileBody, scope, next_origin);
       then
         Statement.WHILE(exp1, stmtl, makeSource(scodeStmt.comment, info));
 
@@ -2641,7 +2671,7 @@ algorithm
 
     case SCode.Statement.ALG_FAILURE()
       algorithm
-        stmtl := instStatements(scodeStmt.stmts, scope);
+        stmtl := instStatements(scodeStmt.stmts, scope, origin);
       then
         Statement.FAILURE(stmtl, makeSource(scodeStmt.comment, scodeStmt.info));
 
@@ -2747,38 +2777,24 @@ algorithm
   end if;
 end insertGeneratedInners;
 
-function markStructuralParams
+function updateImplicitVariability
   input InstNode node;
 protected
   Class cls = InstNode.getClass(node);
   ClassTree cls_tree;
-  Sections sections;
 algorithm
   () := match cls
-    case Class.INSTANCED_CLASS(elements = cls_tree as ClassTree.FLAT_TREE(),
-                               sections = sections)
+    case Class.INSTANCED_CLASS(elements = cls_tree as ClassTree.FLAT_TREE())
       algorithm
         for c in cls_tree.components loop
           if not InstNode.isEmpty(c) then
-            markStructuralParamsComp(c);
+            updateImplicitVariabilityComp(c);
           end if;
         end for;
 
-        () := match sections
-          case Sections.SECTIONS()
-            algorithm
-              for eq in sections.equations loop
-                markStructuralParamsEq(eq);
-              end for;
-
-              for ieq in sections.initialEquations loop
-                markStructuralParamsEq(ieq);
-              end for;
-            then
-              ();
-
-          else ();
-        end match;
+        Sections.apply(cls.sections,
+          function updateImplicitVariabilityEq(inWhen = false),
+          updateImplicitVariabilityAlg);
       then
         ();
 
@@ -2788,15 +2804,15 @@ algorithm
           markStructuralParamsDim(dim);
         end for;
 
-        markStructuralParams(cls.baseClass);
+        updateImplicitVariability(cls.baseClass);
       then
         ();
 
     else ();
   end match;
-end markStructuralParams;
+end updateImplicitVariability;
 
-function markStructuralParamsComp
+function updateImplicitVariabilityComp
   input InstNode component;
 protected
   Component c = InstNode.component(InstNode.resolveOuter(component));
@@ -2808,13 +2824,13 @@ algorithm
           markStructuralParamsDim(dim);
         end for;
 
-        markStructuralParams(c.classInst);
+        updateImplicitVariability(c.classInst);
       then
         ();
 
     else ();
   end match;
-end markStructuralParamsComp;
+end updateImplicitVariabilityComp;
 
 function markStructuralParamsDim
   input Dimension dimension;
@@ -2838,14 +2854,12 @@ end markStructuralParamsDim;
 
 function markStructuralParamsExp
   input Expression exp;
-  input output Integer dummy = 0;
 algorithm
-  Expression.fold(exp, markStructuralParamsExp_traverser, dummy);
+  Expression.apply(exp, markStructuralParamsExp_traverser);
 end markStructuralParamsExp;
 
 function markStructuralParamsExp_traverser
   input Expression exp;
-  input output Integer dummy;
 algorithm
   () := match exp
     local
@@ -2875,12 +2889,32 @@ algorithm
   end match;
 end markStructuralParamsExp_traverser;
 
-function markStructuralParamsEq
+function updateImplicitVariabilityEql
+  input list<Equation> eql;
+  input Boolean inWhen = false;
+algorithm
+  for eq in eql loop
+    updateImplicitVariabilityEq(eq, inWhen);
+  end for;
+end updateImplicitVariabilityEql;
+
+function updateImplicitVariabilityEq
   input Equation eq;
+  input Boolean inWhen = false;
 algorithm
   () := match eq
     local
       Expression exp;
+      list<Equation> eql;
+      Boolean all_params;
+
+    case Equation.EQUALITY()
+      algorithm
+        if inWhen then
+          markImplicitWhenExp(eq.lhs);
+        end if;
+      then
+        ();
 
     case Equation.CONNECT()
       algorithm
@@ -2889,23 +2923,114 @@ algorithm
       then
         ();
 
+    case Equation.FOR()
+      algorithm
+        updateImplicitVariabilityEql(eq.body, inWhen);
+      then
+        ();
+
     case Equation.IF()
       algorithm
-        for branch in eq.branches loop
-          (exp, _) := branch;
+        all_params := true;
 
-          if Expression.variability(exp) == Variability.PARAMETER then
+        for branch in eq.branches loop
+          (exp, eql) := branch;
+
+          if all_params and Expression.variability(exp) == Variability.PARAMETER then
             markStructuralParamsExp(exp);
           else
-            return;
+            all_params := false;
           end if;
+
+          updateImplicitVariabilityEql(eql);
+        end for;
+      then
+        ();
+
+    case Equation.WHEN()
+      algorithm
+        for branch in eq.branches loop
+          (_, eql) := branch;
+          updateImplicitVariabilityEql(eql, inWhen = true);
         end for;
       then
         ();
 
     else ();
   end match;
-end markStructuralParamsEq;
+end updateImplicitVariabilityEq;
+
+function updateImplicitVariabilityAlg
+  input Algorithm alg;
+algorithm
+  updateImplicitVariabilityStmts(alg.statements);
+end updateImplicitVariabilityAlg;
+
+function updateImplicitVariabilityStmts
+  input list<Statement> stmtl;
+  input Boolean inWhen = false;
+algorithm
+  for s in stmtl loop
+    updateImplicitVariabilityStmt(s, inWhen);
+  end for;
+end updateImplicitVariabilityStmts;
+
+function updateImplicitVariabilityStmt
+  input Statement stmt;
+  input Boolean inWhen;
+algorithm
+  () := match stmt
+    case Statement.ASSIGNMENT()
+      algorithm
+        if inWhen then
+          markImplicitWhenExp(stmt.lhs);
+        end if;
+      then
+        ();
+
+    case Statement.FOR()
+      algorithm
+        // 'when' is not allowed in 'for', so we only need to keep going if
+        // we're already in a 'when'.
+        if inWhen then
+          updateImplicitVariabilityStmts(stmt.body);
+        end if;
+      then
+        ();
+
+    case Statement.IF()
+      algorithm
+        // 'when' is not allowed in 'if', so we only need to keep going if
+        // we're already in a 'when.
+        if inWhen then
+          for branch in stmt.branches loop
+            updateImplicitVariabilityStmts(Util.tuple22(branch));
+          end for;
+        end if;
+      then
+        ();
+
+    case Statement.WHEN()
+      algorithm
+        for branch in stmt.branches loop
+          updateImplicitVariabilityStmts(Util.tuple22(branch), true);
+        end for;
+      then
+        ();
+
+    case Statement.WHILE()
+      algorithm
+        // 'when' is not allowed in 'while', so we only need to keep going if
+        // we're already in a 'when.
+        if inWhen then
+          updateImplicitVariabilityStmts(stmt.body);
+        end if;
+      then
+        ();
+
+    else ();
+  end match;
+end updateImplicitVariabilityStmt;
 
 function markStructuralParamsSubs
   input Expression exp;
@@ -2927,12 +3052,44 @@ function markStructuralParamsSub
   input output Integer dummy;
 algorithm
   () := match sub
-    case Subscript.UNTYPED() algorithm markStructuralParamsExp(sub.exp); then ();
-    case Subscript.INDEX() algorithm markStructuralParamsExp(sub.index); then ();
-    case Subscript.SLICE() algorithm markStructuralParamsExp(sub.slice); then ();
+      case Subscript.UNTYPED() algorithm markStructuralParamsExp(sub.exp); then ();
+      case Subscript.INDEX() algorithm markStructuralParamsExp(sub.index); then ();
+      case Subscript.SLICE() algorithm markStructuralParamsExp(sub.slice); then ();
     else ();
   end match;
 end markStructuralParamsSub;
+
+function markImplicitWhenExp
+  input Expression exp;
+algorithm
+  Expression.apply(exp, markImplicitWhenExp_traverser);
+end markImplicitWhenExp;
+
+function markImplicitWhenExp_traverser
+  input Expression exp;
+algorithm
+  () := match exp
+    local
+      InstNode node;
+      Component comp;
+
+    case Expression.CREF(cref = ComponentRef.CREF(node = node))
+      algorithm
+        if InstNode.isComponent(node) then
+          comp := InstNode.component(node);
+
+          if Component.variability(comp) == Variability.CONTINUOUS then
+            comp := Component.setVariability(Variability.IMPLICITLY_DISCRETE, comp);
+            InstNode.updateComponent(comp, node);
+          end if;
+        end if;
+      then
+        ();
+
+    else ();
+  end match;
+end markImplicitWhenExp_traverser;
+
 
 annotation(__OpenModelica_Interface="frontend");
 end NFInst;
