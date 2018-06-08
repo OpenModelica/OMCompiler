@@ -358,6 +358,7 @@ algorithm
              else
                Binding.FLAT_BINDING(e, var)
            for e in binding_exp.elements);
+
     else
       algorithm
         Error.assertion(false, getInstanceName() + " got non-record binding " +
@@ -397,7 +398,7 @@ algorithm
       binding_exp := Ceval.evalExp(binding_exp);
     end if;
 
-    if not Expression.isRecord(binding_exp) then
+    if not Expression.isLiteral(binding_exp) then
       name := ComponentRef.prefixCref(node, ty, {}, prefix);
       eq := Equation.EQUALITY(Expression.CREF(ty, name),  binding_exp, ty,
         ElementSource.createElementSource(InstNode.info(node)));
