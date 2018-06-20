@@ -396,7 +396,7 @@ static void* parseString(const char* data, const char* interactiveFilename, int 
 #include "../../OMEncryption/Parser/parseEncryption.c"
 #endif
 
-static void* parseFile(const char* fileName, const char* infoName, int flags, const char *encoding, int langStd, int runningTestsuite)
+static void* parseFile(const char* fileName, const char* infoName, int flags, const char *encoding, int langStd, int runningTestsuite, const char* libraryPath, void* lveInstance)
 {
   bool debug         = false; //check_debug_flag("parsedebug");
 
@@ -422,7 +422,7 @@ static void* parseFile(const char* fileName, const char* infoName, int flags, co
 
 #ifdef OMENCRYPTION
   if (len > 3 && 0==strcmp(fileName+len-4,".moc")) {
-    return parseEncryptedFile(fileName, members.filename_C, langStd, runningTestsuite);
+    return parseEncryptedFile(fileName, members.filename_C, langStd, runningTestsuite, libraryPath, lveInstance);
   }
 #else
   if (len > 3 && 0==strcmp(fileName+len-4,".moc")) {
@@ -452,4 +452,20 @@ static void* parseFile(const char* fileName, const char* infoName, int flags, co
     return NULL;
   }
   return parseStream(input, langStd, runningTestsuite);
+}
+
+int startLibraryVendorExecutable(const char* path, void** lveInstance)
+{
+  *lveInstance = mmc_mk_some(0);
+#ifdef OMENCRYPTION
+  return startLibraryVendorExecutableImpl(path, lveInstance);
+#endif
+  return 0;
+}
+
+void stopLibraryVendorExecutable(void** lveInstance)
+{
+#ifdef OMENCRYPTION
+  stopLibraryVendorExecutableImpl(lveInstance);
+#endif
 }
