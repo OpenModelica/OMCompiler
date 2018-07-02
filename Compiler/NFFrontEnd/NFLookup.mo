@@ -359,7 +359,7 @@ function lookupSimpleName
   input InstNode scope;
   output InstNode node;
 protected
-  InstNode cur_scope = scope;
+  InstNode cur_scope = InstNode.classScope(scope);
 algorithm
   // Look for the name in each enclosing scope, until it's either found or we
   // run out of scopes.
