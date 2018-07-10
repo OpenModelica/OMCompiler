@@ -8,17 +8,17 @@
 #include <Solver/Nox/NOX_StatusTest_SgnChange.H>
 
 
-class Nox : public IAlgLoopSolver
+class Nox : public INonLinearAlgLoopSolver
 {
 public:
-  Nox(INonLinearAlgLoop* algLoop, INonLinSolverSettings* settings);
+  Nox(INonLinSolverSettings* settings);
   virtual ~Nox();
 
   /// (Re-) initialize the solver
   virtual void initialize();
 
   /// Solution of a (non-)linear system of equations
-  virtual void solve();
+  virtual void solve(shared_ptr<INonLinearAlgLoop> algLoop,bool restart = false);
 
   /// Returns the status of iteration
   virtual ITERATIONSTATUS getIterationStatus();

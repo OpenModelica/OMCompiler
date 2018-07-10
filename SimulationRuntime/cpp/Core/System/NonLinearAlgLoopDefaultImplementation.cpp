@@ -17,6 +17,8 @@ NonLinearAlgLoopDefaultImplementation::NonLinearAlgLoopDefaultImplementation()
   ,_res(NULL)
   ,_AData(NULL)
   ,_Ax(NULL)
+  ,_x0(NULL)
+, _firstcall(true)
 {
 }
 
@@ -57,6 +59,13 @@ bool NonLinearAlgLoopDefaultImplementation::getUseSparseFormat(){
 void NonLinearAlgLoopDefaultImplementation::setUseSparseFormat(bool value){
   _useSparseFormat = value;
 }
+
+void NonLinearAlgLoopDefaultImplementation::getRealStartValues(double* vars) const
+{
+
+	 memcpy(vars, _x0, sizeof(double) * _dimAEq);
+}
+
 
 //void NonLinearAlgLoopDefaultImplementation::getSparseAdata(double* data, int nonzeros)
 //{

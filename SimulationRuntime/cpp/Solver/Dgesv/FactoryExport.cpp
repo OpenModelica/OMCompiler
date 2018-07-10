@@ -27,9 +27,9 @@ shared_ptr<ILinSolverSettings> createDgesvSolverSettings()
        shared_ptr<ILinSolverSettings> settings = shared_ptr<ILinSolverSettings>(new DgesvSolverSettings());
         return settings;
    }
-shared_ptr<IAlgLoopSolver> createDgesvSolver(ILinearAlgLoop* algLoop,shared_ptr<ILinSolverSettings> solver_settings)
+shared_ptr<ILinearAlgLoopSolver> createDgesvSolver(shared_ptr<ILinSolverSettings> solver_settings)
 {
-  shared_ptr<IAlgLoopSolver> solver = shared_ptr<IAlgLoopSolver>(new DgesvSolver(algLoop,solver_settings.get()));
+  shared_ptr<ILinearAlgLoopSolver> solver = shared_ptr<ILinearAlgLoopSolver>(new DgesvSolver(solver_settings.get()));
   return solver;
 }
 

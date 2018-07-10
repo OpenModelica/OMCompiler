@@ -8,9 +8,9 @@
 #if defined(__vxworks)
 #include <Solver/LinearSolver/LinearSolver.h>
 
-extern "C" IAlgLoopSolver* createLinearSolver(ILinearAlgLoop* algLoop,ILinSolverSettings*)
+extern "C" ILinearAlgLoopSolver* createLinearSolver(ILinSolverSettings* settings)
 {
-  return new LinearSolver(algLoop);
+  return new LinearSolver(settings);
 }
 
 
@@ -24,7 +24,7 @@ extern "C" IAlgLoopSolver* createLinearSolver(ILinearAlgLoop* algLoop,ILinSolver
 using boost::extensions::factory;
 
 BOOST_EXTENSION_TYPE_MAP_FUNCTION {
-types.get<std::map<std::string, factory<IAlgLoopSolver,ILinearAlgLoop*,ILinSolverSettings*> > >()
+types.get<std::map<std::string, factory<ILinearAlgLoopSolver,ILinSolverSettings*> > >()
     ["linearSolver"].set<LinearSolver>();
 types.get<std::map<std::string, factory<ILinSolverSettings> > >()
     ["linearSolverSettings"].set<LinearSolverSettings>();
@@ -38,9 +38,9 @@ shared_ptr<ILinSolverSettings> createLinearSolverSettings()
        shared_ptr<ILinSolverSettings> settings = shared_ptr<ILinSolverSettings>(new LinearSolverSettings());
         return settings;
    }
-shared_ptr<IAlgLoopSolver> createLinearSolver(ILinearAlgLoop* algLoop,shared_ptr<ILinSolverSettings> solver_settings)
+shared_ptr<ILinearAlgLoopSolver> createLinearSolver(shared_ptr<ILinSolverSettings> solver_settings)
 {
-  shared_ptr<IAlgLoopSolver> solver = shared_ptr<IAlgLoopSolver>(new LinearSolver(algLoop,solver_settings.get()));
+  shared_ptr<ILinearAlgLoopSolver> solver = shared_ptr<ILinearAlgLoopSolver>(new LinearSolver(solver_settings.get()));
   return solver;
 }
 

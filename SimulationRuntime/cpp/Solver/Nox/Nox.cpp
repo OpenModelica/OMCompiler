@@ -24,8 +24,8 @@
 
 
 //!Constructor
-Nox::Nox(INonLinearAlgLoop* algLoop, INonLinSolverSettings* settings)
-	: _algLoop            (algLoop)
+Nox::Nox(INonLinSolverSettings* settings)
+	: _algLoop            (NULL)
 	, _noxSettings        ((INonLinSolverSettings*)settings)
 	, _iterationStatus    (CONTINUE)
 	, _y                  (NULL)
@@ -66,8 +66,10 @@ Nox::~Nox()
 void Nox::initialize()
 {
 	_firstCall = false;
-	_algLoop->initialize();//this sets values in the real variable
-
+	 if(_algLoop)
+      _algLoop->initialize();
+    else
+	  throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
 
 	if(_y) delete [] _y;
 	if(_y0) delete [] _y0;
@@ -133,7 +135,7 @@ void Nox::initialize()
  *  For detailed calibration, check https://trilinos.org/docs/dev/packages/nox/doc/html/parameters.html
  *
  */
-void Nox::solve()
+void Nox::solve( shared_ptr<INonLinearAlgLoop> algLoop,bool restart)
 {
 	int iter=-1; //Iterationcount of proper methods
 	NOX::StatusTest::StatusType status;
@@ -144,11 +146,16 @@ void Nox::solve()
   LOGGER_WRITE_BEGIN("Nox: start solving algebraic loop no. " + to_string(_algLoop->getEquationIndex()) + " at Simulation time " + to_string(_algLoop->getSimTime()), _lc, LL_DEBUG);
 
   //setup solver
-  if (_firstCall){
-    LOGGER_WRITE("initialize...",_lc, LL_DEBUG);
+  if (!restart)
+  {
+
+	LOGGER_WRITE("initialize...",_lc, LL_DEBUG);
+    _algLoop = algLoop;
     initialize();
-    LOGGER_WRITE("init done!",_lc, LL_DEBUG);
+	LOGGER_WRITE("init done!",_lc, LL_DEBUG);
   }
+  if(!_algLoop)
+    throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
 
 	// Create the list of solver parameters. For detailed calibration, check https://trilinos.org/docs/dev/packages/nox/doc/html/parameters.html
   _solverParametersPtr = Teuchos::rcp(new Teuchos::ParameterList);
@@ -350,7 +357,7 @@ void Nox::solve()
  *
  *  \details Details
  */
-IAlgLoopSolver::ITERATIONSTATUS Nox::getIterationStatus()
+INonLinearAlgLoopSolver::ITERATIONSTATUS Nox::getIterationStatus()
 {
 	return _iterationStatus;
 }
@@ -364,6 +371,9 @@ IAlgLoopSolver::ITERATIONSTATUS Nox::getIterationStatus()
  */
 void Nox::stepCompleted(double time)
 {
+   if(!_algLoop)
+      throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
+
 	memcpy(_y0,_y,_dimSys*sizeof(double));
   memcpy(_y_old,_y_new,_dimSys*sizeof(double));
   memcpy(_y_new,_y,_dimSys*sizeof(double));
@@ -402,6 +412,8 @@ void Nox::restoreNewValues()
  */
 void Nox::check4EventRetry(double* y)
 {
+	 if(!_algLoop)
+      throw ModelicaSimulationError(ALGLOOP_SOLVER, "algloop system is not initialized");
 	_algLoop->setReal(y);
 	if(!(_algLoop->isConsistent()) && !_eventRetry)
 	{

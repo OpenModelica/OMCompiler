@@ -9,9 +9,9 @@
 #include <Solver/Newton/Newton.h>
 #include <Solver/Newton/NewtonSettings.h>
 
-extern "C" IAlgLoopSolver* createNewton(INonLinearAlgLoop* algLoop, INonLinSolverSettings* settings)
+extern "C" INonLinearAlgLoopSolver* createNewton(INonLinSolverSettings* settings)
 {
-  return new Newton(algLoop, settings);
+  return new Newton(settings);
 }
 
 extern "C" INonLinSolverSettings* createNewtonSettings()
@@ -28,7 +28,7 @@ extern "C" INonLinSolverSettings* createNewtonSettings()
 using boost::extensions::factory;
 
 BOOST_EXTENSION_TYPE_MAP_FUNCTION {
-  types.get<std::map<std::string, factory<IAlgLoopSolver,INonLinearAlgLoop*, INonLinSolverSettings*> > >()
+  types.get<std::map<std::string, factory<INonLinearAlgLoopSolver, INonLinSolverSettings*> > >()
     ["newton"].set<Newton>();
   types.get<std::map<std::string, factory<INonLinSolverSettings> > >()
     ["newtonSettings"].set<NewtonSettings>();
@@ -44,9 +44,9 @@ shared_ptr<INonLinSolverSettings> createNewtonSettings()
   return settings;
 }
 
-shared_ptr<IAlgLoopSolver> createNewtonSolver(INonLinearAlgLoop* algLoop, shared_ptr<INonLinSolverSettings> solver_settings)
+shared_ptr<INonLinearAlgLoopSolver> createNewtonSolver(shared_ptr<INonLinSolverSettings> solver_settings)
 {
-  shared_ptr<IAlgLoopSolver> solver = shared_ptr<IAlgLoopSolver>(new Newton(algLoop,solver_settings.get()));
+  shared_ptr<INonLinearAlgLoopSolver> solver = shared_ptr<INonLinearAlgLoopSolver>(new Newton(solver_settings.get()));
   return solver;
 }
 

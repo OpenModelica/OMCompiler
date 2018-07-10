@@ -16,11 +16,11 @@
  see documentation: http://www.math.utah.edu/software/minpack/minpack/hybrj.html
 */
 
-class Hybrj : public IAlgLoopSolver
+class Hybrj : public INonLinearAlgLoopSolver
 {
 public:
 
-    Hybrj(INonLinearAlgLoop* algLoop,INonLinSolverSettings* settings);
+    Hybrj(INonLinSolverSettings* settings);
 
     virtual ~Hybrj();
 
@@ -28,7 +28,7 @@ public:
     virtual void initialize();
 
     /// Solution of a (non-)linear system of equations
-    virtual void solve();
+    virtual void solve(shared_ptr<INonLinearAlgLoop> algLoop,bool restart_solver = false);
 
     /// Returns the status of iteration
     virtual ITERATIONSTATUS getIterationStatus();
@@ -50,8 +50,7 @@ private:
     INonLinSolverSettings
         *_newtonSettings;            ///< Settings for the solver
 
-    INonLinearAlgLoop
-        *_algLoop;                    ///< Algebraic loop to be solved
+    shared_ptr<INonLinearAlgLoop> _algLoop;                    ///< Algebraic loop to be solved
 
     ITERATIONSTATUS
         _iterationStatus;            ///< Output        - Denotes the status of iteration
