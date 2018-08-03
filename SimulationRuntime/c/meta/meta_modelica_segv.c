@@ -231,9 +231,22 @@ void init_metamodelica_segv_handler()
   sigfillset(&segvset);
 }
 
+
+#ifdef HAS_STACK_CACHING
+__thread int mmc_cache_stack = 0;
+#endif
 void mmc_init_stackoverflow(threadData_t *threadData)
 {
-  threadData->stackBottom = getStackBase();
+#ifdef HAS_STACK_CACHING
+  static __thread void *stackBottom;
+  if (!stackBottom || !mmc_cache_stack)
+#else
+  void *stackBottom;
+#endif
+  {
+    stackBottom = getStackBase();
+  }
+  threadData->stackBottom = stackBottom;
 }
 
 #else

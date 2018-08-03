@@ -57,6 +57,11 @@ static inline void mmc_init_stackoverflow(threadData_t *threadData)
 void mmc_init_stackoverflow(threadData_t *threadData);
 #endif
 
+#ifdef __linux
+#define HAS_STACK_CACHING
+extern __thread int mmc_cache_stack;
+#endif
+
 #ifndef __has_builtin
   #define __has_builtin(x) 0  /* Compatibility with non-clang compilers */
 #endif
