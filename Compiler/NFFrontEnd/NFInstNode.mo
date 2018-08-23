@@ -1383,6 +1383,8 @@ uniontype InstNode
         Class cls;
         list<DAE.Var> vars;
         ClassInf.State state;
+        Restriction restriction;
+        Boolean expandFull;
 
       case CLASS_NODE()
         algorithm
@@ -1393,7 +1395,10 @@ uniontype InstNode
 
             else
               algorithm
-                state := Restriction.toDAE(Class.restriction(cls), scopePath(clsNode));
+                restriction := Class.restriction(cls);
+                // full expansion if record!
+                expandFull := Restriction.isRecord(restriction);
+                state := Restriction.toDAE(restriction, scopePath(clsNode, expandFull));
                 vars := ConvertDAE.makeTypeVars(clsNode);
                 outType := DAE.Type.T_COMPLEX(state, vars, NONE());
                 Pointer.update(clsNode.cls, Class.DAE_TYPE(outType));
