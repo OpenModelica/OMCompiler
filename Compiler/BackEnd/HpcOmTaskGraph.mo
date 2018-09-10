@@ -802,14 +802,15 @@ protected
   BackendDAE.StrongComponents comps;
   BackendDAE.Matching matching;
   BackendDAE.EquationArray orderedEqs;
+  BackendDAE.Variables systVars;
   list<Integer> eventEqs;
   list<Integer> eventEqsIn;
   Integer offset;
 algorithm
-  BackendDAE.EQSYSTEM(orderedEqs=orderedEqs,matching=matching) := systIn;
+  BackendDAE.EQSYSTEM(orderedEqs=orderedEqs,orderedVars=systVars,matching=matching) := systIn;
   comps := BackendDAEUtil.getCompsOfMatching(matching);
   (eventEqsIn,offset) := eventInfoIn;
-  eventEqs := getEventNodeEqs1(comps,offset,{});
+  eventEqs := getEventNodeEqs1(comps,orderedEqs,systVars,offset,{});
   offset := offset+ExpandableArray.getNumberOfElements(orderedEqs);
   eventEqs := listAppend(eventEqs,eventEqsIn);
   eventInfoOut := (eventEqs,offset);
@@ -818,6 +819,8 @@ end getEventNodeEqs;
 protected function getEventNodeEqs1 "author: Waurich TUD 2013-06
   Fold-function for getEventNodeEqs to compute the when equation in an eqSystem."
   input BackendDAE.StrongComponents comps;
+  input BackendDAE.EquationArray orderedEqs;
+  input BackendDAE.Variables systVars;
   input Integer offset;
   input list<Integer> eventEqsIn;
   output list<Integer> eventEqsOut;
@@ -827,7 +830,7 @@ algorithm
       Integer eqn;
       Integer sysCount;
       list<Integer> eventEqs;
-      list<Integer> condVars;
+      list<BackendDAE.Var> eqnVars;
       BackendDAE.StrongComponents rest;
       BackendDAE.StrongComponent head;
     case((head::rest),_,_)
@@ -835,13 +838,22 @@ algorithm
         true = isWhenEquation(head);
         BackendDAE.SINGLEWHENEQUATION(eqn = eqn) = head;
         eqn = eqn+offset;
-        eventEqs = getEventNodeEqs1(rest,offset,eqn::eventEqsIn);
+        eventEqs = getEventNodeEqs1(rest,orderedEqs,systVars,offset,eqn::eventEqsIn);
+      then
+        eventEqs;
+    // discrete variables
+    case((head::rest),_,_)
+      equation
+        (eqnVars,_,_,eventEqs) = BackendDAEUtil.getStrongComponentVarsAndEquations(head, systVars, orderedEqs);
+        true = List.mapBoolAnd(eqnVars, BackendVariable.isVarDiscrete);
+        eventEqs = list(i+offset for i in eventEqs);
+        eventEqs = getEventNodeEqs1(rest,orderedEqs,systVars,offset,listAppend(eventEqs,eventEqsIn));
       then
         eventEqs;
     case((head::rest),_,_)
       equation
         false = isWhenEquation(head);
-        eventEqs = getEventNodeEqs1(rest,offset,eventEqsIn);
+        eventEqs = getEventNodeEqs1(rest,orderedEqs,systVars,offset,eventEqsIn);
       then
         eventEqs;
     case({},_,_)
