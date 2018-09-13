@@ -771,12 +771,32 @@ algorithm
       prevClockedVars := (simVar, isPrevVar[i])::prevClockedVars;
       clockedVars := simVar::clockedVars;
       if isPrevVar[i] then
-        cr := simVar.name;
-        simVar.name := ComponentReference.crefPrefixPrevious(cr);
-        clockedVars := simVar::clockedVars;
-        simEq := SimCode.SES_SIMPLE_ASSIGN(ouniqueEqIndex, simVar.name, DAE.CREF(cr, simVar.type_), DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN);
-         equations := simEq::equations;
-        ouniqueEqIndex := ouniqueEqIndex + 1;
+        // add variable $CLKPRE.var and equation $CLKPRE.var = var
+        (clockedVars, equations, ouniqueEqIndex) := match simVar
+        local
+          DAE.Ident ident;
+        case SimCodeVar.SIMVAR(arrayCref = SOME(_))
+          // the first element of an array -- generate array assignment
+          algorithm
+          cr := match simVar.name case DAE.CREF_QUAL(ident=ident) then
+            DAE.CREF_QUAL(ident, DAE.T_ARRAY(simVar.type_, {}), {}, cr);
+          case DAE.CREF_IDENT(ident=ident) then
+            DAE.CREF_IDENT(ident, DAE.T_ARRAY(simVar.type_, {}), {});
+          end match;
+          simVar.name := ComponentReference.crefPrefixPrevious(cr);
+          simEq := SimCode.SES_SIMPLE_ASSIGN(ouniqueEqIndex, simVar.name, DAE.CREF(cr, simVar.type_), DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN);
+          then (simVar::clockedVars, simEq::equations, ouniqueEqIndex + 1);
+        case SimCodeVar.SIMVAR(numArrayElement = {})
+          // a scalar variable -- generate regular assignment
+          algorithm
+          cr := simVar.name;
+          simVar.name := ComponentReference.crefPrefixPrevious(cr);
+          simEq := SimCode.SES_SIMPLE_ASSIGN(ouniqueEqIndex, simVar.name, DAE.CREF(cr, simVar.type_), DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN);
+          then (simVar::clockedVars, simEq::equations, ouniqueEqIndex + 1);
+        else
+          // skip individual array elements
+          then (clockedVars, equations, ouniqueEqIndex);
+        end match;
       end if;
     end for;
     GC.free(isPrevVar);
