@@ -868,6 +868,11 @@ algorithm
     case DAE.CALL(path=Absyn.IDENT(name="previous"), expLst={DAE.CREF(componentRef=cr1)}) then (cr1, "previous");
     else fail();
   end match;
+  if call1 <> "" and Config.simCodeTarget() <> "Cpp" or call1 == "pre" then
+    // only Cpp runtime supports collapsed calls, except pre(array), see e.g.
+    // Modelica_Synchronous.Examples.Elementary.RealSignals.SampleWithADeffects
+    fail();
+  end if;
   // Check that the first element starts at index [1,...,1]
   subs := ComponentReference.crefLastSubs(cr1);
   true := ndim==listLength(subs);
