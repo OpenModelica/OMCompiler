@@ -2718,8 +2718,14 @@ algorithm
 
   if allowVector and Type.isVector(ty) then
     (_, _, mk) := TypeCheck.matchTypes(Type.arrayElementType(ty), Type.BOOLEAN(), condition);
+    if TypeCheck.isIncompatibleMatch(mk) then
+      (_, _, mk) := TypeCheck.matchTypes(Type.arrayElementType(ty), Type.CLOCK(), condition);
+    end if;
   else
     (_, _, mk) := TypeCheck.matchTypes(ty, Type.BOOLEAN(), condition);
+    if TypeCheck.isIncompatibleMatch(mk) then
+      (_, _, mk) := TypeCheck.matchTypes(ty, Type.CLOCK(), condition);
+    end if;
   end if;
 
   if TypeCheck.isIncompatibleMatch(mk) then
