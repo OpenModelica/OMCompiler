@@ -1500,9 +1500,7 @@ algorithm
   outAllEquations := inEq::inAllEquations;
 
   outOdeEquations := if bdynamic and not skipDiscrete then inEq::inOdeEquations else inOdeEquations;
-  // FIXME: actually discrete equtaions should be also skipable in the algebraic equations
-  //        but currently the event handling with sample operator fail if they are skipped
-  outAlgebraicEquations := if not bdynamic then inEq::inAlgebraicEquations else inAlgebraicEquations;
+  outAlgebraicEquations := if not bdynamic and not skipDiscrete then inEq::inAlgebraicEquations else inAlgebraicEquations;
   outEquationsforZeroCrossings := if bzceqns and not skipDiscrete then inEq::inEquationsforZeroCrossings else inEquationsforZeroCrossings;
 end addEquationsToLists;
 
@@ -1563,7 +1561,7 @@ algorithm
       String message;
 
     // case used for then inline solver, if "not createAlgebraicEquations = true"
-    case _ guard not (createAlgebraicEquations or bdynamic) or skip and not createAlgebraicEquations
+    case _ guard ((not bdynamic) or skip) and not createAlgebraicEquations
     then (uniqueEqIndex, odeEquations, algebraicEquations, allEquations, equationsforZeroCrossings,
             tempvars, eqSccMapping, eqBackendSimCodeMapping, backendMapping, sccIndex);
 

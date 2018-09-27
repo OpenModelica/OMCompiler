@@ -278,6 +278,8 @@ void handleEvents(DATA* data, threadData_t *threadData, LIST* eventLst, double *
     debugStreamPrint(LOG_EVENTS, 0, "next sample-event at t = %g", data->simulationInfo->nextSampleEvent);
 
     solverInfo->sampleEvents++;
+    /* update the whole system */
+    updateDiscreteSystem(data, threadData);
   }
 
   TRACE_POP
