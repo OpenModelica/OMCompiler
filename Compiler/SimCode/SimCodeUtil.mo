@@ -2104,6 +2104,11 @@ algorithm
       BackendDAE.EquationAttributes eqAttr;
       Boolean b;
 
+    // array equation that may result from -d=-nfScalarize and is assumed solved
+    case BackendDAE.ARRAY_EQUATION(left = DAE.CREF(componentRef = cr), right = e2, source = source, attr = eqAttr)
+      then
+        ({SimCode.SES_SIMPLE_ASSIGN(iuniqueEqIndex, cr, e2, source, eqAttr)}, iuniqueEqIndex + 1, itempvars);
+
     // solved equation
     case BackendDAE.SOLVED_EQUATION(exp=e2, source=source, attr=eqAttr)
       algorithm
@@ -6274,25 +6279,25 @@ algorithm
     vars := createVars(dlow, inInitDAE, tempVars);
     if debug then execStat("simCode: createVars"); end if;
     BackendDAE.DAE(shared=BackendDAE.SHARED(info=BackendDAE.EXTRA_INFO(description=description))) := dlow;
-    nx := listLength(vars.stateVars);
-    ny := listLength(vars.algVars);
-    ndy := listLength(vars.discreteAlgVars);
-    ny_int := listLength(vars.intAlgVars);
-    ny_bool := listLength(vars.boolAlgVars);
-    numOutVars := listLength(vars.outputVars);
-    numInVars := listLength(vars.inputVars);
-    na := listLength(vars.aliasVars);
-    na_int := listLength(vars.intAliasVars);
-    na_bool := listLength(vars.boolAliasVars);
-    np := listLength(vars.paramVars);
-    np_int := listLength(vars.intParamVars);
-    np_bool := listLength(vars.boolParamVars);
-    ny_string := listLength(vars.stringAlgVars);
-    np_string := listLength(vars.stringParamVars);
-    na_string := listLength(vars.stringAliasVars);
-    next := listLength(vars.extObjVars);
-    numOptimizeConstraints := listLength(vars.realOptimizeConstraintsVars);
-    numOptimizeFinalConstraints := listLength(vars.realOptimizeFinalConstraintsVars);
+    nx := getNumScalars(vars.stateVars);
+    ny := getNumScalars(vars.algVars);
+    ndy := getNumScalars(vars.discreteAlgVars);
+    ny_int := getNumScalars(vars.intAlgVars);
+    ny_bool := getNumScalars(vars.boolAlgVars);
+    numOutVars := getNumScalars(vars.outputVars);
+    numInVars := getNumScalars(vars.inputVars);
+    na := getNumScalars(vars.aliasVars);
+    na_int := getNumScalars(vars.intAliasVars);
+    na_bool := getNumScalars(vars.boolAliasVars);
+    np := getNumScalars(vars.paramVars);
+    np_int := getNumScalars(vars.intParamVars);
+    np_bool := getNumScalars(vars.boolParamVars);
+    ny_string := getNumScalars(vars.stringAlgVars);
+    np_string := getNumScalars(vars.stringParamVars);
+    na_string := getNumScalars(vars.stringAliasVars);
+    next := getNumScalars(vars.extObjVars);
+    numOptimizeConstraints := getNumScalars(vars.realOptimizeConstraintsVars);
+    numOptimizeFinalConstraints := getNumScalars(vars.realOptimizeFinalConstraintsVars);
     if debug then execStat("simCode: get lengths"); end if;
     varInfo := createVarInfo(dlow, nx, ny, ndy, np, na, next, numOutVars, numInVars,
                              ny_int, np_int, na_int, ny_bool, np_bool, na_bool, ny_string, np_string, na_string,
@@ -7974,7 +7979,7 @@ protected function setVariableIndexHelper2
   input SimCodeVar.SimVar inVar;
   input Integer inIndex;
   output SimCodeVar.SimVar outVar = inVar;
-  output Integer outIndex = inIndex + 1;
+  output Integer outIndex = inIndex + getNumElems(inVar);
 algorithm
   outVar.variable_index := SOME(inIndex);
 end setVariableIndexHelper2;
@@ -10367,11 +10372,20 @@ algorithm
           arrayName = ComponentReference.crefStripLastSubs(name);
         end if;
 
-        if(ComponentReference.crefEqual(arrayName, name)) then
-          //print("Array not found\n");
+        _ = match iVar
+        case SimCodeVar.SIMVAR(type_ = DAE.T_ARRAY()) equation
+          // store array dimensions and
+          // index of first element to indicate a contiguous array
+          arrayDimensions = List.map(List.lastN(numArrayElement, listLength(numArrayElement)), stringInt);
+          varIndices = arrayCreate(1, varIdx);
+          tmpVarToArrayIndexMapping = BaseHashTable.add((arrayName, (arrayDimensions, varIndices)), tmpVarToArrayIndexMapping);
+        then ();
+        else equation if (ComponentReference.crefEqual(arrayName, name)) then
+          // scalar variable
           varIndices = arrayCreate(1, varIdx);
           tmpVarToArrayIndexMapping = BaseHashTable.add((arrayName, ({1},varIndices)), tmpVarToArrayIndexMapping);
         else
+          // store array dimensions and build up list of indices for elements
           if(BaseHashTable.hasKey(arrayName, tmpVarToArrayIndexMapping)) then
             ((arrayDimensions,varIndices)) = BaseHashTable.get(arrayName, tmpVarToArrayIndexMapping);
           else
@@ -10381,11 +10395,12 @@ algorithm
             varIndices = arrayCreate(List.fold(arrayDimensions, intMul, 1), 0);
           end if;
           //print("Num of array elements {" + stringDelimitList(List.map(arrayDimensions, intString), ",") + "} : " + intString(listLength(arraySubscripts)) + "  arraySubs "+ExpressionDump.printSubscriptLstStr(arraySubscripts) + "  arrayDimensions[ "+stringDelimitList(List.map(arrayDimensions,intString),",")+"]\n");
-          arrayIndex = getUnrolledArrayIndex(arraySubscripts,arrayDimensions);
+          arrayIndex = getScalarElementIndex(arraySubscripts, arrayDimensions);
           //print("VarIndices: " + intString(arrayLength(varIndices)) + " arrayIndex: " + intString(arrayIndex) + " varIndex: " + intString(varIdx) + "\n");
           varIndices = arrayUpdate(varIndices, arrayIndex, varIdx);
           tmpVarToArrayIndexMapping = BaseHashTable.add((arrayName, (arrayDimensions,varIndices)), tmpVarToArrayIndexMapping);
-        end if;
+        end if; then ();
+        end match;
       then ((tmpCurrentVarIndices, tmpVarToArrayIndexMapping, tmpVarToIndexMapping));
     else
       equation
@@ -10425,7 +10440,7 @@ algorithm
     case(SimCodeVar.SIMVAR(name=name, aliasvar=SimCodeVar.NOALIAS()),_,tmpCurrentVarIndices)
       equation
         //print("getArrayIdxByVar: Handling common variable\n");
-        (varIdx,tmpCurrentVarIndices) = getVarToArrayIndexByType(iVarType, tmpCurrentVarIndices);
+        (varIdx,tmpCurrentVarIndices) = getVarToArrayIndexByType(iVar, iVarType, tmpCurrentVarIndices);
       then varIdx;
     case(SimCodeVar.SIMVAR(name=name, aliasvar=SimCodeVar.NEGATEDALIAS(varName)),_,_)
       equation
@@ -10453,13 +10468,21 @@ end getArrayIdxByVar;
 
 protected function getVarToArrayIndexByType "author: marcusw
   Return the the current variable index of the given tuple, regarding the given type. The index-tuple is incremented and returned."
+  input SimCodeVar.SimVar iVar;
   input Integer iVarType; //1 = real ; 2 = int ; 3 = bool ; 4 = string
   output Integer oVarIdx;
   input output array<Integer> iCurrentVarIndices;
 algorithm
   try
     oVarIdx := arrayGet(iCurrentVarIndices, iVarType);
-    arrayUpdate(iCurrentVarIndices, iVarType, oVarIdx+1);
+    _ := match iVar
+      case SimCodeVar.SIMVAR(type_ = DAE.T_ARRAY()) algorithm
+        arrayUpdate(iCurrentVarIndices, iVarType, oVarIdx + getNumElems(iVar));
+        then ();
+      else algorithm
+        arrayUpdate(iCurrentVarIndices, iVarType, oVarIdx + 1);
+        then ();
+    end match;
   else
     Error.addMessage(Error.INTERNAL_ERROR, {"GetVarToArrayIndexByType with unknown type called."});
     oVarIdx := -1;
@@ -10504,13 +10527,19 @@ protected
   list<DAE.Subscript> arraySubscripts;
   list<Integer> arrayDimensions, arrayDimensionsReverse;
   Boolean toColumnMajor;
+  Boolean isContiguous;
 algorithm
   arraySubscripts := ComponentReference.crefLastSubs(varName);
   varName := ComponentReference.crefStripLastSubs(varName);//removeSubscripts(varName);
   if(BaseHashTable.hasKey(varName, iVarToArrayIndexMapping)) then
     ((arrayDimensions,varIndices)) := BaseHashTable.get(varName, iVarToArrayIndexMapping); //varIndices are rowMajorOrder!
-    arraySize := arrayLength(varIndices);
-    concreteVarIndex := getUnrolledArrayIndex(arraySubscripts,arrayDimensions);
+    isContiguous := arrayLength(varIndices) == 1;
+    if isContiguous then
+      arraySize := List.fold(arrayDimensions, intMul, 1);
+    else
+      arraySize := arrayLength(varIndices);
+    end if;
+    concreteVarIndex := getScalarElementIndex(arraySubscripts, arrayDimensions);
     toColumnMajor := iColumnMajor and listLength(arrayDimensions) > 1;
     if toColumnMajor then
       concreteVarIndex := convertIndexToColumnMajor(concreteVarIndex, arrayDimensions);
@@ -10523,7 +10552,11 @@ algorithm
         // convert to row major so that column major access will give this idx
         idx := convertIndexToColumnMajor(idx, arrayDimensionsReverse);
       end if;
-      idx := arrayGet(varIndices, idx);
+      if isContiguous then
+        idx := arrayGet(varIndices, 1) + idx - 1;
+      else
+        idx := arrayGet(varIndices, idx);
+      end if;
       if(intLt(idx, 0)) then
         tmpVarIndexListNew := intString((intMul(idx, -1) - 1))::tmpVarIndexListNew;
         //print("SimCodeUtil.tmpVarIndexListNew: Warning, negativ aliases (" + ComponentReference.printComponentRefStr(iVarName) + ") are not supported at the moment!\n");
@@ -10619,7 +10652,7 @@ algorithm
   oIsConsecutive := consecutive;
 end isVarIndexListConsecutive;
 
-protected function getUnrolledArrayIndex
+protected function getScalarElementIndex
  "Calculate the one based memory offset for consecutive row major storage,
   author: rfranke"
   input list<DAE.Subscript> arraySubscripts;
@@ -10635,7 +10668,7 @@ algorithm
     arrayIndex := arrayIndex + (idx - 1) * fac;
     fac := fac * listGet(arrayDimensions, i);
   end for;
-end getUnrolledArrayIndex;
+end getScalarElementIndex;
 
 public function createIdxSCVarMapping "author: marcusw
   Create a mapping from the SCVar-Index (array-Index) to the SCVariable, as it is used in the c-runtime."
@@ -12014,15 +12047,18 @@ else
   // create empty model structure
   try
     // create empty derivatives dependencies
-    derivatives := list(createFmiUnknownFromSimVar(v,1) for v in inModelInfo.vars.derivativeVars);
+    derivatives := list(SimCode.FMIUNKNOWN(getVariableIndex(v), {}, {})
+                        for v in getScalarVars(inModelInfo.vars.derivativeVars));
 
     // create empty output dependencies
     varsA := List.filterOnTrue(inModelInfo.vars.algVars, isOutputSimVar);
-    outputs := list(createFmiUnknownFromSimVar(v,1) for v in varsA);
+    outputs := list(SimCode.FMIUNKNOWN(getVariableIndex(v), {}, {})
+                    for v in getScalarVars(varsA));
 
     // create empty clockedStates dependencies
     clockedStates := List.filterOnTrue(inModelInfo.vars.algVars, isClockedStateSimVar);
-    discreteStates := list(createFmiUnknownFromSimVar(v,1) for v in clockedStates);
+    discreteStates := list(SimCode.FMIUNKNOWN(getVariableIndex(v), {}, {})
+                           for v in getScalarVars(clockedStates));
 
     contPartSimDer := NONE();
 
@@ -12075,15 +12111,6 @@ algorithm
     else false;
   end match;
 end isFmiUnknown;
-
-protected function createFmiUnknownFromSimVar
-"create a basic FMIUNKNOWN without dependencies from a SimVar"
-  input SimCodeVar.SimVar var;
-  input Integer indexOffset;
-  output SimCode.FmiUnknown unknown;
-algorithm
-  unknown := SimCode.FMIUNKNOWN(var.index + indexOffset, {}, {});
-end createFmiUnknownFromSimVar;
 
 protected function translateSparsePatterInts2FMIUnknown
 "function translates simVar integers to fmi unknowns."
@@ -12177,6 +12204,108 @@ algorithm
   stateVar := listGet(inStateVars, inIndex + 1 - (if Config.simCodeTarget()=="Cpp" then 0 else listLength(inStateVars)) /* SimVar indexes start from zero */);
   outVariableIndex := getVariableIndex(stateVar);
 end getStateSimVarIndexFromIndex;
+
+protected
+function getNumScalars
+  "Get number of elements when rolling out all arrays of a variable list.
+   author: rfranke"
+  input list<SimCodeVar.SimVar> vars;
+  output Integer numScalars;
+algorithm
+  numScalars := List.applyAndFold(vars, intAdd, getNumElems, 0);
+end getNumScalars;
+
+protected
+function getNumElems
+  "Get number of scalar elements of a variable, rolling out arrays.
+   author: rfranke"
+  input SimCodeVar.SimVar var;
+  output Integer numElems;
+algorithm
+  numElems := match var
+    case SimCodeVar.SIMVAR(type_ = DAE.T_ARRAY()) algorithm
+      numElems := 1;
+      for i in 1:listLength(var.numArrayElement) loop
+        numElems := numElems * stringInt(listGet(var.numArrayElement, i));
+      end for;
+      then numElems;
+    else 1;
+  end match;
+end getNumElems;
+
+public
+function getScalarElements
+  "Get scalar elements of an array in row major order. This is
+   needed by templates for XML files that only support scalar variables.
+   author: rfranke"
+  input SimCodeVar.SimVar var;
+  output list<SimCodeVar.SimVar> elts;
+protected
+  list<Integer> dims;
+  SimCodeVar.SimVar elt;
+  Integer index;
+algorithm
+  // create list of elements
+  elts := match var
+  case SimCodeVar.SIMVAR(type_ = DAE.T_ARRAY(), variable_index = SOME(index)) algorithm
+    dims := List.map(List.lastN(var.numArrayElement, listLength(var.numArrayElement)), stringInt);
+    elt := var;
+    elt.type_ := Types.arrayElementType(var.type_);
+    elts := fillScalarElements(elt, dims, 1, {}, {});
+    elts := setVariableIndexHelper(elts, index);
+  then elts;
+  else {var};
+  end match;
+end getScalarElements;
+
+protected
+function fillScalarElements
+  "Helper for getScalarElements, called recursively for each dimension.
+   author: rfranke"
+  input SimCodeVar.SimVar eltIn;
+  input list<Integer> dims;
+  input Integer dimIdx;
+  input list<DAE.Subscript> subsIn;
+  input output list<SimCodeVar.SimVar> elts;
+protected
+  SimCodeVar.SimVar elt = eltIn;
+  list<DAE.Subscript> subs;
+algorithm
+  for i in listGet(dims, dimIdx):-1:1 loop
+    subs := DAE.INDEX(DAE.ICONST(i)) :: subsIn;
+    if dimIdx < listLength(dims) then
+      elts := fillScalarElements(eltIn, dims, dimIdx + 1, subs, elts);
+    else
+      // add subscripts to array element
+      subs := listReverse(subs);
+      elt.name := ComponentReference.crefSetLastSubs(elt.name, subs);
+      // add subscripts to previousName
+      _ := match elt
+        local
+          DAE.ComponentRef cref;
+          Boolean fixed;
+        case SimCodeVar.SIMVAR(varKind = BackendDAE.CLOCKED_STATE(previousName = cref, isStartFixed = fixed))
+        algorithm
+          elt.varKind := BackendDAE.CLOCKED_STATE(ComponentReference.crefSetLastSubs(cref, subs), fixed);
+        then ();
+        else ();
+      end match;
+      elts := elt :: elts;
+    end if;
+  end for;
+end fillScalarElements;
+
+protected
+function getScalarVars
+"Expand all arrays in a vector of SimVars. author: rfranke"
+  input list<SimCodeVar.SimVar> inVars;
+  output list<SimCodeVar.SimVar> outVars;
+algorithm
+  outVars := {};
+  for var in inVars loop
+    outVars := listAppend(outVars, getScalarElements(var));
+  end for;
+end getScalarVars;
 
 public function getVariableIndex
   input SimCodeVar.SimVar inVar;
@@ -12617,11 +12746,23 @@ algorithm
       SimCodeVar.SimVar sv;
       SimCode.HashTableCrefToSimVar crefToSimVarHT;
       String errstr;
-
+      list<DAE.Subscript> subs;
+      Integer index;
     case (cref, SimCode.SIMCODE(crefToSimVarHT = crefToSimVarHT) )
-      equation
-        sv = BaseHashTable.get(cref, crefToSimVarHT);
-        sv = match sv.aliasvar
+      algorithm
+        if BaseHashTable.hasKey(cref, crefToSimVarHT) then
+          sv := BaseHashTable.get(cref, crefToSimVarHT);
+        else
+          // lookup array variable and add offset for array element
+          sv := BaseHashTable.get(ComponentReference.crefStripLastSubs(cref), crefToSimVarHT);
+          subs := ComponentReference.crefLastSubs(cref);
+          sv.name := ComponentReference.crefSetLastSubs(sv.name, subs);
+          sv.variable_index := match sv.variable_index
+            case SOME(index)
+            then SOME(index + getScalarElementIndex(subs, List.map(sv.numArrayElement, stringInt)) - 1);
+          end match;
+        end if;
+        sv := match sv.aliasvar
           case SimCodeVar.NOALIAS() then sv;
           case SimCodeVar.ALIAS(varName=cref) then cref2simvar(cref, simCode); /* Possibly not needed; can't really hurt that much though */
           case SimCodeVar.NEGATEDALIAS() then sv;
