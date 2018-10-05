@@ -36,6 +36,7 @@ import logging
 import sys
 import time
 import hashlib
+import base64
 from optparse import OptionParser
 
 import svgwrite
@@ -93,7 +94,7 @@ regex_points = re.compile('{('+exp_float+'), ('+exp_float+')}')
 
 # example: Bitmap(true, {0.0, 0.0}, 0, {{-98, 98}, {98, -98}}, "modelica://Modelica/Resources/Images/Mechanics/MultiBody/Visualizers/TorusIcon.png"
 # TODO: where is the imageSource?
-regex_bitmap = re.compile('Bitmap\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), ({{'+exp_float+', '+exp_float+'}(?:, {'+exp_float+', '+exp_float+'})*}), ("[^"]*")')
+regex_bitmap = re.compile('Bitmap\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), {{('+exp_float+'), ('+exp_float+')}, {('+exp_float+'), ('+exp_float+')}}, ("[^"]*")(?:, ("[^"]*"))?')
 
 # anything unknown that produces output should look like this: Trash(...
 regex_any = re.compile('(\w+)\(')
@@ -287,18 +288,16 @@ def getGraphicsForClass(modelicaClass):
         if r:
             g = r.groups()
             graphicsObj['type'] = 'Bitmap'
-            # Bitmap(true, {0.0, 0.0}, 0, {{-98, 98}, {98, -98}}, "modelica://Modelica/Resources/Images/Mechanics/MultiBody/Visualizers/TorusIcon.png"
-
             graphicsObj['visible'] = g[0]
             graphicsObj['origin'] = [float(g[1]), float(g[2])]
             graphicsObj['rotation'] = float(g[3])
-
-            points = []
-            gg = re.findall(regex_points, g[4])
-            for i in range(0, len(gg)):
-                points.append([float(gg[i][0]), float(gg[i][1])])
-            graphicsObj['points'] = points
-            graphicsObj['href'] = g[5].strip('"')
+            graphicsObj['extent'] = [[float(g[4]), float(g[5])], [float(g[6]), float(g[7])]]
+            if g[9] is not None:
+                graphicsObj['href'] = "data:image;base64,"+g[9].strip('"')
+            else:
+                fname = ask_omc('uriToFilename', g[8], parsed=False).strip().strip('"')
+                fdata = open(fname, "rb").read()
+                graphicsObj['href'] = "data:image;base64,"+base64.b64encode(fdata)
 
         if not 'type' in graphicsObj:
             r = regex_any.search(icon_line)
@@ -528,7 +527,7 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
 
     origin = graphics['origin']
 
-    if graphics['type'] == 'Rectangle' or graphics['type'] == 'Ellipse' or graphics['type'] == 'Text':
+    if graphics['type'] == 'Rectangle' or graphics['type'] == 'Ellipse' or graphics['type'] == 'Text' or graphics['type'] == "Bitmap":
         (x0, y0) = getCoordinates(graphics['extent'][0], graphics, minX, maxY, transformation, coordinateSystem)
         (x1, y1) = getCoordinates(graphics['extent'][1], graphics, minX, maxY, transformation, coordinateSystem)
 
@@ -684,9 +683,18 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
             shape.add(svgwrite.text.TSpan(graphics['textString'], **extra))
 
     elif graphics['type'] == 'Bitmap':
-        logger.warning('Not supported: {0}'.format(graphics['type']))
-        shape = dwg.image(graphics['href']) # put in correct URL or base64 data "data:image/png;base64,", need width/height?
-        return shape, definitions
+        xmin = x0
+        ymin = y0
+        xmax = x1
+        ymax = y1
+
+        if x0 > x1:
+            xmin = x1
+            xmax = x0
+        if y0 > y1:
+            ymin = y1
+            ymax = y0
+        shape = dwg.image(graphics['href'], x=xmin,y=ymin,width=xmax-xmin,height=ymax-ymin) # put in correct URL or base64 data "data:image;base64,"
 
     elif graphics['type'] == 'Empty':
         return None
@@ -1020,7 +1028,8 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
 
                 definitions.add(gradient)
     else:
-        shape.fill('none', opacity=0)
+        if graphics['type'] != 'Bitmap':
+            shape.fill('none', opacity=0)
 
     return shape, definitions
 
