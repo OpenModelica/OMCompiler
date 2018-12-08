@@ -196,10 +196,55 @@ public
           end for;
         then
           ();
+
+      else ();
     end match;
 
     func(stmt);
   end apply;
+
+  function map
+    input output Statement stmt;
+    input MapFn func;
+
+    partial function MapFn
+      input output Statement stmt;
+    end MapFn;
+  algorithm
+    () := match stmt
+      case FOR()
+        algorithm
+          stmt.body := list(map(s, func) for s in stmt.body);
+        then
+          ();
+
+      case IF()
+        algorithm
+          stmt.branches := list(
+            (Util.tuple21(b),
+             list(map(s, func) for s in Util.tuple22(b))) for b in stmt.branches);
+        then
+          ();
+
+      case WHEN()
+        algorithm
+          stmt.branches := list(
+            (Util.tuple21(b),
+             list(map(s, func) for s in Util.tuple22(b))) for b in stmt.branches);
+        then
+          ();
+
+      case WHILE()
+        algorithm
+          stmt.body := list(map(s, func) for s in stmt.body);
+        then
+          ();
+
+      else ();
+    end match;
+
+    stmt := func(stmt);
+  end map;
 
   function mapExpList
     input output list<Statement> stmtl;
@@ -372,6 +417,79 @@ public
       else ();
     end match;
   end foldExp;
+
+  function toString
+    input Statement stmt;
+    output String str;
+  algorithm
+    str := match stmt
+      local
+        String s1, s2;
+
+      case ASSIGNMENT()
+        then Expression.toString(stmt.lhs) + " := " + Expression.toString(stmt.rhs);
+
+      case FUNCTION_ARRAY_INIT()
+        then "array init " + stmt.name;
+
+      case FOR()
+        algorithm
+          s1 := if isSome(stmt.range) then " in " + Expression.toString(Util.getOption(stmt.range)) else "";
+          s2 := toStringList(stmt.body);
+        then
+          "for " + InstNode.name(stmt.iterator) + s1 + " loop\n" + s2 + "end for";
+
+      case IF()
+        then branchString(listHead(stmt.branches), "if", true) +
+             stringDelimitList(list(branchString(b, "if", false) for b in listRest(stmt.branches)), "\n") +
+             "\nend if";
+
+      case WHEN()
+        then branchString(listHead(stmt.branches), "when", true) +
+             stringDelimitList(list(branchString(b, "when", false) for b in listRest(stmt.branches)), "\n") +
+             "\nwhen if";
+
+      case ASSERT()
+        then "assert(" + Expression.toString(stmt.condition) + ", " +
+             Expression.toString(stmt.message) + ", " + Expression.toString(stmt.level) + ")";
+
+      case TERMINATE()
+        then "terminate( " + Expression.toString(stmt.message) + ")";
+
+      case NORETCALL()
+        then Expression.toString(stmt.exp);
+
+      case WHILE()
+        then "while " + Expression.toString(stmt.condition) + " then\n" +
+             toStringList(stmt.body) + "\nend while";
+
+      case RETURN() then "return";
+      case BREAK() then "break";
+      else "#UNKNOWN STATEMENT#";
+    end match;
+  end toString;
+
+  function branchString
+    input tuple<Expression, list<Statement>> branch;
+    input String stmtType;
+    input Boolean firstBranch;
+    output String str;
+  protected
+    Expression cond;
+    list<Statement> body;
+  algorithm
+    (cond, body) := branch;
+
+    str := (if firstBranch then stmtType elseif Expression.isTrue(cond) then "else" else "else" + stmtType) +
+           " " + Expression.toString(cond) + "then\n" + toStringList(body);
+  end branchString;
+
+  function toStringList
+    input list<Statement> stmtl;
+    output String str;
+  algorithm
+    str := List.toString(stmtl, toString, "", " " , "\n  ", "", false) + "\n";
+  end toStringList;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFStatement;

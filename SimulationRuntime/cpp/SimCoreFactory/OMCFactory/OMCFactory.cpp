@@ -89,6 +89,12 @@ class LoggerXMLTCP: public LoggerXML
   std::stringstream _sstream;
 };
 
+inline void normalizePath(std::string& path)
+{
+  if (path.length() > 0 && path[path.length() - 1] != '/')
+    path += "/";
+}
+
 /**
  * Implementation of OMCFactory
  */
@@ -307,6 +313,8 @@ SimSettings OMCFactory::readSimulationParameter(int argc, const char* argv[])
           ("nls-continue", po::bool_switch()->default_value(false), "non linear solver will continue if it can not reach the given precision")
           ("runtime-library,R", po::value<string>(), "path to cpp runtime libraries")
           ("modelica-system-library,M",  po::value<string>(), "path to Modelica library")
+          ("input-path", po::value< string >(), "directory with input files, like init xml (defaults to modelica-system-library)")
+          ("output-path", po::value< string >(), "directory for output files, like results (defaults to modelica-system-library)")
           ("results-file,F", po::value<vector<string> >(),"name of results file")
           ("start-time,S", po::value< double >()->default_value(0.0), "simulation start time")
           ("stop-time,E", po::value< double >()->default_value(1.0), "simulation stop time")
@@ -331,7 +339,7 @@ SimSettings OMCFactory::readSimulationParameter(int argc, const char* argv[])
      descHidden.add_options()
           ("ignored", po::value<vector<string> >(), "ignored options")
           ("unrecognized", po::value<vector<string> >(), "unsupported options")
-          ("solverThreads", po::value<int>()->default_value(1), "number of threads that can be used by the solver")
+          ("solver-threads", po::value<int>()->default_value(1), "number of threads that can be used by the solver")
           ;
 
      po::options_description descAll("All options");
@@ -375,20 +383,21 @@ SimSettings OMCFactory::readSimulationParameter(int argc, const char* argv[])
      double stoptime = vm["stop-time"].as<double>();
      double stepsize =vm["step-size"].as<double>();
      bool nlsContinueOnError = vm["nls-continue"].as<bool>();
-     int solverThreads = vm["solverThreads"].as<int>();
+     int solverThreads = vm["solver-threads"].as<int>();
 
      if (!(stepsize > 0.0))
          stepsize = (stoptime - starttime) / vm["number-of-intervals"].as<int>();
 
-     double tolerance =vm["tolerance"].as<double>();
-     string solver =  vm["solver"].as<string>();
-     string nonLinSolver =  vm["non-lin-solver"].as<string>();
-     string linSolver =  vm["lin-solver"].as<string>();
-     unsigned int timeOut =  vm["alarm"].as<unsigned int>();
+     double tolerance = vm["tolerance"].as<double>();
+     string solver = vm["solver"].as<string>();
+     string nonLinSolver = vm["non-lin-solver"].as<string>();
+     string linSolver = vm["lin-solver"].as<string>();
+     unsigned int timeOut = vm["alarm"].as<unsigned int>();
      if (vm.count("runtime-library"))
      {
          //cout << "runtime library path set to " << vm["runtime-library"].as<string>() << endl;
          runtime_lib_path = vm["runtime-library"].as<string>();
+         normalizePath(runtime_lib_path);
      }
      else
          throw ModelicaSimulationError(MODEL_FACTORY,"runtime libraries path is not set");
@@ -396,10 +405,25 @@ SimSettings OMCFactory::readSimulationParameter(int argc, const char* argv[])
      if (vm.count("modelica-system-library"))
      {
          //cout << "Modelica library path set to " << vm["Modelica-system-library"].as<string>()  << endl;
-         modelica_lib_path =vm["modelica-system-library"].as<string>();
+         modelica_lib_path = vm["modelica-system-library"].as<string>();
+         normalizePath(modelica_lib_path);
      }
      else
          throw ModelicaSimulationError(MODEL_FACTORY,"Modelica library path is not set");
+
+     string inputPath, outputPath;
+     if (vm.count("input-path")) {
+         inputPath = vm["input-path"].as<string>();
+         normalizePath(inputPath);
+     }
+     else
+         inputPath = modelica_lib_path;
+     if (vm.count("output-path")) {
+         outputPath = vm["output-path"].as<string>();
+         normalizePath(outputPath);
+     }
+     else
+         outputPath = modelica_lib_path;
 
      string resultsfilename;
      if (vm.count("results-file"))
@@ -453,7 +477,7 @@ SimSettings OMCFactory::readSimulationParameter(int argc, const char* argv[])
      libraries_path.make_preferred();
      modelica_path.make_preferred();
 
-     SimSettings settings = {solver,linSolver,nonLinSolver,starttime,stoptime,stepsize,1e-24,0.01,tolerance,resultsfilename,timeOut,outputPointType,logSettings,nlsContinueOnError,solverThreads,outputFormat,emitResults};
+     SimSettings settings = {solver, linSolver, nonLinSolver, starttime, stoptime, stepsize, 1e-24, 0.01, tolerance, resultsfilename, timeOut, outputPointType, logSettings, nlsContinueOnError, solverThreads, outputFormat, emitResults, inputPath, outputPath};
 
      _library_path = libraries_path.string();
      _modelicasystem_path = modelica_path.string();
@@ -592,6 +616,8 @@ void OMCFactory::fillArgumentsToReplace()
   _argumentsToReplace.insert(pair<string,string>("-port", "--log-port"));
   _argumentsToReplace.insert(pair<string,string>("-alarm", "--alarm"));
   _argumentsToReplace.insert(pair<string,string>("-emit_protected", "--emit-results all"));
+  _argumentsToReplace.insert(pair<string,string>("-inputPath", "--input-path"));
+  _argumentsToReplace.insert(pair<string,string>("-outputPath", "--output-path"));
 }
 
 pair<shared_ptr<ISimController>,SimSettings>

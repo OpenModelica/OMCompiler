@@ -844,7 +844,7 @@ public function isEnumeration "Return true if Type is the builtin String type."
   input DAE.Type inType;
   output Boolean outBoolean;
 algorithm
-  outBoolean := match(inType)
+  outBoolean := match(arrayElementType(inType))
     case (DAE.T_ENUMERATION()) then true;
     else false;
   end match;
@@ -2347,8 +2347,8 @@ algorithm
   outString := match(inConst)
     case DAE.C_CONST() then "constant";
     case DAE.C_PARAM() then "parameter";
-    case DAE.C_VAR() then "";
-    case DAE.C_UNKNOWN() then "#UNKNOWN#";
+    case DAE.C_VAR() then "continuous";
+    case DAE.C_UNKNOWN() then "unknown";
   end match;
 end unparseConst;
 

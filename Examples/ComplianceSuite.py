@@ -6,22 +6,34 @@ import glob
 import simplejson
 import subprocess
 import time
+from natsort import natsorted
 
 def readTest(f, expectedFailures):
   cl = ".".join(f.split(".")[:-1])
   name = f.split(".")[-2]
   with open(f) as fin:
-    res = simplejson.load(fin)
+    try:
+      res = simplejson.load(fin)
+    except simplejson.errors.JSONDecodeError:
+      print("Error loading file %s" % f)
+      raise
+
+  expectFail = cl in expectedFailures
+
   if "killed" in res:
-    tc = TestCase(name, cl, 0, '', '')
-    tc.add_error_info('Killed or crashed')
-    return (tc, tc, cl)
+    tc1 = TestCase(name, cl, 0, '', '')
+    tc2 = TestCase(name, cl, 0, '', '')
+    if expectFail:
+      tc1.add_skipped_info('Killed or crashed; expected failure')
+    else:
+      tc1.add_error_info('Killed or crashed')
+    tc2.add_error_info('Killed or crashed')
+    return (tc1, tc2, cl)
 
   tc1 = TestCase(name, cl, res["time"], res["messages"], '')
   tc2 = TestCase(name, cl, res["time"], res["messages"], '')
   success = res["success"]
   shouldPass = res["shouldPass"]
-  expectFail = cl in expectedFailures
   if expectFail:
     if success:
       tc1.add_error_info('This testcase started working (failure was expected)')
@@ -53,9 +65,11 @@ if __name__ == '__main__':
   if expectedFailuresFile:
     with open(expectedFailuresFile) as fin:
       expectedFailures = set(l.strip() for l in fin.readlines())
+  print("=== Expected Failures ===")
   print(expectedFailures)
+  print("=== End Expected Failures ===")
 
-  res = [readTest(f, expectedFailures) for f in glob.glob("*.res")]
+  res = [readTest(f, expectedFailures) for f in natsorted(glob.glob("*.res"))]
 
   (tcs1,tcs2,failures) = zip(*res)
   ts1 = TestSuite(version, tcs1)

@@ -188,11 +188,17 @@ public function equationArraySize "author: lochel
   should correspond to the number of variables."
   input BackendDAE.EquationArray equationArray;
   output Integer outSize;
+protected
+  Boolean nfScalarize = Flags.isSet(Flags.NF_SCALARIZE);
 algorithm
   outSize := 0;
   for i in 1:ExpandableArray.getLastUsedIndex(equationArray) loop
     if ExpandableArray.occupied(i, equationArray) then
-      outSize := outSize + equationSize(ExpandableArray.get(i, equationArray));
+      if nfScalarize then
+        outSize := outSize + equationSize(ExpandableArray.get(i, equationArray));
+      else
+        outSize := outSize + 1;
+      end if;
     end if;
   end for;
 end equationArraySize;
@@ -276,6 +282,22 @@ algorithm
     end if;
   end for;
 end traverseEquationArray_WithUpdate;
+
+public
+function getForEquationIterIdent
+ "Get the iterator of a for-equation
+  author: rfranke"
+  input BackendDAE.Equation inEquation;
+  output Option<DAE.Ident> forIter;
+algorithm
+  forIter := match inEquation
+    local
+      DAE.Ident iter;
+    case BackendDAE.FOR_EQUATION(iter = DAE.CREF(componentRef = DAE.CREF_IDENT(ident = iter)))
+    then SOME(iter);
+    else NONE();
+  end match;
+end getForEquationIterIdent;
 
 public function getWhenEquationExpr "Get the left and right hand parts from an equation appearing in a when clause"
   input BackendDAE.WhenEquation inWhenEquation;
@@ -774,6 +796,7 @@ algorithm
       list<DAE.Exp> expl;
       DAE.Type tp;
       DAE.ComponentRef cr, cr1;
+      BackendDAE.Equation eqn;
       BackendDAE.WhenEquation we, we_1;
       DAE.ElementSource source;
       Integer size;
@@ -826,10 +849,9 @@ algorithm
       (eqns, extArg) = List.map1Fold(eqns, traverseExpsOfEquation, inFunc, extArg);
     then (BackendDAE.IF_EQUATION(expl, eqnslst, eqns, source, attr), extArg);
 
-    case BackendDAE.FOR_EQUATION(iter=iter,start=start,stop=stop,left=e1, right=e2, source=source, attr=attr) equation
-      (e_1, extArg) = inFunc(e1, inTypeA);
-      (e_2, extArg) = inFunc(e2, extArg);
-    then (if referenceEq(e1,e_1) and referenceEq(e2,e_2) then inEquation else BackendDAE.FOR_EQUATION(iter,start,stop,e_1,e_2,source,attr), extArg);
+    case BackendDAE.FOR_EQUATION(iter = iter, start = start, stop = stop, source = source, attr = attr) equation
+      (eqn, extArg) = traverseExpsOfEquation(inEquation.body, inFunc, inTypeA);
+    then (BackendDAE.FOR_EQUATION(iter, start, stop, eqn, source, attr), extArg);
   end match;
 end traverseExpsOfEquation;
 
@@ -1323,18 +1345,20 @@ algorithm
 
   outEquations := match (inEquation)
     local
-      DAE.Exp e, e1, e2, exp;
+      DAE.Exp e, e1, e2, exp, cond;
       DAE.ComponentRef cr;
       DAE.ElementSource source;
       BackendDAE.Equation backendEq;
       list<Integer> ds;
-      Integer size;
-      list<DAE.Exp> explst, explst2;
-      list<BackendDAE.Equation> eqns;
+      Integer size, i, branches;
+      list<DAE.Exp> explst, explst2, condExps;
+      list<BackendDAE.Equation> eqns, eqnsfalse;
+      list<list<BackendDAE.Equation>> eqnstrue;
       list<list<DAE.Subscript>> subslst;
       Real r;
       BackendDAE.EquationAttributes attr;
       list<DAE.ComponentRef> crlst, crlst2;
+      array<list<DAE.Exp>> expA;
 
     case (BackendDAE.EQUATION(exp=DAE.TUPLE(explst), scalar=e2, source=source, attr=attr)) equation
       ((_, eqns)) = List.fold3(explst,equationTupleToScalarResidualForm, e2, source, attr, (1, {}));
@@ -1402,6 +1426,42 @@ algorithm
     case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source, attr=attr)) equation
       exp = Expression.createResidualExp(e1, e2);
     then {BackendDAE.RESIDUAL_EQUATION(exp, source, attr)};
+
+    case (BackendDAE.IF_EQUATION(conditions=condExps, eqnstrue=eqnstrue, eqnsfalse=eqnsfalse, source=source, attr=attr))
+      algorithm
+      branches := listLength(condExps);
+      expA := arrayCreate(branches, {});
+      // create array<list<exp>> with true branches
+      for eqLst in eqnstrue loop
+        i := 1;
+        for eq in eqLst loop
+          {BackendDAE.RESIDUAL_EQUATION(e1, _, _)} :=  equationToScalarResidualForm(eq, funcTree);
+          expA := Array.consToElement(i, e1, expA);
+          i := i + 1;
+        end for;
+      end for;
+      // add also else branches
+      i := 1;
+      for eq in eqnsfalse loop
+        {BackendDAE.RESIDUAL_EQUATION(e1, _, _)} :=  equationToScalarResidualForm(eq, funcTree);
+        expA := Array.consToElement(i, e1, expA);
+        i := i + 1;
+      end for;
+
+      eqns := {};
+      for i in 1:branches loop
+        explst := arrayGet(expA, i);
+        //get else branch
+        e2::explst := explst;
+        explst2 := condExps;
+        for e1 in explst loop
+          cond::explst2 := explst2;
+          e2 := DAE.IFEXP(cond, e1, e2);
+        end for;
+        eqns := BackendDAE.RESIDUAL_EQUATION(e2, source, attr)::eqns;
+        //BackendDump.printEquationList(eqns);
+      end for;
+    then eqns;
 
     case (backendEq as BackendDAE.RESIDUAL_EQUATION())
     then {backendEq};
@@ -1477,6 +1537,8 @@ algorithm
       DAE.ElementSource source;
       BackendDAE.Equation backendEq;
       BackendDAE.EquationAttributes eqAttr;
+      list<list<BackendDAE.Equation>> eqnstrue;
+      list<BackendDAE.Equation> eqnsfalse;
 
     case (BackendDAE.EQUATION(exp=e1, scalar=e2, source=source, attr=eqAttr)) equation
       //ExpressionDump.dumpExpWithTitle("equationToResidualForm 1\n", e2);
@@ -1608,6 +1670,7 @@ algorithm
   source := match eq
     case BackendDAE.EQUATION(source=source) then source;
     case BackendDAE.ARRAY_EQUATION(source=source) then source;
+    case BackendDAE.FOR_EQUATION(source=source) then source;
     case BackendDAE.SOLVED_EQUATION(source=source) then source;
     case BackendDAE.RESIDUAL_EQUATION(source=source) then source;
     case BackendDAE.WHEN_EQUATION(source=source) then source;
@@ -1670,8 +1733,8 @@ algorithm
       size = equationLstSize(eqnsfalse);
     then size;
 
-    case BackendDAE.FOR_EQUATION(start=DAE.ICONST(start), stop=DAE.ICONST(stop)) equation
-      size = stop-start+1;
+    case BackendDAE.FOR_EQUATION(start = DAE.ICONST(start), stop = DAE.ICONST(stop)) equation
+      size = (stop - start + 1) * equationSize(eq.body);
     then size;
 
     else equation
@@ -1768,6 +1831,7 @@ algorithm
 
     case BackendDAE.EQUATION(attr=BackendDAE.EQUATION_ATTRIBUTES(kind=kind)) then kind;
     case BackendDAE.ARRAY_EQUATION(attr=BackendDAE.EQUATION_ATTRIBUTES(kind=kind)) then kind;
+    case BackendDAE.FOR_EQUATION(attr=BackendDAE.EQUATION_ATTRIBUTES(kind=kind)) then kind;
     case BackendDAE.SOLVED_EQUATION(attr=BackendDAE.EQUATION_ATTRIBUTES(kind=kind)) then kind;
     case BackendDAE.RESIDUAL_EQUATION(attr=BackendDAE.EQUATION_ATTRIBUTES(kind=kind)) then kind;
     case BackendDAE.WHEN_EQUATION(attr=BackendDAE.EQUATION_ATTRIBUTES(kind=kind)) then kind;
@@ -1960,6 +2024,9 @@ algorithm
 
     case (BackendDAE.ARRAY_EQUATION(dimSize=dimSize, left=lhs, right=rhs, source=source), _)
     then BackendDAE.ARRAY_EQUATION(dimSize, lhs, rhs, source, inAttr);
+
+    case (BackendDAE.FOR_EQUATION(), _)
+    then BackendDAE.FOR_EQUATION(inEqn.iter, inEqn.start, inEqn.stop, inEqn.body, inEqn.source, inAttr);
 
     case (BackendDAE.SOLVED_EQUATION(componentRef=componentRef, exp=rhs, source=source), _)
     then BackendDAE.SOLVED_EQUATION(componentRef, rhs, source, inAttr);
@@ -3071,6 +3138,50 @@ algorithm
       then fail();
   end match;
 end getEquationLHS;
+
+public function scalarComplexEquations
+"This function splits tuples and record in single equations,
+ to avoid non-linear loops.
+ e.g.: R(a,b) = R(2*x,3*y) => r.a = 2*x; r.b = 3*y
+       (a,b) = (2*g(x)[1],3*g(x)[2]) => a = 2*g(x)[1]; b = 3*g(x)[2]
+  Used after some equations have been differentiated.
+"
+  input BackendDAE.Equation inEquation;
+  input DAE.FunctionTree funcTree;
+  output list<BackendDAE.Equation> outEquations;
+algorithm
+
+  outEquations := match (inEquation)
+    local
+      DAE.Exp e1, e2;
+      DAE.ElementSource source;
+      list<DAE.Exp> explst, explst2;
+      list<BackendDAE.Equation> eqns;
+      BackendDAE.EquationAttributes attr;
+
+    case (BackendDAE.COMPLEX_EQUATION(left=DAE.TUPLE(explst), right=DAE.TUPLE(explst2), source=source, attr=attr))
+    equation
+      true = listLength(explst) == listLength(explst2);
+      eqns = List.threadMap2(explst, explst2, generateEquation, source, attr);
+    then eqns;
+
+    case (BackendDAE.COMPLEX_EQUATION(left=e1, right=e2, source=source, attr=attr))
+    guard ((Expression.isRecordCall(e1, funcTree) or Expression.isRecord(e1)) and
+           (Expression.isRecordCall(e2, funcTree) or Expression.isRecord(e2))
+          )
+    equation
+      explst = Expression.splitRecord(e1, Expression.typeof(e1));
+      explst2 = Expression.splitRecord(e2, Expression.typeof(e2));
+      true = listLength(explst) == listLength(explst2);
+      eqns = List.threadMap2(explst, explst2, generateEquation, source, attr);
+    then eqns;
+
+    else
+    then {inEquation};
+
+  end match;
+end scalarComplexEquations;
+
 
 annotation(__OpenModelica_Interface="backend");
 end BackendEquation;

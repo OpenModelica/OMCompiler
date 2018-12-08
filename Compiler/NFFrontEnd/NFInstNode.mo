@@ -44,11 +44,13 @@ import Visibility = NFPrefixes.Visibility;
 import NFModifier.Modifier;
 import SCodeDump;
 import DAE;
+import Expression = NFExpression;
 
 protected
 import List;
 import ConvertDAE = NFConvertDAE;
 import Restriction = NFRestriction;
+import NFClassTree.ClassTree;
 
 public
 uniontype InstNodeType
@@ -245,6 +247,10 @@ uniontype InstNode
     list<InstNode> locals;
   end IMPLICIT_SCOPE;
 
+  record EXP_NODE
+    Expression exp;
+  end EXP_NODE;
+
   record EMPTY_NODE end EMPTY_NODE;
 
   function new
@@ -347,6 +353,16 @@ uniontype InstNode
     end match;
   end isUserdefinedClass;
 
+  function isFunction
+    input InstNode node;
+    output Boolean isFunc;
+  algorithm
+    isFunc := match node
+      case CLASS_NODE() then Class.isFunction(Pointer.access(node.cls));
+      else false;
+    end match;
+  end isFunction;
+
   function isComponent
     input InstNode node;
     output Boolean isComponent;
@@ -397,6 +413,45 @@ uniontype InstNode
       else false;
     end match;
   end isConnector;
+
+  function isExpandableConnector
+    input InstNode node;
+    output Boolean isConnector;
+  algorithm
+    isConnector := match node
+      case COMPONENT_NODE() then Component.isExpandableConnector(component(node));
+      else false;
+    end match;
+  end isExpandableConnector;
+
+  function hasParentExpandableConnector
+  "@author: adrpo
+   returns true if itself or any of the parents are expandable connectors"
+    input InstNode node;
+    output Boolean b = isExpandableConnector(node);
+  protected
+    InstNode p;
+  algorithm
+    p := node;
+    while not isEmpty(p) loop
+      p := parent(p);
+      b := boolOr(b, isExpandableConnector(p));
+      if b then
+        break;
+      end if;
+    end while;
+  end hasParentExpandableConnector;
+
+  function isOperator
+    input InstNode node;
+    output Boolean op;
+  algorithm
+    op := match node
+      case CLASS_NODE() then SCode.isOperator(node.definition);
+      case INNER_OUTER_NODE() then isOperator(node.innerNode);
+      else false;
+    end match;
+  end isOperator;
 
   function name
     input InstNode node;
@@ -474,6 +529,11 @@ uniontype InstNode
       else EMPTY_NODE();
     end match;
   end parent;
+
+  function explicitParent
+    input InstNode node;
+    output InstNode parentNode = explicitScope(parent(node));
+  end explicitParent;
 
   function classParent
     input InstNode node;
@@ -1093,6 +1153,18 @@ uniontype InstNode
     end match;
   end openImplicitScope;
 
+  function explicitScope
+    "Returns the first parent of the node that's not an implicit scope, or the
+     node itself if it's not an implicit scope."
+    input InstNode node;
+    output InstNode scope;
+  algorithm
+    scope := match node
+      case IMPLICIT_SCOPE() then explicitScope(node.parentScope);
+      else node;
+    end match;
+  end explicitScope;
+
   function addIterator
     input InstNode iterator;
     input output InstNode scope;
@@ -1323,7 +1395,8 @@ uniontype InstNode
 
             else
               algorithm
-                state := Restriction.toDAE(Class.restriction(cls), scopePath(clsNode));
+                state := Restriction.toDAE(Class.restriction(cls),
+                                           scopePath(clsNode, includeRoot = true));
               then
                 DAE.Type.T_COMPLEX(state, {}, NONE());
 
@@ -1365,7 +1438,8 @@ uniontype InstNode
 
             else
               algorithm
-                state := Restriction.toDAE(Class.restriction(cls), scopePath(clsNode));
+                state := Restriction.toDAE(Class.restriction(cls),
+                                           scopePath(clsNode, includeRoot = true));
                 vars := ConvertDAE.makeTypeVars(clsNode);
                 outType := DAE.Type.T_COMPLEX(state, vars, NONE());
                 Pointer.update(clsNode.cls, Class.DAE_TYPE(outType));
@@ -1384,6 +1458,37 @@ uniontype InstNode
       else false;
     end match;
   end isBuiltin;
+
+  function isPartial
+    input InstNode node;
+    output Boolean isPartial;
+  algorithm
+    isPartial := match node
+      case CLASS_NODE() then SCode.isPartial(node.definition);
+      else false;
+    end match;
+  end isPartial;
+
+  function clone
+    input output InstNode node;
+  algorithm
+    () := match node
+      local
+        Class cls;
+
+      case CLASS_NODE()
+        algorithm
+          cls := Pointer.access(node.cls);
+          cls := Class.classTreeApply(cls, ClassTree.clone);
+          node.cls := Pointer.create(cls);
+          node.caches := CachedData.empty();
+        then
+          ();
+
+      else ();
+    end match;
+  end clone;
+
 end InstNode;
 
 annotation(__OpenModelica_Interface="frontend");

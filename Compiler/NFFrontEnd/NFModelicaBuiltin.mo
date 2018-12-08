@@ -106,7 +106,7 @@ annotation(Documentation(info="<html>
 </html>"));
 end floor;
 
-function integer "Round a real number towards minus infinity"
+function integer "Returns the largest integer not greater than x. The argument shall have type Real. The result has type Integer. [Note, outside of a when-clause state events are triggered when the return value changes discontinuously.]."
   input Real x;
   output Integer y;
 external "builtin";
@@ -358,8 +358,9 @@ end cross;
 function skew "The skew matrix associated with the vector"
   input Real[3] x;
   output Real[3,3] y;
-external "builtin" skew(x,y);
-  annotation(Documentation(info="<html>
+algorithm
+  y := {{0, -x[3], x[2]}, {x[3], 0, -x[1]}, {-x[2], x[1], 0}};
+annotation(__OpenModelica_EarlyInline = true, preferredView = "text", Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'skew()'\">skew()</a>
 </html>"));
 end skew;
@@ -372,18 +373,24 @@ function delay = $overload(OpenModelica.Internal.delay2,OpenModelica.Internal.de
 // function min = $overload(OpenModelica.Internal.realMin, OpenModelica.Internal.intMin
 //                         , OpenModelica.Internal.boolMin, OpenModelica.Internal.enumMin
 //                         , OpenModelica.Internal.arrayMin)
-function min = $overload(OpenModelica.Internal.scalarMin, OpenModelica.Internal.arrayMin)
+//function min = $overload(OpenModelica.Internal.scalarMin, OpenModelica.Internal.arrayMin)
+function min
+  external "builtin";
   annotation(Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'min()'\">min()</a>
 </html>"));
+end min;
 
 // function max = $overload(OpenModelica.Internal.realMax, OpenModelica.Internal.intMax
 //                         , OpenModelica.Internal.boolMax, OpenModelica.Internal.enumMax
 //                         , OpenModelica.Internal.arrayMax)
-function max = $overload(OpenModelica.Internal.scalarMax, OpenModelica.Internal.arrayMax)
+//function max = $overload(OpenModelica.Internal.scalarMax, OpenModelica.Internal.arrayMax)
+function max
+  external "builtin";
   annotation(Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'max()'\">max()</a>
 </html>"));
+end max;
 
 function sum<ArrayType, ScalarBasicType> "Sum of all array elements"
   input ArrayType a;
@@ -448,14 +455,12 @@ function cardinality "Number of connectors in connection"
 </html>"),version="Deprecated");
 end cardinality;
 
-/*
 function array "Constructs an array"
   external "builtin";
   annotation(Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'array()'\">array()</a>
 </html>"));
 end array;
-*/
 
 function zeros "Returns a zero array"
   external "builtin";
@@ -512,26 +517,54 @@ function reinit<RealOrArrayCref, RealOrArrayExpr> "Reinitialize state variable"
 </html>"));
 end reinit;
 
-impure function sample "Overloaded operator to either trigger time events or to convert between continuous-time and clocked-time representation"
-  parameter input Real start;
-  parameter input Real interval;
-  output Boolean b;
-  external "builtin";
-  annotation(Documentation(info="<html>
+function sample = $overload(OMC_NO_CLOCK.sample, OMC_CLOCK.sample)
+   "Returns the interval between the previous and present tick of the clock of its argument"
+  annotation(__OpenModelica_UnboxArguments=true, Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'sample()'\">sample()</a>
 </html>"));
-end sample;
 
-function shiftSample "First activation of clock is shifted in time"
+package OMC_NO_CLOCK
+	impure function sample "Overloaded operator to either trigger time events or to convert between continuous-time and clocked-time representation"
+	  parameter input Real start;
+	  parameter input Real interval;
+	  output Boolean b;
+	  external "builtin";
+	  annotation(Documentation(info="<html>
+	  See <a href=\"modelica://ModelicaReference.Operators.'sample()'\">sample()</a>
+	</html>"));
+	end sample;
+end OMC_NO_CLOCK;
+
+package OMC_CLOCK
+  impure function sample<T> "Overloaded operator to either trigger time events or to convert between continuous-time and clocked-time representation"
+    input T u;
+    input Clock c = OpenModelica.Internal.inferredClock();
+    output T o;
+    external "builtin";
+    annotation(version="Modelica 3.3", Documentation(info="<html>
+    See <a href=\"modelica://ModelicaReference.Operators.'sample()'\">sample()</a>
+  </html>"));
+  end sample;
+end OMC_CLOCK;
+
+function shiftSample<T> "First activation of clock is shifted in time"
+  input T u;
+  parameter input Integer shiftCounter(min = 0);
+  parameter input Integer resolution(min = 1) = 1;
+  output T c;
   external "builtin";
-  annotation(Documentation(info="<html>
+  annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'shiftSample()'\">shiftSample()</a>
 </html>"));
 end shiftSample;
 
-function backSample "First activation of clock is shifted in time before activation of u"
+function backSample<T> "First activation of clock is shifted in time before activation of u"
+  input T u;
+  parameter input Integer backCounter(min = 0);
+  parameter input Integer resolution(min = 1) = 1;
+  output T c;
   external "builtin";
-  annotation(Documentation(info="<html>
+  annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'backSample()'\">backSample()</a>
 </html>"));
 end backSample;
@@ -794,15 +827,69 @@ function previous<T> "Access previous value of a clocked variable"
 </html>"));
 end previous;
 
+function firstTick = $overload(OMC_NO_ARGS.firstTick, OMC_ARGS.firstTick)
+   "Returns the interval between the previous and present tick of the clock of its argument"
+  annotation(__OpenModelica_UnboxArguments=true, Documentation(info="<html>
+  See <a href=\"modelica://ModelicaReference.Operators.'firstTick()'\">firstTick()</a>
+</html>"));
+
+function interval = $overload(OMC_NO_ARGS.interval, OMC_ARGS.interval)
+   "Returns the interval between the previous and present tick of the clock of its argument"
+  annotation(__OpenModelica_UnboxArguments=true, Documentation(info="<html>
+  See <a href=\"modelica://ModelicaReference.Operators.'interval()'\">interval()</a>
+</html>"));
+
+package OMC_NO_ARGS
+  impure function firstTick<T>
+    "This operator returns true at the first tick of the clock of the expression, in which this operator is called. The operator returns false at all subsequent ticks of the clock. The optional argument u is only used for clock inference"
+    output Boolean b;
+    external "builtin";
+    annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
+    See <a href=\"modelica://ModelicaReference.Operators.'firstTick()'\">firstTick()</a>
+    </html>"));
+  end firstTick;
+
+  impure function interval<T>
+    "This operator returns true at the first tick of the clock of the expression, in which this operator is called. The operator returns false at all subsequent ticks of the clock. The optional argument u is only used for clock inference"
+    output Real b;
+    external "builtin";
+    annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
+    See <a href=\"modelica://ModelicaReference.Operators.'interval()'\">interval()</a>
+    </html>"));
+  end interval;
+end OMC_NO_ARGS;
+
+package OMC_ARGS
+  impure function firstTick<T>
+    "This operator returns true at the first tick of the clock of the expression, in which this operator is called. The operator returns false at all subsequent ticks of the clock. The optional argument u is only used for clock inference"
+    input T u annotation(__OpenModelica_optionalArgument=true);
+    output Boolean b;
+    external "builtin";
+    annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
+    See <a href=\"modelica://ModelicaReference.Operators.'firstTick()'\">firstTick()</a>
+    </html>"));
+  end firstTick;
+
+  impure function interval<T>
+    "This operator returns true at the first tick of the clock of the expression, in which this operator is called. The operator returns false at all subsequent ticks of the clock. The optional argument u is only used for clock inference"
+    input T u annotation(__OpenModelica_optionalArgument=true);
+    output Real b;
+    external "builtin";
+    annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
+    See <a href=\"modelica://ModelicaReference.Operators.'interval()'\">interval()</a>
+    </html>"));
+  end interval;
+end OMC_ARGS;
+
 function subSample = $overload(OpenModelica.Internal.subSampleExpression, OpenModelica.Internal.subSampleClock)
   "Conversion from faster clock to slower clock"
-  annotation(version="Modelica 3.3", Documentation(info="<html>
+  annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'subSample()'\">subSample()</a>
 </html>"));
 
 function superSample = $overload(OpenModelica.Internal.superSampleExpression, OpenModelica.Internal.superSampleClock)
   "Conversion from slower clock to faster clock"
-  annotation(version="Modelica 3.3", Documentation(info="<html>
+  annotation(__OpenModelica_UnboxArguments=true, version="Modelica 3.3", Documentation(info="<html>
   See <a href=\"modelica://ModelicaReference.Operators.'superSample()'\">superSample()</a>
 </html>"));
 
@@ -823,12 +910,6 @@ function noClock<T> "Clock of y=Clock(u) is always inferred"
   See <a href=\"modelica://ModelicaReference.Operators.'noClock()'\">noClock()</a>
 </html>"));
 end noClock;
-
-function interval = $overload(OpenModelica.Internal.intervalInferred, OpenModelica.Internal.intervalExpression)
-   "Returns the interval between the previous and present tick of the clock of its argument"
-  annotation(Documentation(info="<html>
-  See <a href=\"modelica://ModelicaReference.Operators.'interval()'\">interval()</a>
-</html>"));
 
 impure function ticksInState "Returns the number of clock ticks since a transition was made to the currently active state"
   output Integer ticks;
@@ -913,20 +994,20 @@ package Internal "Contains internal implementations, e.g. overloaded builtin fun
 
   function rationalClock
     input Integer intervalCounter(min=0);
-    parameter input Integer resolution(unit="Hz", min=1)=1;
+    parameter input Integer resolution(min = 1) = 1;
     output Clock c;
     external "builtin";
   end rationalClock;
 
   function realClock
-    input Real interval(unit="s", min=0);
+    input Real interval(unit="s", min = 0);
     output Clock c;
     external "builtin";
   end realClock;
 
   function booleanClock
     input Boolean condition;
-    input Real startInterval=0.0;
+    input Real startInterval = 0.0;
     output Clock c;
     external "builtin";
   end booleanClock;
@@ -937,18 +1018,6 @@ package Internal "Contains internal implementations, e.g. overloaded builtin fun
     output Clock clk;
     external "builtin";
   end solverClock;
-
-  function intervalInferred
-    output Real interval;
-    external "builtin" interval=interval();
-  end intervalInferred;
-
-  function intervalExpression<T>
-    input T u;
-    output Real y;
-    external "builtin" y=interval(u);
-    annotation(__OpenModelica_UnboxArguments=true);
-  end intervalExpression;
 
   impure function subSampleExpression<T>
     input T u;
@@ -1142,11 +1211,11 @@ package Internal "Contains internal implementations, e.g. overloaded builtin fun
   package Architecture
     function numBits
       output Integer numBit;
-      external "builtin";
+      external "builtin" numBit = architecture_numbits() annotation(Include="#define architecture_numbits() (8*sizeof(void*))");
     end numBits;
     function integerMax
       output Integer max;
-      external "builtin";
+      external "builtin" max = intMaxLit();
     end integerMax;
   end Architecture;
 

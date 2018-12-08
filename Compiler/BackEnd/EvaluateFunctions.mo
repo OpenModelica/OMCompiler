@@ -39,6 +39,7 @@ public import BackendDAE;
 public import DAE;
 public import HashTable2;
 public import BackendVarTransform;
+public import HashSetExp;
 
 protected import BackendDAEUtil;
 protected import BackendDump;
@@ -491,6 +492,8 @@ algorithm
 
         // get the elements of the function and the algorithms
         SOME(func) = DAE.AvlTreePathFunction.get(funcsIn,path);
+        // fail if is an external function!
+        false = DAEUtil.isExtFunction(func);
         elements = DAEUtil.getFunctionElements(func);
 
         // get the input exps from the call
@@ -499,7 +502,7 @@ algorithm
         allInputExps = List.flatten(scalarExp);
           //print("allInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
 
-        if listEmpty(elements) then  // its a record
+        if listEmpty(elements) and DAEUtil.funcIsRecord(func) then  // its a record
         //-----------------------its a record-----------------------
           expOut = DAE.TUPLE(allInputExps);
           if Flags.isSet(Flags.EVAL_FUNC_DUMP) then print("\nIts a record.\n");
@@ -2089,9 +2092,7 @@ algorithm
           stmtsList = listReverse(stmtsList);
           stmtsList = stmtsIf::stmtsList;
           allStmts = List.flatten(stmtsList);
-          lhsExps = List.fold1(allStmts,getStatementLHSScalar,funcTree,{});
-          lhsExps = List.unique(lhsExps);
-          outputs = List.map(lhsExps,Expression.expCref);
+          outputs = getStatementsOutputs(allStmts, funcTree);
 
           //check if the conditions can be evaluated, get evaluated stmts
           (isEval,stmts1,repl) = evaluateIfStatement(stmt,FUNCINFO(repl,funcTree,idx));
@@ -2188,9 +2189,7 @@ algorithm
           if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
             print("While-statement (not evaluated):\n"+DAEDump.ppStatementStr(stmt));
           end if;
-          lhsExps = List.fold1(stmts1,getStatementLHSScalar,funcTree,{});
-          lhsExps = List.unique(lhsExps);
-          outputs = List.map(lhsExps,Expression.expCref);
+          outputs = getStatementsOutputs(stmts1, funcTree);
           BackendVarTransform.removeReplacements(repl,outputs,NONE());
           if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
             print("evaluated While-statement to:\n"+DAEDump.ppStatementStr(stmt));
@@ -2284,9 +2283,7 @@ algorithm
       (stmts,_,repl,_) := evaluateFunctions_updateStatement(stmtsIn,funcTreeIn,repl,i,{});
 
       // check if any variable has been evaluated. If not, skip the loop (this is necessary for testsuite/modelica/linear_systems/problem1.mos)
-      lhsExps := List.fold1(stmts,getStatementLHSScalar,funcTreeIn,{});
-      lhsExps := List.unique(lhsExps);
-      outputs := List.map(lhsExps,Expression.expCref);
+      outputs := getStatementsOutputs(stmts, funcTreeIn);
       hasNoRepl := List.applyAndFold1(outputs,boolAnd,BackendVarTransform.hasNoReplacementCrefFirst,repl,true);
       if hasNoRepl then
         if Flags.isSet(Flags.EVAL_FUNC_DUMP) then print("For-loop evaluation is skipped, since the first loop evaluated nothing.\n"); end if;
@@ -2632,7 +2629,7 @@ algorithm
       algs = List.filterOnTrue(elements,DAEUtil.isAlgorithm);
       stmtLstLst = List.map(algs,DAEUtil.getStatement);
       stmtLst1 = List.flatten(stmtLstLst);
-      expLst = List.fold1(stmtLst1,getStatementLHSScalar,funcTree,expsIn);
+      expLst = List.fold1(stmtLst1,getStatementLHSScalar,funcTree,{});
       outputCrefs = List.map(expLst,Expression.expCref);
 
       lhsCref = Expression.expCref(exp);
@@ -2641,20 +2638,40 @@ algorithm
       outputCrefs = List.map1(outputCrefs,ComponentReference.joinCrefsR,lhsCref);
 
       expLst = List.map(outputCrefs,Expression.crefExp);
-      expLst = listAppend(expLst,expsIn);
     then
-      expLst;
+      listAppend(expLst,expsIn);
+
   case(DAE.STMT_ASSIGN_ARR(lhs=exp),_,_)
     equation
       expLst = Expression.getComplexContents(exp);
-      expLst = listAppend(expLst,expsIn);
-    then expLst;
+    then
+      listAppend(expLst, expsIn);
+
   else
     equation
-      expLst = getStatementLHS(stmt,expsIn);
-    then expLst;
+      expLst = getStatementLHS(stmt,{});
+    then
+      listAppend(expLst, expsIn);
+
   end matchcontinue;
 end getStatementLHSScalar;
+
+function getStatementsOutputs
+  input list<DAE.Statement> statements;
+  input DAE.FunctionTree funcTree;
+  output list<DAE.ComponentRef> outputs;
+protected
+  list<DAE.Exp> lhs_expl;
+  HashSetExp.HashSet lhs_set;
+algorithm
+  lhs_expl := List.fold1(statements, getStatementLHSScalar, funcTree, {});
+
+  // Use a hash set to get a list of unique elements.
+  lhs_set := HashSetExp.emptyHashSetSized(Util.nextPrime(listLength(lhs_expl)));
+  lhs_set := List.fold(lhs_expl, BaseHashSet.add, lhs_set);
+
+  outputs := list(Expression.expCref(e) for e in BaseHashSet.hashSetList(lhs_set));
+end getStatementsOutputs;
 
 protected function getDAEelseStatemntLsts "get all statements for every else or elseif clause
 author:Waurich TUD 2014"

@@ -35,6 +35,10 @@ import Expression = NFExpression;
 import Operator = NFOperator;
 import Type = NFType;
 import NFCall.Call;
+import Subscript = NFSubscript;
+import NFOperator.Op;
+import NFPrefixes.Variability;
+import NFInstNode.InstNode;
 
 protected
 
@@ -47,6 +51,9 @@ import ComponentRef = NFComponentRef;
 import ExpandExp = NFExpandExp;
 import TypeCheck = NFTypeCheck;
 import Absyn;
+import ErrorExt;
+import Flags;
+import Debug;
 
 public
 
@@ -135,27 +142,45 @@ function simplifyCall
 protected
   Call call;
   list<Expression> args;
-  Boolean builtin;
+  Boolean builtin, is_pure;
 algorithm
   Expression.CALL(call = call) := callExp;
 
   callExp := match call
-    case Call.TYPED_CALL() guard not Call.isExternal(call)
+    case Call.TYPED_CALL(arguments = args) guard not Call.isExternal(call)
       algorithm
-        args := list(simplify(arg) for arg in call.arguments);
+        if Flags.isSet(Flags.NF_EXPAND_FUNC_ARGS) then
+          args := list(if Expression.hasArrayCall(arg) then arg else ExpandExp.expand(arg) for arg in args);
+        end if;
+
+        args := list(simplify(arg) for arg in args);
         call.arguments := args;
         builtin := Function.isBuiltin(call.fn);
+        is_pure := not Function.isImpure(call.fn);
 
         // Use Ceval for builtin pure functions with literal arguments.
-        if builtin and not Function.isImpure(call.fn) and List.all(args, Expression.isLiteral) then
-          callExp := Ceval.evalCall(call, EvalTarget.IGNORE_ERRORS());
+        if builtin then
+          if is_pure and List.all(args, Expression.isLiteral) then
+            callExp := Ceval.evalCall(call, EvalTarget.IGNORE_ERRORS());
+          else
+            // do not expand builtin calls if we should not scalarize
+            if Flags.isSet(Flags.NF_SCALARIZE) then
+              callExp := simplifyBuiltinCall(Function.nameConsiderBuiltin(call.fn), args, call);
+            else
+              // nothing
+            end if;
+          end if;
+        elseif Flags.isSet(Flags.NF_EVAL_CONST_ARG_FUNCS) and is_pure and List.all(args, Expression.isLiteral) then
+          callExp := simplifyCall2(call);
         else
-          callExp := simplifyBuiltinCall(Function.nameConsiderBuiltin(call.fn), args, call);
+          callExp := Expression.CALL(call);
         end if;
       then
         callExp;
 
-    case Call.TYPED_MAP_CALL()
+    case Call.TYPED_ARRAY_CONSTRUCTOR() then simplifyArrayConstructor(call);
+
+    case Call.TYPED_REDUCTION()
       algorithm
         call.exp := simplify(call.exp);
         call.iters := list((Util.tuple21(i), simplify(Util.tuple22(i))) for i in call.iters);
@@ -165,6 +190,27 @@ algorithm
     else callExp;
   end match;
 end simplifyCall;
+
+function simplifyCall2
+  input Call call;
+  output Expression outExp;
+algorithm
+  ErrorExt.setCheckpoint(getInstanceName());
+
+  try
+    outExp := Ceval.evalCall(call, EvalTarget.IGNORE_ERRORS());
+    ErrorExt.delCheckpoint(getInstanceName());
+  else
+    if Flags.isSet(Flags.FAILTRACE) then
+      ErrorExt.delCheckpoint(getInstanceName());
+      Debug.traceln("- " + getInstanceName() + " failed to evaluate " + Call.toString(call) + "\n");
+    else
+      ErrorExt.rollBack(getInstanceName());
+    end if;
+
+    outExp := Expression.CALL(call);
+  end try;
+end simplifyCall2;
 
 function simplifyBuiltinCall
   input Absyn.Path name;
@@ -179,8 +225,9 @@ algorithm
       then
         exp;
 
-    case "sum"     then simplifySumProduct(listHead(args), call, isSum = true);
-    case "product" then simplifySumProduct(listHead(args), call, isSum = false);
+    case "sum"     then   simplifySumProduct(listHead(args), call, isSum = true);
+    case "product" then   simplifySumProduct(listHead(args), call, isSum = false);
+    case "transpose" then simplifyTranspose(listHead(args), call);
 
     else Expression.CALL(call);
   end match;
@@ -219,6 +266,69 @@ algorithm
   end if;
 end simplifySumProduct;
 
+function simplifyTranspose
+  input Expression arg;
+  input Call call;
+  output Expression exp;
+protected
+  Expression e;
+algorithm
+  e := if Expression.hasArrayCall(arg) then arg else ExpandExp.expand(arg);
+
+  exp := match e
+    case Expression.ARRAY()
+      guard List.all(e.elements, Expression.isArray)
+      then Expression.transposeArray(e);
+
+    else Expression.CALL(call);
+  end match;
+end simplifyTranspose;
+
+function simplifyArrayConstructor
+  input Call call;
+  output Expression outExp;
+protected
+  Type ty;
+  Variability var;
+  Expression exp, e;
+  list<tuple<InstNode, Expression>> iters;
+  InstNode iter;
+  Dimension dim;
+  Integer dim_size;
+  Boolean expanded;
+algorithm
+  Call.TYPED_ARRAY_CONSTRUCTOR(ty, var, exp, iters) := call;
+  iters := list((Util.tuple21(i), simplify(Util.tuple22(i))) for i in iters);
+
+  outExp := matchcontinue (iters)
+    case {(iter, e)}
+      algorithm
+        Type.ARRAY(dimensions = {dim}) := Expression.typeOf(e);
+        dim_size := Dimension.size(dim);
+
+        if dim_size == 0 then
+          // Result is Array[0], return empty array expression.
+          outExp := Expression.makeEmptyArray(ty);
+        elseif dim_size == 1 then
+          // Result is Array[1], return array with the single element.
+          (Expression.ARRAY(elements = {e}), _) := ExpandExp.expand(e);
+          exp := Expression.replaceIterator(exp, iter, e);
+          exp := Expression.makeArray(ty, {exp});
+          outExp := simplify(exp);
+        else
+          fail();
+        end if;
+      then
+        outExp;
+
+    else
+      algorithm
+        exp := simplify(exp);
+      then
+        Expression.CALL(Call.TYPED_ARRAY_CONSTRUCTOR(ty, var, exp, iters));
+  end matchcontinue;
+end simplifyArrayConstructor;
+
 function simplifySize
   input output Expression sizeExp;
 algorithm
@@ -251,8 +361,8 @@ algorithm
         dims := Type.arrayDims(Expression.typeOf(sizeExp.exp));
 
         if List.all(dims, function Dimension.isKnown(allowExp = true)) then
-          exp := Expression.ARRAY(Type.ARRAY(Type.INTEGER(), {Dimension.fromInteger(listLength(dims))}),
-                                  list(Dimension.sizeExp(d) for d in dims));
+          exp := Expression.makeArray(Type.ARRAY(Type.INTEGER(), {Dimension.fromInteger(listLength(dims))}),
+                                      list(Dimension.sizeExp(d) for d in dims));
         else
           exp := sizeExp;
         end if;
@@ -272,12 +382,121 @@ algorithm
   se1 := simplify(e1);
   se2 := simplify(e2);
 
-  if Expression.isLiteral(se1) and Expression.isLiteral(se2) then
-    binaryExp := Ceval.evalBinaryOp(se1, op, se2);
-  elseif not (referenceEq(e1, se1) and referenceEq(e2, se2)) then
-    binaryExp := Expression.BINARY(se1, op, se2);
+  binaryExp := simplifyBinaryOp(se1, op, se2);
+
+  if Flags.isSet(Flags.NF_EXPAND_OPERATIONS) and not Expression.hasArrayCall(binaryExp) then
+    binaryExp := ExpandExp.expand(binaryExp);
   end if;
 end simplifyBinary;
+
+function simplifyBinaryOp
+  input Expression exp1;
+  input Operator op;
+  input Expression exp2;
+  output Expression outExp;
+
+  import NFOperator.Op;
+algorithm
+  if Expression.isLiteral(exp1) and Expression.isLiteral(exp2) then
+    outExp := Ceval.evalBinaryOp(exp1, op, exp2);
+  else
+    outExp := match op.op
+      case Op.ADD then simplifyBinaryAdd(exp1, op, exp2);
+      case Op.SUB then simplifyBinarySub(exp1, op, exp2);
+      case Op.MUL then simplifyBinaryMul(exp1, op, exp2);
+      case Op.DIV then simplifyBinaryDiv(exp1, op, exp2);
+      case Op.POW then simplifyBinaryPow(exp1, op, exp2);
+      else Expression.BINARY(exp1, op, exp2);
+    end match;
+  end if;
+end simplifyBinaryOp;
+
+function simplifyBinaryAdd
+  input Expression exp1;
+  input Operator op;
+  input Expression exp2;
+  output Expression outExp;
+algorithm
+  if Expression.isZero(exp1) then
+    // 0 + e = e
+    outExp := exp2;
+  elseif Expression.isZero(exp2) then
+    // e + 0 = e
+    outExp := exp1;
+  else
+    outExp := Expression.BINARY(exp1, op, exp2);
+  end if;
+end simplifyBinaryAdd;
+
+function simplifyBinarySub
+  input Expression exp1;
+  input Operator op;
+  input Expression exp2;
+  output Expression outExp;
+algorithm
+  if Expression.isZero(exp1) then
+    // 0 - e = -e
+    outExp := Expression.UNARY(Operator.makeUMinus(Operator.typeOf(op)), exp2);
+  elseif Expression.isZero(exp2) then
+    // e - 0 = e
+    outExp := exp1;
+  else
+    outExp := Expression.BINARY(exp1, op, exp2);
+  end if;
+end simplifyBinarySub;
+
+function simplifyBinaryMul
+  input Expression exp1;
+  input Operator op;
+  input Expression exp2;
+  input Boolean switched = false;
+  output Expression outExp;
+algorithm
+  outExp := match exp1
+    // 0 * e = 0
+    case Expression.INTEGER(value = 0) then exp1;
+    case Expression.REAL(value = 0.0) then exp1;
+
+    // 1 * e = e
+    case Expression.INTEGER(value = 1) then exp2;
+    case Expression.REAL(value = 1.0) then exp2;
+
+    else
+      if switched then
+        Expression.BINARY(exp2, op, exp1)
+      else
+        simplifyBinaryMul(exp2, op, exp1, true);
+  end match;
+end simplifyBinaryMul;
+
+function simplifyBinaryDiv
+  input Expression exp1;
+  input Operator op;
+  input Expression exp2;
+  output Expression outExp;
+algorithm
+  // e / 1 = e
+  if Expression.isOne(exp2) then
+    outExp := exp1;
+  else
+    outExp := Expression.BINARY(exp1, op, exp2);
+  end if;
+end simplifyBinaryDiv;
+
+function simplifyBinaryPow
+  input Expression exp1;
+  input Operator op;
+  input Expression exp2;
+  output Expression outExp;
+algorithm
+  if Expression.isZero(exp2) then
+    outExp := Expression.makeOne(Operator.typeOf(op));
+  elseif Expression.isOne(exp2) then
+    outExp := exp1;
+  else
+    outExp := Expression.BINARY(exp1, op, exp2);
+  end if;
+end simplifyBinaryPow;
 
 function simplifyUnary
   input output Expression unaryExp;
@@ -288,12 +507,24 @@ algorithm
   Expression.UNARY(op, e) := unaryExp;
   se := simplify(e);
 
-  if Expression.isLiteral(se) then
-    unaryExp := Ceval.evalUnaryOp(se, op);
-  elseif not referenceEq(e, se) then
-    unaryExp := Expression.UNARY(op, se);
+  unaryExp := simplifyUnaryOp(se, op);
+
+  if Flags.isSet(Flags.NF_EXPAND_OPERATIONS) and not Expression.hasArrayCall(unaryExp) then
+    unaryExp := ExpandExp.expand(unaryExp);
   end if;
 end simplifyUnary;
+
+function simplifyUnaryOp
+  input Expression exp;
+  input Operator op;
+  output Expression outExp;
+algorithm
+  if Expression.isLiteral(exp) then
+    outExp := Ceval.evalUnaryOp(exp, op);
+  else
+    outExp := Expression.UNARY(op, exp);
+  end if;
+end simplifyUnaryOp;
 
 function simplifyLogicBinary
   input output Expression binaryExp;
@@ -357,7 +588,13 @@ algorithm
     case Expression.BOOLEAN()
       then simplify(if cond.value then tb else fb);
 
-    else Expression.IF(cond, simplify(tb), simplify(fb));
+    else
+      algorithm
+        tb := simplify(tb);
+        fb := simplify(fb);
+      then
+        if Expression.isEqual(tb, fb) then tb else Expression.IF(cond, tb, fb);
+
   end match;
 end simplifyIf;
 
@@ -381,15 +618,12 @@ function simplifySubscriptedExp
   input output Expression subscriptedExp;
 protected
   Expression e;
-  list<Expression> subs;
+  list<Subscript> subs;
   Type ty;
 algorithm
   Expression.SUBSCRIPTED_EXP(e, subs, ty) := subscriptedExp;
   subscriptedExp := simplify(e);
-
-  for s in subs loop
-    subscriptedExp := Expression.applyIndexSubscript(simplify(s), subscriptedExp);
-  end for;
+  subscriptedExp := Expression.applySubscripts(list(Subscript.simplify(s) for s in subs), subscriptedExp);
 end simplifySubscriptedExp;
 
 function simplifyTupleElement

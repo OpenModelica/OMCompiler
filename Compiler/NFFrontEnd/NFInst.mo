@@ -97,7 +97,9 @@ import FlatModel = NFFlatModel;
 import ElementSource;
 import SimplifyModel = NFSimplifyModel;
 import Record = NFRecord;
+import Variable = NFVariable;
 import OperatorOverloading = NFOperatorOverloading;
+import EvalConstants = NFEvalConstants;
 
 public
 function instClassInProgram
@@ -113,12 +115,20 @@ protected
   FlatModel flat_model;
   FunctionTree funcs;
 algorithm
+  // gather here all the flags to disable expansion
+  // and scalarization if -d=-nfScalarize is on
+  if not Flags.isSet(Flags.NF_SCALARIZE) then
+    // make sure we don't expand anything
+    Flags.set(Flags.NF_EXPAND_OPERATIONS, false);
+    Flags.set(Flags.NF_EXPAND_FUNC_ARGS, false);
+  end if;
+
   // Create a root node from the given top-level classes.
   top := makeTopNode(program);
   name := Absyn.pathString(classPath);
 
   // Look up the class to instantiate and mark it as the root class.
-  cls := Lookup.lookupClassName(classPath, top, Absyn.dummyInfo);
+  cls := Lookup.lookupClassName(classPath, top, Absyn.dummyInfo, checkAccessViolations = false);
   cls := InstNode.setNodeType(InstNodeType.ROOT_CLASS(), cls);
 
   // Initialize the storage for automatically generated inner elements.
@@ -136,15 +146,17 @@ algorithm
   execStat("NFInst.instExpressions("+ name +")");
 
   // Mark structural parameters.
-  updateImplicitVariability(inst_cls);
+  updateImplicitVariability(inst_cls, Flags.isSet(Flags.EVAL_PARAM));
   execStat("NFInst.updateImplicitVariability");
 
   // Type the class.
   Typing.typeClass(inst_cls, name);
 
   // Flatten and simplify the model.
-  (flat_model, funcs) := Flatten.flatten(inst_cls, name);
-  (flat_model, funcs) := SimplifyModel.simplify(flat_model, funcs);
+  flat_model := Flatten.flatten(inst_cls, name);
+  flat_model := EvalConstants.evaluate(flat_model);
+  flat_model := SimplifyModel.simplify(flat_model);
+  funcs := Flatten.collectFunctions(flat_model, name);
 
   // Collect package constants that couldn't be substituted with their values
   // (e.g. because they where used with non-constant subscripts), and add them
@@ -152,7 +164,13 @@ algorithm
   flat_model := Package.collectConstants(flat_model, funcs);
 
   // Scalarize array components in the flat model.
-  flat_model := Scalarize.scalarize(flat_model, name);
+  if Flags.isSet(Flags.NF_SCALARIZE) then
+    flat_model := Scalarize.scalarize(flat_model, name);
+  else
+    // Remove empty arrays from variables
+    flat_model.variables := List.filterOnFalse(flat_model.variables, Variable.isEmptyArray);
+  end if;
+
   // Convert the flat model to a DAE.
   (dae, daeFuncs) := ConvertDAE.convert(flat_model, funcs, name, InstNode.info(inst_cls));
 
@@ -344,7 +362,7 @@ algorithm
 
     else
       algorithm
-        Error.assertion(false, getInstanceName() + " got unknown class", sourceInfo());
+        Error.assertion(false, getInstanceName() + " got unknown class:\n" + SCodeDump.unparseElementStr(def), sourceInfo());
       then
         fail();
 
@@ -638,6 +656,7 @@ algorithm
   end if;
 
   ext_node := expand(ext_node);
+  ext_node := InstNode.clone(ext_node);
 
   // Fetch the needed information from the class definition and construct a EXPANDED_DERIVED.
   cls := InstNode.getClass(node);
@@ -1859,7 +1878,8 @@ protected
   ComplexType cty;
 algorithm
   cty := match restriction
-    case Restriction.RECORD() then makeRecordComplexType(node, cls);
+    case Restriction.RECORD()
+      then makeRecordComplexType(InstNode.classScope(InstNode.getDerivedNode(node)), cls);
     else ComplexType.CLASS();
   end match;
 
@@ -1968,7 +1988,7 @@ algorithm
         instExpressions(c.classInst, node);
 
         for i in 1:arrayLength(dims) loop
-          dims[i] := instDimension(dims[i], InstNode.parent(component), c.info);
+          dims[i] := instDimension(dims[i], InstNode.parent(node), c.info);
         end for;
 
         // This is to avoid instantiating the same component multiple times,
@@ -2058,7 +2078,7 @@ algorithm
       algorithm
         expl := list(instExp(e, scope, info) for e in absynExp.arrayExp);
       then
-        Expression.ARRAY(Type.UNKNOWN(), expl);
+        Expression.makeArray(Type.UNKNOWN(), expl);
 
     case Absyn.Exp.MATRIX()
       algorithm
@@ -2135,6 +2155,9 @@ algorithm
 
     case Absyn.Exp.CALL()
       then Call.instantiate(absynExp.function_, absynExp.functionArgs, scope, info);
+
+    case Absyn.Exp.PARTEVALFUNCTION()
+      then instPartEvalFunction(absynExp.function_, absynExp.functionArgs, scope, info);
 
     case Absyn.Exp.END() then Expression.END();
 
@@ -2325,6 +2348,29 @@ algorithm
   end match;
 end instSubscript;
 
+function instPartEvalFunction
+  input Absyn.ComponentRef func;
+  input Absyn.FunctionArgs funcArgs;
+  input InstNode scope;
+  input SourceInfo info;
+  output Expression outExp;
+protected
+  ComponentRef fn_ref;
+  list<Absyn.NamedArg> nargs;
+  list<Expression> args;
+  list<String> arg_names;
+algorithm
+  Absyn.FunctionArgs.FUNCTIONARGS(argNames = nargs) := funcArgs;
+  outExp := instCref(func, scope, info);
+
+  if not listEmpty(nargs) then
+    fn_ref := Expression.toCref(outExp);
+    args := list(instExp(arg.argValue, scope, info) for arg in nargs);
+    arg_names := list(arg.argName for arg in nargs);
+    outExp := Expression.PARTIAL_FUNCTION_APPLICATION(fn_ref, args, arg_names, Type.UNKNOWN());
+  end if;
+end instPartEvalFunction;
+
 function instSections
   input InstNode node;
   input InstNode scope;
@@ -2371,7 +2417,7 @@ algorithm
     case (SCode.PARTS(), _)
       algorithm
         origin := if isFunction then ExpOrigin.FUNCTION else ExpOrigin.CLASS;
-        iorigin := intBitOr(origin, ExpOrigin.INITIAL);
+        iorigin := ExpOrigin.setFlag(origin, ExpOrigin.INITIAL);
 
         eq := instEquations(parts.normalEquationLst, scope, origin);
         ieq := instEquations(parts.initialEquationLst, scope, iorigin);
@@ -2488,7 +2534,7 @@ algorithm
         exp1 := instExp(scodeEq.expLeft, scope, info);
         exp2 := instExp(scodeEq.expRight, scope, info);
 
-        if intBitAnd(origin, ExpOrigin.WHEN) > 0 and not checkLhsInWhen(exp1) then
+        if ExpOrigin.flagSet(origin, ExpOrigin.WHEN) and not checkLhsInWhen(exp1) then
           Error.addSourceMessage(Error.WHEN_EQ_LHS, {Expression.toString(exp1)}, info);
           fail();
         end if;
@@ -2497,7 +2543,7 @@ algorithm
 
     case SCode.EEquation.EQ_CONNECT(info = info)
       algorithm
-        if intBitAnd(origin, ExpOrigin.WHEN) > 0 then
+        if ExpOrigin.flagSet(origin, ExpOrigin.WHEN) then
           Error.addSourceMessage(Error.CONNECT_IN_WHEN,
             {Dump.printComponentRefStr(scodeEq.crefLeft),
              Dump.printComponentRefStr(scodeEq.crefRight)}, info);
@@ -2507,13 +2553,13 @@ algorithm
         exp1 := instCref(scodeEq.crefLeft, scope, info);
         exp2 := instCref(scodeEq.crefRight, scope, info);
       then
-        Equation.CONNECT(exp1, exp2, makeSource(scodeEq.comment, info));
+        Equation.CONNECT(exp1, exp2, {}, makeSource(scodeEq.comment, info));
 
     case SCode.EEquation.EQ_FOR(info = info)
       algorithm
         oexp := instExpOpt(scodeEq.range, scope, info);
         (for_scope, iter) := addIteratorToScope(scodeEq.index, scope, scodeEq.info);
-        next_origin := intBitOr(origin, ExpOrigin.FOR);
+        next_origin := ExpOrigin.setFlag(origin, ExpOrigin.FOR);
         eql := instEEquations(scodeEq.eEquationLst, for_scope, next_origin);
       then
         Equation.FOR(iter, oexp, eql, makeSource(scodeEq.comment, info));
@@ -2524,7 +2570,7 @@ algorithm
         expl := list(instExp(c, scope, info) for c in scodeEq.condition);
 
         // Instantiate each branch and pair it up with a condition.
-        next_origin := intBitOr(origin, ExpOrigin.IF);
+        next_origin := ExpOrigin.setFlag(origin, ExpOrigin.IF);
         branches := {};
         for branch in scodeEq.thenBranch loop
           eql := instEEquations(branch, scope, next_origin);
@@ -2543,13 +2589,13 @@ algorithm
 
     case SCode.EEquation.EQ_WHEN(info = info)
       algorithm
-        if intBitAnd(origin, ExpOrigin.WHEN) > 0 then
+        if ExpOrigin.flagSet(origin, ExpOrigin.WHEN) then
           Error.addSourceMessageAndFail(Error.NESTED_WHEN, {}, info);
-        elseif intBitAnd(origin, ExpOrigin.INITIAL) > 0 then
+        elseif ExpOrigin.flagSet(origin, ExpOrigin.INITIAL) then
           Error.addSourceMessageAndFail(Error.INITIAL_WHEN, {}, info);
         end if;
 
-        next_origin := intBitOr(origin, ExpOrigin.WHEN);
+        next_origin := ExpOrigin.setFlag(origin, ExpOrigin.WHEN);
         exp1 := instExp(scodeEq.condition, scope, info);
         eql := instEEquations(scodeEq.eEquationLst, scope, next_origin);
         branches := {Equation.makeBranch(exp1, eql)};
@@ -2578,7 +2624,7 @@ algorithm
 
     case SCode.EEquation.EQ_REINIT(info = info)
       algorithm
-        if intBitAnd(origin, ExpOrigin.WHEN) == 0 then
+        if ExpOrigin.flagNotSet(origin, ExpOrigin.WHEN) then
           Error.addSourceMessage(Error.REINIT_NOT_IN_WHEN, {}, info);
           fail();
         end if;
@@ -2666,7 +2712,7 @@ algorithm
       algorithm
         oexp := instExpOpt(scodeStmt.range, scope, info);
         (for_scope, iter) := addIteratorToScope(scodeStmt.index, scope, info);
-        next_origin := intBitOr(origin, ExpOrigin.FOR);
+        next_origin := ExpOrigin.setFlag(origin, ExpOrigin.FOR);
         stmtl := instStatements(scodeStmt.forBody, for_scope, next_origin);
       then
         Statement.FOR(iter, oexp, stmtl, makeSource(scodeStmt.comment, info));
@@ -2674,7 +2720,7 @@ algorithm
     case SCode.Statement.ALG_IF(info = info)
       algorithm
         branches := {};
-        next_origin := intBitOr(origin, ExpOrigin.FOR);
+        next_origin := ExpOrigin.setFlag(origin, ExpOrigin.FOR);
 
         for branch in (scodeStmt.boolExpr, scodeStmt.trueBranch) :: scodeStmt.elseIfBranch loop
           exp1 := instExp(Util.tuple21(branch), scope, info);
@@ -2692,9 +2738,9 @@ algorithm
     case SCode.Statement.ALG_WHEN_A(info = info)
       algorithm
         if origin > 0 then
-          if intBitAnd(origin, ExpOrigin.WHEN) > 0 then
+          if ExpOrigin.flagSet(origin, ExpOrigin.WHEN) then
             Error.addSourceMessageAndFail(Error.NESTED_WHEN, {}, info);
-          elseif intBitAnd(origin, ExpOrigin.INITIAL) > 0 then
+          elseif ExpOrigin.flagSet(origin, ExpOrigin.INITIAL) then
             Error.addSourceMessageAndFail(Error.INITIAL_WHEN, {}, info);
           else
             Error.addSourceMessageAndFail(Error.INVALID_WHEN_STATEMENT_CONTEXT, {}, info);
@@ -2704,7 +2750,7 @@ algorithm
         branches := {};
         for branch in scodeStmt.branches loop
           exp1 := instExp(Util.tuple21(branch), scope, info);
-          next_origin := intBitOr(origin, ExpOrigin.WHEN);
+          next_origin := ExpOrigin.setFlag(origin, ExpOrigin.WHEN);
           stmtl := instStatements(Util.tuple22(branch), scope, next_origin);
           branches := (exp1, stmtl) :: branches;
         end for;
@@ -2740,7 +2786,7 @@ algorithm
     case SCode.Statement.ALG_WHILE(info = info)
       algorithm
         exp1 := instExp(scodeStmt.boolExpr, scope, info);
-        next_origin := intBitOr(origin, ExpOrigin.WHILE);
+        next_origin := ExpOrigin.setFlag(origin, ExpOrigin.WHILE);
         stmtl := instStatements(scodeStmt.whileBody, scope, next_origin);
       then
         Statement.WHILE(exp1, stmtl, makeSource(scodeStmt.comment, info));
@@ -2861,6 +2907,7 @@ end insertGeneratedInners;
 
 function updateImplicitVariability
   input InstNode node;
+  input Boolean evalAllParams;
 protected
   Class cls = InstNode.getClass(node);
   ClassTree cls_tree;
@@ -2870,7 +2917,7 @@ algorithm
       algorithm
         for c in cls_tree.components loop
           if not InstNode.isEmpty(c) then
-            updateImplicitVariabilityComp(c);
+          updateImplicitVariabilityComp(c, evalAllParams);
           end if;
         end for;
 
@@ -2886,7 +2933,15 @@ algorithm
           markStructuralParamsDim(dim);
         end for;
 
-        updateImplicitVariability(cls.baseClass);
+        updateImplicitVariability(cls.baseClass, evalAllParams);
+      then
+        ();
+
+    case Class.INSTANCED_BUILTIN(elements = cls_tree as ClassTree.FLAT_TREE())
+      algorithm
+        for c in cls_tree.components loop
+          updateImplicitVariabilityComp(c, evalAllParams);
+        end for;
       then
         ();
 
@@ -2896,21 +2951,48 @@ end updateImplicitVariability;
 
 function updateImplicitVariabilityComp
   input InstNode component;
+  input Boolean evalAllParams;
 protected
-  Component c = InstNode.component(InstNode.resolveOuter(component));
+  InstNode node = InstNode.resolveOuter(component);
+  Component c = InstNode.component(node);
 algorithm
   () := match c
-    case Component.UNTYPED_COMPONENT()
+    local
+      Binding binding, condition;
+
+    case Component.UNTYPED_COMPONENT(binding = binding, condition = condition)
       algorithm
+        // @adrpo: if Evaluate=true make the parameter a structural parameter
+        // only make it a structural parameter if is not constant, duh!, 1071 regressions :)
+        if c.attributes.variability == Variability.PARAMETER and
+           (Component.getEvaluateAnnotation(c) or evalAllParams) then
+          markStructuralParamsComp(c, node);
+        end if;
+
         for dim in c.dimensions loop
           markStructuralParamsDim(dim);
         end for;
 
-        if Binding.isBound(c.binding) then
-          markStructuralParamsExpSize(Binding.getUntypedExp(c.binding));
+        if Binding.isBound(binding) then
+          markStructuralParamsExpSize(Binding.getUntypedExp(binding));
         end if;
 
-        updateImplicitVariability(c.classInst);
+        if Binding.isBound(condition) then
+          markStructuralParamsExp(Binding.getUntypedExp(condition));
+        end if;
+
+        updateImplicitVariability(c.classInst, evalAllParams);
+      then
+        ();
+
+    case Component.TYPE_ATTRIBUTE()
+      guard listMember(InstNode.name(component), {"fixed", "stateSelect"})
+      algorithm
+        binding := Modifier.binding(c.modifier);
+
+        if Binding.isBound(binding) then
+          markStructuralParamsExp(Binding.getUntypedExp(binding));
+        end if;
       then
         ();
 
@@ -2946,6 +3028,7 @@ end markStructuralParamsExp;
 
 function markStructuralParamsExp_traverser
   input Expression exp;
+  import NFComponentRef.Origin;
 algorithm
   () := match exp
     local
@@ -2953,19 +3036,13 @@ algorithm
       Component comp;
       Option<Expression> binding;
 
-    case Expression.CREF(cref = ComponentRef.CREF(node = node))
+    case Expression.CREF(cref = ComponentRef.CREF(node = node, origin = Origin.CREF))
       algorithm
         if InstNode.isComponent(node) then
           comp := InstNode.component(node);
 
           if Component.variability(comp) == Variability.PARAMETER then
-            comp := Component.setVariability(Variability.STRUCTURAL_PARAMETER, comp);
-            InstNode.updateComponent(comp, node);
-
-            binding := Binding.untypedExp(Component.getBinding(comp));
-            if isSome(binding) then
-              markStructuralParamsExp(Util.getOption(binding));
-            end if;
+            markStructuralParamsComp(comp, node);
           end if;
         end if;
       then
@@ -2974,6 +3051,22 @@ algorithm
     else ();
   end match;
 end markStructuralParamsExp_traverser;
+
+function markStructuralParamsComp
+  input Component component;
+  input InstNode node;
+protected
+  Component comp;
+  Option<Expression> binding;
+algorithm
+  comp := Component.setVariability(Variability.STRUCTURAL_PARAMETER, component);
+  InstNode.updateComponent(comp, node);
+
+  binding := Binding.untypedExp(Component.getBinding(comp));
+  if isSome(binding) then
+    markStructuralParamsExp(Util.getOption(binding));
+  end if;
+end markStructuralParamsComp;
 
 function markStructuralParamsExpSize
   input Expression exp;
@@ -2988,7 +3081,7 @@ algorithm
     local
       list<tuple<InstNode, Expression>> iters;
 
-    case Expression.CALL(call = Call.UNTYPED_MAP_CALL(iters = iters))
+    case Expression.CALL(call = Call.UNTYPED_ARRAY_CONSTRUCTOR(iters = iters))
       algorithm
         for iter in iters loop
           markStructuralParamsExp(Util.tuple22(iter));
@@ -3054,7 +3147,7 @@ algorithm
                   all_params := false;
                 end if;
 
-                updateImplicitVariabilityEql(branch.body);
+                updateImplicitVariabilityEql(branch.body, inWhen);
               then
                 ();
           end match;
@@ -3113,7 +3206,7 @@ algorithm
         // 'when' is not allowed in 'for', so we only need to keep going if
         // we're already in a 'when'.
         if inWhen then
-          updateImplicitVariabilityStmts(stmt.body);
+          updateImplicitVariabilityStmts(stmt.body, true);
         end if;
       then
         ();
@@ -3124,7 +3217,7 @@ algorithm
         // we're already in a 'when.
         if inWhen then
           for branch in stmt.branches loop
-            updateImplicitVariabilityStmts(Util.tuple22(branch));
+            updateImplicitVariabilityStmts(Util.tuple22(branch), true);
           end for;
         end if;
       then
@@ -3143,7 +3236,7 @@ algorithm
         // 'when' is not allowed in 'while', so we only need to keep going if
         // we're already in a 'when.
         if inWhen then
-          updateImplicitVariabilityStmts(stmt.body);
+          updateImplicitVariabilityStmts(stmt.body, true);
         end if;
       then
         ();
@@ -3169,7 +3262,7 @@ end markStructuralParamsSubs;
 
 function markStructuralParamsSub
   input Subscript sub;
-  input output Integer dummy;
+  input output Integer dummy = 0;
 algorithm
   () := match sub
       case Subscript.UNTYPED() algorithm markStructuralParamsExp(sub.exp); then ();

@@ -39,6 +39,7 @@ import Type = NFType;
 import NFPrefixes.*;
 import List;
 import FunctionDerivative = NFFunctionDerivative;
+import NFModifier.Modifier;
 
 protected
 import ErrorExt;
@@ -71,6 +72,9 @@ import Statement = NFStatement;
 import Sections = NFSections;
 import Algorithm = NFAlgorithm;
 import OperatorOverloading = NFOperatorOverloading;
+import MetaModelica.Dangerous.listReverseInPlace;
+import Array;
+import ElementSource;
 
 
 public
@@ -85,12 +89,16 @@ type SlotType = enumeration(
   GENERIC    "Accepts both positional and named arguments."
 ) "Determines which type of argument a slot accepts.";
 
+type SlotEvalStatus = enumeration(NOT_EVALUATED, EVALUATING, EVALUATED);
+
 uniontype Slot
   record SLOT
     String name;
     SlotType ty;
     Option<Expression> default;
     Option<TypedArg> arg;
+    Integer index;
+    SlotEvalStatus evalStatus;
   end SLOT;
 
   function positional
@@ -114,6 +122,12 @@ uniontype Slot
       else false;
     end match;
   end named;
+
+  function hasName
+    input String name;
+    input Slot slot;
+    output Boolean hasName = name == slot.name;
+  end hasName;
 end Slot;
 
 public
@@ -134,6 +148,7 @@ uniontype FunctionMatchKind
     // Instead they are added to each call as is.
     // This list represents which args should be vectorized.
     list<Boolean> is_vectorized;
+    FunctionMatchKind baseMatch;
   end VECTORIZED;
 
   record NOT_COMPATIBLE end NOT_COMPATIBLE;
@@ -168,6 +183,16 @@ uniontype FunctionMatchKind
     end match;
   end isVectorized;
 
+  function isExactVectorized
+    input FunctionMatchKind mk;
+    output Boolean b;
+  algorithm
+    b := match mk
+      case VECTORIZED(baseMatch = EXACT()) then true;
+      else false;
+    end match;
+  end isExactVectorized;
+
 end FunctionMatchKind;
 
 constant FunctionMatchKind EXACT_MATCH = FunctionMatchKind.EXACT();
@@ -192,12 +217,26 @@ uniontype MatchedFunction
     output list<MatchedFunction> outFuncs = list(mf for mf guard(FunctionMatchKind.isExact(mf.mk)) in matchedFunctions);
   end getExactMatches;
 
+  function getExactVectorizedMatches
+    input list<MatchedFunction> matchedFunctions;
+    output list<MatchedFunction> outFuncs =
+      list(mf for mf guard(FunctionMatchKind.isExactVectorized(mf.mk)) in matchedFunctions);
+  end getExactVectorizedMatches;
+
   function isVectorized
     input MatchedFunction mf;
     output Boolean b = FunctionMatchKind.isVectorized(mf.mk);
   end isVectorized;
 
 end MatchedFunction;
+
+type FunctionStatus = enumeration(
+  BUILTIN    "A builtin function.",
+  INITIAL    "The initial status.",
+  EVALUATED  "Constants in the function has been evaluated by EvalConstants.",
+  SIMPLIFIED "The function has been simplified by SimplifyModel.",
+  COLLECTED  "The function has been added to the function tree."
+);
 
 uniontype Function
 
@@ -211,7 +250,7 @@ uniontype Function
     Type returnType;
     DAE.FunctionAttributes attributes;
     list<FunctionDerivative> derivatives;
-    Pointer<Boolean> collected "Whether this function has already been added to the function tree or not.";
+    Pointer<FunctionStatus> status;
     Pointer<Integer> callCounter "Used during function evaluation to limit recursion.";
   end FUNCTION;
 
@@ -224,14 +263,14 @@ uniontype Function
     list<InstNode> inputs, outputs, locals;
     list<Slot> slots;
     DAE.FunctionAttributes attr;
-    Pointer<Boolean> collected;
+    FunctionStatus status;
   algorithm
     (inputs, outputs, locals) := collectParams(node);
     attr := makeAttributes(node, inputs, outputs);
     // Make sure builtin functions aren't added to the function tree.
-    collected := Pointer.create(isBuiltinAttr(attr));
+    status := if isBuiltinAttr(attr) then FunctionStatus.COLLECTED else FunctionStatus.INITIAL;
     fn := FUNCTION(path, node, inputs, outputs, locals, {}, Type.UNKNOWN(),
-      attr, {}, collected, Pointer.create(0));
+      attr, {}, Pointer.create(status), Pointer.create(0));
   end new;
 
   function lookupFunctionSimple
@@ -260,6 +299,7 @@ uniontype Function
     LookupState state;
     Absyn.Path functionPath;
     ComponentRef prefix;
+    Boolean is_class;
   algorithm
     try
       // Make sure the name is a path.
@@ -270,7 +310,10 @@ uniontype Function
     end try;
 
     (functionRef, found_scope) := Lookup.lookupFunctionName(functionName, scope, info);
-    prefix := ComponentRef.fromNodeList(InstNode.scopeList(InstNode.classScope(found_scope), includeRoot = true));
+    // If we found a function class we include the root in the prefix, but if we
+    // instead found a component (i.e. a functional parameter) we don't.
+    is_class := InstNode.isClass(ComponentRef.node(functionRef));
+    prefix := ComponentRef.fromNodeList(InstNode.scopeList(InstNode.classScope(found_scope), includeRoot = is_class));
     functionRef := ComponentRef.append(functionRef, prefix);
   end lookupFunction;
 
@@ -415,16 +458,54 @@ uniontype Function
     end match;
   end getCachedFuncs;
 
+  function isEvaluated
+    input Function fn;
+    output Boolean evaluated;
+  algorithm
+    evaluated := match Pointer.access(fn.status)
+      case FunctionStatus.BUILTIN then true;
+      case FunctionStatus.EVALUATED then true;
+      else false;
+    end match;
+  end isEvaluated;
+
+  function markEvaluated
+    input Function fn;
+  algorithm
+    if Pointer.access(fn.status) <> FunctionStatus.BUILTIN then
+      Pointer.update(fn.status, FunctionStatus.EVALUATED);
+    end if;
+  end markEvaluated;
+
+  function isSimplified
+    input Function fn;
+    output Boolean simplified;
+  algorithm
+    simplified := match Pointer.access(fn.status)
+      case FunctionStatus.BUILTIN then true;
+      case FunctionStatus.SIMPLIFIED then true;
+      else false;
+    end match;
+  end isSimplified;
+
+  function markSimplified
+    input Function fn;
+  algorithm
+    if Pointer.access(fn.status) <> FunctionStatus.BUILTIN then
+      Pointer.update(fn.status, FunctionStatus.SIMPLIFIED);
+    end if;
+  end markSimplified;
+
   function isCollected
     "Returns true if this function has already been added to the function tree
      (or shouldn't be added, e.g. if it's builtin), otherwise false."
     input Function fn;
     output Boolean collected;
-  protected
-    Pointer<Boolean> coll;
   algorithm
-    collected := match fn
-      case FUNCTION(collected=coll) then Pointer.access(coll);
+    collected := match Pointer.access(fn.status)
+      case FunctionStatus.BUILTIN then true;
+      case FunctionStatus.COLLECTED then true;
+      else false;
     end match;
   end isCollected;
 
@@ -432,9 +513,9 @@ uniontype Function
     "Marks this function as collected for addition to the function tree."
     input Function fn;
   algorithm
-    if not Pointer.access(fn.collected) then
-      // Check if the pointer is false first; if they are true they might be immutable
-      Pointer.update(fn.collected, true);
+    // The pointer might be immutable, check before assigning to it.
+    if Pointer.access(fn.status) <> FunctionStatus.BUILTIN then
+      Pointer.update(fn.status, FunctionStatus.COLLECTED);
     end if;
   end collect;
 
@@ -442,6 +523,13 @@ uniontype Function
     input Function fn;
     output Absyn.Path path = fn.path;
   end name;
+
+  function setName
+    input Absyn.Path name;
+    input output Function fn;
+  algorithm
+    fn.path := name;
+  end setName;
 
   function nameConsiderBuiltin "Handles the DAE.mo structure where builtin calls are replaced by their simpler name"
     input Function fn;
@@ -532,6 +620,22 @@ uniontype Function
     str := Absyn.pathString(fn.path) + "(" + str + ")";
   end callString;
 
+  function typeString
+    "Constructs a string representing the type of the function, on the form
+     function_name<function>(input types) => output type"
+    input Function fn;
+    output String str;
+  algorithm
+    str := List.toString(fn.inputs, paramTypeString,
+      Absyn.pathString(name(fn)) + "<function>",
+      "(", ", ", ") => " + Type.toString(fn.returnType), true);
+  end typeString;
+
+  function paramTypeString
+    input InstNode param;
+    output String str = Type.toString(InstNode.getType(param));
+  end paramTypeString;
+
   function instance
     input Function fn;
     output InstNode node = fn.node;
@@ -565,55 +669,42 @@ uniontype Function
     output Boolean matching;
   protected
     Slot slot;
-    list<Slot> slots;
+    list<Slot> slots, remaining_slots;
     list<TypedArg> filled_named_args;
+    array<Slot> slots_arr;
+    Integer pos_arg_count, slot_count, index = 1;
   algorithm
     slots := fn.slots;
+    pos_arg_count := listLength(posArgs);
+    slot_count := listLength(slots);
 
-    if listLength(posArgs) > listLength(slots) then
+    if pos_arg_count > slot_count then
+      // If we have too many positional arguments it can't possibly match.
       matching := false;
       return;
+    elseif pos_arg_count == slot_count and listEmpty(namedArgs) then
+      // If we have exactly as many positional arguments as slots and no named
+      // arguments we can just return the list of arguments as it is.
+      matching := true;
+      return;
     end if;
-    // Remove as many slots as there are positional arguments. We don't actually
-    // need to fill the slots, the positional arguments will always be first
-    // anyway. This makes it a bit slower to figure out what error to give if a
-    // named argument is wrong, but faster for the most common case of
-    // everything being correct.
+
+    slots_arr := listArray(slots);
+
     for arg in args loop
-      slot :: slots := slots;
+      slot := slots_arr[index];
 
       if not Slot.positional(slot) then
         // Slot doesn't allow positional arguments (used for some builtin functions).
         matching := false;
         return;
       end if;
+
+      slot.arg := SOME(arg);
+      arrayUpdate(slots_arr, index, slot);
+      index := index + 1;
     end for;
 
-    // Fill the remaining slots with the named arguments.
-    (filled_named_args, matching) := fillNamedArgs(namedArgs, slots, fn, info);
-
-    // Append the now ordered named arguments to the positional arguments.
-    if matching then
-      args := listAppend(posArgs, filled_named_args);
-    end if;
-  end fillArgs;
-
-  function fillNamedArgs
-    "Sorts a list of named arguments based on the given slots, and returns the
-     arguments for the slots if the arguments are correct. If the arguments
-     are not correct the list of expressions returned is undefined, along with
-     the matching output being false."
-    input list<TypedNamedArg> namedArgs;
-    input list<Slot> slots;
-    input Function fn;
-    input SourceInfo info;
-    output list<TypedArg> args = {};
-    output Boolean matching = true;
-  protected
-    array<Slot> slots_arr = listArray(slots);
-    String name;
-    Expression arg;
-  algorithm
     for narg in namedArgs loop
       (slots_arr, matching) := fillNamedArg(narg, slots_arr, fn, info);
 
@@ -623,7 +714,7 @@ uniontype Function
     end for;
 
     (args, matching) := collectArgs(slots_arr, info);
-  end fillNamedArgs;
+  end fillArgs;
 
   function fillNamedArg
     "Looks up a slot with the given name and tries to fill it with the given
@@ -641,7 +732,9 @@ uniontype Function
     Variability var;
   algorithm
     // Try to find a slot and fill it with the argument expression.
-    for i in 1:arrayLength(slots) loop
+    // Positional arguments fill the slots from the start of the array, so
+    // searching backwards will generally be a bit more efficient.
+    for i in arrayLength(slots):-1:1 loop
       s := slots[i];
 
       (argName, argExp, ty, var) := inArg;
@@ -701,21 +794,132 @@ uniontype Function
     for s in slots loop
       SLOT(name = name, default = default, arg = arg) := s;
 
-      args := match (default, arg)
-        case (_, SOME(a)) then a :: args; // Use the argument from the call if one was given.
-        // TODO: save this info in the defaults in slots (the type we can get from the exp manually but the variability is lost.).
-        case (SOME(e), _) then (e,Expression.typeOf(e),Variability.CONSTANT) ::args; // Otherwise, check that a default value exists.
-        else // Give an error if no argument was given and there's no default value.
+      args := matchcontinue arg
+        // Use the argument from the call if one was given.
+        case SOME(a) then a :: args;
+
+        // Otherwise, try to fill the slot with its default argument.
+        case _ then fillDefaultSlot(s, slots, info) :: args;
+
+        else
           algorithm
-            Error.addSourceMessage(Error.UNFILLED_SLOT, {name}, info);
             matching := false;
           then
             args;
-      end match;
+      end matchcontinue;
     end for;
 
     args := listReverse(args);
   end collectArgs;
+
+  function fillDefaultSlot
+    input Slot slot;
+    input array<Slot> slots;
+    input SourceInfo info;
+    output TypedArg outArg;
+  algorithm
+    outArg := match slot
+      // Slot already filled by function argument.
+      case SLOT(arg = SOME(outArg)) then outArg;
+
+      // Slot not filled by function argument, but has default value.
+      case SLOT(default = SOME(_))
+        then fillDefaultSlot2(slot, slots, info);
+
+      // Give an error if no argument was given and there's no default argument.
+      else
+        algorithm
+          Error.addSourceMessage(Error.UNFILLED_SLOT, {slot.name}, info);
+        then
+          fail();
+
+    end match;
+  end fillDefaultSlot;
+
+  function fillDefaultSlot2
+    input Slot slot;
+    input array<Slot> slots;
+    input SourceInfo info;
+    output TypedArg outArg;
+  algorithm
+    outArg := match slot.evalStatus
+      local
+        Expression exp;
+
+      // An already evaluated slot, return its binding.
+      case SlotEvalStatus.EVALUATED
+        then Util.getOption(slot.arg);
+
+      // A slot in the process of being evaluated => cyclic bindings.
+      case SlotEvalStatus.EVALUATING
+        algorithm
+          Error.addSourceMessage(Error.CYCLIC_DEFAULT_VALUE, {slot.name}, info);
+        then
+          fail();
+
+      // A slot with a not evaluated binding, evaluate the binding and return it.
+      case SlotEvalStatus.NOT_EVALUATED
+        algorithm
+          slot.evalStatus := SlotEvalStatus.EVALUATING;
+          arrayUpdate(slots, slot.index, slot);
+
+          exp := evaluateSlotExp(Util.getOption(slot.default), slots, info);
+          outArg := (exp, Expression.typeOf(exp), Expression.variability(exp));
+
+          slot.arg := SOME(outArg);
+          slot.evalStatus := SlotEvalStatus.EVALUATED;
+          arrayUpdate(slots, slot.index, slot);
+        then
+          outArg;
+
+    end match;
+  end fillDefaultSlot2;
+
+  function evaluateSlotExp
+    input Expression exp;
+    input array<Slot> slots;
+    input SourceInfo info;
+    output Expression outExp;
+  algorithm
+    outExp := Expression.map(exp,
+      function evaluateSlotExp_traverser(slots = slots, info = info));
+  end evaluateSlotExp;
+
+  function evaluateSlotExp_traverser
+    input Expression exp;
+    input array<Slot> slots;
+    input SourceInfo info;
+    output Expression outExp;
+  algorithm
+    outExp := match exp
+      local
+        ComponentRef cref;
+        Option<Slot> slot;
+
+      case Expression.CREF(cref = cref as ComponentRef.CREF(restCref = ComponentRef.EMPTY()))
+        algorithm
+          slot := lookupSlotInArray(ComponentRef.firstName(cref), slots);
+        then
+          if isSome(slot) then Util.tuple31(fillDefaultSlot(Util.getOption(slot), slots, info)) else exp;
+
+      else exp;
+    end match;
+  end evaluateSlotExp_traverser;
+
+  function lookupSlotInArray
+    input String slotName;
+    input array<Slot> slots;
+    output Option<Slot> outSlot;
+  protected
+    Slot slot;
+  algorithm
+    try
+      slot := Array.getMemberOnTrue(slotName, slots, Slot.hasName);
+      outSlot := SOME(slot);
+    else
+      outSlot := NONE();
+    end try;
+  end lookupSlotInArray;
 
   function matchArgsVectorize
     input Function func;
@@ -727,7 +931,7 @@ uniontype Function
     Component comp;
     InstNode inputnode;
     list<InstNode> inputs;
-    Expression argexp, margexp;
+    Expression argexp, margexp, vect_arg;
     Type argty, compty, tmpty, mty;
     Variability var;
     list<TypedArg> checked_args;
@@ -736,14 +940,15 @@ uniontype Function
     list<Dimension> argdims, compdims, vectdims, tmpdims, outvectdims;
     Boolean has_cast;
     list<Boolean> vectorized;
+    FunctionMatchKind base_mk = EXACT_MATCH;
   algorithm
-
     checked_args := {};
     idx := 1;
     inputs := func.inputs;
     outvectdims := {};
     vectorized := {};
     has_cast := false;
+    vect_arg := Expression.INTEGER(0);
 
     for arg in args loop
       (argexp,argty,var) := arg;
@@ -761,16 +966,18 @@ uniontype Function
         vectorized := false::vectorized;
 
       elseif listLength(argdims) > listLength(compdims) then
-        // Try vectorized matching since  we have more dims in the actual argument.
+        // Try vectorized matching since we have more dims in the actual argument.
         (vectdims, tmpdims) := List.split(argdims, listLength(argdims)-listLength(compdims));
 
         // make sure the vectorization dims are consistent.
         if listEmpty(outvectdims) then
           outvectdims := vectdims;
-        elseif not Dimension.allEqualKnown(outvectdims, vectdims) then
-          // TODO: proper error message
-          Error.assertion(false, getInstanceName() + " vect dims not equal: " + Dimension.toStringList(outvectdims)
-            + " vs " + Dimension.toStringList(vectdims), sourceInfo());
+          vect_arg := argexp;
+        elseif not List.isEqualOnTrue(outvectdims, vectdims, Dimension.isEqual) then
+          Error.addSourceMessage(Error.VECTORIZE_CALL_DIM_MISMATCH,
+            {"", Expression.toString(vect_arg), "", Expression.toString(argexp),
+             Dimension.toStringList(outvectdims), Dimension.toStringList(vectdims)}, info);
+          fail();
         end if;
 
         tmpty := Type.arrayElementType(argty);
@@ -798,10 +1005,18 @@ uniontype Function
         correct := false;
         Error.addSourceMessage(Error.FUNCTION_SLOT_VARIABILITY, {
           InstNode.name(inputnode), Expression.toString(argexp),
+          Absyn.pathString(Function.name(func)),
+          Prefixes.variabilityString(var),
           Prefixes.variabilityString(Component.variability(comp))
         }, info);
         funcMatchKind := NO_MATCH;
         return;
+      end if;
+
+      if TypeCheck.isCastMatch(matchKind) then
+        base_mk := CAST_MATCH;
+      elseif TypeCheck.isGenericMatch(matchKind) then
+        base_mk := GENERIC_MATCH;
       end if;
 
       checked_args := (margexp,mty,var) :: checked_args;
@@ -810,7 +1025,7 @@ uniontype Function
 
     correct := true;
     args := listReverse(checked_args);
-    funcMatchKind := VECTORIZED(vectdims, listReverse(vectorized));
+    funcMatchKind := VECTORIZED(vectdims, listReverse(vectorized), base_mk);
   end matchArgsVectorize;
 
   function matchArgs
@@ -865,6 +1080,8 @@ uniontype Function
         correct := false;
         Error.addSourceMessage(Error.FUNCTION_SLOT_VARIABILITY, {
           InstNode.name(inputnode), Expression.toString(argexp),
+          Absyn.pathString(name(func)),
+          Prefixes.variabilityString(var),
           Prefixes.variabilityString(Component.variability(comp))
         }, info);
         funcMatchKind := NO_MATCH;
@@ -986,6 +1203,16 @@ uniontype Function
     end if;
   end typeNodeCache;
 
+  function getRefCache
+    input ComponentRef fnRef;
+    output list<Function> functions;
+  protected
+    InstNode fn_node;
+  algorithm
+    fn_node := InstNode.classScope(ComponentRef.node(fnRef));
+    CachedData.FUNCTION(funcs = functions) := InstNode.getFuncCache(fn_node);
+  end getRefCache;
+
   function typeFunction
     input output Function fn;
   algorithm
@@ -1002,10 +1229,14 @@ uniontype Function
   algorithm
     if not isTyped(fn) then
       // Type all the components in the function.
-      Typing.typeClassType(node, NFBinding.EMPTY_BINDING, ExpOrigin.FUNCTION);
+      Typing.typeClassType(node, NFBinding.EMPTY_BINDING, ExpOrigin.FUNCTION, node);
       Typing.typeComponents(node, ExpOrigin.FUNCTION);
 
-      // Type the binding of the inputs only. This is done because they are
+      if InstNode.isPartial(node) then
+        ClassTree.applyComponents(Class.classTree(InstNode.getClass(node)), boxFunctionParameter);
+      end if;
+
+      // Type the bindings of the inputs only. This is done because they are
       // needed when type checking a function call. The outputs are not needed
       // for that and can contain recursive calls to the function, so we leave
       // them for later.
@@ -1014,7 +1245,7 @@ uniontype Function
       end for;
 
       // Make the slots and return type for the function.
-      fn.slots := list(makeSlot(i) for i in fn.inputs);
+      fn.slots := makeSlots(fn.inputs);
       checkParamTypes(fn);
       fn.returnType := makeReturnType(fn);
     end if;
@@ -1042,6 +1273,107 @@ uniontype Function
       FunctionDerivative.typeDerivative(fn_der);
     end for;
   end typeFunctionBody;
+
+  function boxFunctionParameter
+    input InstNode component;
+  protected
+    Component comp;
+  algorithm
+    comp := InstNode.component(component);
+    comp := Component.setType(Type.box(Component.getType(comp)), comp);
+    InstNode.updateComponent(comp, component);
+  end boxFunctionParameter;
+
+  function typePartialApplication
+    input output Expression exp;
+    input ExpOrigin.Type origin;
+    input SourceInfo info;
+          output Type ty;
+          output Variability variability;
+  protected
+    ComponentRef fn_ref;
+    list<Expression> args, ty_args = {};
+    list<String> arg_names, rest_names;
+    String arg_name;
+    Expression arg_exp;
+    Type arg_ty;
+    Variability arg_var;
+    Function fn;
+    ExpOrigin.Type next_origin = ExpOrigin.setFlag(origin, ExpOrigin.SUBEXPRESSION);
+    list<InstNode> inputs;
+    list<Slot> slots;
+  algorithm
+    Expression.PARTIAL_FUNCTION_APPLICATION(fn = fn_ref, args = args, argNames = arg_names) := exp;
+    // TODO: Handle overloaded functions?
+    fn :: _ := typeRefCache(fn_ref);
+    inputs := fn.inputs;
+    slots := fn.slots;
+    rest_names := arg_names;
+
+    variability := if Function.isImpure(fn) or Function.isOMImpure(fn)
+      then Variability.PARAMETER else Variability.CONSTANT;
+
+    for arg in args loop
+      (arg, arg_ty, arg_var) := Typing.typeExp(arg, origin, info);
+
+      arg_name :: rest_names := rest_names;
+      (arg, inputs, slots) :=
+        applyPartialApplicationArg(arg_name, arg, arg_ty, inputs, slots, fn, info);
+
+      ty_args := Expression.box(arg) :: ty_args;
+      variability := Prefixes.variabilityMax(variability, arg_var);
+    end for;
+
+    fn.inputs := inputs;
+    fn.slots := slots;
+    ty := Type.FUNCTION(fn, NFType.FunctionType.FUNCTIONAL_VARIABLE);
+    exp := Expression.PARTIAL_FUNCTION_APPLICATION(fn_ref, listReverseInPlace(ty_args), arg_names, ty);
+  end typePartialApplication;
+
+  function applyPartialApplicationArg
+    input String argName;
+    input output Expression argExp;
+    input Type argType;
+    input list<InstNode> inputs;
+    input list<Slot> slots;
+    input Function fn;
+    input SourceInfo info;
+          output list<InstNode> outInputs = {};
+          output list<Slot> outSlots = {};
+  protected
+    InstNode i;
+    list<InstNode> rest_inputs = inputs;
+    Slot s;
+    list<Slot> rest_slots = slots;
+    TypeCheck.MatchKind mk;
+  algorithm
+    while not listEmpty(rest_inputs) loop
+      i :: rest_inputs := rest_inputs;
+      s :: rest_slots := rest_slots;
+
+      if s.name == argName then
+        (argExp, _, mk) := TypeCheck.matchTypes(argType, InstNode.getType(i), argExp, true);
+
+        if TypeCheck.isIncompatibleMatch(mk) then
+          Error.addSourceMessage(Error.NAMED_ARG_TYPE_MISMATCH,
+            {Absyn.pathString(name(fn)), argName, Expression.toString(argExp),
+             Type.toString(argType), Type.toString(InstNode.getType(i))}, info);
+          fail();
+        end if;
+
+        outInputs := listAppend(listReverseInPlace(outInputs), rest_inputs);
+        outSlots := listAppend(listReverseInPlace(outSlots), rest_slots);
+        return;
+      end if;
+
+      outInputs := i :: outInputs;
+      outSlots := s :: outSlots;
+    end while;
+
+    Error.addSourceMessage(Error.NO_SUCH_INPUT_PARAMETER,
+      {Absyn.pathString(name(fn)), argName}, info);
+    fail();
+  end applyPartialApplicationArg;
 
   function isBuiltin
     input Function fn;
@@ -1135,21 +1467,57 @@ uniontype Function
           case "vector" then true;
           // can have variable number of arguments
           case "zeros" then true;
+          // sample - overloaded for sync features
+          case "sample" then true;
           else false;
         end match;
       end if;
     end if;
   end isSpecialBuiltin;
 
+  function isSubscriptableBuiltin
+    input Function fn;
+    output Boolean scalarBuiltin;
+  protected
+  algorithm
+    if not isBuiltin(fn) then
+      scalarBuiltin := false;
+    else
+      scalarBuiltin := match Absyn.pathFirstIdent(Function.nameConsiderBuiltin(fn))
+        case "change" then true;
+        case "der" then true;
+        case "pre" then true;
+        else false;
+      end match;
+    end if;
+  end isSubscriptableBuiltin;
+
   function isImpure
     input Function fn;
     output Boolean isImpure = fn.attributes.isImpure;
   end isImpure;
 
+  function isOMImpure
+    input Function fn;
+    output Boolean isImpure = not fn.attributes.isOpenModelicaPure;
+  end isOMImpure;
+
   function isFunctionPointer
     input Function fn;
     output Boolean isPointer = fn.attributes.isFunctionPointer;
   end isFunctionPointer;
+
+  function setFunctionPointer
+    input Boolean isPointer;
+    input output Function fn;
+  protected
+    DAE.FunctionAttributes attr = fn.attributes;
+  algorithm
+    attr.isFunctionPointer := isPointer;
+    fn.attributes := attr;
+    // The whole function should just be this, but it doesn't compile yet.
+    //fn.attributes.isFunctionPointer := isPointer;
+  end setFunctionPointer;
 
   function isExternal
     input Function fn;
@@ -1196,15 +1564,18 @@ uniontype Function
     ty := makeDAEType(fn);
     defs := def :: list(FunctionDerivative.toDAE(fn_der) for fn_der in fn.derivatives);
     daeFn := DAE.FUNCTION(fn.path, defs, ty, vis, par, impr, ity,
-      DAE.emptyElementSource, SCode.getElementComment(InstNode.definition(fn.node)));
+      ElementSource.createElementSource(InstNode.info(fn.node)),
+      SCode.getElementComment(InstNode.definition(fn.node)));
   end toDAE;
 
   function makeDAEType
     input Function fn;
-    output DAE.Type ty;
+    input Boolean boxTypes = false;
+    output DAE.Type outType;
   protected
     list<DAE.FuncArg> params = {};
     String pname;
+    Type ty;
     DAE.Type ptype;
     DAE.Const pconst;
     DAE.VarParallelism ppar;
@@ -1214,7 +1585,8 @@ uniontype Function
     for param in fn.inputs loop
       comp := InstNode.component(param);
       pname := InstNode.name(param);
-      ptype := Type.toDAE(Component.getType(comp));
+      ty := Component.getType(comp);
+      ptype := Type.toDAE(if boxTypes then Type.box(ty) else ty);
       pconst := Prefixes.variabilityToDAEConst(Component.variability(comp));
       ppar := Prefixes.parallelismToDAE(Component.parallelism(comp));
       pdefault := Util.applyOption(Binding.typedExp(Component.getBinding(comp)), Expression.toDAE);
@@ -1222,13 +1594,123 @@ uniontype Function
     end for;
 
     params := listReverse(params);
-    ty := DAE.T_FUNCTION(params, Type.toDAE(fn.returnType), fn.attributes, fn.path);
+    ty := if boxTypes then Type.box(fn.returnType) else fn.returnType;
+    outType := DAE.T_FUNCTION(params, Type.toDAE(ty), fn.attributes, fn.path);
   end makeDAEType;
 
   function getBody
     input Function fn;
     output list<Statement> body = getBody2(fn.node);
   end getBody;
+
+  function hasUnboxArgs
+    "Returns true if the function has the __OpenModelica_UnboxArguments annotation, otherwise false."
+    input Function fn;
+    output Boolean res;
+  algorithm
+    res := match fn.attributes
+      case DAE.FunctionAttributes.FUNCTION_ATTRIBUTES(
+        isBuiltin = DAE.FunctionBuiltin.FUNCTION_BUILTIN(unboxArgs = res)) then res;
+      else false;
+    end match;
+  end hasUnboxArgs;
+
+  function hasUnboxArgsAnnotation
+    input SCode.Element def;
+    output Boolean res =
+      SCode.hasBooleanNamedAnnotationInClass(def, "__OpenModelica_UnboxArguments");
+  end hasUnboxArgsAnnotation;
+
+  function hasOptionalArgument
+    input SCode.Element component;
+    output Boolean res = SCode.hasBooleanNamedAnnotationInComponent(component, "__OpenModelica_optionalArgument");
+  end hasOptionalArgument;
+
+  function mapExp
+    input output Function fn;
+    input MapFunc mapFn;
+    input Boolean mapParameters = true;
+    input Boolean mapBody = true;
+
+    partial function MapFunc
+      input output Expression exp;
+    end MapFunc;
+  protected
+    Class cls;
+    ClassTree ctree;
+    array<InstNode> comps;
+    Sections sections;
+    Component comp;
+    Binding binding, binding2;
+  algorithm
+    cls := InstNode.getClass(fn.node);
+
+    if mapParameters then
+      ctree := Class.classTree(cls);
+      ClassTree.applyComponents(ctree, function mapExpParameter(mapFn = mapFn));
+      fn.returnType := makeReturnType(fn);
+    end if;
+
+    if mapBody then
+      sections := Sections.mapExp(Class.getSections(cls), mapFn);
+      cls := cls.setSections(sections, cls);
+      InstNode.updateClass(cls, fn.node);
+    end if;
+  end mapExp;
+
+  function mapExpParameter
+    input InstNode node;
+    input MapFunc mapFn;
+
+    partial function MapFunc
+      input output Expression exp;
+    end MapFunc;
+  protected
+    Component comp;
+    Binding binding, binding2;
+    Class cls;
+    Type ty;
+    Boolean dirty = false;
+  algorithm
+    if not InstNode.isEmpty(node) then
+      comp := InstNode.component(node);
+      binding := Component.getBinding(comp);
+      binding2 := Binding.mapExp(binding, mapFn);
+
+      if not referenceEq(binding, binding2) then
+        comp := Component.setBinding(binding2, comp);
+        dirty := true;
+      end if;
+
+      () := match comp
+        case Component.TYPED_COMPONENT()
+          algorithm
+            ty := Type.mapDims(comp.ty, function Dimension.mapExp(func = mapFn));
+
+            if not referenceEq(ty, comp.ty) then
+              comp.ty := ty;
+              dirty := true;
+            end if;
+
+            cls := InstNode.getClass(comp.classInst);
+            ClassTree.applyComponents(Class.classTree(cls),
+              function mapExpParameter(mapFn = mapFn));
+          then
+            ();
+
+        else ();
+      end match;
+
+      if dirty then
+        InstNode.updateComponent(comp, node);
+      end if;
+    end if;
+  end mapExpParameter;
+
+  function isPartial
+    input Function fn;
+    output Boolean isPartial = InstNode.isPartial(fn.node);
+  end isPartial;
 
 protected
   function collectParams
@@ -1286,6 +1768,7 @@ protected
     ConnectorType cty;
     InnerOuter io;
     Visibility vis;
+    Variability var;
   algorithm
     Component.Attributes.ATTRIBUTES(
       connectorType = cty,
@@ -1293,6 +1776,7 @@ protected
       innerOuter = io) := Component.getAttributes(InstNode.component(component));
 
     vis := InstNode.visibility(component);
+    var := Component.variability(InstNode.component(component));
 
     // Function components may not be connectors.
     if cty <> ConnectorType.POTENTIAL then
@@ -1318,16 +1802,35 @@ protected
         fail();
       end if;
     else
+
       if vis == Visibility.PUBLIC then
         Error.addSourceMessage(Error.NON_FORMAL_PUBLIC_FUNCTION_VAR,
           {InstNode.name(component)}, InstNode.info(component));
-        fail();
+        // @adrpo: alow public constants and parameters in functions
+        if var > Variability.PARAMETER then
+          fail();
+        end if;
       end if;
     end if;
   end paramDirection;
 
+  function makeSlots
+    input list<InstNode> inputs;
+    output list<Slot> slots = {};
+  protected
+    Integer index = 1;
+  algorithm
+    for i in inputs loop
+      slots := makeSlot(i, index) :: slots;
+      index := index + 1;
+    end for;
+
+    slots := listReverseInPlace(slots);
+  end makeSlots;
+
   function makeSlot
     input InstNode component;
+    input Integer index;
     output Slot slot;
   protected
     Component comp;
@@ -1346,7 +1849,7 @@ protected
         end if;
       end if;
 
-      slot := SLOT(InstNode.name(component), SlotType.GENERIC, default, NONE());
+      slot := SLOT(InstNode.name(component), SlotType.GENERIC, default, NONE(), index, SlotEvalStatus.NOT_EVALUATED);
     else
       Error.assertion(false, getInstanceName() + " got invalid component", sourceInfo());
     end try;
@@ -1364,12 +1867,6 @@ protected
       SCode.hasBooleanNamedAnnotationInClass(def, "__ModelicaAssociation_Impure");
   end hasImpure;
 
-  function hasUnboxArgs
-    input SCode.Element def;
-    output Boolean res =
-      SCode.hasBooleanNamedAnnotationInClass(def, "__OpenModelica_UnboxArguments");
-  end hasUnboxArgs;
-
   function getBuiltin
     input SCode.Element def;
     output DAE.FunctionBuiltin builtin = if SCode.isBuiltinElement(def) then
@@ -1386,6 +1883,7 @@ protected
     array<InstNode> params;
     SCode.Restriction res;
     SCode.FunctionRestriction fres;
+    Boolean is_partial;
   algorithm
     def := InstNode.definition(node);
     res := SCode.getClassRestriction(def);
@@ -1393,10 +1891,11 @@ protected
     Error.assertion(SCode.isFunctionRestriction(res), getInstanceName() + " got non-function restriction", sourceInfo());
 
     SCode.Restriction.R_FUNCTION(functionRestriction = fres) := res;
+    is_partial := SCode.isPartial(def);
 
     attr := matchcontinue fres
       local
-        Boolean is_impure, is_om_pure, has_out_params;
+        Boolean is_impure, is_om_pure, has_out_params, has_unbox_args;
         String name;
         list<String> in_params, out_params;
         DAE.InlineType inline_ty;
@@ -1410,9 +1909,10 @@ protected
           name := SCode.isBuiltinFunction(def, in_params, out_params);
           inline_ty := InstUtil.classIsInlineFunc(def);
           is_impure := is_impure or hasImpure(def);
+          has_unbox_args := hasUnboxArgsAnnotation(def);
         then
-          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), is_impure, false,
-            DAE.FUNCTION_BUILTIN(SOME(name), hasUnboxArgs(def)), DAE.FP_NON_PARALLEL());
+          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), is_impure, is_partial,
+            DAE.FUNCTION_BUILTIN(SOME(name), has_unbox_args), DAE.FP_NON_PARALLEL());
 
       // Parallel function: there are some builtin functions.
       case SCode.FunctionRestriction.FR_PARALLEL_FUNCTION()
@@ -1421,21 +1921,22 @@ protected
           out_params := list(InstNode.name(o) for o in outputs);
           name := SCode.isBuiltinFunction(def, in_params, out_params);
           inline_ty := InstUtil.classIsInlineFunc(def);
+          has_unbox_args := hasUnboxArgsAnnotation(def);
         then
-          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), false, false,
-            DAE.FUNCTION_BUILTIN(SOME(name), hasUnboxArgs(def)), DAE.FP_PARALLEL_FUNCTION());
+          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), false, is_partial,
+            DAE.FUNCTION_BUILTIN(SOME(name), has_unbox_args), DAE.FP_PARALLEL_FUNCTION());
 
       // Parallel function: non-builtin.
       case SCode.FunctionRestriction.FR_PARALLEL_FUNCTION()
         algorithm
           inline_ty := InstUtil.classIsInlineFunc(def);
         then
-          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), false, false,
+          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), false, is_partial,
             getBuiltin(def), DAE.FP_PARALLEL_FUNCTION());
 
       // Kernel functions: never builtin and never inlined.
       case SCode.FunctionRestriction.FR_KERNEL_FUNCTION()
-        then DAE.FUNCTION_ATTRIBUTES(DAE.NO_INLINE(), true, false, false,
+        then DAE.FUNCTION_ATTRIBUTES(DAE.NO_INLINE(), true, false, is_partial,
           DAE.FUNCTION_NOT_BUILTIN(), DAE.FP_KERNEL_FUNCTION());
 
       // Normal function.
@@ -1449,7 +1950,7 @@ protected
               not listEmpty(outputs)) or
             SCode.hasBooleanNamedAnnotationInClass(def, "__ModelicaAssociation_Impure");
         then
-          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), is_impure, false,
+          DAE.FUNCTION_ATTRIBUTES(inline_ty, hasOMPure(def), is_impure, is_partial,
             getBuiltin(def), DAE.FP_NON_PARALLEL());
 
     end matchcontinue;
@@ -1496,6 +1997,8 @@ protected
       case Type.POLYMORPHIC() then true;
       case Type.ARRAY() then isValidParamType(ty.elementType);
       case Type.COMPLEX() then isValidParamState(ty.cls);
+      case Type.FUNCTION() then true;
+      case Type.METABOXED() then isValidParamType(ty.ty);
       else false;
     end match;
   end isValidParamType;
@@ -1514,7 +2017,7 @@ protected
     end match;
   end isValidParamState;
 
-  function makeReturnType
+  public function makeReturnType
     input Function fn;
     output Type returnType;
   protected

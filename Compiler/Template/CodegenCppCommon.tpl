@@ -53,18 +53,21 @@ template subscriptToCStr(Subscript subscript)
    match exp
     case ICONST(integer=i) then i
     case ENUM_LITERAL(index=i) then i
+    case CREF(componentRef=cr) then crefToCStr(cr, false)
     end match
   else "UNKNOWN_SUBSCRIPT"
 end subscriptToCStr;
 
 template crefToCStrForArray(ComponentRef cr, Text& dims)
+ "Convert array cref to cstr. Skip subscripts if not NF_SCALARIZE."
 ::=
   match cr
   case CREF_IDENT(__) then
     let &dims+=listLength(subscriptLst)
     '<%ident%>_'
   case CREF_QUAL(__) then
-    '<%ident%><%subscriptsToCStrForArray(subscriptLst)%>_P_<%crefToCStrForArray(componentRef,dims)%>'
+    let subs = if Flags.isSet(Flags.NF_SCALARIZE) then subscriptsToCStrForArray(subscriptLst)
+    '<%ident%><%subs%>_P_<%crefToCStrForArray(componentRef,dims)%>'
   case WILD(__) then ' '
   else "CREF_NOT_IDENT_OR_QUAL"
 end crefToCStrForArray;
@@ -316,8 +319,12 @@ template crefToCStr(ComponentRef cr, Boolean useFlatArrayNotation)
  "Helper function to cref."
 ::=
   match cr
-  case CREF_IDENT(__) then '<%ident%>_<%subscriptsToCStr(subscriptLst, useFlatArrayNotation)%>'
-  case CREF_QUAL(__) then '<%ident%><%subscriptsToCStrForArray(subscriptLst)%>_P_<%crefToCStr(componentRef,useFlatArrayNotation)%>'
+  case CREF_IDENT(__) then
+    let subs = if Flags.isSet(Flags.NF_SCALARIZE) then subscriptsToCStr(subscriptLst, useFlatArrayNotation)
+    '<%ident%>_<%subs%>'
+  case CREF_QUAL(__) then
+    let subs = if Flags.isSet(Flags.NF_SCALARIZE) then subscriptsToCStrForArray(subscriptLst)
+    '<%ident%><%subs%>_P_<%crefToCStr(componentRef, useFlatArrayNotation)%>'
   case WILD(__) then ''
   else "CREF_NOT_IDENT_OR_QUAL"
 end crefToCStr;
@@ -366,7 +373,7 @@ case component as CREF(componentRef=cr, ty=ty) then
   else if crefIsScalar(cr, context) then
     contextCref(cr, context, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
   else
-    if crefSubIsScalar(cr) then
+    if boolAnd(intEq(listLength(crefSubs(cr)), listLength(crefDims(cr))), crefSubIsScalar(cr)) then
       // The array subscript results in a scalar
       let arrName = contextCref(crefStripLastSubs(cr), context,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
       let arrayType = expTypeShort(ty)
@@ -466,7 +473,7 @@ template daeExpCrefRhsArrayBox(ComponentRef cr, DAE.Type ty, Context context, Te
                   >>
                 '<%arr%>_pre'
               else
-                arrayCrefCStr(cr,context)
+                ''
             else ''
 end daeExpCrefRhsArrayBox;
 
@@ -1703,7 +1710,7 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     '_discrete_events->pre(<%var1%>)'
 
   case CALL(path=IDENT(name="previous"), expLst={arg as CREF(__)}) then
-    '<%contextSystem(context)%><%cref(crefPrefixPrevious(arg.componentRef), useFlatArrayNotation)%>'
+    '<%daeExp(crefExp(crefPrefixPrevious(arg.componentRef)), context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>'
 
   case CALL(path=IDENT(name="firstTick")) then
     '(<%contextSystem(context)%>_clockStart[clockIndex - 1] || <%contextSystem(context)%>_clockSubactive[clockIndex - 1])'
@@ -2287,7 +2294,19 @@ template daeExpBinary(Operator it, Exp exp1, Exp exp2, Context context, Text &pr
   case ADD(__) then '(<%e1%> + <%e2%>)'
   case SUB(__) then '(<%e1%> - <%e2%>)'
   case MUL(__) then '(<%e1%> * <%e2%>)'
-  case DIV(__) then '(<%e1%> / <%e2%>)'
+  case DIV(__) then
+   let e2str = Util.escapeModelicaStringToCString(ExpressionDumpTpl.dumpExp(exp2,"\""))
+    match context
+     case ALGLOOP_CONTEXT(genInitialisation = false)
+        then
+        <<
+        division(<%e1%>,<%e2%>,!_system->_initial,"<%e2str%>")
+        >>
+       else
+        <<
+        division(<%e1%>,<%e2%>,!_initial,"<%e2str%>")
+        >>
+    end match
   case POW(__) then 'std::pow(<%e1%>, <%e2%>)'
   case AND(__) then '(<%e1%> && <%e2%>)'
   case OR(__)  then '(<%e1%> || <%e2%>)'

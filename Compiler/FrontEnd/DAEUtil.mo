@@ -235,6 +235,24 @@ algorithm
   end match;
 end expTypeArrayDimensions;
 
+public function dimExp
+ "Converts a dimension to an expression, covering constants and paramters."
+  input DAE.Dimension dim;
+  output DAE.Exp exp;
+algorithm
+  exp := match dim
+    local
+      Integer iconst;
+    case DAE.DIM_INTEGER(iconst) then
+      DAE.ICONST(iconst);
+    case DAE.DIM_EXP(exp) then
+      exp;
+    else algorithm
+      Error.addMessage(Error.DIMENSION_NOT_KNOWN, {anyString(dim)});
+    then fail();
+  end match;
+end dimExp;
+
 public function derivativeOrder "
 Function to sort derivatives.
 Used for Util.sort"
@@ -420,6 +438,11 @@ algorithm
         then ();
 
       case DAE.WHEN_EQUATION()
+        algorithm
+          DoubleEndedList.push_back(eqs, elt);
+        then ();
+
+      case DAE.FOR_EQUATION()
         algorithm
           DoubleEndedList.push_back(eqs, elt);
         then ();
@@ -4160,6 +4183,15 @@ algorithm
       then
         ();
 
+    case DAE.FOR_EQUATION(range = e1, equations = el)
+      algorithm
+        (new_e1, arg) := func(e1, arg);
+        if not referenceEq(e1, new_e1) then element.range := new_e1; end if;
+        (new_el, arg) := traverseDAEElementList(el, func, arg);
+        if not referenceEq(el, new_el) then element.equations := new_el; end if;
+      then
+        ();
+
     case DAE.COMP(dAElist = el)
       algorithm
         (new_el, arg) := traverseDAEElementList(el, func, arg);
@@ -5151,6 +5183,8 @@ algorithm
       case DAE.TERMINATE()
         algorithm equations := e :: equations; then ();
       case DAE.IF_EQUATION()
+        algorithm equations := e :: equations; then ();
+      case DAE.FOR_EQUATION()
         algorithm equations := e :: equations; then ();
       case DAE.WHEN_EQUATION()
         algorithm equations := e :: equations; then ();

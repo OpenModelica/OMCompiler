@@ -37,6 +37,7 @@ public
   import SCode;
   import Type = NFType;
   import NFPrefixes.Variability;
+  import Error;
 
 protected
   import Dump;
@@ -78,6 +79,7 @@ uniontype Binding
     Variability variability;
     list<InstNode> parents;
     Boolean isEach;
+    Boolean evaluated;
     SourceInfo info;
   end TYPED_BINDING;
 
@@ -91,8 +93,13 @@ uniontype Binding
      bindings constructed from the record fields) that should be discarded
      during flattening."
     Expression bindingExp;
+    list<InstNode> parents;
   end CEVAL_BINDING;
 
+  record INVALID_BINDING
+    Binding binding;
+    list<Error.TotalMessage> errors;
+  end INVALID_BINDING;
 
 public
   function fromAbsyn
@@ -249,6 +256,46 @@ public
     end match;
   end isRecordExp;
 
+  function recordFieldBinding
+    input String fieldName;
+    input Binding recordBinding;
+    output Binding fieldBinding = recordBinding;
+  protected
+    Expression exp;
+    Type ty;
+    Variability var;
+  algorithm
+    fieldBinding := match fieldBinding
+      case UNTYPED_BINDING()
+        algorithm
+          fieldBinding.bindingExp := Expression.recordElement(fieldName, fieldBinding.bindingExp);
+        then
+          fieldBinding;
+
+      case TYPED_BINDING()
+        algorithm
+          exp := Expression.recordElement(fieldName, fieldBinding.bindingExp);
+          ty := Expression.typeOf(exp);
+          var := Expression.variability(exp);
+        then
+          TYPED_BINDING(exp, ty, var, fieldBinding.parents, fieldBinding.isEach, fieldBinding.evaluated, fieldBinding.info);
+
+      case FLAT_BINDING()
+        algorithm
+          exp := Expression.recordElement(fieldName, fieldBinding.bindingExp);
+          var := Expression.variability(exp);
+        then
+          FLAT_BINDING(exp, var);
+
+      case CEVAL_BINDING()
+        algorithm
+          fieldBinding.bindingExp := Expression.recordElement(fieldName, fieldBinding.bindingExp);
+        then
+          fieldBinding;
+
+    end match;
+  end recordFieldBinding;
+
   function variability
     input Binding binding;
     output Variability var;
@@ -316,9 +363,15 @@ public
       case RAW_BINDING() then binding.parents;
       case UNTYPED_BINDING() then binding.parents;
       case TYPED_BINDING() then binding.parents;
+      case CEVAL_BINDING() then binding.parents;
       else {};
     end match;
   end parents;
+
+  function parentCount
+    input Binding binding;
+    output Integer count = listLength(parents(binding));
+  end parentCount;
 
   function addParent
     input InstNode parent;
@@ -344,6 +397,12 @@ public
           ();
 
       case TYPED_BINDING()
+        algorithm
+          binding.parents := parent :: binding.parents;
+        then
+          ();
+
+      case CEVAL_BINDING()
         algorithm
           binding.parents := parent :: binding.parents;
         then
@@ -396,6 +455,9 @@ public
       case RAW_BINDING() then prefix + Dump.printExpStr(binding.bindingExp);
       case UNTYPED_BINDING() then prefix + Expression.toString(binding.bindingExp);
       case TYPED_BINDING() then prefix + Expression.toString(binding.bindingExp);
+      case FLAT_BINDING() then prefix + Expression.toString(binding.bindingExp);
+      case CEVAL_BINDING() then prefix + Expression.toString(binding.bindingExp);
+      case INVALID_BINDING() then toString(binding.binding, prefix);
     end match;
   end toString;
 
@@ -430,6 +492,11 @@ public
       case TYPED_BINDING() then makeDAEBinding(binding.bindingExp, binding.variability);
       case FLAT_BINDING() then makeDAEBinding(binding.bindingExp, binding.variability);
       case CEVAL_BINDING() then DAE.UNBOUND();
+      case INVALID_BINDING()
+        algorithm
+          Error.addTotalMessages(binding.errors);
+        then
+          fail();
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got untyped binding", sourceInfo());
@@ -467,6 +534,62 @@ public
           fail();
     end match;
   end toDAEExp;
+
+  function mapExp
+    input output Binding binding;
+    input MapFunc mapFn;
+
+    partial function MapFunc
+      input output Expression exp;
+    end MapFunc;
+  protected
+    Expression e1, e2;
+  algorithm
+    () := match binding
+      case UNTYPED_BINDING(bindingExp = e1)
+        algorithm
+          e2 := mapFn(e1);
+
+          if not referenceEq(e1, e2) then
+            binding.bindingExp := e2;
+          end if;
+        then
+          ();
+
+      case TYPED_BINDING(bindingExp = e1)
+        algorithm
+          e2 := mapFn(e1);
+
+          if not referenceEq(e1, e2) then
+            binding.bindingExp := e2;
+          end if;
+        then
+          ();
+
+      case FLAT_BINDING(bindingExp = e1)
+        algorithm
+          e2 := mapFn(e1);
+
+          if not referenceEq(e1, e2) then
+            binding.bindingExp := e2;
+          end if;
+        then
+          ();
+
+      case CEVAL_BINDING(bindingExp = e1)
+        algorithm
+          e2 := mapFn(e1);
+
+          if not referenceEq(e1, e2) then
+            binding.bindingExp := e2;
+          end if;
+        then
+          ();
+
+      else ();
+    end match;
+  end mapExp;
+
 end Binding;
 
 annotation(__OpenModelica_Interface="frontend");

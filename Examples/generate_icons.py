@@ -36,6 +36,8 @@ import logging
 import sys
 import time
 import hashlib
+import base64
+import datetime
 from optparse import OptionParser
 
 import svgwrite
@@ -52,42 +54,45 @@ def classToFileName(cl):
   """
   return cl.replace("/","Division").replace("*","Multiplication")
 
-# Bitmap
-#   extends GraphicItem
-#   extent
-#   fileName
-#   imageSource
+exp_float = '[+-]?\d+(?:.\d+)?(?:e[+-]?\d+)?'
 
 element_id = 0
 regex_equal_key_value = re.compile("([^ =]+) *= *(\"[^\"]*\"|[^ ]*)")
-regex_points = re.compile("{([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}")
 
 regex_type_value = re.compile("(\w+.\w+)*")
 
 # Compile regular expressions ONLY once!
 # example: {-100.0,-100.0,100.0,100.0,true,0.16,2.0,2.0, {...
-regex_coordSys = re.compile('([+-]?\d+(?:.\d+)?),([+-]?\d+(?:.\d+)?),([+-]?\d+(?:.\d+)?),([+-]?\d+(?:.\d+)?),(\w+),([+-]?\d+(?:.\d+)?),([+-]?\d+(?:.\d+)?),([+-]?\d+(?:.\d+)?),')
+regex_coordSys = re.compile('('+exp_float+'),('+exp_float+'),('+exp_float+'),('+exp_float+'),(\w+),('+exp_float+'),('+exp_float+'),('+exp_float+'),')
 
 # example: Rectangle(true, {35.0, 10.0}, 0, {0, 0, 0}, {255, 255, 255}, LinePattern.Solid, FillPattern.Solid, 0.25, BorderPattern.None, {{-15.0, -4.0}, {15.0, 4.0}}, 0
-regex_rectangle = re.compile('Rectangle\((\w+), {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, ([+-]?\d+(?:.\d+)?), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ([+-]?\d+(?:.\d+)?), (\w+.\w+), {{([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}}, ([+-]?\d+(?:.\d+)?)')
+regex_rectangle = re.compile('Rectangle\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ('+exp_float+'), (\w+.\w+), {{('+exp_float+'), ('+exp_float+')}, {('+exp_float+'), ('+exp_float+')}}, ('+exp_float+')')
 
 # example: Line(true, {0.0, 0.0}, 0, {{-30, -120}, {-10, -100}}, {0, 0, 0}, LinePattern.Solid, 0.25, {Arrow.None, Arrow.None}, 3, Smooth.None
-regex_line = re.compile('Line\((\w+), {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, ([+-]?\d+(?:.\d+)?), ({{[+-]?\d+(?:.\d+)?, [+-]?\d+(?:.\d+)?}(?:, {[+-]?\d+(?:.\d+)?, [+-]?\d+(?:.\d+)?})*}), {(\d+), (\d+), (\d+)}, (\w+.\w+), ([+-]?\d+(?:.\d+)?), {(\w+.\w+), (\w+.\w+)}, ([+-]?\d+(?:.\d+)?), (\w+.\w+)')
+regex_line = re.compile('Line\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), ({{'+exp_float+', '+exp_float+'}(?:, {'+exp_float+', '+exp_float+'})*}), {(\d+), (\d+), (\d+)}, (\w+.\w+), ('+exp_float+'), {(\w+.\w+), (\w+.\w+)}, ('+exp_float+'), (\w+.\w+)')
 
 # example: Ellipse(true, {0.0, 0.0}, 0, {0, 0, 0}, {95, 95, 95}, LinePattern.Solid, FillPattern.Solid, 0.25, {{-100, 100}, {100, -100}}, 0, 360)}}
-regex_ellipse = re.compile('Ellipse\((\w+), {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, ([+-]?\d+(?:.\d+)?), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ([+-]?\d+(?:.\d+)?), {{([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}}, ([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)')
+regex_ellipse = re.compile('Ellipse\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ('+exp_float+'), {{('+exp_float+'), ('+exp_float+')}, {('+exp_float+'), ('+exp_float+')}}, ('+exp_float+'), ('+exp_float+')')
 
 # example: Text(true, {0.0, 0.0}, 0, {0, 0, 255}, {0, 0, 0}, LinePattern.Solid, FillPattern.None, 0.25, {{-150, 110}, {150, 70}}, "%name", 0, TextAlignment.Center
-regex_text = re.compile('Text\((\w+), {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, ([+-]?\d+(?:.\d+)?), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ([+-]?\d+(?:.\d+)?), {{([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}}, ("[^"]*"), ([+-]?\d+(?:.\d+)?)(?:, ("[^"]*"))?(?:, {([^}]*)})?, (\w+.\w+)')
+regex_text = re.compile('Text\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ('+exp_float+'), {{('+exp_float+'), ('+exp_float+')}, {('+exp_float+'), ('+exp_float+')}}, ("[^"]*"), ('+exp_float+')(?:, ("[^"]*"))?(?:, {([^}]*)})?, (\w+.\w+)')
+
+# example: Text(true, {0.0, 0.0}, 0, {0, 0, 255}, {0, 0, 0}, LinePattern.Solid, FillPattern.None, 0.25, {{-150, 110}, {150, 70}}, {"%name", y, 0}, 0, TextAlignment.Center
+regex_text2 = re.compile('Text\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ('+exp_float+'), {{('+exp_float+'), ('+exp_float+')}, {('+exp_float+'), ('+exp_float+')}}, {("[^"]*"), [+-, \w\d]*}, ('+exp_float+')(?:, ("[^"]*"))?(?:, {([^}]*)})?, (\w+.\w+)')
 
 # example: Polygon(true, {0.0, 0.0}, 0, {0, 127, 255}, {0, 127, 255}, LinePattern.Solid, FillPattern.Solid, 0.25, {{-24, -34}, {-82, 40}, {-72, 46}, {-14, -26}, {-24, -34}}, Smooth.None
-regex_polygon = re.compile('Polygon\((\w+), {([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}, ([+-]?\d+(?:.\d+)?), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ([+-]?\d+(?:.\d+)?), ({{[+-]?\d+(?:.\d+)?, [+-]?\d+(?:.\d+)?}(?:, {[+-]?\d+(?:.\d+)?, [+-]?\d+(?:.\d+)?})*}), (\w+.\w+)')
+#   Polygon(true, {-60, -40},90, {0, 0, 0}, {255, 128, 0}, LinePattern.Solid, FillPattern.VerticalCylinder, 0.25, {{-20.0, 10.0}, {0.0, -10.0}, {1.22465e-16, -50.0}, {-10.0, -60.0}, {-20.0, -60.0}, {-20.0, 10.0}}, Smooth.None
+regex_polygon = re.compile('Polygon\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), {(\d+), (\d+), (\d+)}, {(\d+), (\d+), (\d+)}, (\w+.\w+), (\w+.\w+), ('+exp_float+'), ({{'+exp_float+'(?:e[+-]?\d+)?, '+exp_float+'(?:e[+-]?\d+)?}(?:, {'+exp_float+', '+exp_float+'})*}), (\w+.\w+)')
 
 # example: {{-100.0, -100.0}, {-100.0, -30.0}, {0.0, -30.0}, {0.0, 0.0}}
-regex_points = re.compile('{([+-]?\d+(?:.\d+)?), ([+-]?\d+(?:.\d+)?)}')
+regex_points = re.compile('{('+exp_float+'), ('+exp_float+')}')
 
 # example: Bitmap(true, {0.0, 0.0}, 0, {{-98, 98}, {98, -98}}, "modelica://Modelica/Resources/Images/Mechanics/MultiBody/Visualizers/TorusIcon.png"
 # TODO: where is the imageSource?
+regex_bitmap = re.compile('Bitmap\(([\w ]+), {('+exp_float+'), ('+exp_float+')}, ('+exp_float+'), {{('+exp_float+'), ('+exp_float+')}, {('+exp_float+'), ('+exp_float+')}}, ("[^"]*")(?:, ("[^"]*"))?')
+
+# anything unknown that produces output should look like this: Trash(...
+regex_any = re.compile('(\w+)\(')
 
 omc_cache = {}
 
@@ -232,6 +237,8 @@ def getGraphicsForClass(modelicaClass):
             graphicsObj['smooth'] = g[14]
 
         r = regex_text.search(icon_line)
+        if not r:
+            r = regex_text2.search(icon_line)
         if r:
             graphicsObj['type'] = 'Text'
             g = r.groups()
@@ -244,7 +251,7 @@ def getGraphicsForClass(modelicaClass):
             graphicsObj['fillPattern'] = g[11]
             graphicsObj['lineThickness'] = float(g[12])
             graphicsObj['extent'] = [[float(g[13]), float(g[14])], [float(g[15]), float(g[16])]]
-            graphicsObj['textString'] = g[17].strip('"').decode('utf-8')
+            graphicsObj['textString'] = g[17].strip('"')
             graphicsObj['fontSize'] = float(g[18])
             graphicsObj['fontName'] = g[19]
             if graphicsObj['fontName']:
@@ -272,9 +279,38 @@ def getGraphicsForClass(modelicaClass):
             graphicsObj['startAngle'] = float(g[17])
             graphicsObj['endAngle'] = float(g[18])
 
+        r = regex_bitmap.search(icon_line)
+        if r:
+            g = r.groups()
+            graphicsObj['type'] = 'Bitmap'
+            graphicsObj['visible'] = g[0]
+            graphicsObj['origin'] = [float(g[1]), float(g[2])]
+            graphicsObj['rotation'] = float(g[3])
+            graphicsObj['extent'] = [[float(g[4]), float(g[5])], [float(g[6]), float(g[7])]]
+            if g[9] is not None:
+                graphicsObj['href'] = "data:image;base64,"+g[9].strip('"')
+            else:
+                fname = ask_omc('uriToFilename', g[8], parsed=False).strip().strip('"')
+                if not os.path.exists(fname):
+                    fname = os.path.join(baseDir, g[8].strip('"'))
+                if os.path.exists(fname):
+                    with open(fname, "rb") as f_p:
+                        graphicsObj['href'] = "data:image;base64,"+base64.b64encode(f_p.read())
+                else:
+                    logger.error("Could not find bitmap file {0}".format(g[8]))
+                    graphicsObj['href'] = g[8].strip('"')
+
         if not 'type' in graphicsObj:
-            graphicsObj['type'] = 'Unknown'
-            # logger.error('Unknown graphicsObj: {0}'.format(icon_line))
+            r = regex_any.search(icon_line)
+            if r:
+                g = r.groups()
+                graphicsObj['type'] = 'Unknown'
+                logger.error('Unknown graphicsObj: {0}'.format(g[0]))
+            elif icon_line.strip() == '{}': # ignore empty icons
+                graphicsObj['type'] = 'Empty'
+            else: # assume others to be empty as well
+                graphicsObj['type'] = 'Empty'
+                logger.info('Treating graphicsObj as empty icon: {0}'.format(icon_line))
 
         result['graphics'].append(graphicsObj)
 
@@ -300,7 +336,7 @@ def getGraphicsWithPortsForClass(modelicaClass):
             try:
                 comp_annotation = ask_omc('getNthComponentAnnotation', modelicaClass + ', ' + str(comp_id))['SET2']['Set1']
             except KeyError as ex:
-                logger.error('KeyError: {0} componentName: {1} {2}'.format(modelicaClass, component_name, ex.message))
+                logger.error('KeyError: {0} componentName: {1} {2}'.format(modelicaClass, component_name, str(ex)))
                 continue
 
             # base class graphics for ports
@@ -492,7 +528,7 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
 
     origin = graphics['origin']
 
-    if graphics['type'] == 'Rectangle' or graphics['type'] == 'Ellipse' or graphics['type'] == 'Text':
+    if graphics['type'] == 'Rectangle' or graphics['type'] == 'Ellipse' or graphics['type'] == 'Text' or graphics['type'] == "Bitmap":
         (x0, y0) = getCoordinates(graphics['extent'][0], graphics, minX, maxY, transformation, coordinateSystem)
         (x1, y1) = getCoordinates(graphics['extent'][1], graphics, minX, maxY, transformation, coordinateSystem)
 
@@ -589,7 +625,7 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
         extra['font_family'] = graphics['fontName'] or "Verdana"
 
         if graphics['fontSize'] == 0:
-            extra['font_size'] = "18"
+            extra['font_size'] = str(abs(y1-y0)) # fit text into extent according to 18.6.5.5
         else:
             extra['font_size'] = graphics['fontSize']
 
@@ -601,7 +637,7 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
             elif style == "TextStyle.UnderLine":
                 extra['text-decoration'] = 'underline'
 
-        extra['alignment_baseline'] = "middle"
+        extra['dominant_baseline'] = "middle"
 
         if graphics['horizontalAlignment'] == "TextAlignment.Left":
             extra['text_anchor'] = "start"
@@ -646,8 +682,26 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
             shape.add(svgwrite.text.TSpan(("{0} {1} {2} {3}".format(xmin, ymin, xmax, ymax)), **extra))
             extra = {'class': "data-bind", 'display': "none"}
             shape.add(svgwrite.text.TSpan(graphics['textString'], **extra))
+
+    elif graphics['type'] == 'Bitmap':
+        xmin = x0
+        ymin = y0
+        xmax = x1
+        ymax = y1
+
+        if x0 > x1:
+            xmin = x1
+            xmax = x0
+        if y0 > y1:
+            ymin = y1
+            ymax = y0
+        shape = dwg.image(graphics['href'], x=xmin,y=ymin,width=xmax-xmin,height=ymax-ymin) # put in correct URL or base64 data "data:image;base64,"
+
+    elif graphics['type'] == 'Empty':
+        return None
+
     else:
-        logger.error('Not handled: {0}'.format(graphics))
+        logger.warning('Not handled: {0}'.format(graphics))
         return None
 
     dot_size = 4
@@ -728,11 +782,11 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
     if 'fillPattern' in graphics:
         if graphics['fillPattern'] == 'FillPattern.None':
             if graphics['type'] == 'Text':
-                shape.fill("rgb(" + ','.join([str(v) for v in graphics['lineColor']]) + ")")
+                shape.fill("rgb(" + ','.join([str(v) for v in graphics['lineColor']]) + ")", opacity=1)
             else:
                 shape.fill('none', opacity=0)
         elif graphics['fillPattern'] == 'FillPattern.Solid':
-            shape.fill("rgb(" + ','.join([str(v) for v in graphics['fillColor']]) + ")")
+            shape.fill("rgb(" + ','.join([str(v) for v in graphics['fillColor']]) + ")", opacity=1)
         elif graphics['fillPattern'] == 'FillPattern.Horizontal':
             url_id = str(element_id)
             element_id += 1
@@ -975,14 +1029,15 @@ def getSvgFromGraphics(dwg, graphics, minX, maxY, includeInvisibleText, transfor
 
                 definitions.add(gradient)
     else:
-        shape.fill('none', opacity=0)
+        if graphics['type'] != 'Bitmap':
+            shape.fill('none', opacity=0)
 
     return shape, definitions
 
 
 # generate svgs from graphics objects
-def generateSvg(filename, iconGraphics, includeInvisibleText):
-    global element_id
+def generateSvg(filename, iconGraphics, includeInvisibleText, warn_duplicates):
+    global element_id, use_subdirs
     element_id = 0
 
     width = 100
@@ -1087,15 +1142,26 @@ def generateSvg(filename, iconGraphics, includeInvisibleText):
 
             dwg.add(group)
     hashName = hashlib.sha1(dwg.tostring().encode("utf-8")).hexdigest() + ".svg"
+    if use_subdirs:
+        hashName = os.path.join(hashName[:1],hashName)
     hashPath = os.path.join(os.path.dirname(filename),hashName)
     if not os.path.exists(hashPath):
-      dwg.saveas(hashPath)
-    os.symlink(hashName, filename)
+        dwg.saveas(hashPath)
+    if not os.path.islink(filename):
+        try:
+            os.symlink(hashName, filename)
+        except OSError as e:
+            logger.error('Target file {0} already exists'.format(filename))
+    else:
+        if warn_duplicates:
+            logger.warning('Target file {0} already exists'.format(filename))
+        else:
+            logger.error('Target file {0} already exists'.format(filename))
 
     return dwg
 
 
-def exportIcon(modelicaClass, base_classes, includeInvisbleText):
+def exportIcon(modelicaClass, base_classes, includeInvisbleText, warn_duplicates, with_json):
     # get all icons
     iconGraphics = []
 
@@ -1105,11 +1171,12 @@ def exportIcon(modelicaClass, base_classes, includeInvisbleText):
     graphics = getGraphicsWithPortsForClass(modelicaClass)
     iconGraphics.append(graphics)
 
-    with open(os.path.join(output_dir, classToFileName(modelicaClass) + '.json'), 'w') as f_p:
-        json.dump(iconGraphics, f_p)
+    if with_json:
+        with open(os.path.join(output_dir, classToFileName(modelicaClass) + '.json'), 'w') as f_p:
+            json.dump(iconGraphics, f_p)
 
     # export svgs
-    dwg = generateSvg(os.path.join(output_dir, classToFileName(modelicaClass) + ".svg"), iconGraphics, includeInvisbleText)
+    dwg = generateSvg(os.path.join(output_dir, classToFileName(modelicaClass) + ".svg"), iconGraphics, includeInvisbleText, warn_duplicates)
     return dwg
 
 # Note: The order of the base classes matters
@@ -1124,11 +1191,15 @@ def getBaseClasses(modelica_class, base_classes):
 
 
 def main():
+    global baseDir, use_subdirs
     t = time.time()
     parser = OptionParser()
     parser.add_option("--with-html", help="Generate an HTML report with all SVG-files", action="store_true", dest="with_html", default=False)
     parser.add_option("--with-invisible-text", action="store_true", help="Includes invisible text containing the original text and bounding box, for debugging purposes", dest="includeInvisibleText", default=False)
     parser.add_option("--output-dir", help="Directory to generate SVG-files in", type="string", dest="output_dir", default=os.path.abspath('ModelicaIcons'))
+    parser.add_option("--warn-dup", help="Warn about duplicate files instead of generating an error", action="store_true", dest="warn_duplicates", default=False)
+    parser.add_option("--with-json", help="Output icon annotation as json", action="store_true", dest="with_json", default=False)
+    parser.add_option("--with-subdirs", help="Output hashed icon files in subdirs", action="store_true", dest="use_subdirs", default=False)
     parser.add_option("--quiet", help="Do not output to the console", action="store_true", dest="quiet", default=False)
     (options, args) = parser.parse_args()
     if len(args) == 0:
@@ -1138,6 +1209,9 @@ def main():
     output_dir = options.output_dir
     with_html = options.with_html
     includeInvisibleText = options.includeInvisibleText
+    warn_duplicates = options.warn_duplicates
+    with_json = options.with_json
+    use_subdirs = options.use_subdirs
 
     # create logger with 'spam_application'
     global logger
@@ -1166,9 +1240,22 @@ def main():
 
     logger.info('Application started')
     logger.info('Output directory: ' + output_dir)
+    print("%s Generating SVGs for package(s) %s" % (datetime.datetime.now(),PACKAGES_TO_GENERATE))
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    if use_subdirs:
+        for f in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']:
+            output_dirx = os.path.join(output_dir, f)
+            if not os.path.exists(output_dirx):
+                try:
+                    os.makedirs(output_dirx)
+                except:
+                    pass
+    else:
+        if not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir)
+            except:
+                pass
 
     success = True
 
@@ -1200,6 +1287,8 @@ def main():
         fh.setFormatter(formatter)
         logger.addHandler(fh)
 
+        classInfo  = omc.sendExpression('getClassInformation({0})'.format(package))
+        baseDir = os.path.dirname(classInfo[5])
         modelica_classes = omc.sendExpression('getClassNames(' + package + ', recursive=true, qualified=true, sort=true)')
         for modelica_class in modelica_classes:
             logger.info('Exporting: ' + modelica_class)
@@ -1207,7 +1296,7 @@ def main():
             # try:
             base_classes = []
             getBaseClasses(modelica_class, base_classes)
-            dwg = exportIcon(modelica_class, base_classes, includeInvisibleText)
+            dwg = exportIcon(modelica_class, base_classes, includeInvisibleText, warn_duplicates, with_json)
             dwgs.append(dwg)
 
             logger.info('Done: ' + modelica_class)
@@ -1236,7 +1325,7 @@ def main():
           f_p.write('</html>\n')
 
       logger.info('HTML file is ready.')
-    print("Generated svg's for %d models in packages %s in %.1f seconds" % (len(dwgs),PACKAGES_TO_GENERATE,time.time()-t))
+    print("%s Generated SVGs for %d models in package(s) %s in %.1f seconds" % (datetime.datetime.now(),len(dwgs),PACKAGES_TO_GENERATE,time.time()-t))
 
     logger.info('End of application')
     return 0 if success else 1

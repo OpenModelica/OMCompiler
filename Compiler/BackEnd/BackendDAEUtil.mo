@@ -117,6 +117,7 @@ import System;
 import Tearing;
 import Types;
 import UnitCheck;
+import Uncertainties;
 import Values;
 import XMLDump;
 import ZeroCrossings;
@@ -140,6 +141,16 @@ algorithm
     else false;
   end match;
 end isSimulationDAE;
+
+public function isJacobianDAE
+  input BackendDAE.Shared inShared;
+  output Boolean res;
+algorithm
+  res := match(inShared)
+    case (BackendDAE.SHARED(backendDAEType=BackendDAE.JACOBIAN())) then true;
+    else false;
+  end match;
+end isJacobianDAE;
 
 /*************************************************
  * checkBackendDAE and stuff
@@ -2510,6 +2521,7 @@ algorithm
       list<DAE.Statement> statementLst;
       list<list<BackendDAE.Equation>> eqnslst;
       list<BackendDAE.Equation> eqns;
+      BackendDAE.Equation eqn;
       list<BackendDAE.WhenOperator> whenStmtLst;
 
     // EQUATION
@@ -2531,11 +2543,19 @@ algorithm
     // ARRAY_EQUATION
     case BackendDAE.ARRAY_EQUATION(dimSize=dimsize,left=e1,right=e2)
       equation
-        size = List.reduce(dimsize, intMul);
+        size = if Flags.isSet(Flags.NF_SCALARIZE) then List.reduce(dimsize, intMul) else 1;
         lst1 = incidenceRowExp(e1, vars, iRow, functionTree, inIndexType);
         res = incidenceRowExp(e2, vars, lst1, functionTree, inIndexType);
       then
         (res,size);
+
+    // FOR_EQUATION
+    case BackendDAE.FOR_EQUATION(body = eqn, iter = DAE.CREF(componentRef = DAE.CREF_IDENT(ident = str)))
+      equation
+        // assume one equation defining a whole array var (no NF_SCALARIZE)
+        eqn = BackendEquation.traverseExpsOfEquation(eqn, function Expression.traverseExpTopDown(func = stripIterSub), str);
+      then
+        incidenceRow(eqn, vars, inIndexType, functionTree, iRow);
 
     // SOLVED_EQUATION
     case BackendDAE.SOLVED_EQUATION(componentRef = cr,exp = e)
@@ -2584,13 +2604,34 @@ algorithm
     else
       equation
         eqnstr = BackendDump.equationString(inEquation);
-        str = "- BackendDAE.incidenceRow failed for equation: " + eqnstr;
+        str = "- BackendDAEUtil.incidenceRow failed for equation: " + eqnstr;
         Error.addMessage(Error.INTERNAL_ERROR, {str});
       then
         fail();
   end matchcontinue;
   outIntegerLst := AvlSetInt.addList(outIntegerLst, whenIntegerLst);
 end incidenceRow;
+
+protected
+function stripIterSub
+"Strips the last subscript if it is equal to given inIter ident.
+ This enables incicence analysis for array variables defined in for loops.
+ author: rfranke"
+  input DAE.Exp inExp;
+  input DAE.Ident inIter;
+  output DAE.Exp outExp;
+  output Boolean cont;
+  output DAE.Ident outIter = inIter;
+algorithm
+  (outExp, cont) := match inExp
+    local
+      DAE.ComponentRef cr;
+      DAE.Type ty;
+    case DAE.CREF(componentRef = cr, ty = ty)
+    then (DAE.CREF(ComponentReference.crefStripIterSub(cr, inIter), ty), false);
+    else (inExp, true);
+  end match;
+end stripIterSub;
 
 protected function incidenceRowLst
 "author: Frenkel TUD
@@ -7613,6 +7654,7 @@ end selectMatchingAlgorithm;
 public function allPreOptimizationModules
   "This list contains all back end pre-optimization modules."
   output list<tuple<BackendDAEFunc.optimizationModule, String>> allPreOptimizationModules = {
+    (Uncertainties.dataReconciliation, "dataReconciliation"),
     (UnitCheck.unitChecking, "unitChecking"),
     (DynamicOptimization.createDynamicOptimization,"createDynamicOptimization"),
     (BackendInline.normalInlineFunction, "normalInlineFunction"),
@@ -7775,9 +7817,9 @@ algorithm
 
   if Flags.getConfigBool(Flags.DEFAULT_OPT_MODULES_ORDERING) then
     // handle special flags, which enable modules
-
     enabledModules := deprecatedDebugFlag(Flags.SORT_EQNS_AND_VARS, enabledModules, "sortEqnsVars", "preOptModules+");
     enabledModules := deprecatedDebugFlag(Flags.ADD_DER_ALIASES, enabledModules, "introduceDerAlias", "preOptModules+");
+
     if Config.acceptOptimicaGrammar() or Flags.getConfigBool(Flags.GENERATE_DYN_OPTIMIZATION_PROBLEM) then
       enabledModules := "inputDerivativesForDynOpt"::enabledModules;
       enabledModules := "createDynamicOptimization"::enabledModules;
@@ -7786,15 +7828,19 @@ algorithm
     // handle special flags, which disable modules
     disabledModules := deprecatedDebugFlag(Flags.NO_PARTITIONING, disabledModules, "clockPartitioning", "preOptModules-");
     disabledModules := deprecatedDebugFlag(Flags.DISABLE_COMSUBEXP, disabledModules, "comSubExp", "preOptModules-");
+
     if Flags.getConfigString(Flags.REMOVE_SIMPLE_EQUATIONS) == "causal" or
        Flags.getConfigString(Flags.REMOVE_SIMPLE_EQUATIONS) == "none" then
       disabledModules := "removeSimpleEquations"::disabledModules;
     end if;
 
-
     if not Flags.isSet(Flags.EVALUATE_CONST_FUNCTIONS) then
       disabledModules := "evalFunc"::disabledModules;
       Error.addCompilerWarning("Deprecated debug flag --d=evalConstFuncs=false detected. Use --preOptModules-=evalFunc instead.");
+    end if;
+
+    if not Flags.isSet(Flags.NF_SCALARIZE) then
+      disabledModules := "inlineArrayEqn"::disabledModules;
     end if;
   end if;
 
@@ -7899,6 +7945,10 @@ algorithm
 
     if Config.getTearingMethod() == "noTearing" then
       disabledModules := "tearingSystem"::disabledModules;
+    end if;
+
+    if not Flags.isSet(Flags.NF_SCALARIZE) then
+      disabledModules := "inlineArrayEqn"::disabledModules;
     end if;
   end if;
 
@@ -9432,9 +9482,9 @@ algorithm
         case BackendDAE.EQUATIONSYSTEM(vars = vlst, jacType = BackendDAE.JAC_NONLINEAR())
           then ("nonlinear equation system in the " + daeTypeStr + " DAE:", vlst);
         case BackendDAE.EQUATIONSYSTEM(vars = vlst, jacType = BackendDAE.JAC_GENERIC())
-          then ("equation system w/o analytic Jacobian in the " + daeTypeStr + " DAE:", vlst);
+          then ("equation system with analytic Jacobian in the " + daeTypeStr + " DAE:", vlst);
         case BackendDAE.EQUATIONSYSTEM(vars = vlst, jacType = BackendDAE.JAC_NO_ANALYTIC())
-          then ("equation system w/o analytic Jacobian in the " + daeTypeStr + " DAE:", vlst);
+          then ("equation system without analytic Jacobian in the " + daeTypeStr + " DAE:", vlst);
         case BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(tearingvars = vlst), linear = false)
           then ("torn nonlinear equation system in the " + daeTypeStr + " DAE:", vlst);
         // If the component is none of these types, do nothing.

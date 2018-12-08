@@ -38,8 +38,10 @@ encapsulated package NFBuiltinCall
   import NFInstNode.InstNode;
   import NFPrefixes.Variability;
   import Type = NFType;
+  import Subscript = NFSubscript;
 
 protected
+  import Config;
   import Ceval = NFCeval;
   import ComponentRef = NFComponentRef;
   import Dimension = NFDimension;
@@ -114,8 +116,8 @@ public
       case "initial" then typeDiscreteCall(call, origin, info);
       case "isRoot" then typeIsRootCall(call, origin, info);
       case "matrix" then typeMatrixCall(call, origin, info);
-      case "max" then typeMinMaxCall(call, origin, info);
-      case "min" then typeMinMaxCall(call, origin, info);
+      case "max" then typeMinMaxCall("max", call, origin, info);
+      case "min" then typeMinMaxCall("min", call, origin, info);
       case "ndims" then typeNdimsCall(call, origin, info);
       case "noEvent" then typeNoEventCall(call, origin, info);
       case "ones" then typeZerosOnesCall("ones", call, origin, info);
@@ -132,6 +134,19 @@ public
       case "transpose" then typeTransposeCall(call, origin, info);
       case "vector" then typeVectorCall(call, origin, info);
       case "zeros" then typeZerosOnesCall("zeros", call, origin, info);
+      case "Clock" guard Config.synchronousFeaturesAllowed() then typeClockCall(call, origin, info);
+      case "sample" then typeSampleCall(call, origin, info);
+      /*
+      case "hold" guard Config.synchronousFeaturesAllowed() then typeHoldCall(call, origin, info);
+      case "shiftSample" guard Config.synchronousFeaturesAllowed() then typeShiftSampleCall(call, origin, info);
+      case "backSample" guard Config.synchronousFeaturesAllowed() then typeBackSampleCall(call, origin, info);
+      case "noClock" guard Config.synchronousFeaturesAllowed() then typeNoClockCall(call, origin, info);
+      case "transition" guard Config.synchronousFeaturesAllowed() then typeTransitionCall(call, origin, info);
+      case "initialState" guard Config.synchronousFeaturesAllowed() then typeInitialStateCall(call, origin, info);
+      case "activeState" guard Config.synchronousFeaturesAllowed() then typeActiveStateCall(call, origin, info);
+      case "ticksInState" guard Config.synchronousFeaturesAllowed() then typeTicksInStateCall(call, origin, info);
+      case "timeInState" guard Config.synchronousFeaturesAllowed() then typeTimeInStateCall(call, origin, info);
+      */
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unhandled builtin function: " + Call.toString(call), sourceInfo());
@@ -185,7 +200,7 @@ public
       fail();
     end if;
 
-    arrayExp := Expression.ARRAY(Type.UNKNOWN(), posArgs);
+    arrayExp := Expression.makeArray(Type.UNKNOWN(), posArgs);
   end makeArrayExp;
 
   function makeCatExp
@@ -517,7 +532,7 @@ protected
     end if;
 
     // pre/change may not be used in a function context.
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessageAndFail(Error.EXP_INVALID_IN_FUNCTION,
         {ComponentRef.toString(fn_ref)}, info);
     end if;
@@ -556,7 +571,7 @@ protected
     Type ety;
   algorithm
     // der may not be used in a function context.
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessage(Error.EXP_INVALID_IN_FUNCTION, {"der"}, info);
       fail();
     end if;
@@ -645,7 +660,7 @@ protected
     CallAttributes ca;
   algorithm
     // edge may not be used in a function context.
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessage(Error.EXP_INVALID_IN_FUNCTION, {"edge"}, info);
       fail();
     end if;
@@ -664,6 +679,7 @@ protected
   end typeEdgeCall;
 
   function typeMinMaxCall
+    input String name;
     input Call call;
     input ExpOrigin.Type origin;
     input SourceInfo info;
@@ -671,16 +687,67 @@ protected
     output Type ty;
     output Variability var;
   protected
-    Call argtycall;
+    ComponentRef fn_ref;
+    list<Expression> args;
+    list<NamedArg> named_args;
+    Expression arg;
+    Function fn;
+    Expression arg1, arg2;
+    Type ty1, ty2;
+    Variability var1, var2;
+    TypeCheck.MatchKind mk;
   algorithm
-    argtycall := Call.typeMatchNormalCall(call, origin, info);
-    argtycall := Call.unboxArgs(argtycall);
-    ty := Call.typeOf(argtycall);
-    var := Call.variability(argtycall);
-    callExp := Expression.CALL(argtycall);
-    // TODO: check basic type in two argument overload.
-    // check arrays of simple types in one argument overload.
-    // fix return type.
+    Call.UNTYPED_CALL(ref = fn_ref, arguments = args, named_args = named_args) := call;
+    assertNoNamedParams(name, named_args, info);
+
+    (args, ty, var) := match args
+      case {arg1}
+        algorithm
+          (arg1, ty1, var1) := Typing.typeExp(arg1, origin, info);
+          ty := Type.arrayElementType(ty1);
+
+          if not (Type.isArray(ty1) and Type.isBasic(ty)) then
+            Error.addSourceMessageAndFail(Error.ARG_TYPE_MISMATCH,
+              {"1", name, "", Expression.toString(arg1), Type.toString(ty1), "Any[:, ...]"}, info);
+          end if;
+
+        then
+          ({arg1}, ty, var1);
+
+      case {arg1, arg2}
+        algorithm
+          (arg1, ty1, var1) := Typing.typeExp(arg1, origin, info);
+          (arg2, ty2, var2) := Typing.typeExp(arg2, origin, info);
+
+          if not Type.isBasic(ty1) then
+            Error.addSourceMessageAndFail(Error.ARG_TYPE_MISMATCH,
+              {"1", name, "", Expression.toString(arg1), Type.toString(ty1), "Any"}, info);
+          end if;
+
+          if not Type.isBasic(ty2) then
+            Error.addSourceMessageAndFail(Error.ARG_TYPE_MISMATCH,
+              {"2", name, "", Expression.toString(arg2), Type.toString(ty2), "Any"}, info);
+          end if;
+
+          (arg1, arg2, ty, mk) := TypeCheck.matchExpressions(arg1, ty1, arg2, ty2);
+
+          if not TypeCheck.isValidArgumentMatch(mk) then
+            Error.addSourceMessage(Error.NO_MATCHING_FUNCTION_FOUND_NFINST,
+              {Call.toString(call), name + "(Any[:, ...]) => Any\n" + name + "(Any, Any) => Any"}, info);
+          end if;
+        then
+          ({arg1, arg2}, ty, Prefixes.variabilityMax(var1, var2));
+
+      else
+        algorithm
+          Error.addSourceMessage(Error.NO_MATCHING_FUNCTION_FOUND_NFINST,
+            {Call.toString(call), name + "(Any[:, ...]) => Any\n" + name + "(Any, Any) => Any"}, info);
+        then
+          fail();
+    end match;
+
+    fn := listHead(Function.typeRefCache(fn_ref));
+    callExp := Expression.CALL(Call.makeTypedCall(fn, args, var, ty));
   end typeMinMaxCall;
 
   function typeSumCall
@@ -884,7 +951,7 @@ protected
     {fn} := Function.typeRefCache(fnRef);
     ty := Type.liftArrayLeftList(fillType, dims);
 
-    if evaluated and intBitAnd(origin, ExpOrigin.FUNCTION) == 0 then
+    if evaluated and ExpOrigin.flagNotSet(origin, ExpOrigin.FUNCTION) then
       callExp := Ceval.evalBuiltinFill(ty_args);
     else
       callExp := Expression.CALL(Call.makeTypedCall(NFBuiltinFuncs.FILL_FUNC, ty_args, variability, ty));
@@ -983,7 +1050,8 @@ protected
     Expression arg;
     Variability var;
     Function fn;
-    Integer dim_size = -1, i = 1;
+    Dimension vector_dim = Dimension.fromInteger(1);
+    Boolean dim_found = false;
   algorithm
     Call.UNTYPED_CALL(ref = fn_ref, arguments = args, named_args = named_args) := call;
     assertNoNamedParams("vector", named_args, info);
@@ -998,27 +1066,18 @@ protected
     // vector requires that at most one dimension is > 1, and that dimension
     // determines the type of the vector call.
     for dim in Type.arrayDims(ty) loop
-      if Dimension.isKnown(dim) then
-        if Dimension.size(dim) > 1 then
-          if dim_size == -1 then
-            dim_size := Dimension.size(dim);
-          else
-            Error.addSourceMessageAndFail(Error.NF_VECTOR_INVALID_DIMENSIONS,
-              {Type.toString(ty), Call.toString(call)}, info);
-          end if;
+      if not Dimension.isKnown(dim) or Dimension.size(dim) > 1 then
+        if dim_found then
+          Error.addSourceMessageAndFail(Error.NF_VECTOR_INVALID_DIMENSIONS,
+            {Type.toString(ty), Call.toString(call)}, info);
+        else
+          vector_dim := dim;
+          dim_found := true;
         end if;
       end if;
-
-      i := i + 1;
     end for;
 
-    // If the argument was scalar or an array where all dimensions where 1, set
-    // the dimension size to 1.
-    if dim_size == -1 then
-      dim_size := 1;
-    end if;
-
-    ty := Type.ARRAY(Type.arrayElementType(ty), {Dimension.fromInteger(dim_size)});
+    ty := Type.ARRAY(Type.arrayElementType(ty), {vector_dim});
     {fn} := Function.typeRefCache(fn_ref);
     callExp := Expression.CALL(Call.makeTypedCall(fn, {arg}, variability, ty));
   end typeVectorCall;
@@ -1039,7 +1098,7 @@ protected
     Function fn;
     list<Dimension> dims;
     Dimension dim1, dim2;
-    Integer i;
+    Integer i, ndims;
   algorithm
     Call.UNTYPED_CALL(ref = fn_ref, arguments = args, named_args = named_args) := call;
     assertNoNamedParams("matrix", named_args, info);
@@ -1051,32 +1110,32 @@ protected
 
     (arg, ty, variability) := Typing.typeExp(listHead(args), origin, info);
     dims := Type.arrayDims(ty);
+    ndims := listLength(dims);
 
-    dims := match listLength(dims)
-      case 0 then {Dimension.fromInteger(1), Dimension.fromInteger(1)};
-      case 1 then {listHead(dims), Dimension.fromInteger(1)};
-      case 2 then dims;
-      else
-        algorithm
-          // matrix requires all but the first two dimensions to have size 1.
-          dim1 :: dim2 :: dims := dims;
-          i := 3;
+    if ndims < 2 then
+      // matrix(A) where A is a scalar or vector returns promote(A, 2).
+      (callExp, ty) := Expression.promote(arg, ty, 2);
+    elseif ndims == 2 then
+      // matrix(A) where A is a matrix just returns A.
+      callExp := arg;
+    else
+      // matrix requires all but the first two dimensions to have size 1.
+      dim1 :: dim2 :: dims := dims;
+      i := 3;
 
-          for dim in dims loop
-            if Dimension.isKnown(dim) and Dimension.size(dim) > 1 then
-              Error.addSourceMessageAndFail(Error.INVALID_ARRAY_DIM_IN_CONVERSION_OP,
-                {String(i), "matrix", "1", Dimension.toString(dim)}, info);
-            end if;
+      for dim in dims loop
+        if Dimension.isKnown(dim) and Dimension.size(dim) > 1 then
+          Error.addSourceMessageAndFail(Error.INVALID_ARRAY_DIM_IN_CONVERSION_OP,
+            {String(i), "matrix", "1", Dimension.toString(dim)}, info);
+        end if;
 
-            i := i + 1;
-          end for;
-        then
-          {dim1, dim2};
-    end match;
+        i := i + 1;
+      end for;
 
-    ty := Type.ARRAY(Type.arrayElementType(ty), dims);
-    {fn} := Function.typeRefCache(fn_ref);
-    callExp := Expression.CALL(Call.makeTypedCall(fn, {arg}, variability, ty));
+      ty := Type.ARRAY(Type.arrayElementType(ty), {dim1, dim2});
+      {fn} := Function.typeRefCache(fn_ref);
+      callExp := Expression.CALL(Call.makeTypedCall(fn, {arg}, variability, ty));
+    end if;
   end typeMatrixCall;
 
   function typeCatCall
@@ -1228,7 +1287,7 @@ protected
         {Call.toString(call), ComponentRef.toString(fn_ref) + "(Connector) => Integer"}, info);
     end if;
 
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessageAndFail(Error.EXP_INVALID_IN_FUNCTION,
         {ComponentRef.toString(fn_ref)}, info);
     end if;
@@ -1276,7 +1335,7 @@ protected
         {Call.toString(call), ComponentRef.toString(fn_ref) + "(Connector, Connector)"}, info);
     end if;
 
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessageAndFail(Error.EXP_INVALID_IN_FUNCTION,
         {ComponentRef.toString(fn_ref)}, info);
     end if;
@@ -1315,7 +1374,7 @@ protected
         {Call.toString(call), ComponentRef.toString(fn_ref) + "(Connector)"}, info);
     end if;
 
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessageAndFail(Error.EXP_INVALID_IN_FUNCTION,
         {ComponentRef.toString(fn_ref)}, info);
     end if;
@@ -1363,7 +1422,7 @@ protected
         {Call.toString(call), ComponentRef.toString(fn_ref) + "(Connector, Integer = 0)"}, info);
     end if;
 
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessageAndFail(Error.EXP_INVALID_IN_FUNCTION,
         {ComponentRef.toString(fn_ref)}, info);
     end if;
@@ -1413,7 +1472,7 @@ protected
         {Call.toString(call), ComponentRef.toString(fn_ref) + "(Connector)"}, info);
     end if;
 
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessageAndFail(Error.EXP_INVALID_IN_FUNCTION,
         {ComponentRef.toString(fn_ref)}, info);
     end if;
@@ -1448,7 +1507,7 @@ protected
         {Call.toString(call), ComponentRef.toString(fn_ref) + "(Connector)"}, info);
     end if;
 
-    if intBitAnd(origin, ExpOrigin.FUNCTION) > 0 then
+    if ExpOrigin.flagSet(origin, ExpOrigin.FUNCTION) then
       Error.addSourceMessageAndFail(Error.EXP_INVALID_IN_FUNCTION,
         {ComponentRef.toString(fn_ref)}, info);
     end if;
@@ -1473,17 +1532,21 @@ protected
         Type ty2;
         InstNode node;
         Boolean valid_cref;
-        ComponentRef rest_cref;
 
       case Expression.CREF()
         algorithm
           valid_cref := match arg.cref
             case ComponentRef.CREF(node = node, origin = NFComponentRef.Origin.CREF,
-                restCref = ComponentRef.CREF(ty = ty2, origin = NFComponentRef.Origin.CREF,
-                restCref = rest_cref))
+                restCref = ComponentRef.CREF(ty = ty2, origin = NFComponentRef.Origin.CREF))
+              algorithm
+                ty2 := match ty2
+                  case Type.ARRAY()
+                    guard listLength(ComponentRef.subscriptsAllFlat(arg.cref)) == listLength(ty2.dimensions)
+                    then ty2.elementType;
+                  else ty2;
+                end match;
               then Class.isOverdetermined(InstNode.getClass(node)) and
-                   Type.isConnector(ty2) and
-                   not ComponentRef.isFromCref(rest_cref);
+                   Type.isConnector(ty2);
 
             else false;
           end match;
@@ -1531,7 +1594,7 @@ protected
     end if;
 
     {arg} := args;
-    (arg, ty, variability) := Typing.typeExp(arg, intBitOr(origin, ExpOrigin.NOEVENT), info);
+    (arg, ty, variability) := Typing.typeExp(arg, ExpOrigin.setFlag(origin, ExpOrigin.NOEVENT), info);
 
     {fn} := Function.typeRefCache(fn_ref);
     callExp := Expression.CALL(Call.makeTypedCall(fn, {arg}, variability, ty));
@@ -1548,6 +1611,141 @@ protected
     Call.UNTYPED_CALL(call_scope = scope) := call;
     result := Expression.STRING(Absyn.pathString(InstNode.scopePath(scope, includeRoot = true)));
   end typeGetInstanceName;
+
+  function typeClockCall
+    input Call call;
+    input ExpOrigin.Type origin;
+    input SourceInfo info;
+    output Expression callExp;
+    output Type outType = Type.CLOCK();
+    output Variability var = Variability.PARAMETER;
+  protected
+    Call ty_call;
+    list<Expression> args;
+    Integer args_count;
+    Expression e1, e2;
+  algorithm
+    Call.TYPED_CALL(arguments = args) := Call.typeMatchNormalCall(call, origin, info);
+    args_count := listLength(args);
+
+    callExp := match args
+      // Clock() - inferred clock.
+      case {} then Expression.CLKCONST(Expression.ClockKind.INFERRED_CLOCK());
+      // Clock(interval) - real clock.
+      case {e1} then Expression.CLKCONST(Expression.ClockKind.REAL_CLOCK(e1));
+      case {e1, e2}
+        algorithm
+          e2 := Ceval.evalExp(e2);
+
+          callExp := match Expression.typeOf(e2)
+            // Clock(intervalCounter, resolution) - integer clock.
+            case Type.INTEGER()
+              algorithm
+                Error.assertionOrAddSourceMessage(Expression.integerValue(e2) >= 1,
+                  Error.WRONG_VALUE_OF_ARG, {"Clock", "resolution", Expression.toString(e2), "=> 1"}, info);
+              then
+                Expression.CLKCONST(Expression.INTEGER_CLOCK(e1, e2));
+
+            // Clock(condition, startInterval) - boolean clock.
+            case Type.REAL()
+              then Expression.CLKCONST(Expression.BOOLEAN_CLOCK(e1, e2));
+
+            // Clock(c, solverMethod) - solver clock.
+            case Type.STRING()
+              then Expression.CLKCONST(Expression.SOLVER_CLOCK(e1, e2));
+          end match;
+        then
+          callExp;
+
+    end match;
+  end typeClockCall;
+
+  function typeSampleCall
+    input Call call;
+    input ExpOrigin.Type origin;
+    input SourceInfo info;
+    output Expression callExp;
+    output Type outType;
+    output Variability var;
+  protected
+    Call ty_call;
+    Type arg_ty;
+    list<TypedArg> args;
+    list<TypedNamedArg> namedArgs;
+    Expression e, e1, e2;
+    Type t, t1, t2;
+    Variability v, v1, v2;
+    ComponentRef fn_ref;
+    Function normalSample, clockedSample;
+    InstNode recopnode;
+  algorithm
+    Call.ARG_TYPED_CALL(fn_ref, args, namedArgs) := Call.typeNormalCall(call, origin, info);
+
+    recopnode := ComponentRef.node(fn_ref);
+
+    fn_ref := Function.instFunctionRef(fn_ref, InstNode.info(recopnode));
+    {normalSample, clockedSample} := Function.typeRefCache(fn_ref);
+
+    (callExp, outType, var) := match(args, namedArgs)
+
+      // sample(start, Real interval) - the usual stuff
+      case ({(e, t, v), (e1, Type.INTEGER(), v1)}, {})
+        algorithm
+          if valueEq(t, Type.INTEGER()) then
+            e := Expression.CAST(Type.REAL(), e);
+          end if;
+          ty_call := Call.makeTypedCall(normalSample, {e, Expression.CAST(Type.REAL(), e1)}, Variability.PARAMETER, Type.BOOLEAN());
+        then
+          (Expression.CALL(ty_call), Type.BOOLEAN(), Variability.PARAMETER);
+
+      // sample(start, Real interval) - the usual stuff
+      case ({(e, t, v), (e1, Type.REAL(), v1)}, {})
+        algorithm
+          if valueEq(t, Type.INTEGER()) then
+            e := Expression.CAST(Type.REAL(), e);
+          end if;
+          ty_call := Call.makeTypedCall(normalSample, {e, e1}, Variability.PARAMETER, Type.BOOLEAN());
+        then
+          (Expression.CALL(ty_call), Type.BOOLEAN(), Variability.PARAMETER);
+
+      // sample(start, Real interval = value) - the usual stuff
+      case ({(e, t, v)}, {("interval", e1, Type.REAL(), v1)})
+        algorithm
+          if valueEq(t, Type.INTEGER()) then
+            e := Expression.CAST(Type.REAL(), e);
+          end if;
+          ty_call := Call.makeTypedCall(normalSample, {e, e1}, Variability.PARAMETER, Type.BOOLEAN());
+        then
+          (Expression.CALL(ty_call), Type.BOOLEAN(), Variability.PARAMETER);
+
+      // sample(u) - inferred clock
+      case ({(e, t, v)}, {}) guard Config.synchronousFeaturesAllowed()
+        algorithm
+          ty_call := Call.makeTypedCall(clockedSample, {e, Expression.CLKCONST(Expression.ClockKind.INFERRED_CLOCK())}, v, t);
+        then
+          (Expression.CALL(ty_call), t, v);
+
+      // sample(u, c) - specified clock
+      case ({(e, t, v), (e1, Type.CLOCK(), v1)}, {}) guard Config.synchronousFeaturesAllowed()
+        algorithm
+          ty_call := Call.makeTypedCall(clockedSample, {e, e1}, v, t);
+        then
+          (Expression.CALL(ty_call), t, v);
+
+      // sample(u, Clock c = c) - specified clock
+      case ({(e, t, v)}, {("c", e1, Type.CLOCK(), v1)}) guard Config.synchronousFeaturesAllowed()
+        algorithm
+          ty_call := Call.makeTypedCall(clockedSample, {e, e1}, v, t);
+        then
+          (Expression.CALL(ty_call), t, v);
+
+      else
+        algorithm
+          Error.addSourceMessage(Error.WRONG_TYPE_OR_NO_OF_ARGS, {Call.toString(call), "<NO COMPONENT>"}, info);
+        then
+          fail();
+    end match;
+  end typeSampleCall;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFBuiltinCall;

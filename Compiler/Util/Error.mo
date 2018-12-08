@@ -518,7 +518,7 @@ public constant Message ARRAY_TYPE_MISMATCH = MESSAGE(193, TRANSLATION(), ERROR(
 public constant Message VECTORIZE_TWO_UNKNOWN = MESSAGE(194, TRANSLATION(), ERROR(),
   Util.gettext("Could not vectorize call with unknown dimensions due to finding two for-iterators: %s and %s."));
 public constant Message FUNCTION_SLOT_VARIABILITY = MESSAGE(195, TRANSLATION(), ERROR(),
-  Util.gettext("Function argument %s=%s is not a %s expression."));
+  Util.gettext("Function argument %s=%s in call to %s has variability %s which is not a %s expression."));
 public constant Message INVALID_ARRAY_DIM_IN_CONVERSION_OP = MESSAGE(196, TRANSLATION(), ERROR(),
   Util.gettext("Invalid dimension %s of argument to %s, expected dimension size %s but got %s."));
 public constant Message DUPLICATE_REDECLARATION = MESSAGE(197, TRANSLATION(), ERROR(),
@@ -812,6 +812,8 @@ public constant Message OPERATOR_OVERLOADING_INVALID_OUTPUT_TYPE = MESSAGE(341, 
   Util.gettext("Output ‘%s‘ in operator %s must be of type %s, got type %s."));
 public constant Message OPERATOR_NOT_ENCAPSULATED = MESSAGE(342, TRANSLATION(), ERROR(),
   Util.gettext("Operator %s is not encapsulated."));
+public constant Message NO_SUCH_INPUT_PARAMETER = MESSAGE(343, TRANSLATION(), ERROR(),
+  Util.gettext("Function %s has no input parameter named %s."));
 public constant Message INITIALIZATION_NOT_FULLY_SPECIFIED = MESSAGE(496, TRANSLATION(), WARNING(),
   Util.gettext("The initial conditions are not fully specified. %s."));
 public constant Message INITIALIZATION_OVER_SPECIFIED = MESSAGE(497, TRANSLATION(), WARNING(),
@@ -994,6 +996,10 @@ public constant Message STATE_STATESELECT_NEVER = MESSAGE(592, SYMBOLIC(), WARNI
   Util.gettext("Variable %s has attribute stateSelect=StateSelect.never, but was selected as a state"));
 public constant Message FUNCTION_HIGHER_VARIABILITY_BINDING = MESSAGE(593, TRANSLATION(), WARNING(),
   Util.gettext("Component ‘%s’ of variability %s has binding %s of higher variability %s."));
+public constant Message OCG_MISSING_BRANCH = MESSAGE(594, TRANSLATION(), WARNING(),
+  Util.gettext("Connections.rooted(%s) needs exactly one statement Connections.branch(%s, B.R) involving %s but we found none in the graph. Run with -d=cgraphGraphVizFile to debug"));
+public constant Message UNBOUND_PARAMETER_EVALUATE_TRUE = MESSAGE(594, TRANSLATION(), WARNING(),
+  Util.gettext("Parameter %s has annotation(Evaluate=true) and no binding."));
 
 public constant Message MATCH_SHADOWING = MESSAGE(5001, TRANSLATION(), ERROR(),
   Util.gettext("Local variable '%s' shadows another variable."));
@@ -1138,6 +1144,9 @@ public constant Message SAVE_ENCRYPTED_CLASS_ERROR = MESSAGE(7022, SCRIPTING(), 
   Util.gettext("Cannot save the encrypted class. Encrypted classes are read-only."));
 public constant Message ACCESS_ENCRYPTED_PROTECTED_CONTENTS = MESSAGE(7023, SCRIPTING(), ERROR(),
   Util.gettext("Cannot access encrypted and protected class contents."));
+public constant Message INVALID_NONLINEAR_JACOBIAN_COMPONENT = MESSAGE(7024, TRANSLATION(), ERROR(),
+  Util.gettext("Jacobian %s contains non-linear components. This indicates a singular system or internal generation errors."));
+
 
 protected
 
@@ -1353,6 +1362,24 @@ algorithm
       then ();
   end match;
 end addMessageOrSourceMessage;
+
+function addTotalMessage
+  input TotalMessage message;
+protected
+  Message msg;
+  SourceInfo info;
+algorithm
+  TOTALMESSAGE(msg = msg, info = info) := message;
+  addSourceMessage(msg, {}, info);
+end addTotalMessage;
+
+function addTotalMessages
+  input list<TotalMessage> messages;
+algorithm
+  for msg in messages loop
+    addTotalMessage(msg);
+  end for;
+end addTotalMessages;
 
 public function printMessagesStr "Relations for pretty printing.
   function: printMessagesStr

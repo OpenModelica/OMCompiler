@@ -197,6 +197,8 @@ function convertVarAttributes
   output Option<DAE.VariableAttributes> attributes;
 protected
   Option<Boolean> is_final;
+  Type elTy;
+  Boolean is_array = false;
 algorithm
   if listEmpty(attrs) and not compAttrs.isFinal then
     attributes := NONE();
@@ -205,7 +207,7 @@ algorithm
 
   is_final := SOME(compAttrs.isFinal);
 
-  attributes := match ty
+  attributes := match Type.arrayElementType(ty)
     case Type.REAL() then convertRealVarAttributes(attrs, is_final);
     case Type.INTEGER() then convertIntVarAttributes(attrs, is_final);
     case Type.BOOLEAN() then convertBoolVarAttributes(attrs, is_final);
@@ -459,7 +461,10 @@ algorithm
         e2 := Expression.toDAE(eq.rhs);
       then
         (if Type.isComplex(eq.ty) then
-           DAE.Element.COMPLEX_EQUATION(e1, e2, eq.source) else
+           DAE.Element.COMPLEX_EQUATION(e1, e2, eq.source)
+         elseif Type.isArray(eq.ty) then
+           DAE.Element.ARRAY_EQUATION(list(Dimension.toDAE(d) for d in Type.arrayDims(eq.ty)), e1, e2, eq.source)
+         else
            DAE.Element.EQUATION(e1, e2, eq.source)) :: elements;
 
     case Equation.CREF_EQUALITY()
@@ -477,12 +482,8 @@ algorithm
       then
         DAE.Element.ARRAY_EQUATION(dims, e1, e2, eq.source) :: elements;
 
-    // For equations should have been unrolled here.
     case Equation.FOR()
-      algorithm
-        Error.assertion(false, getInstanceName() + " got a for equation", sourceInfo());
-      then
-        fail();
+      then convertForEquation(eq) :: elements;
 
     case Equation.IF()
       then convertIfEquation(eq.branches, eq.source, isInitial = false) :: elements;
@@ -515,6 +516,25 @@ algorithm
   end match;
 end convertEquation;
 
+function convertForEquation
+  input Equation forEquation;
+  output DAE.Element forDAE;
+protected
+  InstNode iterator;
+  Type ty;
+  Expression range;
+  list<Equation> body;
+  list<DAE.Element> dbody;
+  DAE.ElementSource source;
+algorithm
+  Equation.FOR(iterator = iterator, range = SOME(range), body = body, source = source) := forEquation;
+  dbody := convertEquations(body);
+  Component.ITERATOR(ty = ty) := InstNode.component(iterator);
+
+  forDAE := DAE.Element.FOR_EQUATION(Type.toDAE(ty), Type.isArray(ty),
+    InstNode.name(iterator), 0, Expression.toDAE(range), dbody, source);
+end convertForEquation;
+
 function convertIfEquation
   input list<Equation.Branch> ifBranches;
   input DAE.ElementSource source;
@@ -531,6 +551,12 @@ algorithm
     (conds, branches) := match branch
       case Equation.Branch.BRANCH()
         then (branch.condition :: conds, branch.body :: branches);
+
+      case Equation.Branch.INVALID_BRANCH()
+        algorithm
+          Equation.Branch.triggerErrors(branch);
+        then
+          fail();
     end match;
   end for;
 
@@ -547,6 +573,8 @@ algorithm
   end if;
 
   dconds := listReverse(Expression.toDAE(c) for c in conds);
+  dbranches := listReverseInPlace(dbranches);
+
   ifEquation := if isInitial then
     DAE.Element.INITIAL_IF_EQUATION(dconds, dbranches, else_branch, source) else
     DAE.Element.IF_EQUATION(dconds, dbranches, else_branch, source);
@@ -579,7 +607,7 @@ function convertInitialEquations
   input list<Equation> equations;
   input output list<DAE.Element> elements = {};
 algorithm
-  for eq in equations loop
+  for eq in listReverse(equations) loop
     elements := convertInitialEquation(eq, elements);
   end for;
 end convertInitialEquations;
@@ -612,12 +640,8 @@ algorithm
       then
         DAE.Element.INITIAL_ARRAY_EQUATION(dims, e1, e2, eq.source) :: elements;
 
-    // For equations should have been unrolled here.
     case Equation.FOR()
-      algorithm
-        Error.assertion(false, getInstanceName() + " got a for equation", sourceInfo());
-      then
-        fail();
+      then convertForEquation(eq) :: elements;
 
     case Equation.IF()
       then convertIfEquation(eq.branches, eq.source, isInitial = true) :: elements;

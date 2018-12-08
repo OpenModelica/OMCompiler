@@ -198,24 +198,30 @@ LIBS="$LIBS_BEFORE"
 
 TRY_FLAGS="-fno-stack-protector"
 
-# GCC 5.x generates bad code due to detecting some impure functions as pure
-if $CC --version | grep -q gcc && $CC -dumpversion | grep -q "^5"; then
-  TRY_FLAGS="$TRY_FLAGS -fno-ipa-pure-const"
+if echo $CC | grep -v ccc-analyzer; then # ccc-analyzer calls gcc first and then clang; the CFLAGS need to work in both compilers...
+
+  # GCC 5.x generates bad code due to detecting some impure functions as pure
+  if $CC --version | grep -q gcc && $CC -dumpversion | grep -q "^5"; then
+    TRY_FLAGS="$TRY_FLAGS -fno-ipa-pure-const"
+  fi
+
+  # GCC 7.x issues:
+  # - RUNPATH instead of RPATH, disable that via -Wl,--disable-new-dtags
+  # - sqrt from libcolamd is not found in -lm if -Wl,--no-as-needed is not specified
+  if $CC --version | grep -q gcc && $CC -dumpversion | grep -q "^7"; then
+    TRY_FLAGS="$TRY_FLAGS -Wl,--no-as-needed"
+    RPATH_EXTRA="-Wl,--disable-new-dtags"
+  fi
+
 fi
 
-# GCC 7.x issues:
-# - RUNPATH instead of RPATH, disable that via -Wl,--disable-new-dtags
-# - sqrt from libcolamd is not found in -lm if -Wl,--no-as-needed is not specified
-if $CC --version | grep -q gcc && $CC -dumpversion | grep -q "^7"; then
-  TRY_FLAGS="$TRY_FLAGS -Wl,--no-as-needed"
-  RPATH_EXTRA="-Wl,--disable-new-dtags"
-fi
-
+AC_MSG_CHECKING([for flags to append to CFLAGS ($TRY_FLAGS)])
 for flag in $TRY_FLAGS; do
   OLD_CFLAGS="$CFLAGS"
   CFLAGS="$RUNTIMECFLAGS $flag -Werror"
   AC_TRY_LINK([], [return 0;], [CFLAGS="$OLD_CFLAGS $flag"],[CFLAGS="$OLD_CFLAGS"])
 done
+AC_MSG_RESULT([$CFLAGS])
 OLD_CFLAGS="$CFLAGS"
 for flag in -Wno-parentheses-equality -Wno-unused-variable; do
   CFLAGS="$RUNTIMECFLAGS $flag -Werror"

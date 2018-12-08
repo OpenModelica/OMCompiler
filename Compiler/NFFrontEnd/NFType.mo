@@ -43,6 +43,13 @@ public
   import ComplexType = NFComplexType;
   import ConvertDAE = NFConvertDAE;
   import ComponentRef = NFComponentRef;
+  import NFFunction.Function;
+
+  type FunctionType = enumeration(
+    FUNCTIONAL_PARAMETER "Function parameter of function type.",
+    FUNCTION_REFERENCE   "Function name used to reference a function.",
+    FUNCTIONAL_VARIABLE  "A variable that contains a function reference."
+  );
 
   record INTEGER
   end INTEGER;
@@ -89,8 +96,8 @@ public
   end COMPLEX;
 
   record FUNCTION
-    //ComponentRef fnRef;
-    Type resultType;
+    Function fn;
+    FunctionType fnType;
   end FUNCTION;
 
   record METABOXED "Used for MetaModelica generic types"
@@ -356,7 +363,7 @@ public
       case STRING() then true;
       case ENUMERATION() then true;
       case CLOCK() then true;
-      case FUNCTION() then isBasic(ty.resultType);
+      case FUNCTION() then isBasic(Function.returnType(ty.fn));
       else false;
     end match;
   end isBasic;
@@ -395,7 +402,7 @@ public
       case CLOCK() then true;
       case ENUMERATION() then true;
       case ENUMERATION_ANY() then true;
-      case FUNCTION() then isScalarBuiltin(ty.resultType);
+      case FUNCTION() then isScalarBuiltin(Function.returnType(ty.fn));
       else false;
     end match;
   end isScalarBuiltin;
@@ -441,6 +448,18 @@ public
     end match;
   end firstTupleType;
 
+  function nthTupleType
+    input Type ty;
+    input Integer n;
+    output Type outTy;
+  algorithm
+    outTy := match ty
+      case TUPLE() then listGet(ty.types, n);
+      case ARRAY() then Type.ARRAY(nthTupleType(ty.elementType, n), ty.dimensions);
+      else ty;
+    end match;
+  end nthTupleType;
+
   function arrayElementType
     "Returns the common type of the elements in an array, or just the type
      itself if it's not an array type."
@@ -472,7 +491,7 @@ public
   algorithm
     elementTy := match ty
       case ARRAY() then ty.elementType;
-      case FUNCTION() then ty.resultType;
+      case FUNCTION() then elementType(Function.returnType(ty.fn));
       else ty;
     end match;
   end elementType;
@@ -483,7 +502,7 @@ public
   algorithm
     dims := match ty
       case ARRAY() then ty.dimensions;
-      case FUNCTION() then arrayDims(ty.resultType);
+      case FUNCTION() then arrayDims(Function.returnType(ty.fn));
       case METABOXED() then arrayDims(ty.ty);
       else {};
     end match;
@@ -496,12 +515,16 @@ public
     input Type dstType;
     output Type ty;
   algorithm
-    ty := match dstType
-      case ARRAY()
-        then ARRAY(dstType.elementType, arrayDims(srcType));
+    if listEmpty(arrayDims(srcType)) then
+      ty := arrayElementType(dstType);
+    else
+      ty := match dstType
+        case ARRAY()
+          then ARRAY(dstType.elementType, arrayDims(srcType));
 
-      else ARRAY(dstType, arrayDims(srcType));
-    end match;
+        else ARRAY(dstType, arrayDims(srcType));
+      end match;
+    end if;
   end copyDims;
 
   function nthDimension
@@ -511,7 +534,7 @@ public
   algorithm
     dim := match ty
       case ARRAY() then listGet(ty.dimensions, index);
-      case FUNCTION() then nthDimension(ty.resultType, index);
+      case FUNCTION() then nthDimension(Function.returnType(ty.fn), index);
       case METABOXED() then nthDimension(ty.ty, index);
     end match;
   end nthDimension;
@@ -522,7 +545,7 @@ public
   algorithm
     dimCount := match ty
       case ARRAY() then listLength(ty.dimensions);
-      case FUNCTION() then dimensionCount(ty.resultType);
+      case FUNCTION() then dimensionCount(Function.returnType(ty.fn));
       case METABOXED() then dimensionCount(ty.ty);
       else 0;
     end match;
@@ -534,10 +557,20 @@ public
   algorithm
     isKnown := match ty
       case ARRAY() then List.all(ty.dimensions, function Dimension.isKnown(allowExp = false));
-      case FUNCTION() then hasKnownSize(ty.resultType);
+      case FUNCTION() then hasKnownSize(Function.returnType(ty.fn));
       else true;
     end match;
   end hasKnownSize;
+
+  function hasZeroDimension
+    input Type ty;
+    output Boolean hasZero;
+  algorithm
+    hasZero := match ty
+      case ARRAY() then List.exist(ty.dimensions, Dimension.isZero);
+      else false;
+    end match;
+  end hasZeroDimension;
 
   function mapDims
     input output Type ty;
@@ -548,6 +581,9 @@ public
     end FuncT;
   algorithm
     () := match ty
+      local
+        Function fn;
+
       case ARRAY()
         algorithm
           ty.dimensions := list(func(d) for d in ty.dimensions);
@@ -560,9 +596,9 @@ public
         then
           ();
 
-      case FUNCTION()
+      case FUNCTION(fn = fn)
         algorithm
-          ty.resultType := mapDims(ty.resultType, func);
+          ty.fn := Function.setReturnType(mapDims(Function.returnType(fn), func), fn);
         then
           ();
 
@@ -605,7 +641,7 @@ public
       case Type.NORETCALL() then "()";
       case Type.UNKNOWN() then "unknown()";
       case Type.COMPLEX() then InstNode.name(ty.cls);
-      case Type.FUNCTION() then "function( output " + toString(ty.resultType) + " )";
+      case Type.FUNCTION() then Function.typeString(ty.fn);
       case Type.METABOXED() then "#" + toString(ty.ty);
       case Type.POLYMORPHIC() then "<" + ty.name + ">";
       case Type.ANY() then "$ANY$";
@@ -644,12 +680,20 @@ public
           list(Dimension.toDAE(d) for d in ty.dimensions));
       case Type.TUPLE()
         then DAE.T_TUPLE(list(toDAE(t) for t in ty.types), ty.names);
-      //case Type.FUNCTION()
-      //  then DAE.T_FUNCTION({} /*TODO:FIXME*/, toDAE(ty.resultType, makeTypeVars), ty.attributes, Absyn.IDENT("TODO:FIXME"));
+      case Type.FUNCTION()
+        then match ty.fnType
+          case FunctionType.FUNCTIONAL_PARAMETER
+            then Function.makeDAEType(ty.fn);
+          case FunctionType.FUNCTION_REFERENCE
+            then DAE.T_FUNCTION_REFERENCE_FUNC(Function.isBuiltin(ty.fn), Function.makeDAEType(ty.fn));
+          case FunctionType.FUNCTIONAL_VARIABLE
+            then DAE.T_FUNCTION_REFERENCE_VAR(Function.makeDAEType(ty.fn, true));
+        end match;
       case Type.NORETCALL() then DAE.T_NORETCALL_DEFAULT;
       case Type.UNKNOWN() then DAE.T_UNKNOWN_DEFAULT;
       case Type.COMPLEX()
         then if makeTypeVars then InstNode.toFullDAEType(ty.cls) else InstNode.toPartialDAEType(ty.cls);
+      case Type.METABOXED() then DAE.T_METABOXED(toDAE(ty.ty));
       case Type.POLYMORPHIC() then DAE.T_METAPOLYMORPHIC(ty.name);
       case Type.ANY() then DAE.T_ANYTYPE(NONE());
       else
@@ -740,7 +784,7 @@ public
       case BOOLEAN() then true;
       case ENUMERATION() then true;
       case ARRAY() then isDiscrete(ty.elementType);
-      case FUNCTION() then isDiscrete(ty.resultType);
+      case FUNCTION() then isDiscrete(Function.returnType(ty.fn));
       else false;
     end match;
   end isDiscrete;
@@ -751,10 +795,47 @@ public
     output Type fieldType;
   algorithm
     fieldType := match recordType
-      case Type.COMPLEX()
+      case COMPLEX()
         then InstNode.getType(Class.lookupElement(name, InstNode.getClass(recordType.cls)));
     end match;
   end lookupRecordFieldType;
+
+  function enumName
+    input Type ty;
+    output Absyn.Path name;
+  algorithm
+    ENUMERATION(typePath = name) := ty;
+  end enumName;
+
+  function box
+    input Type ty;
+    output Type boxedType;
+  algorithm
+    boxedType := match ty
+      case METABOXED() then ty;
+      else METABOXED(ty);
+    end match;
+  end box;
+
+  function unbox
+    input Type ty;
+    output Type unboxedType;
+  algorithm
+    unboxedType := match ty
+      case METABOXED() then ty.ty;
+      else ty;
+    end match;
+  end unbox;
+
+  function isBoxed
+    input Type ty;
+    output Boolean isBoxed;
+  algorithm
+    isBoxed := match ty
+      case METABOXED() then true;
+      else false;
+    end match;
+  end isBoxed;
 
   annotation(__OpenModelica_Interface="frontend");
 end NFType;

@@ -280,6 +280,41 @@ package SimCodeVar
   end Causality;
 end SimCodeVar;
 
+package HashTableCrefSimVar
+
+	type Key = DAE.ComponentRef;
+	type Value = SimCodeVar.SimVar;
+
+	type HashTableCrefFunctionsType = tuple<FuncHashCref,FuncCrefEqual,FuncCrefStr,FuncExpStr>;
+	type HashTable = tuple<
+	  array<list<tuple<Key,Integer>>>,
+	  tuple<Integer,Integer,array<Option<tuple<Key,Value>>>>,
+	  Integer,
+	  HashTableCrefFunctionsType
+	>;
+
+  function FuncHashCref
+    input Key cr;
+    input Integer mod;
+    output Integer res;
+  end FuncHashCref;
+
+  function FuncCrefEqual
+    input Key cr1;
+    input Key cr2;
+    output Boolean res;
+  end FuncCrefEqual;
+
+  function FuncCrefStr
+    input Key cr;
+    output String res;
+  end FuncCrefStr;
+
+  function FuncExpStr
+    input Value exp;
+    output String res;
+  end FuncExpStr;
+end HashTableCrefSimVar;
 
 package SimCode
 
@@ -308,6 +343,7 @@ package SimCode
       Integer maxColorCols;
       Integer jacobianIndex;
       Integer partitionIndex;
+      Option<HashTableCrefSimVar.HashTable> crefsHT;
     end JAC_MATRIX;
   end JacobianMatrix;
 
@@ -532,6 +568,7 @@ package SimCode
       list<DAE.ElementSource> sources;
       Integer indexLinearSystem;
       Integer nUnknowns;
+      Boolean partOfJac "if TRUE then this system is part of a jacobian matrix";
     end LINEARSYSTEM;
   end LinearSystem;
 
@@ -819,6 +856,7 @@ package SimCodeFunction
     record FUNCTION_CONTEXT
     end FUNCTION_CONTEXT;
     record JACOBIAN_CONTEXT
+      Option<HashTableCrefSimVar.HashTable> jacHT;
     end JACOBIAN_CONTEXT;
     record ALGLOOP_CONTEXT
       Boolean genInitialisation;
@@ -909,6 +947,11 @@ package SimCodeUtil
     input Integer inIndex;
     output Integer outVariableIndex;
   end getStateSimVarIndexFromIndex;
+
+  function getScalarElements
+    input SimCodeVar.SimVar var;
+    output list<SimCodeVar.SimVar> elts;
+  end getScalarElements;
 
   function getVariableIndex
     input SimCodeVar.SimVar inVar;
@@ -1022,6 +1065,17 @@ package SimCodeUtil
     input SimCode.SimCode simCode;
     output SimCodeVar.SimVar outSimVar;
   end cref2simvar;
+
+  function simVarFromHT
+    input DAE.ComponentRef inCref;
+    input HashTableCrefSimVar.HashTable crefToSimVarHT;
+    output SimCodeVar.SimVar outSimVar;
+  end simVarFromHT;
+
+  function createJacContext
+    input Option<HashTableCrefSimVar.HashTable> jacHT;
+    output SimCodeFunction.Context outContext;
+  end createJacContext;
 
   function isModelTooBigForCSharpInOneFile
     input SimCode.SimCode simCode;
@@ -3228,6 +3282,11 @@ package ComponentReference
     output list<DAE.Subscript> subs;
   end crefSubs;
 
+  function crefTypeFull
+    input DAE.ComponentRef inRef;
+    output DAE.Type res;
+  end crefTypeFull;
+
   function crefLastType
     input DAE.ComponentRef inRef;
     output DAE.Type res;
@@ -3261,6 +3320,11 @@ package ComponentReference
     input Boolean expandRecord;
     output list<DAE.ComponentRef> outCref;
   end expandCref;
+
+  function crefHasScalarSubscripts
+    input DAE.ComponentRef cr;
+    output Boolean hasScalarSubs;
+  end crefHasScalarSubscripts;
 
   function crefIsScalarWithAllConstSubs
     input DAE.ComponentRef inCref;
@@ -3316,6 +3380,13 @@ package ComponentReference
     input DAE.ComponentRef inCR;
     output DAE.ComponentRef outCR;
   end crefRemovePrePrefix;
+
+  function createDifferentiatedCrefName
+    input DAE.ComponentRef inCref;
+    input DAE.ComponentRef inX;
+    input String inMatrixName;
+    output DAE.ComponentRef outCref;
+  end createDifferentiatedCrefName;
 end ComponentReference;
 
 package Expression
@@ -3335,11 +3406,6 @@ package Expression
     input list<DAE.Subscript> inSubs;
     output Boolean areConstant;
   end subscriptConstants;
-
-  function crefHasScalarSubscripts
-    input DAE.ComponentRef cr;
-    output Boolean hasScalarSubs;
-  end crefHasScalarSubscripts;
 
   function typeof
     input DAE.Exp inExp;
@@ -3534,6 +3600,7 @@ package Flags
   constant DebugFlag HARDCODED_START_VALUES;
   constant DebugFlag OMC_RECORD_ALLOC_WORDS;
   constant DebugFlag OMC_RELOCATABLE_FUNCTIONS;
+  constant DebugFlag NF_SCALARIZE;
   constant ConfigFlag NUM_PROC;
   constant ConfigFlag HPCOM_CODE;
   constant ConfigFlag PROFILING_LEVEL;
@@ -3666,6 +3733,10 @@ package DAEUtil
 end DAEUtil;
 
 package Types
+  function arrayElementType
+    input DAE.Type inType;
+    output DAE.Type outType;
+  end arrayElementType;
   function getDimensionSizes
     input DAE.Type inType;
     output list<Integer> outIntegerLst;

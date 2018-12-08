@@ -88,9 +88,9 @@ public:
   virtual T& operator()(const vector<size_t>& idx) = 0;
   virtual void assign(const T* data) = 0;
   virtual void assign(const BaseArray<T>& b) = 0;
+  virtual void assign(const T& value) = 0; // fill value
   virtual std::vector<size_t> getDims() const = 0;
   virtual int getDim(size_t dim) const = 0; // { (int)getDims()[dim - 1]; }
-
   virtual size_t getNumElems() const = 0;
   virtual size_t getNumDims() const = 0;
   virtual void setDims(const std::vector<size_t>& v) = 0;
@@ -269,6 +269,17 @@ public:
     else
       std::transform(_ref_array, _ref_array + nelems, b.getData(),
                      _ref_array, CopyCArray2RefArray<T>());
+  }
+
+  /**
+   * Assigns value reference to each array element
+   * @param value  new value for each element
+   * a.assign(value)
+   */
+  virtual void assign(const T& value)
+  {
+    for (size_t i = 0; i < nelems; i++)
+      *_ref_array[i] = value;
   }
 
   /**
@@ -705,54 +716,16 @@ class StatArray : public BaseArray<T>
   virtual ~StatArray() {}
 
   /**
-   * Assign static array with external storage to static array.
-   * a = b
-   * Just copy the data pointer if this array has external storage as well.
-   * @param b any array of type StatArray
+   * Initialize static array with external data.
+   * @param data  new array data
+   * a.init(data)
    */
-  StatArray<T, nelems, external>&
-  operator=(const StatArray<T, nelems, true>& b)
+  void init(T* data)
   {
     if (external)
-      _data = b._data;
-    else if (nelems > 0) {
-      if (_data == NULL)
-        throw std::runtime_error("Invalid assign operation from StatArray to uninitialized StatArray!");
-      b.getDataCopy(_data, nelems);
-    }
-    return *this;
-  }
-
-  /**
-   * Assign static array with internal storage to static array.
-   * a = b
-   * @param b any array of type StatArray
-   */
-  StatArray<T, nelems, external>&
-  operator=(const StatArray<T, nelems, false>& b)
-  {
-    if (nelems > 0) {
-      if (_data == NULL)
-        throw std::runtime_error("Invalid assign operation from StatArray to uninitialized StatArray!");
-      b.getDataCopy(_data, nelems);
-    }
-    return *this;
-  }
-
-  /**
-   * Assignment operator to assign array of type base array to static array
-   * a = b
-   * @param b any array of type BaseArray
-   */
-  StatArray<T, nelems, external>& operator=(const BaseArray<T>& b)
-  {
-    if (nelems > 0) {
-      if (_data == NULL)
-        throw std::runtime_error("Invalid assign operation to uninitialized StatArray!");
-      assert(b.getNumElems() == nelems);
-      b.getDataCopy(_data, nelems);
-    }
-    return *this;
+      _data = data;
+    else
+      throw std::runtime_error("Invalid init of StatArray with own data!");
   }
 
   /**
@@ -792,6 +765,20 @@ class StatArray : public BaseArray<T>
         throw std::runtime_error("Cannot assign to uninitialized StatArray!");
       assert(b.getNumElems() == nelems);
       b.getDataCopy(_data, nelems);
+    }
+  }
+
+  /**
+   * Assigns value to each array element
+   * @param value  new array value
+   * a.assign(value)
+   */
+  virtual void assign(const T& value)
+  {
+    if (nelems > 0) {
+      if (_data == NULL)
+        throw std::runtime_error("Cannot assign value to uninitialized StatArray!");
+      std::fill(_data, _data + nelems, value);
     }
   }
 
@@ -895,25 +882,24 @@ class StatArrayDim1 : public StatArray<T, size, external>
   /**
    * Assign static array with external storage to static array.
    * a = b
-   * Just copy the data pointer if this array has external storage as well.
-   * @param b any array of type StatArray
+   * @param b any array of type StatArrayDim1
    */
   StatArrayDim1<T, size, external>&
   operator=(const StatArrayDim1<T, size, true>& b)
   {
-    StatArray<T, size, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
   /**
    * Assign static array with internal storage to static array.
    * a = b
-   * @param b any array of type StatArray
+   * @param b any array of type StatArrayDim1
    */
   StatArrayDim1<T, size, external>&
   operator=(const StatArrayDim1<T, size, false>& b)
   {
-    StatArray<T, size, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
@@ -924,7 +910,7 @@ class StatArrayDim1 : public StatArray<T, size, external>
    */
   StatArrayDim1<T, size, external>& operator=(const BaseArray<T>& b)
   {
-    StatArray<T, size, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
@@ -1065,25 +1051,24 @@ class StatArrayDim2 : public StatArray<T, size1*size2, external>
   /**
    * Assign static array with external storage to static array.
    * a = b
-   * Just copy the data pointer if this array has external storage as well.
-   * @param b any array of type StatArray
+   * @param b any array of type StatArrayDim2
    */
   StatArrayDim2<T, size1, size2, external>&
   operator=(const StatArrayDim2<T, size1, size2, true>& b)
   {
-    StatArray<T, size1*size2, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
   /**
    * Assign static array with internal storage to static array.
    * a = b
-   * @param b any array of type StatArray
+   * @param b any array of type StatArrayDim2
    */
   StatArrayDim2<T, size1, size2, external>&
   operator=(const StatArrayDim2<T, size1, size2, false>& b)
   {
-    StatArray<T, size1*size2, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
@@ -1094,7 +1079,7 @@ class StatArrayDim2 : public StatArray<T, size1*size2, external>
    */
   StatArrayDim2<T, size1, size2, external>& operator=(const BaseArray<T>& b)
   {
-    StatArray<T, size1*size2, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
@@ -1104,7 +1089,8 @@ class StatArrayDim2 : public StatArray<T, size1*size2, external>
    * @param i row number
    * @param n optional number of rows not needed for static arrays
    */
-  void append(size_t i, const StatArrayDim1<T, size2, external>& b, size_t n = 0)
+  template<bool anybool>
+  void append(size_t i, const StatArrayDim1<T, size2, anybool>& b, size_t n = 0)
   {
     const T* data = b.getData();
     T *array_data = StatArray<T, size1*size2, external>::getData() + i-1;
@@ -1249,25 +1235,24 @@ class StatArrayDim3 : public StatArray<T, size1*size2*size3, external>
   /**
    * Assign static array with external storage to static array.
    * a = b
-   * Just copy the data pointer if this array has external storage as well.
-   * @param b any array of type StatArray
+   * @param b any array of type StatArrayDim3
    */
   StatArrayDim3<T, size1, size2, size3, external>&
   operator=(const StatArrayDim3<T, size1, size2, size3, true>& b)
   {
-    StatArray<T, size1*size2*size3, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
   /**
    * Assign static array with internal storage to static array.
    * a = b
-   * @param b any array of type StatArray
+   * @param b any array of type StatArrayDim3
    */
   StatArrayDim3<T, size1, size2, size3, external>&
   operator=(const StatArrayDim3<T, size1, size2, size3, false>& b)
   {
-    StatArray<T, size1*size2*size3, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
@@ -1279,7 +1264,7 @@ class StatArrayDim3 : public StatArray<T, size1*size2*size3, external>
   StatArrayDim3<T, size1, size2, size3, external>&
   operator=(const BaseArray<T>& b)
   {
-    StatArray<T, size1*size2*size3, external>::operator=(b);
+    this->assign(b);
     return *this;
   }
 
@@ -1289,7 +1274,8 @@ class StatArrayDim3 : public StatArray<T, size1*size2*size3, external>
    * @param i row number
    * @param n optional number of rows not needed for static arrays
    */
-  void append(size_t i, const StatArrayDim2<T,size2,size3>& b, size_t n = 0)
+  template<bool anybool>
+  void append(size_t i, const StatArrayDim2<T, size2, size3, anybool>& b, size_t n = 0)
   {
     const T* data = b.getData();
     T *array_data = StatArray<T, size1*size2*size3, external>::getData() + i-1;
@@ -1434,6 +1420,12 @@ class DynArray : public BaseArray<T>
   {
     if (_nelems > 0)
       std::copy(data, data + _nelems, _array_data);
+  }
+
+  virtual void assign(const T& value)
+  {
+    if (_nelems > 0)
+      std::fill(_array_data, _array_data + _nelems, value);
   }
 
   virtual void resize(const std::vector<size_t>& dims)

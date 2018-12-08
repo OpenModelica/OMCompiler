@@ -45,6 +45,7 @@ import Sections = NFSections;
 import NFBinding.Binding;
 import Variable = NFVariable;
 import Algorithm = NFAlgorithm;
+import Dimension = NFDimension;
 
 protected
 import MetaModelica.Dangerous.*;
@@ -56,15 +57,12 @@ import Ceval = NFCeval;
 public
 function simplify
   input output FlatModel flatModel;
-  input output FunctionTree functions;
 algorithm
   flatModel.variables := list(simplifyVariable(v) for v in flatModel.variables);
   flatModel.equations := simplifyEquations(flatModel.equations);
   flatModel.initialEquations := simplifyEquations(flatModel.initialEquations);
-  flatModel.algorithms := list(simplifyAlgorithm(a) for a in flatModel.algorithms);
-  flatModel.initialAlgorithms := list(simplifyAlgorithm(a) for a in flatModel.initialAlgorithms);
-
-  functions := FunctionTree.map(functions, simplifyFunction);
+  flatModel.algorithms := simplifyAlgorithms(flatModel.algorithms);
+  flatModel.initialAlgorithms := simplifyAlgorithms(flatModel.initialAlgorithms);
 
   execStat(getInstanceName());
 end simplify;
@@ -84,6 +82,7 @@ algorithm
   if Binding.isBound(binding) then
     exp := Binding.getTypedExp(binding);
     sexp := SimplifyExp.simplify(exp);
+    sexp := removeEmptyFunctionArguments(sexp);
 
     if not referenceEq(exp, sexp) then
       binding := Binding.setTypedExp(sexp, binding);
@@ -105,6 +104,24 @@ algorithm
   end if;
 end simplifyTypeAttribute;
 
+function simplifyDimension
+  input Dimension dim;
+  output Dimension outDim;
+algorithm
+  outDim := match dim
+    local
+      Expression e;
+
+    case Dimension.EXP()
+      algorithm
+        e := SimplifyExp.simplify(dim.exp);
+      then
+        if referenceEq(e, dim.exp) then dim else Dimension.fromExp(e, dim.var);
+
+    else dim;
+  end match;
+end simplifyDimension;
+
 function simplifyEquations
   input list<Equation> eql;
   output list<Equation> outEql = {};
@@ -122,20 +139,28 @@ function simplifyEquation
 algorithm
   equations := match eq
     local
-      Expression e;
+      Expression e, lhs, rhs;
+      Type ty;
 
     case Equation.EQUALITY()
       algorithm
-        eq.lhs := removeEmptyTupleElements(SimplifyExp.simplify(eq.lhs));
-        eq.rhs := removeEmptyFunctionArguments(SimplifyExp.simplify(eq.rhs));
+        ty := Type.mapDims(eq.ty, simplifyDimension);
+
+        if not Type.isEmptyArray(ty) then
+          lhs := removeEmptyTupleElements(SimplifyExp.simplify(eq.lhs));
+          rhs := removeEmptyFunctionArguments(SimplifyExp.simplify(eq.rhs));
+          equations := Equation.EQUALITY(lhs, rhs, ty, eq.source) :: equations;
+        end if;
       then
-        eq :: equations;
+        equations;
 
     case Equation.ARRAY_EQUALITY()
       algorithm
-        if not Type.isEmptyArray(eq.ty) then
-          eq.rhs := removeEmptyFunctionArguments(SimplifyExp.simplify(eq.rhs));
-          equations := eq :: equations;
+        ty := Type.mapDims(eq.ty, simplifyDimension);
+
+        if not Type.isEmptyArray(ty) then
+          rhs := removeEmptyFunctionArguments(SimplifyExp.simplify(eq.rhs));
+          equations := Equation.ARRAY_EQUALITY(eq.lhs, rhs, ty, eq.source) :: equations;
         end if;
       then
         equations;
@@ -185,6 +210,21 @@ algorithm
   end match;
 end simplifyEquation;
 
+function simplifyAlgorithms
+  input list<Algorithm> algs;
+  output list<Algorithm> outAlgs = {};
+algorithm
+  for alg in algs loop
+    alg := simplifyAlgorithm(alg);
+
+    if not listEmpty(alg.statements) then
+      outAlgs := alg :: outAlgs;
+    end if;
+  end for;
+
+  outAlgs := listReverseInPlace(outAlgs);
+end simplifyAlgorithms;
+
 function simplifyAlgorithm
   input output Algorithm alg;
 algorithm
@@ -208,14 +248,20 @@ function simplifyStatement
 algorithm
   statements := match stmt
     local
-      Expression e;
+      Expression e, lhs, rhs;
+      Type ty;
 
     case Statement.ASSIGNMENT()
       algorithm
-        stmt.lhs := removeEmptyTupleElements(SimplifyExp.simplify(stmt.lhs));
-        stmt.rhs := removeEmptyFunctionArguments(SimplifyExp.simplify(stmt.rhs));
+        ty := Type.mapDims(stmt.ty, simplifyDimension);
+
+        if not Type.isEmptyArray(ty) then
+          lhs := removeEmptyTupleElements(SimplifyExp.simplify(stmt.lhs));
+          rhs := removeEmptyFunctionArguments(SimplifyExp.simplify(stmt.rhs));
+          statements := Statement.ASSIGNMENT(lhs, rhs, ty, stmt.source) :: statements;
+        end if;
       then
-        stmt :: statements;
+        statements;
 
     case Statement.FOR(range = SOME(e))
       algorithm
@@ -311,11 +357,7 @@ algorithm
     accum := match branch
       case Equation.Branch.BRANCH(cond, var, body)
         algorithm
-          if var <= Variability.STRUCTURAL_PARAMETER then
-            cond := Ceval.evalExp(cond);
-          else
-            cond := SimplifyExp.simplify(cond);
-          end if;
+          cond := SimplifyExp.simplify(cond);
 
           // A branch with condition true will always be selected when encountered.
           if Expression.isTrue(cond) then
@@ -332,6 +374,21 @@ algorithm
           elseif not Expression.isFalse(cond) then
             // Keep branches that are neither literal true or false.
             accum := Equation.makeBranch(cond, simplifyEquations(body)) :: accum;
+          end if;
+        then
+          accum;
+
+      case Equation.INVALID_BRANCH(branch =
+          Equation.Branch.BRANCH(condition = cond, conditionVar = var))
+        algorithm
+          if var <= Variability.STRUCTURAL_PARAMETER then
+            cond := Ceval.evalExp(cond);
+          end if;
+
+          // An invalid branch that can't be removed will trigger the errors
+          // stored in it.
+          if not Expression.isFalse(cond) then
+            Equation.Branch.triggerErrors(branch);
           end if;
         then
           accum;
@@ -393,35 +450,44 @@ algorithm
 end simplifyIfStmtBranches;
 
 function simplifyFunction
-  input Absyn.Path name;
-  input output Function func;
+  input Function func;
 protected
   Class cls;
   Algorithm fn_body;
   Sections sections;
 algorithm
-  cls := InstNode.getClass(func.node);
+  if not Function.isSimplified(func) then
+    Function.markSimplified(func);
+    Function.mapExp(func, SimplifyExp.simplify, mapBody = false);
 
-  () := match cls
-    case Class.INSTANCED_CLASS(sections = sections)
-      algorithm
-        () := match sections
-          case Sections.SECTIONS(algorithms = {fn_body})
-            algorithm
-              fn_body.statements := simplifyStatements(fn_body.statements);
-              sections.algorithms := {fn_body};
-              cls.sections := sections;
-              InstNode.updateClass(cls, func.node);
-            then
-              ();
+    cls := InstNode.getClass(func.node);
+    () := match cls
+      case Class.INSTANCED_CLASS(sections = sections)
+        algorithm
+          () := match sections
+            case Sections.SECTIONS(algorithms = {fn_body})
+              algorithm
+                fn_body.statements := simplifyStatements(fn_body.statements);
+                sections.algorithms := {fn_body};
+                cls.sections := sections;
+                InstNode.updateClass(cls, func.node);
+              then
+                ();
 
-          else ();
-        end match;
-      then
-        ();
+            else ();
+          end match;
+        then
+          ();
 
-    else ();
-  end match;
+      else ();
+    end match;
+
+    for fn_der in func.derivatives loop
+      for der_fn in Function.getCachedFuncs(fn_der.derivativeFn) loop
+        simplifyFunction(der_fn);
+      end for;
+    end for;
+  end if;
 end simplifyFunction;
 
 annotation(__OpenModelica_Interface="frontend");

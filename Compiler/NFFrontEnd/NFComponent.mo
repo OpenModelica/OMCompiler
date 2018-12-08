@@ -431,6 +431,8 @@ uniontype Component
     b := match component
       case UNTYPED_COMPONENT() then component.binding;
       case TYPED_COMPONENT() then component.binding;
+      case TYPE_ATTRIBUTE() then Modifier.binding(component.modifier);
+      else NFBinding.EMPTY_BINDING;
     end match;
   end getBinding;
 
@@ -451,6 +453,11 @@ uniontype Component
         then
           ();
 
+      case TYPE_ATTRIBUTE()
+        algorithm
+          component.modifier := Modifier.setBinding(binding, component.modifier);
+        then
+          ();
     end match;
   end setBinding;
 
@@ -561,6 +568,16 @@ uniontype Component
     output Boolean isConst = variability(component) == Variability.CONSTANT;
   end isConst;
 
+  function isParameter
+    input Component component;
+    output Boolean b = variability(component) == Variability.PARAMETER;
+  end isParameter;
+
+  function isStructuralParameter
+    input Component component;
+    output Boolean b = variability(component) == Variability.STRUCTURAL_PARAMETER;
+  end isStructuralParameter;
+
   function isVar
     input Component component;
     output Boolean isVar = variability(component) == Variability.CONTINUOUS;
@@ -648,6 +665,12 @@ uniontype Component
     output Boolean isConnector =
       Class.isConnectorClass(InstNode.getDerivedClass(classInstance(component)));
   end isConnector;
+
+  function isExpandableConnector
+    input Component component;
+    output Boolean isExpandableConnector =
+      Class.isExpandableConnectorClass(InstNode.getDerivedClass(classInstance(component)));
+  end isExpandableConnector;
 
   function isIdentical
     input Component comp1;
@@ -748,6 +771,40 @@ uniontype Component
     end match;
   end comment;
 
+  function getEvaluateAnnotation
+    input Component component;
+    output Boolean evaluate;
+  protected
+    SCode.Comment cmt;
+  algorithm
+    evaluate := SCode.getEvaluateAnnotation(comment(component));
+  end getEvaluateAnnotation;
+
+  function getFixedAttribute
+    input Component component;
+    output Boolean fixed = false;
+  protected
+    list<Modifier> typeAttrs = {};
+    Binding binding;
+  algorithm
+    // for parameters the default is fixed = true
+    if isParameter(component) or isStructuralParameter(component) then
+      fixed := true;
+    else
+      fixed := false;
+    end if;
+
+    binding := Class.lookupAttributeBinding("fixed", InstNode.getClass(classInstance(component)));
+
+    // no fixed attribute present
+    if Binding.isUnbound(binding) then
+      return;
+    end if;
+
+    fixed := fixed and Expression.isTrue(Binding.getTypedExp(binding));
+
+  end getFixedAttribute;
+
   function isDeleted
     input Component component;
     output Boolean isDeleted;
@@ -764,6 +821,15 @@ uniontype Component
     end match;
   end isDeleted;
 
+  function isTypeAttribute
+    input Component component;
+    output Boolean isAttribute;
+  algorithm
+    isAttribute := match component
+      case TYPE_ATTRIBUTE() then true;
+      else false;
+    end match;
+  end isTypeAttribute;
 end Component;
 
 annotation(__OpenModelica_Interface="frontend");

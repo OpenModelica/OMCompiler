@@ -116,7 +116,7 @@ end simplifyAllExpressions;
 // OM introduces $OMC$PosetiveMax which can simplified using min or max attribute
 // see Modelica spec for inStream
 // author: Vitalij Ruge
-// see. #3885, 4441
+// see. #3885, 4441, 5104
 // =============================================================================
 
 public function simplifyInStream
@@ -140,6 +140,14 @@ protected function simplifyInStreamWork
   output list<BackendDAE.Variables> outVars = inVars;
 algorithm
   outExp := Expression.traverseExpBottomUp(inExp, simplifyInStreamWork2, outVars);
+
+  // with #5104 we remove max(x, eps)
+  // so in case max(x,eps)*y/max(x,eps) => x*y/x
+  // now x can be equal 0, so we need simplify x*y/x = y
+  // it's seem no other models silplyfied it
+  if not Expression.expEqual(outExp, inExp) then
+    outExp := ExpressionSimplify.simplify(outExp);
+  end if;
 end simplifyInStreamWork;
 
 protected function simplifyInStreamWork2
@@ -152,44 +160,70 @@ algorithm
     local
       DAE.Type tp;
       DAE.ComponentRef cr;
-      DAE.Exp e, expr, a, b;
+      DAE.Exp e, expr, ret;
       Option<DAE.Exp> eMin, eMax;
-      Boolean isZero;
 
-    case DAE.CALL(path=Absyn.IDENT("$OMC$PositiveMax"),expLst={e as DAE.CREF(componentRef=cr), expr}) algorithm
+    // positiveMax(cref, eps) = 0 if variable(cref).max <= 0
+    // positiveMax(cref, eps) = cref if variable(cref).min >= 0
+    case DAE.CALL(path=Absyn.IDENT("$OMC$PositiveMax"),expLst={e as DAE.CREF(componentRef=cr), expr})
+    algorithm
       (eMin, eMax) := simplifyInStreamWorkExpresion(cr, outVars);
-      isZero := simplifyInStreamWorkSimplify(eMin, false);
-      tp := ComponentReference.crefTypeFull(cr);
-    then if isZero then Expression.createZeroExpression(tp) else Expression.makePureBuiltinCall("max", {e, expr}, tp);
+      if simplifyInStreamWorkSimplify(eMax, true) then  // var.max <= 0.0
+        tp := ComponentReference.crefTypeFull(cr);
+        ret := Expression.createZeroExpression(tp);
+      elseif simplifyInStreamWorkSimplify(eMin, false) then // var.min >= 0.0
+        ret := e;
+      else
+        tp := ComponentReference.crefTypeFull(cr);
+        ret := Expression.makePureBuiltinCall("max", {e, expr}, tp);
+      end if;
+    then
+       ret;
 
-    case DAE.CALL(path=Absyn.IDENT("$OMC$PositiveMax"),expLst={e as DAE.UNARY(DAE.UMINUS(tp), DAE.CREF(componentRef=cr)), expr}) algorithm
+    //positiveMax(-cref, eps) = 0 if variable(cref).min >= 0
+    //positiveMax(-cref, eps) = -cref if variable(cref).max <= 0
+    case DAE.CALL(path=Absyn.IDENT("$OMC$PositiveMax"),expLst={e as DAE.UNARY(DAE.UMINUS(tp), DAE.CREF(componentRef=cr)), expr})
+    algorithm
       (eMin, eMax) := simplifyInStreamWorkExpresion(cr, outVars);
-      isZero := simplifyInStreamWorkSimplify(eMax, true);
-    then if isZero then Expression.createZeroExpression(tp) else Expression.makePureBuiltinCall("max", {e, expr}, tp);
+      if simplifyInStreamWorkSimplify(eMin, false) then // var.min >= 0.0
+        ret := Expression.createZeroExpression(tp);
+      elseif simplifyInStreamWorkSimplify(eMax, true) then  // var.max <= 0.0
+        ret := e;
+      else
+        ret := Expression.makePureBuiltinCall("max", {e, expr}, tp);
+      end if;
+    then
+       ret;
 
-    case DAE.CALL(path=Absyn.IDENT("$OMC$PositiveMax"),expLst={e, expr}) guard Expression.isZero(e)
+    //positiveMax(cref, eps) = cref where cref >= 0
+    case DAE.CALL(path=Absyn.IDENT("$OMC$PositiveMax"),expLst={e, expr}) guard Expression.isPositiveOrZero(e)
     then e;
 
+    // e.g. positiveMax(cref, eps) = max(cref,eps) = eps where cref < 0
     case DAE.CALL(path=Absyn.IDENT("$OMC$PositiveMax"),expLst={e, expr})
       //print("\nsimplifyInStreamWork: ");
       //print(ExpressionDump.printExpStr(inExp));
       //print(" <-> ");
       //print(ExpressionDump.printExpStr(e));
-    then Expression.makePureBuiltinCall("max", {e, expr}, Expression.typeof(e));
+    then
+      Expression.makePureBuiltinCall("max", {e, expr}, Expression.typeof(e));
 
     case DAE.CALL(path=Absyn.IDENT("$OMC$inStreamDiv"),expLst={e, expr})
       algorithm
           e := ExpressionSimplify.simplify(e);
-          expr := match(e)
-                      case DAE.BINARY(a, DAE.DIV(), b)
-                        guard Expression.isZero(a) and Expression.isZero(b)
-                      then
-                        expr;
-                      else
-                        e;
+          ret := match(e)
+                  local
+                    DAE.Exp a,b;
+
+                  case DAE.BINARY(a, DAE.DIV(), b)
+                  guard Expression.isZero(a) and Expression.isZero(b)
+                  then expr;
+
+                  else e;
+
                  end match;
       then
-         expr;
+         ret;
 
     else inExp;
   end match;
@@ -207,7 +241,7 @@ algorithm
     try
       (v, _) := BackendVariable.getVarSingle(cr, vars);
       (outMin, outMax) := BackendVariable.getMinMaxAttribute(v);
-      return;
+      break;
     else
       // search
     end try;
@@ -5602,7 +5636,7 @@ algorithm
       varlst = List.map1r(vlst, BackendVariable.getVarAt, inVars);
       false = listEmpty(varlst);
 
-      warning = "Iteration variables of equation system w/o analytic Jacobian:\n" + warnAboutVars(varlst);
+      warning = "Iteration variables of equation system with analytic Jacobian:\n" + warnAboutVars(varlst);
       warningList = listAllIterationVariables2(rest, inVars);
     then warning::warningList;
 
@@ -5610,7 +5644,7 @@ algorithm
       varlst = List.map1r(vlst, BackendVariable.getVarAt, inVars);
       false = listEmpty(varlst);
 
-      warning = "Iteration variables of equation system w/o analytic Jacobian:\n" + warnAboutVars(varlst);
+      warning = "Iteration variables of equation system without analytic Jacobian:\n" + warnAboutVars(varlst);
       warningList = listAllIterationVariables2(rest, inVars);
     then warning::warningList;
 
@@ -5852,6 +5886,7 @@ algorithm
       tasks := List.sort(listAppend(predecessors,listAppend(outputTasks,stateTasks)),intGt);
         //print("predecessors of outputs and states "+stringDelimitList(List.map(tasks,intString),", ")+"\n");
       compsNew := List.map1(tasks,List.getIndexFirst,comps);
+      compsNew := List.unique(compsNew);
         print("There have been "+intString(listLength(comps))+" SCCs and now there are "+intString(listLength(compsNew))+" SCCs.\n");
 
       //get vars and equations from the new reduced set of comps and make a equationIdxMap

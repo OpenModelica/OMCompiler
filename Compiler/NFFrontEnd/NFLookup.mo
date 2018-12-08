@@ -36,6 +36,7 @@ encapsulated package NFLookup
 "
 
 import Absyn;
+import SCode;
 import Dump;
 import Error;
 import Global;
@@ -53,6 +54,7 @@ import NFInstNode.CachedData;
 import NFComponent.Component;
 import Subscript = NFSubscript;
 import ComplexType = NFComplexType;
+import Config;
 
 public
 type MatchType = enumeration(FOUND, NOT_FOUND, PARTIAL);
@@ -61,11 +63,12 @@ function lookupClassName
   input Absyn.Path name;
   input InstNode scope;
   input SourceInfo info;
+  input Boolean checkAccessViolations = true;
   output InstNode node;
 protected
   LookupState state;
 algorithm
-  (node, state) := lookupNameWithError(name, scope, info, Error.LOOKUP_ERROR);
+  (node, state) := lookupNameWithError(name, scope, info, Error.LOOKUP_ERROR, checkAccessViolations);
   LookupState.assertClass(state, node, name, info);
 end lookupClassName;
 
@@ -252,8 +255,7 @@ algorithm
   (foundCref, foundScope, state) := match cref
     case Absyn.ComponentRef.CREF_IDENT()
       algorithm
-        (_, foundCref, foundScope, state) :=
-          lookupSimpleCref(cref.name, cref.subscripts, scope);
+        (_, foundCref, foundScope, state) := lookupSimpleCref(cref.name, cref.subscripts, scope);
       then
         (foundCref, foundScope, state);
 
@@ -261,8 +263,18 @@ algorithm
       algorithm
         (node, foundCref, foundScope, state) :=
           lookupSimpleCref(cref.name, cref.subscripts, scope);
+        if InstNode.isExpandableConnector(ComponentRef.node(foundCref)) then
+          try // it migth not be there!
+            (foundCref, foundScope, state) := lookupCrefInNode(cref.componentRef, node, foundCref, foundScope, state);
+          else
+            // add it if is not there, fake crefs
+             (foundCref, foundScope, state) := createVirtualCrefs(cref.componentRef, node, foundCref, foundScope, state);
+          end try;
+        else
+          (foundCref, foundScope, state) := lookupCrefInNode(cref.componentRef, node, foundCref, foundScope, state);
+        end if;
       then
-        lookupCrefInNode(cref.componentRef, node, foundCref, foundScope, state);
+        (foundCref, foundScope, state);
 
     case Absyn.ComponentRef.CREF_FULLYQUALIFIED()
       then lookupCref(cref.componentRef, InstNode.topScope(scope));
@@ -274,6 +286,58 @@ algorithm
       then (ComponentRef.WILD(), scope, LookupState.PREDEF_COMP());
   end match;
 end lookupCref;
+
+function createVirtualCrefs
+  "This function will create virtual crefs for the expandable connectors"
+  input Absyn.ComponentRef cref;
+  input InstNode node;
+  input output ComponentRef foundCref;
+  input output InstNode foundScope;
+  input output LookupState state;
+protected
+  SCode.Element definition;
+  InstNode crefNode;
+algorithm
+  (foundCref, foundScope, state) := match cref
+    case Absyn.ComponentRef.CREF_IDENT()
+      algorithm
+        definition :=
+          SCode.COMPONENT(
+            cref.name,
+            SCode.defaultPrefixes,
+            SCode.defaultVarAttr,
+            Absyn.TPATH(Absyn.IDENT("Any"), NONE()),
+            SCode.NOMOD(),
+            SCode.COMMENT(NONE(), SOME("virtual expandable component")),
+            NONE(),
+            Absyn.dummyInfo);
+        crefNode := InstNode.newComponent(definition, node);
+        foundCref := ComponentRef.fromAbsyn(crefNode, cref.subscripts, foundCref);
+        state := LookupState.nodeState(crefNode);
+      then
+        (foundCref, foundScope, state);
+
+    case Absyn.ComponentRef.CREF_QUAL()
+      algorithm
+        definition :=
+          SCode.COMPONENT(
+            cref.name,
+            SCode.defaultPrefixes,
+            SCode.defaultVarAttr,
+            Absyn.TPATH(Absyn.IDENT("Any"), NONE()),
+            SCode.NOMOD(),
+            SCode.COMMENT(NONE(), SOME("virtual expandable component")),
+            NONE(),
+            Absyn.dummyInfo);
+        crefNode := InstNode.newComponent(definition, node);
+        foundCref := ComponentRef.fromAbsyn(crefNode, cref.subscripts, foundCref);
+        state := LookupState.nodeState(crefNode);
+        (foundCref, foundScope, state) :=
+           createVirtualCrefs(cref.componentRef, node, foundCref, foundScope, state);
+      then
+        (foundCref, foundScope, state);
+  end match;
+end createVirtualCrefs;
 
 function lookupLocalCref
   "Looks up a cref in the local scope without going into any enclosing scopes."
@@ -390,11 +454,12 @@ function lookupNameWithError
   input InstNode scope;
   input SourceInfo info;
   input Error.Message errorType;
+  input Boolean checkAccessViolations = true;
   output InstNode node;
   output LookupState state;
 algorithm
   try
-    (node, state) := lookupName(name, scope);
+    (node, state) := lookupName(name, scope, checkAccessViolations);
   else
     Error.addSourceMessage(errorType, {Absyn.pathString(name), InstNode.scopeName(scope)}, info);
     fail();
@@ -404,6 +469,7 @@ end lookupNameWithError;
 function lookupName
   input Absyn.Path name;
   input InstNode scope;
+  input Boolean checkAccessViolations;
   output InstNode node;
   output LookupState state;
 algorithm
@@ -418,11 +484,11 @@ algorithm
       algorithm
         (node, state) := lookupFirstIdent(name.name, scope);
       then
-        lookupLocalName(name.path, node, state, InstNode.refEqual(node, scope));
+        lookupLocalName(name.path, node, state, checkAccessViolations, InstNode.refEqual(node, scope));
 
     // Fully qualified path, start from top scope.
     case Absyn.Path.FULLYQUALIFIED()
-      then lookupName(name.path, InstNode.topScope(scope));
+      then lookupName(name.path, InstNode.topScope(scope), checkAccessViolations);
 
   end match;
 end lookupName;
@@ -483,6 +549,7 @@ function lookupLocalName
   input Absyn.Path name;
   input output InstNode node;
   input output LookupState state;
+  input Boolean checkAccessViolations = true;
   input Boolean selfReference = false;
 algorithm
   // Looking something up in a component is only legal when the name begins with
@@ -502,15 +569,15 @@ algorithm
     case Absyn.Path.IDENT()
       algorithm
         node := lookupLocalSimpleName(name.name, node);
-        state := LookupState.next(node, state);
+        state := LookupState.next(node, state, checkAccessViolations);
       then
         ();
 
     case Absyn.Path.QUALIFIED()
       algorithm
         node := lookupLocalSimpleName(name.name, node);
-        state := LookupState.next(node, state);
-        (node, state) := lookupLocalName(name.path, node, state);
+        state := LookupState.next(node, state, checkAccessViolations);
+        (node, state) := lookupLocalName(name.path, node, state, checkAccessViolations);
       then
         ();
 
@@ -580,6 +647,7 @@ algorithm
     case "Integer" then NFBuiltin.INTEGER_NODE;
     case "Boolean" then NFBuiltin.BOOLEAN_NODE;
     case "String" then NFBuiltin.STRING_NODE;
+    case "Clock" then NFBuiltin.CLOCK_NODE;
     case "polymorphic" then NFBuiltin.POLYMORPHIC_NODE;
   end match;
 end lookupSimpleBuiltinName;
@@ -591,6 +659,7 @@ function lookupSimpleBuiltinCref
   output ComponentRef cref;
   output LookupState state;
 algorithm
+
   (node, cref, state) := match name
     case "time"
       then (NFBuiltin.TIME, NFBuiltin.TIME_CREF, LookupState.PREDEF_COMP());
@@ -600,6 +669,8 @@ algorithm
       then (NFBuiltinFuncs.INTEGER_NODE, NFBuiltinFuncs.INTEGER_CREF, LookupState.FUNC());
     case "String"
       then (NFBuiltinFuncs.STRING_NODE, NFBuiltinFuncs.STRING_CREF, LookupState.FUNC());
+    case "Clock" guard Config.synchronousFeaturesAllowed()
+      then (NFBuiltinFuncs.CLOCK_NODE, NFBuiltinFuncs.CLOCK_CREF, LookupState.FUNC());
   end match;
 
   if not listEmpty(subs) then

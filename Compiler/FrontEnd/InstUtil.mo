@@ -643,7 +643,7 @@ algorithm
     // BTH
     case (_, _, SCode.CLASS(name = "Clock"))
       equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        true = Config.synchronousFeaturesAllowed();
       then ();
 
     // anything else, check for equality!
@@ -665,7 +665,7 @@ algorithm
     case("String") then true;
     case("Boolean") then true;
     // BTH
-    case("Clock") then intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+    case("Clock") then Config.synchronousFeaturesAllowed();
     else false;
   end match;
 end isBuiltInClass;
@@ -857,7 +857,7 @@ algorithm
     //BTH same as above but extended with Clock type if Flags.SYNCHRONOUS_FEATURES == true
     case (_, _, _, r, {SCode.EXTENDS(baseClassPath=Absyn.IDENT(id))})
       equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        true = Config.synchronousFeaturesAllowed();
         true = listMember(r, {SCode.R_TYPE(), SCode.R_CONNECTOR(false), SCode.R_CONNECTOR(true)});
         true = listMember(id, {"Real", "Integer", "Boolean", "String", "Clock"});
       then ();
@@ -896,12 +896,12 @@ protected
   list<SCode.Restriction> rstLst;
 algorithm
   // BTH add Clock type to both lists if Flags.SYNCHRONOUS_FEATURES == true
-  strLst := if intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33)
+  strLst := if Config.synchronousFeaturesAllowed()
       then {"Real", "Integer", "String", "Boolean", "Clock"}
       else {"Real", "Integer", "String", "Boolean"};
   b1 := listMember(childName, strLst);
 
-  rstLst := if intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33)
+  rstLst := if Config.synchronousFeaturesAllowed()
       then {SCode.R_TYPE(), SCode.R_PREDEFINED_INTEGER(), SCode.R_PREDEFINED_REAL(), SCode.R_PREDEFINED_STRING(), SCode.R_PREDEFINED_BOOLEAN(), SCode.R_PREDEFINED_CLOCK()}
       else {SCode.R_TYPE(), SCode.R_PREDEFINED_INTEGER(), SCode.R_PREDEFINED_REAL(), SCode.R_PREDEFINED_STRING(), SCode.R_PREDEFINED_BOOLEAN()};
   b2 := listMember(childRestriction, rstLst);
@@ -3304,7 +3304,7 @@ algorithm
     // BTH
     case (cache, _, _, _, cl as SCode.CLASS(name = "Clock"), _, _)
       equation
-        true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+        true = Config.synchronousFeaturesAllowed();
       then (cache,{},cl,DAE.NOMOD());
 
     case (cache, _, _, _, cl as SCode.CLASS(restriction = SCode.R_RECORD(_),
@@ -5960,44 +5960,38 @@ public function splitInnerAndOtherTplLstElementMod
 "@author: adrpo
   Split the elements into inner, inner outer and others"
   input list<tuple<SCode.Element, DAE.Mod>> inTplLstElementMod;
-  output list<tuple<SCode.Element, DAE.Mod>> outInnerTplLstElementMod;
-  output list<tuple<SCode.Element, DAE.Mod>> outInnerOuterTplLstElementMod;
-  output list<tuple<SCode.Element, DAE.Mod>> outOtherTplLstElementMod;
+  output list<tuple<SCode.Element, DAE.Mod>> outInnerTplLstElementMod = {};
+  output list<tuple<SCode.Element, DAE.Mod>> outInnerOuterTplLstElementMod = {};
+  output list<tuple<SCode.Element, DAE.Mod>> outOtherTplLstElementMod = {};
+protected
+  SCode.Element comp;
+  Absyn.InnerOuter io;
 algorithm
-  (outInnerTplLstElementMod, outInnerOuterTplLstElementMod, outOtherTplLstElementMod) := matchcontinue (inTplLstElementMod)
-    local
-      list<tuple<SCode.Element, DAE.Mod>> rest,innerComps,innerouterComps,otherComps;
-      tuple<SCode.Element, DAE.Mod> comp;
-      Absyn.InnerOuter io;
+  for e in listReverse(inTplLstElementMod) loop
+    (comp, _) := e;
 
-    // empty case
-    case ({}) then ({},{},{});
+    () := match comp
+      case SCode.COMPONENT(prefixes = SCode.PREFIXES(innerOuter = io))
+        guard Absyn.isInner(io)
+        algorithm
+          if Absyn.isOuter(io) then
+            // inner outer components.
+            outInnerOuterTplLstElementMod := e :: outInnerOuterTplLstElementMod;
+          else
+            // inner components.
+            outInnerTplLstElementMod := e :: outInnerTplLstElementMod;
+          end if;
+        then
+          ();
 
-    // inner components
-    case ( ( comp as (SCode.COMPONENT(prefixes=SCode.PREFIXES(innerOuter = io)), _) ) :: rest)
-      equation
-        true = Absyn.isInner(io);
-        false = Absyn.isOuter(io);
-        (innerComps,innerouterComps,otherComps) = splitInnerAndOtherTplLstElementMod(rest);
-      then
-        (comp::innerComps,innerouterComps,otherComps);
-
-    // inner outer components
-    case ( ( comp as (SCode.COMPONENT(prefixes=SCode.PREFIXES(innerOuter = io)), _) ) :: rest)
-      equation
-        true = Absyn.isInner(io);
-        true = Absyn.isOuter(io);
-        (innerComps,innerouterComps,otherComps) = splitInnerAndOtherTplLstElementMod(rest);
-      then
-        (innerComps,comp::innerouterComps,otherComps);
-
-    // any other components
-    case (comp :: rest)
-      equation
-        (innerComps,innerouterComps,otherComps) = splitInnerAndOtherTplLstElementMod(rest);
-      then
-        (innerComps,innerouterComps,comp::otherComps);
-  end matchcontinue;
+      else
+        algorithm
+          // any other components.
+          outOtherTplLstElementMod := e :: outOtherTplLstElementMod;
+        then
+          ();
+    end match;
+  end for;
 end splitInnerAndOtherTplLstElementMod;
 
 public function splitEltsOrderInnerOuter "
@@ -7384,7 +7378,7 @@ algorithm
     // you cannot redeclare a basic type, only the properties and the binding, i.e.
     // redeclare constant Boolean standardOrderComponents = true
     case DAE.REDECL(element = SCode.COMPONENT(typeSpec=Absyn.TPATH(path=path))) equation
-      true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      true = Config.synchronousFeaturesAllowed();
 
         name = Absyn.pathFirstIdent(path);
       // BTH
@@ -7392,7 +7386,7 @@ algorithm
     then true;
 
     case DAE.REDECL(element = SCode.COMPONENT(typeSpec=Absyn.TPATH(path=path))) equation
-      false = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
+      false = Config.synchronousFeaturesAllowed();
 
       name = Absyn.pathFirstIdent(path);
       // BTH

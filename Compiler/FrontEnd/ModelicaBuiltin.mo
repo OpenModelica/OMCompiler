@@ -102,7 +102,7 @@ annotation(Documentation(info="<html>
 </html>"));
 end floor;
 
-function integer "Round a real number towards minus infinity"
+function integer "Returns the largest integer not greater than x. The argument shall have type Real. The result has type Integer. [Note, outside of a when-clause state events are triggered when the return value changes discontinuously.]."
   input Real x;
   output Integer y;
 external "builtin";
@@ -1021,11 +1021,11 @@ package Internal "Contains internal implementations, e.g. overloaded builtin fun
   package Architecture
     function numBits
       output Integer numBit;
-      external "builtin";
+      external "builtin" numBit = architecture_numbits() annotation(Include="#define architecture_numbits() (8*sizeof(void*))");
     end numBits;
     function integerMax
       output Integer max;
-      external "builtin";
+      external "builtin" max = intMaxLit();
     end integerMax;
   end Architecture;
 
@@ -1992,6 +1992,14 @@ function mkdir "create directory of given path (which may be either relative or 
 external "builtin";
 annotation(preferredView="text");
 end mkdir;
+
+function copy "copies the source file to the destined directory. Returns true if the file has been copied."
+  input String source;
+  input String destination;
+  output Boolean success;
+external "builtin";
+annotation(preferredView="text");
+end copy;
 
 function remove "removes a file or directory of given path (which may be either relative or absolute)."
   input String path;

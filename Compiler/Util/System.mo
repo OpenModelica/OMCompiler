@@ -482,6 +482,13 @@ public function directoryExists
   external "C" outBool=SystemImpl__directoryExists(inString) annotation(Library = "omcruntime");
 end directoryExists;
 
+public function copyFile
+  input String source;
+  input String destination;
+  output Boolean outBool;
+  external "C" outBool=SystemImpl__copyFile(source, destination) annotation(Library = "omcruntime");
+end copyFile;
+
 
 public function removeDirectory
   input String inString;
@@ -597,8 +604,24 @@ public function getHasExpandableConnectors
  retrieves the external flag that signals the
  presence of expandable connectors in a model"
   output Boolean hasExpandable;
-  external "C" hasExpandable=System_getHasExpandableConnectors() annotation(Library = "omcruntime");
+  external "C" hasExpandable = System_getHasExpandableConnectors() annotation(Library = "omcruntime");
 end getHasExpandableConnectors;
+
+public function setHasOverconstrainedConnectors
+"@author: adrpo
+ sets the external flag that signals the
+ presence of overconstrained connectors in a model"
+  input Boolean hasOverconstrained;
+  external "C" System_setHasOverconstrainedConnectors(hasOverconstrained) annotation(Library = "omcruntime");
+end setHasOverconstrainedConnectors;
+
+public function getHasOverconstrainedConnectors
+"@author: adrpo
+ retrieves the external flag that signals the
+ presence of overconstrained connectors in a model"
+  output Boolean hasOverconstrained;
+  external "C" hasOverconstrained = System_getHasOverconstrainedConnectors() annotation(Library = "omcruntime");
+end getHasOverconstrainedConnectors;
 
 public function setPartialInstantiation
 "@author: adrpo

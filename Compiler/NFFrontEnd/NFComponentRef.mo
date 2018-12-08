@@ -175,6 +175,13 @@ public
     CREF(node = node) := cref;
   end node;
 
+  function nodeType
+    input ComponentRef cref;
+    output Type ty;
+  algorithm
+    CREF(ty = ty) := cref;
+  end nodeType;
+
   function firstName
     input ComponentRef cref;
     output String name;
@@ -268,7 +275,8 @@ public
     output Variability var;
   algorithm
     var := match cref
-      case CREF() then Component.variability(InstNode.component(cref.node));
+      case CREF(node = InstNode.COMPONENT_NODE())
+        then Component.variability(InstNode.component(cref.node));
       else Variability.CONTINUOUS;
     end match;
   end nodeVariability;
@@ -311,51 +319,36 @@ public
     end match;
   end addSubscript;
 
-  function applyIndexSubscript
-    input Subscript subscript;
+  function applySubscripts
+    input list<Subscript> subscripts;
     input output ComponentRef cref;
   algorithm
-    () := match cref
+    ({}, cref) := applySubscripts2(subscripts, cref);
+  end applySubscripts;
+
+  function applySubscripts2
+    input output list<Subscript> subscripts;
+    input output ComponentRef cref;
+  algorithm
+    (subscripts, cref) := match cref
       local
-        Boolean success;
-        list<Subscript> subs;
+        ComponentRef rest_cref;
+        list<Subscript> cref_subs;
 
-      case CREF()
+      case CREF(subscripts = cref_subs)
         algorithm
-          // First check if there's any space left for another subscript.
-          if Type.dimensionCount(cref.ty) - listLength(cref.subscripts) > 0 then
-            // If so, just append the subscript.
-            cref.subscripts := listAppend(cref.subscripts, {subscript});
-          else
-            // Otherwise, check if there are any slice subscripts that can be subscripted.
-            (subs, success) := List.findMap(cref.subscripts,
-              function applySubscript2(indexSub = subscript));
+          (subscripts, rest_cref) := applySubscripts2(subscripts, cref.restCref);
 
-            if success then
-              cref.subscripts := subs;
-            else
-              // If the subscript couldn't be added to this cref part, push it down.
-              cref.restCref := applyIndexSubscript(subscript, cref.restCref);
-            end if;
+          if not listEmpty(subscripts) then
+            (cref_subs, subscripts) :=
+              Subscript.mergeList(subscripts, cref_subs, Type.dimensionCount(cref.ty));
           end if;
         then
-          ();
+          (subscripts, CREF(cref.node, cref_subs, cref.ty, cref.origin, rest_cref));
 
+      else (subscripts, cref);
     end match;
-  end applyIndexSubscript;
-
-  function applySubscript2
-    input output Subscript existingSub;
-    input Subscript indexSub;
-          output Boolean success;
-  algorithm
-    (existingSub, success) := match existingSub
-      case Subscript.SLICE()
-        then (Subscript.INDEX(Expression.applySubscript(indexSub, existingSub.slice)), true);
-      case Subscript.WHOLE() then (indexSub, true);
-      else (existingSub, false);
-    end match;
-  end applySubscript2;
+  end applySubscripts2;
 
   function hasSubscripts
     input ComponentRef cref;
@@ -426,6 +419,13 @@ public
       else accumSubs;
     end match;
   end subscriptsAll;
+
+  function subscriptsAllFlat
+    "Returns all subscripts of a cref as a flat list in the correct order.
+     Ex: a[1, 2].b[4].c[6, 3] => {1, 2, 4, 6, 3}"
+    input ComponentRef cref;
+    output list<Subscript> subscripts = List.flattenReverse(subscriptsAll(cref));
+  end subscriptsAllFlat;
 
   function subscriptsN
     "Returns the subscripts of the N first parts of a cref in reverse order.
@@ -551,6 +551,26 @@ public
     end match;
   end isEqual;
 
+  function isPrefix
+    input ComponentRef cref1;
+    input ComponentRef cref2;
+    output Boolean isPrefix;
+  algorithm
+    if referenceEq(cref1, cref2) then
+      isPrefix := true;
+      return;
+    end if;
+
+    isPrefix := match (cref1, cref2)
+      case (CREF(), CREF())
+        then
+          if InstNode.name(cref1.node) == InstNode.name(cref2.node) then
+             isEqual(cref1.restCref, cref2.restCref)
+          else isEqual(cref1, cref2.restCref);
+      else false;
+    end match;
+  end isPrefix;
+
   function toDAE
     input ComponentRef cref;
     output DAE.ComponentRef dcref;
@@ -613,6 +633,13 @@ public
     end match;
   end toString;
 
+  function listToString
+    input list<ComponentRef> crs;
+    output String str;
+  algorithm
+    str := "{" + stringDelimitList(List.map(crs, toString), ",") + "}";
+  end listToString;
+
   function hash
     input ComponentRef cref;
     input Integer mod;
@@ -663,7 +690,7 @@ public
       case CREF(ty = Type.ARRAY())
         algorithm
           dims := Type.arrayDims(cref.ty);
-          subs := Subscript.expandList(cref.subscripts, dims);
+          subs := Subscript.scalarizeList(cref.subscripts, dims);
           subs := List.combination(subs);
         then
           list(setSubscripts(s, cref) for s in subs);
@@ -676,12 +703,23 @@ public
     input ComponentRef cref;
     output Boolean isPkgConst;
   algorithm
+    // TODO: This should really be CONSTANT and not PARAMETER, but that breaks
+    //       some models since we get some redeclared parameters that look like
+    //       package constants due to redeclare issues, and which need to e.g.
+    //       be collected by Package.collectConstants.
+    isPkgConst := nodeVariability(cref) <= Variability.PARAMETER and isPackageConstant2(cref);
+  end isPackageConstant;
+
+  function isPackageConstant2
+    input ComponentRef cref;
+    output Boolean isPkgConst;
+  algorithm
     isPkgConst := match cref
       case CREF(node = InstNode.CLASS_NODE()) then InstNode.isUserdefinedClass(cref.node);
-      case CREF(origin = Origin.CREF) then isPackageConstant(cref.restCref);
+      case CREF(origin = Origin.CREF) then isPackageConstant2(cref.restCref);
       else false;
     end match;
-  end isPackageConstant;
+  end isPackageConstant2;
 
   function stripSubscripts
     "Strips the subscripts from the last name in a cref, e.g. a[2].b[3] => a[2].b"
@@ -730,6 +768,29 @@ public
     end match;
   end simplifySubscripts;
 
+  function evaluateSubscripts
+    input output ComponentRef cref;
+  algorithm
+    cref := match cref
+      local
+        list<Subscript> subs;
+
+      case CREF(subscripts = {}, origin = Origin.CREF)
+        algorithm
+          cref.restCref := evaluateSubscripts(cref.restCref);
+        then
+          cref;
+
+      case CREF(origin = Origin.CREF)
+        algorithm
+          subs := list(Subscript.eval(s) for s in cref.subscripts);
+        then
+          CREF(cref.node, subs, cref.ty, cref.origin, evaluateSubscripts(cref.restCref));
+
+      else cref;
+    end match;
+  end evaluateSubscripts;
+
   function isDeleted
     input ComponentRef cref;
     output Boolean isDeleted;
@@ -766,6 +827,25 @@ public
       else accum;
     end match;
   end toListReverse;
+
+  function depth
+    input ComponentRef cref;
+    output Integer d = 0;
+  algorithm
+    d := match cref
+      case CREF(restCref = EMPTY())
+        then d + 1;
+
+      case CREF()
+        algorithm
+          d := 1 + depth(cref.restCref);
+        then
+          d;
+
+      case WILD() then 0;
+      else "EMPTY_CREF" then 0;
+    end match;
+  end depth;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFComponentRef;

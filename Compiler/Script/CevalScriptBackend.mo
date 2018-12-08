@@ -1504,6 +1504,8 @@ algorithm
           (cache,simSettings) := calculateSimulationSettings(cache,env,vals,msg);
           SimCode.SIMULATION_SETTINGS(outputFormat = outputFormat_str) := simSettings;
           result_file := stringAppendList(List.consOnTrue(not Config.getRunningTestsuite(),compileDir,{executable,"_res.",outputFormat_str}));
+          // result file might have been set by simflags (-r ...)
+          result_file := selectResultFile(result_file, simflags);
           executableSuffixedExe := stringAppend(executable, getSimulationExtension(Config.simCodeTarget(),System.platform()));
           logFile := stringAppend(executable,".log");
           // adrpo: log file is deleted by buildModel! do NOT DELETE IT AGAIN!
@@ -2147,7 +2149,7 @@ algorithm
         ErrorExt.setCheckpoint("getSimulationOptions");
         simOpt = GlobalScript.SIMULATION_OPTIONS(DAE.RCONST(startTime),DAE.RCONST(stopTime),DAE.ICONST(numberOfIntervals),DAE.RCONST(0.0),DAE.RCONST(tolerance),DAE.SCONST(""),DAE.SCONST(""),DAE.SCONST(""),DAE.SCONST(""),DAE.SCONST(""),DAE.SCONST(""),DAE.SCONST(""));
         ErrorExt.rollBack("getSimulationOptions");
-        (_, _::startTimeExp::stopTimeExp::intervalExp::toleranceExp::_) = StaticScript.getSimulationArguments(FCore.emptyCache(), FGraph.empty(), {Absyn.CREF(cr_1)},{},false,Prefix.NOPRE(),Absyn.dummyInfo,SOME(simOpt));
+        (_, _::startTimeExp::stopTimeExp::intervalExp::toleranceExp::_) = StaticScript.getSimulationArguments(FCore.emptyCache(), FGraph.empty(), {Absyn.CREF(cr_1)},{},false,Prefix.NOPRE(), "getSimulationOptions", Absyn.dummyInfo,SOME(simOpt));
         startTime = ValuesUtil.valueReal(Util.makeValueOrDefault(Ceval.cevalSimple,startTimeExp,Values.REAL(startTime)));
         stopTime = ValuesUtil.valueReal(Util.makeValueOrDefault(Ceval.cevalSimple,stopTimeExp,Values.REAL(stopTime)));
         tolerance = ValuesUtil.valueReal(Util.makeValueOrDefault(Ceval.cevalSimple,toleranceExp,Values.REAL(tolerance)));
@@ -3509,6 +3511,10 @@ algorithm
 
   isWindows := System.os() == "Windows_NT";
 
+  fmutmp := filenameprefix + ".fmutmp";
+  logfile := filenameprefix + ".log";
+  dir := fmutmp+"/sources/";
+
   if Config.simCodeTarget() == "Cpp" then
     System.removeDirectory("binaries");
     for platform in platforms loop
@@ -3520,17 +3526,15 @@ algorithm
       end if;
       ExecStat.execStat("buildModelFMU: Generate C++ for platform " + platform);
     end for;
-    System.systemCall("make -f " + filenameprefix + "_FMU.makefile clean");
+    if 0 <> System.systemCall("make -f " + filenameprefix + "_FMU.makefile clean", outFile=logfile) then
+	  // do nothing
+	end if;
     return;
   end if;
 
   CevalScript.compileModel(filenameprefix+"_FMU" , libs);
 
   ExecStat.execStat("buildModelFMU: Generate the FMI files");
-
-  fmutmp := filenameprefix + ".fmutmp";
-  logfile := filenameprefix + ".log";
-  dir := fmutmp+"/sources/";
 
   for platform in platforms loop
     configureFMU(platform, fmutmp, System.realpath(fmutmp)+"/resources/"+System.stringReplace(listGet(Util.stringSplitAtChar(platform," "),1),"/","-")+".log", isWindows);
@@ -5725,14 +5729,15 @@ algorithm
       String ret;
       FCore.Graph env;
       Boolean b;
+      Integer failed;
 
     case (cache,env,_,b,msg)
       equation
         allClassPaths = getAllClassPathsRecursive(className, b, SymbolTable.getAbsyn());
         print("Number of classes to check: " + intString(listLength(allClassPaths)) + "\n");
         // print ("All paths: \n" + stringDelimitList(List.map(allClassPaths, Absyn.pathString), "\n") + "\n");
-        checkAll(cache, env, allClassPaths, msg);
-        ret = "Number of classes checked: " + intString(listLength(allClassPaths));
+        failed = checkAll(cache, env, allClassPaths, msg, 0);
+        ret = "Number of classes checked / failed: " + intString(listLength(allClassPaths)) + "/" + intString(failed);
       then
         (cache,Values.STRING(ret));
 
@@ -5748,15 +5753,22 @@ function failOrSuccess
 "@author adrpo"
   input String inStr;
   output String outStr;
+  output Boolean failed = false;
 algorithm
   outStr := matchcontinue(inStr)
     local Integer res;
     case _
-      equation
-        res = System.stringFind(inStr, "successfully");
-        true = (res >= 0);
-      then "OK";
-    else "FAILED!";
+      algorithm
+        res := System.stringFind(inStr, "successfully");
+        true := (res >= 0);
+        failed := false;
+      then
+        "OK";
+    else
+      algorithm
+        failed := true;
+      then
+        "FAILED!";
   end matchcontinue;
 end failOrSuccess;
 
@@ -5767,6 +5779,7 @@ function checkAll
   input FCore.Graph inEnv;
   input list<Absyn.Path> allClasses;
   input Absyn.Msg inMsg;
+  input output Integer failed;
 protected
   Absyn.Program p;
 algorithm
@@ -5777,11 +5790,13 @@ algorithm
       Absyn.Path className;
       Absyn.Msg msg;
       FCore.Cache cache;
-      String  str, s;
+      String  str, s, smsg;
       FCore.Graph env;
       Real t1, t2, elapsedTime;
       Absyn.ComponentRef cr;
       Absyn.Class c;
+      Boolean f = false;
+
     case (_,_,{},_) then ();
 
     case (cache,env,className::rest,msg)
@@ -5800,21 +5815,28 @@ algorithm
         Flags.setConfigBool(Flags.CHECK_MODEL, true);
         (_,Values.STRING(str)) = checkModel(FCore.emptyCache(), env, className, msg);
         Flags.setConfigBool(Flags.CHECK_MODEL, false);
-        (_,Values.STRING(str)) = checkModel(FCore.emptyCache(), env, className, msg);
         t2 = clock();
         elapsedTime = t2 - t1;
         s = realString(elapsedTime);
-        print (s + " seconds -> " + failOrSuccess(str) + "\n\t");
+        (smsg, f) = failOrSuccess(str);
+        failed = if f then failed + 1 else failed;
+        print (s + " seconds -> " + smsg + "\n\t");
         print (System.stringReplace(str, "\n", "\n\t"));
         print ("\n");
-        checkAll(cache, env, rest, msg);
+        print ("Error String:\n" + Print.getErrorString() + "\n");
+        print ("Error Buffer:\n" + ErrorExt.printMessagesStr(false) + "\n");
+        print ("#" + (if f then "[-]" else "[+]") + ", " +
+          realString(elapsedTime) + ", " +
+          Absyn.pathString(className) + "\n");
+        print ("-------------------------------------------------------------------------\n");
+        failed = checkAll(cache, env, rest, msg, failed);
       then ();
 
     case (cache,env,className::rest,msg)
       equation
         c = Interactive.getPathedClassInProgram(className, p);
         print("Checking skipped: " + Dump.unparseClassAttributesStr(c) + " " + Absyn.pathString(className) + "... \n");
-        checkAll(cache, env, rest, msg);
+        failed = checkAll(cache, env, rest, msg, failed);
       then
         ();
   end matchcontinue;
@@ -7221,7 +7243,7 @@ function getClassComment "Returns the class comment of a Absyn.ClassDef"
   output String outString;
 algorithm
   outString:=
-  matchcontinue (inClassDef)
+  match (inClassDef)
     local
       String str,res;
       Option<Absyn.Comment> cmt;
@@ -7236,7 +7258,7 @@ algorithm
       then Interactive.getStringComment(cmt);
     case (Absyn.CLASS_EXTENDS(comment = SOME(str))) then str;
     else "";
-  end matchcontinue;
+  end match;
 end getClassComment;
 
 protected function getAnnotationInEquation
@@ -8093,6 +8115,54 @@ algorithm
       then List.consOnTrue(not b,v,acc);
   end match;
 end makeLoadLibrariesEntryAbsyn;
+
+function selectResultFile
+  input output String resultFile;
+  input String simflags;
+protected
+  Integer nm;
+  String f = "";
+algorithm
+  // if there is no -r in the simflags, return
+  if  System.stringFind(simflags, "-r") < 0 then
+    return;
+  end if;
+  // never fail!
+  try
+   // match -r="file"
+   (nm, {_, f}) := System.regex(simflags, "-r=\"(.*?)\"", 2, true);
+   if nm == 2 then
+     resultFile := f; return;
+   end if;
+   // match -r='file'
+   (nm, {_, f}) := System.regex(simflags, "-r=\'(.*?)\'", 2, true);
+   if nm == 2 then
+     resultFile := f; return;
+   end if;
+   // match -r 'file'
+   (nm, {_, f}) := System.regex(simflags, "-r[ ]*\"(.*?)\"", 2, true);
+   if nm == 2 then
+     resultFile := f; return;
+   end if;
+   // match -r "file"
+   (nm, {_, f}) := System.regex(simflags, "-r[ ]*\'(.*?)\'", 2, true);
+   if nm == 2 then
+     resultFile := f; return;
+   end if;
+   // match -r=file
+   (nm, {_, f}) := System.regex(simflags, "-r=([^ ]*)", 2, true);
+   if nm == 2 then
+     resultFile := f; return;
+   end if;
+   // match -r file
+   (nm, {_, f}) := System.regex(simflags, "-r[ ]*([^ ]*)", 2, true);
+   if nm == 2 then
+     resultFile := f; return;
+   end if;
+	else
+	  // do nothing
+  end try;
+end selectResultFile;
 
 annotation(__OpenModelica_Interface="backend");
 

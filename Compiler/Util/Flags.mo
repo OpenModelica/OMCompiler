@@ -530,6 +530,20 @@ constant DebugFlag EXEC_STAT_EXTRA_GC = DEBUG_FLAG(177, "execstatGCcollect", fal
   Util.gettext("When running execstat, also perform an extra full garbage collection."));
 constant DebugFlag DEBUG_DAEMODE = DEBUG_FLAG(178, "debugDAEmode", false,
   Util.gettext("Dump debug output for the DAEmode."));
+constant DebugFlag NF_SCALARIZE = DEBUG_FLAG(179, "nfScalarize", true,
+  Util.gettext("Run scalarization in NF, default true."));
+constant DebugFlag NF_EVAL_CONST_ARG_FUNCS = DEBUG_FLAG(180, "nfEvalConstArgFuncs", true,
+  Util.gettext("Evaluate all functions with constant arguments in the new frontend."));
+constant DebugFlag NF_EXPAND_OPERATIONS = DEBUG_FLAG(181, "nfExpandOperations", true,
+  Util.gettext("Expand all unary/binary operations to scalar expressions in the new frontend."));
+constant DebugFlag NF_API = DEBUG_FLAG(182, "nfAPI", false,
+  Util.gettext("Enables experimental new instantiation use in the OMC API."));
+constant DebugFlag FMI20_DEPENDENCIES = DEBUG_FLAG(183, "disableFMIDependency", false,
+  Util.gettext("Disables the dependency analysis and generation for FMI 2.0."));
+constant DebugFlag WARNING_MINMAX_ATTRIBUTES = DEBUG_FLAG(184, "warnMinMax", true,
+  Util.gettext("Makes a warning assert from min/max variable attributes instead of error."));
+constant DebugFlag NF_EXPAND_FUNC_ARGS = DEBUG_FLAG(185, "nfExpandFuncArgs", false,
+  Util.gettext("Expand all function arguments in the new frontend."));
 
 // This is a list of all debug flags, to keep track of which flags are used. A
 // flag can not be used unless it's in this list, and the list is checked at
@@ -714,7 +728,14 @@ constant list<DebugFlag> allDebugFlags = {
   SUSAN_MATCHCONTINUE_DEBUG,
   OLD_FE_UNITCHECK,
   EXEC_STAT_EXTRA_GC,
-  DEBUG_DAEMODE
+  DEBUG_DAEMODE,
+  NF_SCALARIZE,
+  NF_EVAL_CONST_ARG_FUNCS,
+  NF_EXPAND_OPERATIONS,
+  NF_API,
+  FMI20_DEPENDENCIES,
+  WARNING_MINMAX_ATTRIBUTES,
+  NF_EXPAND_FUNC_ARGS
 };
 
 public
@@ -1410,31 +1431,31 @@ constant ConfigFlag IGNORE_REPLACEABLE = CONFIG_FLAG(117, "ignoreReplaceable",
   NONE(), EXTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Sets whether to ignore replaceability or not when redeclaring."));
 
-  constant ConfigFlag LABELED_REDUCTION = CONFIG_FLAG(118,
+constant ConfigFlag LABELED_REDUCTION = CONFIG_FLAG(118,
   "labeledReduction", NONE(), INTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Turns on labeling and reduce terms to do whole process of reduction."));
 
-  constant ConfigFlag DISABLE_EXTRA_LABELING = CONFIG_FLAG(119,
+constant ConfigFlag DISABLE_EXTRA_LABELING = CONFIG_FLAG(119,
   "disableExtraLabeling", NONE(), INTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Disable adding extra label into the whole experssion with more than one term and +,- operations."));
 
-  constant ConfigFlag LOAD_MSL_MODEL = CONFIG_FLAG(120,
+constant ConfigFlag LOAD_MSL_MODEL = CONFIG_FLAG(120,
   "loadMSLModel", NONE(), INTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Used to know loadFile doesn't need to be called in cpp-runtime (for labeled model reduction)."));
 
-  constant ConfigFlag Load_PACKAGE_FILE = CONFIG_FLAG(121,
+constant ConfigFlag Load_PACKAGE_FILE = CONFIG_FLAG(121,
   "loadPackageFile", NONE(), INTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("used when the outside name is different with the inside name of the packge, in cpp-runtime (for labeled model reduction)."));
 
-  constant ConfigFlag BUILDING_FMU = CONFIG_FLAG(122,
+constant ConfigFlag BUILDING_FMU = CONFIG_FLAG(122,
   "", NONE(), INTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Is true when building an FMU (so the compiler can look for URIs to package as FMI resources)."));
 
-  constant ConfigFlag BUILDING_MODEL = CONFIG_FLAG(123,
+constant ConfigFlag BUILDING_MODEL = CONFIG_FLAG(123,
   "", NONE(), INTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Is true when building a model (as opposed to running a Modelica script)."));
 
-  constant ConfigFlag POST_OPT_MODULES_DAE = CONFIG_FLAG(124, "postOptModulesDAE",
+constant ConfigFlag POST_OPT_MODULES_DAE = CONFIG_FLAG(124, "postOptModulesDAE",
   NONE(), EXTERNAL(), STRING_LIST_FLAG({
     "lateInlineFunction",
     "wrapFunctionCalls",
@@ -1451,15 +1472,15 @@ constant ConfigFlag IGNORE_REPLACEABLE = CONFIG_FLAG(117, "ignoreReplaceable",
     }),NONE(),
     Util.gettext("Sets the optimization modules for the DAEmode in the back end. See --help=optmodules for more info."));
 
-  constant ConfigFlag EVAL_LOOP_LIMIT = CONFIG_FLAG(125,
-    "evalLoopLimit", NONE(), EXTERNAL(), INT_FLAG(100000), NONE(),
-    Util.gettext("The loop iteration limit used when evaluating constant function calls."));
+constant ConfigFlag EVAL_LOOP_LIMIT = CONFIG_FLAG(125,
+  "evalLoopLimit", NONE(), EXTERNAL(), INT_FLAG(100000), NONE(),
+  Util.gettext("The loop iteration limit used when evaluating constant function calls."));
 
-  constant ConfigFlag EVAL_RECURSION_LIMIT = CONFIG_FLAG(126,
-    "evalRecursionLimit", NONE(), EXTERNAL(), INT_FLAG(256), NONE(),
-    Util.gettext("The recursion limit used when evaluating constant function calls."));
+constant ConfigFlag EVAL_RECURSION_LIMIT = CONFIG_FLAG(126,
+  "evalRecursionLimit", NONE(), EXTERNAL(), INT_FLAG(256), NONE(),
+  Util.gettext("The recursion limit used when evaluating constant function calls."));
 
-  constant ConfigFlag SINGLE_INSTANCE_AGLSOLVER = CONFIG_FLAG(127, "singleInstanceAglSolver",
+constant ConfigFlag SINGLE_INSTANCE_AGLSOLVER = CONFIG_FLAG(127, "singleInstanceAglSolver",
   NONE(), EXTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Sets to instantiate only  one algebraic loop solver all algebraic loops"));
 

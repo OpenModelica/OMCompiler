@@ -48,6 +48,7 @@ protected
   import NFClass.Class;
   import Restriction = NFRestriction;
   import ComplexType = NFComplexType;
+  import Dimension = NFDimension;
 
 public
   type Face = enumeration(INSIDE, OUTSIDE);
@@ -57,7 +58,6 @@ public
     Type ty;
     Face face;
     ConnectorType cty;
-    Option<ComponentRef> associatedFlow;
     DAE.ElementSource source;
   end CONNECTOR;
 
@@ -78,7 +78,7 @@ public
     InstNode node = ComponentRef.node(cref);
   algorithm
     conn := CONNECTOR(ComponentRef.simplifySubscripts(cref), ty, face,
-      Component.connectorType(InstNode.component(node)), NONE(), source);
+      Component.connectorType(InstNode.component(node)), source);
   end fromFacedCref;
 
   function fromExp
@@ -129,6 +129,12 @@ public
                              conn1.face == conn2.face;
   end isEqual;
 
+  function isPrefix
+    input Connector conn1;
+    input Connector conn2;
+    output Boolean isPrefix = ComponentRef.isPrefix(conn1.name, conn2.name);
+  end isPrefix;
+
   function isOutside
     input Connector conn;
     output Boolean isOutside;
@@ -176,13 +182,6 @@ public
     connl := splitImpl(conn.name, conn.ty, conn.face, conn.source, conn.cty);
   end split;
 
-  function flowCref
-    input Connector conn;
-    output ComponentRef cref;
-  algorithm
-    SOME(cref) := conn.associatedFlow;
-  end flowCref;
-
 protected
   function crefFace
     "Determines whether a cref refers to an inside or outside connector, where
@@ -206,25 +205,20 @@ protected
     input Face face;
     input DAE.ElementSource source;
     input ConnectorType cty;
-    input Option<ComponentRef> associatedFlow = NONE();
     input output list<Connector> conns = {};
+    input list<Dimension> dims = {} "accumulated dimensions if not NF_SCALARIZE";
   algorithm
     conns := match ty
       local
         Type t;
         ComplexType ct;
-        Option<ComponentRef> aflow;
         ClassTree tree;
 
       case Type.COMPLEX(complexTy = ct as ComplexType.CONNECTOR())
         algorithm
-          conns := splitImpl2(name, face, source, ct.potentials, NONE(), conns);
-          conns := splitImpl2(name, face, source, ct.flows, NONE(), conns);
-
-          if not listEmpty(ct.streams) then
-            aflow := SOME(Connector.name(listHead(conns)));
-            conns := splitImpl2(name, face, source, ct.streams, aflow, conns);
-          end if;
+          conns := splitImpl2(name, face, source, ct.potentials, conns, dims);
+          conns := splitImpl2(name, face, source, ct.flows, conns, dims);
+          conns := splitImpl2(name, face, source, ct.streams, conns, dims);
         then
           conns;
 
@@ -232,20 +226,27 @@ protected
         algorithm
           tree := Class.classTree(InstNode.getClass(ty.cls));
           conns := splitImpl2(name, face, source,
-            arrayList(ClassTree.getComponents(tree)), associatedFlow, conns);
+            arrayList(ClassTree.getComponents(tree)), conns, dims);
         then
           conns;
 
       case Type.ARRAY()
         algorithm
           t := Type.arrayElementType(ty);
-          for c in ComponentRef.scalarize(name) loop
-            conns := splitImpl(c, t, face, source, cty, associatedFlow, conns);
-          end for;
+          if Flags.isSet(Flags.NF_SCALARIZE) then
+            for c in ComponentRef.scalarize(name) loop
+              conns := splitImpl(c, t, face, source, cty, conns, dims);
+            end for;
+          else
+            if not Type.isEmptyArray(ty) then
+              conns := splitImpl(name, t, face, source, cty, conns,
+                                 listAppend(dims, ty.dimensions));
+            end if;
+          end if;
         then
           conns;
 
-      else CONNECTOR(name, ty, face, cty, associatedFlow, source) :: conns;
+      else CONNECTOR(name, Type.liftArrayLeftList(ty, dims), face, cty, source) :: conns;
     end match;
   end splitImpl;
 
@@ -254,8 +255,8 @@ protected
     input Face face;
     input DAE.ElementSource source;
     input list<InstNode> comps;
-    input Option<ComponentRef> associatedFlow;
     input output list<Connector> conns;
+    input list<Dimension> dims;
   protected
     Component c;
     ComponentRef cref;
@@ -267,7 +268,7 @@ protected
       ty := Component.getType(c);
       cty := Component.connectorType(c);
       cref := ComponentRef.append(ComponentRef.fromNode(comp, ty), name);
-      conns := splitImpl(cref, ty, face, source, cty, associatedFlow, conns);
+      conns := splitImpl(cref, ty, face, source, cty, conns, dims);
     end for;
   end splitImpl2;
 

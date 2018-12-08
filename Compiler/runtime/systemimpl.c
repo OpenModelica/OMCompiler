@@ -160,7 +160,11 @@ static char *linker = (char *)def_linker;
 static char *cflags = (char *)def_cflags;
 static char *ldflags= (char *)def_ldflags;
 
+/* TODO! FIXME!
+ * we need to move these to threadData if we are to run things in parallel in OMC!
+ */
 static int hasExpandableConnectors = 0;
+static int hasOverconstrainedConnectors = 0;
 static int hasInnerOuterDefinitions = 0;
 static int hasStreamConnectors = 0;
 static int isPartialInstantiation = 0;
@@ -887,6 +891,36 @@ extern int SystemImpl__createDirectory(const char *str)
   {
     return 1;
   }
+}
+
+extern int SystemImpl__copyFile(const char *str_1, const char *str_2)
+{
+  int rv = 1;
+  char ch;
+  FILE *source, *target;
+
+  if (!SystemImpl__directoryExists(str_2))
+  {
+      rv = SystemImpl__createDirectory(str_2);
+  }
+
+  if (str_1 == "")
+    rv = 0;
+
+  char targetFile[100];
+  strcpy(targetFile,str_2);
+  strcat(targetFile,"/");
+  strcat(targetFile,str_1);
+
+  source = fopen(str_1, "r");
+  target = fopen(targetFile, "w");
+
+  while( ( ch = fgetc(source) ) != EOF )
+     rv=rv && fputc(ch, target);
+
+  fclose(source);
+  fclose(target);
+  return rv;
 }
 
 static char * SystemImpl__NextDir(const char * path)

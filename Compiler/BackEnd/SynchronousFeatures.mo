@@ -213,6 +213,7 @@ algorithm
         list<DAE.ComponentRef> derVars = {};
         BackendDAE.Var var;
         DAE.Exp exp, exp2;
+        DAE.Type ty;
       case syst as BackendDAE.EQSYSTEM(orderedEqs = eqs)
         algorithm
           BackendDAE.CLOCKED_PARTITION(idx) := syst.partitionKind;
@@ -232,7 +233,7 @@ algorithm
           // replace der(x) with $DER.x and collect derVars x
           for i in 1:BackendEquation.getNumberOfEquations(eqs) loop
             eq := BackendEquation.get(eqs, i);
-            (eq, derVars) := BackendEquation.traverseExpsOfEquation(eq, getDerVars1, derVars);
+            (eq, (derVars, _)) := BackendEquation.traverseExpsOfEquation(eq, getDerVars1, (derVars, BackendEquation.getForEquationIterIdent(eq)));
             lstEqs := eq :: lstEqs;
           end for;
           // add all $DER.x as additional variables
@@ -244,9 +245,16 @@ algorithm
           // add defining equations for $DER.x, depending on solverMethod
           for derVar in derVars loop
             var := listGet(BackendVariable.getVar(derVar, syst.orderedVars), 1);
-            exp := DAE.CALL(Absyn.IDENT(name = "der"), {DAE.CREF(derVar, var.varType)}, DAE.callAttrBuiltinImpureReal);
+            ty := var.varType;
+            // add forIter subscript and use element type if var is array
+            derVar := match var.varType
+              case DAE.T_ARRAY(ty = ty)
+              then ComponentReference.crefApplySubs(derVar, {DAE.INDEX(DAE.CREF(DAE.CREF_IDENT("i", DAE.T_INTEGER_DEFAULT, {}), DAE.T_INTEGER_DEFAULT))});
+              else derVar;
+            end match;
+            exp := DAE.CALL(Absyn.IDENT(name = "der"), {DAE.CREF(derVar, ty)}, DAE.callAttrBuiltinImpureReal);
             exp := substituteFiniteDifference(exp);
-            exp2 := DAE.CREF(ComponentReference.crefPrefixDer(derVar), var.varType);
+            exp2 := DAE.CREF(ComponentReference.crefPrefixDer(derVar), ty);
             if solverMethod == "ExplicitEuler" then
               // introduce states to delay derivatives; see MLS 3.3, section 16.8.2 Solver Methods
               exp2 := DAE.CALL(Absyn.IDENT(name = "previous"), {exp2}, DAE.callAttrBuiltinImpureReal);
@@ -259,7 +267,18 @@ algorithm
             // clocked continuous states are fixed at first tick
             exp2 := DAE.IFEXP(DAE.CALL(Absyn.IDENT(name = "firstTick"), {}, DAE.callAttrBuiltinImpureBool),
                               DAE.RCONST(0), exp2);
-            eq := BackendDAE.EQUATION(exp, exp2, var.source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
+            // create for-equation or regular equation
+            eq := match var.varType
+              local
+                DAE.Dimension dim;
+              case DAE.T_ARRAY(dims = {dim})
+              then BackendDAE.FOR_EQUATION(
+                DAE.CREF(DAE.CREF_IDENT("i", DAE.T_INTEGER_DEFAULT, {}), DAE.T_INTEGER_DEFAULT),
+                DAE.ICONST(1), DAEUtil.dimExp(dim),
+                BackendDAE.EQUATION(exp, exp2, var.source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC),
+                var.source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
+              else BackendDAE.EQUATION(exp, exp2, var.source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
+            end match;
             lstEqs := eq :: lstEqs;
           end for;
           syst.orderedEqs := BackendEquation.listEquation(listReverse(lstEqs));
@@ -281,9 +300,9 @@ end treatClockedStates;
 
 protected function getDerVars1 "helper to getDerVars"
   input DAE.Exp inExp;
-  input list<DAE.ComponentRef> inDerVars;
+  input tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> inDerVars;
   output DAE.Exp outExp;
-  output list<DAE.ComponentRef> outDerVars;
+  output tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> outDerVars;
 algorithm
   (outExp, outDerVars) := Expression.traverseExpBottomUp(inExp, getDerVars, inDerVars);
 end getDerVars1;
@@ -292,21 +311,37 @@ protected function getDerVars
 "Get all crefs that appear in a der() operator and replace der(x) with $DER.x.
  author: rfranke"
   input DAE.Exp inExp;
-  input list<DAE.ComponentRef> inDerVars;
+  input tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> inDerVars;
   output DAE.Exp outExp;
-  output list<DAE.ComponentRef> outDerVars = inDerVars;
+  output tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> outDerVars = inDerVars;
 algorithm
   outExp := match inExp
     local
+      list<DAE.ComponentRef> derVars;
+      Option<DAE.Ident> optForIter;
+      DAE.Ident forIter;
       DAE.ComponentRef x;
       DAE.Type ty;
+      DAE.Exp der_x;
     case DAE.CALL(path = Absyn.IDENT(name = "der"),
                   expLst = {DAE.CREF(componentRef = x, ty = ty)})
       algorithm
-        if not ComponentReference.crefInLst(x, outDerVars) then
-          outDerVars := x :: outDerVars;
+        // build $DER.x
+        der_x := DAE.CREF(ComponentReference.crefPrefixDer(x), ty);
+        // strip optional forIter and append x to derVars
+        (derVars, optForIter) := inDerVars;
+        _ := match optForIter
+          case SOME(forIter)
+          algorithm
+            x := ComponentReference.crefStripIterSub(x, forIter);
+          then ();
+          else ();
+        end match;
+        if not ComponentReference.crefInLst(x, derVars) then
+          derVars := x :: derVars;
         end if;
-      then DAE.CREF(ComponentReference.crefPrefixDer(x), ty);
+        outDerVars := (derVars, optForIter);
+      then der_x;
     else inExp;
   end match;
 end getDerVars;
@@ -430,11 +465,11 @@ algorithm
   end for;
   for i in 1:BackendEquation.getNumberOfEquations(inSyst.orderedEqs) loop
     eq := BackendEquation.get(inSyst.orderedEqs, i);
-    (_, prevVars) := BackendEquation.traverseExpsOfEquation(eq, collectPrevVars, prevVars);
+    (_, (prevVars, _)) := BackendEquation.traverseExpsOfEquation(eq, collectPrevVars, (prevVars, BackendEquation.getForEquationIterIdent(eq)));
   end for;
   for i in 1:BackendEquation.getNumberOfEquations(inSyst.removedEqs) loop
     eq := BackendEquation.get(inSyst.removedEqs, i);
-    (_, prevVars) := BackendEquation.traverseExpsOfEquation(eq, collectPrevVars, prevVars);
+    (_, (prevVars, _)) := BackendEquation.traverseExpsOfEquation(eq, collectPrevVars, (prevVars, BackendEquation.getForEquationIterIdent(eq)));
   end for;
   for cr in prevVars loop
     varIxs := getVarIxs(cr, inSyst.orderedVars);
@@ -461,25 +496,39 @@ end markClockedStates;
 
 protected function collectPrevVars
   input DAE.Exp inExp;
-  input list<DAE.ComponentRef> inPrevVars;
+  input tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> inPrevVars;
   output DAE.Exp outExp;
-  output list<DAE.ComponentRef> outPrevVars;
+  output tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> outPrevVars;
 algorithm
   (outExp, outPrevVars) := Expression.traverseExpBottomUp(inExp, collectPrevVars1, inPrevVars);
 end collectPrevVars;
 
 protected function collectPrevVars1
+ "Append cref found in previous(cref) to outPrevVars.
+  Optionally strip for iterator to get array variable (no NF_SCALARIZE)."
   input DAE.Exp inExp;
-  input list<DAE.ComponentRef> inPrevCompRefs;
+  input tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> inPrevVars;
   output DAE.Exp outExp = inExp;
-  output list<DAE.ComponentRef> outPrevCompRefs;
+  output tuple<list<DAE.ComponentRef>, Option<DAE.Ident>> outPrevVars;
 algorithm
-  outPrevCompRefs := match inExp
+  outPrevVars := match inExp
     local
+      list<DAE.ComponentRef> inPrevCompRefs;
+      Option<DAE.Ident> inForIter;
+      DAE.Ident forIter;
       DAE.ComponentRef cr;
     case DAE.CALL(path=Absyn.IDENT("previous"), expLst={DAE.CREF(cr, _)})
-      then cr::inPrevCompRefs;
-    else inPrevCompRefs;
+      algorithm
+        (inPrevCompRefs, inForIter) := inPrevVars;
+        _ := match inForIter
+          case SOME(forIter)
+          algorithm
+            cr := ComponentReference.crefStripIterSub(cr, forIter);
+          then ();
+          else ();
+        end match;
+      then (cr :: inPrevCompRefs, inForIter);
+    else inPrevVars;
   end match;
 end collectPrevVars1;
 
@@ -1324,6 +1373,7 @@ algorithm
       DAE.ElementSource source;
       list<BackendDAE.Equation> newEqs;
       list<BackendDAE.Var> newVars;
+      list<Integer> dimSize;
     case(BackendDAE.EQUATION(e1, e2, source, attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx0, newEqs, newVars))
       algorithm
         (e1,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e1, replaceSampledClocks2, (newEqs, newVars, suffixIdx0));
@@ -1334,6 +1384,16 @@ algorithm
           attr := BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC;
         end if;
       then (BackendDAE.EQUATION(e1,e2,source,attr),(vars, suffixIdx, newEqs, newVars));
+    case(BackendDAE.ARRAY_EQUATION(dimSize, e1, e2, source, attr=BackendDAE.EQUATION_ATTRIBUTES(kind=BackendDAE.DYNAMIC_EQUATION())),(vars, suffixIdx0, newEqs, newVars))
+      algorithm
+        (e1,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e1, replaceSampledClocks2, (newEqs, newVars, suffixIdx0));
+        (e2,(newEqs, newVars, suffixIdx)) := Expression.traverseExpTopDown(e2, replaceSampledClocks2, (newEqs, newVars, suffixIdx));
+        if intEq(suffixIdx - suffixIdx0, 1) then
+          attr := BackendEquation.defaultClockedEqAttr(suffixIdx0);
+        else
+          attr := BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC;
+        end if;
+      then (BackendDAE.ARRAY_EQUATION(dimSize, e1, e2, source, attr), (vars, suffixIdx, newEqs, newVars));
     else
       algorithm
       then (eqIn,tplIn);
@@ -2676,6 +2736,7 @@ algorithm
       SourceInfo info;
     case BackendDAE.EQUATION(scalar = e) then isClockExp(e);
     case BackendDAE.ARRAY_EQUATION(right = e) then isClockExp(e);
+    case BackendDAE.FOR_EQUATION(body = eq) then isClockEquation(eq);
     case BackendDAE.SOLVED_EQUATION(exp = e) then isClockExp(e);
     case BackendDAE.RESIDUAL_EQUATION(exp = e) then isClockExp(e);
     case BackendDAE.ALGORITHM() then false;

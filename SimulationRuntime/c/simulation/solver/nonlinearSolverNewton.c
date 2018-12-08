@@ -82,34 +82,35 @@ int getAnalyticalJacobianNewton(DATA* data, threadData_t *threadData, double* ja
   NONLINEAR_SYSTEM_DATA* systemData = &(((DATA*)data)->simulationInfo->nonlinearSystemData[currentSys]);
   DATA_NEWTON* solverData = (DATA_NEWTON*)(systemData->solverData);
   const int index = systemData->jacobianIndex;
+  ANALYTIC_JACOBIAN* jacobian = &(data->simulationInfo->analyticJacobians[systemData->jacobianIndex]);
 
   memset(jac, 0, (solverData->n)*(solverData->n)*sizeof(double));
 
-  for(i=0; i < data->simulationInfo->analyticJacobians[index].sparsePattern.maxColors; i++)
+  for(i=0; i < jacobian->sparsePattern.maxColors; i++)
   {
     /* activate seed variable for the corresponding color */
-    for(ii=0; ii < data->simulationInfo->analyticJacobians[index].sizeCols; ii++)
-      if(data->simulationInfo->analyticJacobians[index].sparsePattern.colorCols[ii]-1 == i)
-        data->simulationInfo->analyticJacobians[index].seedVars[ii] = 1;
+    for(ii=0; ii < jacobian->sizeCols; ii++)
+      if(jacobian->sparsePattern.colorCols[ii]-1 == i)
+        jacobian->seedVars[ii] = 1;
 
-    systemData->analyticalJacobianColumn(data, threadData);
+    systemData->analyticalJacobianColumn(data, threadData, jacobian, NULL);
 
-    for(j = 0; j < data->simulationInfo->analyticJacobians[index].sizeCols; j++)
+    for(j = 0; j < jacobian->sizeCols; j++)
     {
-      if(data->simulationInfo->analyticJacobians[index].seedVars[j] == 1)
+      if(jacobian->seedVars[j] == 1)
       {
-        ii = data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex[j];
-        while(ii < data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex[j+1])
+        ii = jacobian->sparsePattern.leadindex[j];
+        while(ii < jacobian->sparsePattern.leadindex[j+1])
         {
-          l  = data->simulationInfo->analyticJacobians[index].sparsePattern.index[ii];
-          k  = j*data->simulationInfo->analyticJacobians[index].sizeRows + l;
-          jac[k] = data->simulationInfo->analyticJacobians[index].resultVars[l];
+          l  = jacobian->sparsePattern.index[ii];
+          k  = j*jacobian->sizeRows + l;
+          jac[k] = jacobian->resultVars[l];
           ii++;
         };
       }
       /* de-activate seed variable for the corresponding color */
-      if(data->simulationInfo->analyticJacobians[index].sparsePattern.colorCols[j]-1 == i)
-        data->simulationInfo->analyticJacobians[index].seedVars[j] = 0;
+      if(jacobian->sparsePattern.colorCols[j]-1 == i)
+        jacobian->seedVars[j] = 0;
     }
 
   }
@@ -238,7 +239,7 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
   if(ACTIVE_STREAM(LOG_NLS_V))
   {
     int indexes[2] = {1,eqSystemNumber};
-    infoStreamPrintWithEquationIndexes(LOG_NLS, 1, indexes, "Start solving Non-Linear System %d at time %g with Newton Solver",
+    infoStreamPrintWithEquationIndexes(LOG_NLS_V, 1, indexes, "Start solving Non-Linear System %d at time %g with Newton Solver",
         eqSystemNumber, data->localData[0]->timeValue);
 
     for(i = 0; i < solverData->n; i++) {
@@ -285,12 +286,12 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
     {
       success = 1;
       nfunc_evals += solverData->nfev;
-      if(ACTIVE_STREAM(LOG_NLS))
+      if(ACTIVE_STREAM(LOG_NLS_V))
       {
-        infoStreamPrint(LOG_NLS, 0, "*** System solved ***\n%d restarts", retries);
-        infoStreamPrint(LOG_NLS, 0, "nfunc = %d +++ error = %.15e +++ error_scaled = %.15e", nfunc_evals, xerror, xerror_scaled);
+        infoStreamPrint(LOG_NLS_V, 0, "*** System solved ***\n%d restarts", retries);
+        infoStreamPrint(LOG_NLS_V, 0, "nfunc = %d +++ error = %.15e +++ error_scaled = %.15e", nfunc_evals, xerror, xerror_scaled);
         for(i = 0; i < solverData->n; i++)
-          infoStreamPrint(LOG_NLS, 0, "x[%d] = %.15e\n\tresidual = %e", i, solverData->x[i], solverData->fvec[i]);
+          infoStreamPrint(LOG_NLS_V, 0, "x[%d] = %.15e\n\tresidual = %e", i, solverData->x[i], solverData->fvec[i]);
       }
 
       /* take the solution */
@@ -302,7 +303,7 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
     else if(retries < 1 && casualTearingSet)
     {
       giveUp = 1;
-      infoStreamPrint(LOG_NLS, 0, "### No Solution for the casual tearing set at the first try! ###");
+      infoStreamPrint(LOG_NLS_V, 0, "### No Solution for the casual tearing set at the first try! ###");
     }
     else if(retries < 1)
     {
@@ -311,7 +312,7 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
       retries++;
       giveUp = 0;
       nfunc_evals += solverData->nfev;
-      infoStreamPrint(LOG_NLS, 0, " - iteration making no progress:\t try old values.");
+      infoStreamPrint(LOG_NLS_V, 0, " - iteration making no progress:\t try old values.");
       /* try to vary the initial values */
 
       /* evaluate jacobian in every step now */
@@ -324,7 +325,7 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
       retries++;
       giveUp = 0;
       nfunc_evals += solverData->nfev;
-      infoStreamPrint(LOG_NLS, 0, " - iteration making no progress:\t vary solution point by 1%%.");
+      infoStreamPrint(LOG_NLS_V, 0, " - iteration making no progress:\t vary solution point by 1%%.");
       /* try to vary the initial values */
     }
     else if(retries < 3)
@@ -334,7 +335,7 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
       retries++;
       giveUp = 0;
       nfunc_evals += solverData->nfev;
-      infoStreamPrint(LOG_NLS, 0, " - iteration making no progress:\t try nominal values as initial solution.");
+      infoStreamPrint(LOG_NLS_V, 0, " - iteration making no progress:\t try nominal values as initial solution.");
     }
     else if(retries < 4  && data->simulationInfo->discreteCall)
     {
@@ -354,7 +355,7 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
 
       giveUp = 0;
       nfunc_evals += solverData->nfev;
-      infoStreamPrint(LOG_NLS, 0, " - iteration making no progress:\t try to solve a discontinuous system.");
+      infoStreamPrint(LOG_NLS_V, 0, " - iteration making no progress:\t try to solve a discontinuous system.");
     }
     else if(retries2 < 4)
     {
@@ -366,23 +367,23 @@ int solveNewton(DATA *data, threadData_t *threadData, int sysNumber)
       retries2++;
       giveUp = 0;
       nfunc_evals += solverData->nfev;
-      infoStreamPrint(LOG_NLS, 0, " - iteration making no progress:\t reduce the tolerance slightly to %e.", local_tol);
+      infoStreamPrint(LOG_NLS_V, 0, " - iteration making no progress:\t reduce the tolerance slightly to %e.", local_tol);
     }
     else
     {
       printErrorEqSyst(ERROR_AT_TIME, modelInfoGetEquation(&data->modelData->modelDataXml,eqSystemNumber), data->localData[0]->timeValue);
-      if(ACTIVE_STREAM(LOG_NLS))
+      if(ACTIVE_STREAM(LOG_NLS_V))
       {
-        infoStreamPrint(LOG_NLS, 0, "### No Solution! ###\n after %d restarts", retries);
-        infoStreamPrint(LOG_NLS, 0, "nfunc = %d +++ error = %.15e +++ error_scaled = %.15e", nfunc_evals, xerror, xerror_scaled);
-        if(ACTIVE_STREAM(LOG_NLS))
+        infoStreamPrint(LOG_NLS_V, 0, "### No Solution! ###\n after %d restarts", retries);
+        infoStreamPrint(LOG_NLS_V, 0, "nfunc = %d +++ error = %.15e +++ error_scaled = %.15e", nfunc_evals, xerror, xerror_scaled);
+        if(ACTIVE_STREAM(LOG_NLS_V))
           for(i = 0; i < solverData->n; i++)
-            infoStreamPrint(LOG_NLS, 0, "x[%d] = %.15e\n\tresidual = %e", i, solverData->x[i], solverData->fvec[i]);
+            infoStreamPrint(LOG_NLS_V, 0, "x[%d] = %.15e\n\tresidual = %e", i, solverData->x[i], solverData->fvec[i]);
       }
     }
   }
-  if(ACTIVE_STREAM(LOG_NLS))
-    messageClose(LOG_NLS);
+  if(ACTIVE_STREAM(LOG_NLS_V))
+    messageClose(LOG_NLS_V);
 
   free(relationsPreBackup);
 

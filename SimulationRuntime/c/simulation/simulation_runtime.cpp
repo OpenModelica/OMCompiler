@@ -416,6 +416,7 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
     rt_measure_overhead(SIM_TIMER_TOTAL);
     rt_clear(SIM_TIMER_TOTAL);
     rt_tick(SIM_TIMER_TOTAL);
+    rt_clear(SIM_TIMER_PREINIT);
     rt_tick(SIM_TIMER_PREINIT);
     rt_clear(SIM_TIMER_OUTPUT);
     rt_clear(SIM_TIMER_EVENT);
@@ -647,7 +648,8 @@ static int callSolver(DATA* simData, threadData_t *threadData, string init_initM
    */
   if ( (simData->modelData->nStates < 1 &&
         solverID != S_OPTIMIZATION &&
-        solverID != S_SYM_SOLVER) ||
+        solverID != S_SYM_SOLVER &&
+        !compiledInDAEMode) ||
        (compiledInDAEMode && (simData->simulationInfo->daeModeData->nResidualVars +
                              simData->simulationInfo->daeModeData->nAlgebraicDAEVars < 1))
       )

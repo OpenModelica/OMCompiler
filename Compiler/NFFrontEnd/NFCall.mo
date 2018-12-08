@@ -64,11 +64,12 @@ import Prefixes = NFPrefixes;
 import TypeCheck = NFTypeCheck;
 import Typing = NFTyping;
 import Util;
+import Subscript = NFSubscript;
+import Operator = NFOperator;
 
 public
   uniontype CallAttributes
     record CALL_ATTR
-      Type ty "The type of the return value, if several return values this is undefined";
       Boolean tuple_ "tuple" ;
       Boolean builtin "builtin Function call" ;
       Boolean isImpure "if the function has prefix *impure* is true, else false";
@@ -79,9 +80,10 @@ public
 
     function toDAE
       input CallAttributes attr;
+      input Type returnType;
       output DAE.CallAttributes fattr;
     algorithm
-      fattr := DAE.CALL_ATTR(Type.toDAE(attr.ty), attr.tuple_, attr.builtin,
+      fattr := DAE.CALL_ATTR(Type.toDAE(returnType), attr.tuple_, attr.builtin,
         attr.isImpure, attr.isFunctionPointerCall, attr.inlineType, attr.tailCall);
     end toDAE;
   end CallAttributes;
@@ -138,31 +140,31 @@ uniontype Call
     CallAttributes attributes;
   end TYPED_CALL;
 
-  // Right now this represents only array() calls.
-  // Any other mapping call e.g. F(i for i in ...) is converted to
-  // array(F(i) for i in ...) at instIteratorCall().
-  // So the fn is always NFBuiltinFuncs.ARRAY_FUNC.
-
-  // Note that F(i for i in ...) only allows
-  // calling functions with just one argument according to the current
-  // grammar anyway. array(F(i,j) for i in ..) makes this multi calls possible
-  // in Modelica code.
-
-  // If you need to have more mapping calls e.g list() at some point just add them
-  // and make use of fn;
-  record UNTYPED_MAP_CALL
-    // Function fn;
+  record UNTYPED_ARRAY_CONSTRUCTOR
     Expression exp;
     list<tuple<InstNode, Expression>> iters;
-  end UNTYPED_MAP_CALL;
+  end UNTYPED_ARRAY_CONSTRUCTOR;
 
-  record TYPED_MAP_CALL
-    // Function fn;
+  record TYPED_ARRAY_CONSTRUCTOR
     Type ty;
     Variability var;
     Expression exp;
     list<tuple<InstNode, Expression>> iters;
-  end TYPED_MAP_CALL;
+  end TYPED_ARRAY_CONSTRUCTOR;
+
+  record UNTYPED_REDUCTION
+    ComponentRef ref;
+    Expression exp;
+    list<tuple<InstNode, Expression>> iters;
+  end UNTYPED_REDUCTION;
+
+  record TYPED_REDUCTION
+    Function fn;
+    Type ty;
+    Variability var;
+    Expression exp;
+    list<tuple<InstNode, Expression>> iters;
+  end TYPED_REDUCTION;
 
   function instantiate
     input Absyn.ComponentRef functionName;
@@ -191,46 +193,63 @@ uniontype Call
     output Type ty;
     output Variability var;
   protected
-    Call call;
+    Call call, ty_call;
     list<Expression> args;
     ComponentRef cref;
   algorithm
-    outExp := match callExp
-      case Expression.CALL(UNTYPED_CALL(ref = cref))
-        algorithm
-          if(BuiltinCall.needSpecialHandling(callExp.call)) then
-            (outExp, ty, var) := BuiltinCall.typeSpecial(callExp.call, origin, info);
-          else
-            call := typeMatchNormalCall(callExp.call, origin, info);
-            ty := typeOf(call);
-            var := variability(call);
+    Expression.CALL(call = call) := callExp;
 
-            if isRecordConstructor(call) then
-              outExp := toRecordExpression(call, ty);
+    outExp := match call
+      case UNTYPED_CALL(ref = cref)
+        algorithm
+          if(BuiltinCall.needSpecialHandling(call)) then
+            (outExp, ty, var) := BuiltinCall.typeSpecial(call, origin, info);
+          else
+            ty_call := typeMatchNormalCall(call, origin, info);
+            ty := typeOf(ty_call);
+            var := variability(ty_call);
+
+            if isRecordConstructor(ty_call) then
+              outExp := toRecordExpression(ty_call, ty);
             else
-              outExp := Expression.CALL(call);
+              if Function.hasUnboxArgs(Call.typedFunction(ty_call)) then
+                outExp := Expression.CALL(Call.unboxArgs(ty_call));
+              else
+                outExp := Expression.CALL(ty_call);
+              end if;
               outExp := Inline.inlineCallExp(outExp);
             end if;
           end if;
         then
           outExp;
 
-      case Expression.CALL(UNTYPED_MAP_CALL())
+      case UNTYPED_ARRAY_CONSTRUCTOR()
         algorithm
-          call := typeMapIteratorCall(callExp.call, origin, info);
-          ty := typeOf(call);
-          var := variability(call);
+          (ty_call, ty, var) := typeArrayConstructor(call, origin, info);
         then
-          Expression.CALL(call);
+          Expression.CALL(ty_call);
 
-      case Expression.CALL(call as TYPED_CALL())
+      case UNTYPED_REDUCTION()
+        algorithm
+          (ty_call, ty, var) := typeReduction(call, origin, info);
+        then
+          Expression.CALL(ty_call);
+
+      case TYPED_CALL()
         algorithm
           ty := call.ty;
           var := call.var;
         then
           callExp;
 
-      case Expression.CALL(call as TYPED_MAP_CALL())
+      case TYPED_ARRAY_CONSTRUCTOR()
+        algorithm
+          ty := call.ty;
+          var := call.var;
+        then
+          callExp;
+
+      case TYPED_REDUCTION()
         algorithm
           ty := call.ty;
           var := call.var;
@@ -257,12 +276,8 @@ uniontype Call
       case UNTYPED_CALL()
         algorithm
           fnl := Function.typeRefCache(call.ref);
-          // Don't evaluate constants or structural parameters for external functions,
-          // the code generation can't handle it in some cases (see bug #4904).
-          // TODO: Remove this when #4904 is fixed.
-          is_external := if listEmpty(fnl) then false else Function.isExternal(listHead(fnl));
         then
-          typeArgs(call, not is_external, origin, info);
+          typeArgs(call, origin, info);
 
       else
         algorithm
@@ -282,7 +297,6 @@ uniontype Call
     CallAttributes ca;
   algorithm
     ca := CallAttributes.CALL_ATTR(
-      returnType,
       Type.isTuple(returnType),
       Function.isBuiltin(fn),
       Function.isImpure(fn),
@@ -338,7 +352,11 @@ uniontype Call
     typed_args := matchedFunc.args;
 
     args := {};
-    var := Variability.CONSTANT;
+	// if is impure, make it a parameter expression
+	// see https://trac.openmodelica.org/OpenModelica/ticket/5133
+    var := if Function.isImpure(func) or Function.isOMImpure(func)
+           then Variability.PARAMETER
+           else Variability.CONSTANT;
     for a in typed_args loop
       (arg_exp, _, arg_var) := a;
       args := arg_exp :: args;
@@ -351,6 +369,12 @@ uniontype Call
     // Hack to fix return type of some builtin functions.
     if Type.isPolymorphic(ty) then
       ty := getSpecialReturnType(func, args);
+    end if;
+
+    // Functions that return a discrete type, e.g. Integer, should probably be
+    // treated as implicitly discrete if the arguments are continuous.
+    if Type.isDiscrete(ty) and var == Variability.CONTINUOUS then
+      var := Variability.IMPLICITLY_DISCRETE;
     end if;
 
     if intBitAnd(origin, ExpOrigin.FUNCTION) == 0 then
@@ -373,7 +397,8 @@ uniontype Call
   algorithm
     ty := match call
       case TYPED_CALL() then call.ty;
-      case TYPED_MAP_CALL() then call.ty;
+      case TYPED_ARRAY_CONSTRUCTOR() then call.ty;
+      case TYPED_REDUCTION() then call.ty;
       else Type.UNKNOWN();
     end match;
   end typeOf;
@@ -384,7 +409,8 @@ uniontype Call
   algorithm
     call := match call
       case TYPED_CALL() algorithm call.ty := ty; then call;
-      case TYPED_MAP_CALL() algorithm call.ty := ty; then call;
+      case TYPED_ARRAY_CONSTRUCTOR() algorithm call.ty := ty; then call;
+      case TYPED_REDUCTION() algorithm call.ty := ty; then call;
     end match;
   end setType;
 
@@ -421,9 +447,11 @@ uniontype Call
         then
           var;
 
-      case UNTYPED_MAP_CALL() then Expression.variability(call.exp);
+      case UNTYPED_ARRAY_CONSTRUCTOR() then Expression.variability(call.exp);
+      case UNTYPED_REDUCTION() then Expression.variability(call.exp);
       case TYPED_CALL() then call.var;
-      case TYPED_MAP_CALL() then call.var;
+      case TYPED_ARRAY_CONSTRUCTOR() then call.var;
+      case TYPED_REDUCTION() then call.var;
       else algorithm
         Error.assertion(false, getInstanceName() + " got untyped call", sourceInfo());
         then fail();
@@ -466,6 +494,16 @@ uniontype Call
     end match;
   end isExternal;
 
+  function isImpure
+    input Call call;
+    output Boolean isImpure;
+  algorithm
+    isImpure := match call
+      case TYPED_CALL() then Function.isImpure(call.fn) or Function.isOMImpure(call.fn);
+      else false;
+    end match;
+  end isImpure;
+
   function isRecordConstructor
     input Call call;
     output Boolean isConstructor;
@@ -496,7 +534,8 @@ uniontype Call
   algorithm
     fn := match call
       case TYPED_CALL() then call.fn;
-      case TYPED_MAP_CALL() then NFBuiltinFuncs.ARRAY_FUNC;
+      case TYPED_ARRAY_CONSTRUCTOR() then NFBuiltinFuncs.ARRAY_FUNC;
+      case TYPED_REDUCTION() then call.fn;
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got untyped function", sourceInfo());
@@ -553,12 +592,23 @@ uniontype Call
         then
           name + "(" + arg_str + ")";
 
-      case UNTYPED_MAP_CALL()
+      case UNTYPED_ARRAY_CONSTRUCTOR()
         algorithm
           name := Absyn.pathString(Function.name(NFBuiltinFuncs.ARRAY_FUNC));
           arg_str := Expression.toString(call.exp);
+          c := stringDelimitList(list(InstNode.name(Util.tuple21(iter)) + " in " +
+            Expression.toString(Util.tuple22(iter)) for iter in call.iters), ", ");
         then
-          name + "(" + arg_str + ")";
+          "{" + arg_str + " for " + c + "}";
+
+      case UNTYPED_REDUCTION()
+        algorithm
+          name := ComponentRef.toString(call.ref);
+          arg_str := Expression.toString(call.exp);
+          c := stringDelimitList(list(InstNode.name(Util.tuple21(iter)) + " in " +
+            Expression.toString(Util.tuple22(iter)) for iter in call.iters), ", ");
+        then
+          name + "(" + arg_str + " for " + c + ")";
 
       case TYPED_CALL()
         algorithm
@@ -567,9 +617,18 @@ uniontype Call
         then
           name + "(" + arg_str + ")";
 
-      case TYPED_MAP_CALL()
+      case TYPED_ARRAY_CONSTRUCTOR()
         algorithm
           name := Absyn.pathString(Function.name(NFBuiltinFuncs.ARRAY_FUNC));
+          arg_str := Expression.toString(call.exp);
+          c := stringDelimitList(list(InstNode.name(Util.tuple21(iter)) + " in " +
+            Expression.toString(Util.tuple22(iter)) for iter in call.iters), ", ");
+        then
+          "{" + arg_str + " for " + c + "}";
+
+      case TYPED_REDUCTION()
+        algorithm
+          name := Absyn.pathString(Function.name(call.fn));
           arg_str := Expression.toString(call.exp);
           c := stringDelimitList(list(InstNode.name(Util.tuple21(iter)) + " in " +
             Expression.toString(Util.tuple22(iter)) for iter in call.iters), ", ");
@@ -618,24 +677,48 @@ uniontype Call
     output DAE.Exp daeCall;
   algorithm
     daeCall := match call
+      local
+        String fold_id, res_id;
+
       case TYPED_CALL()
         then DAE.CALL(
           Function.nameConsiderBuiltin(call.fn),
           list(Expression.toDAE(e) for e in call.arguments),
-          CallAttributes.toDAE(call.attributes));
+          CallAttributes.toDAE(call.attributes, call.ty));
 
-      case TYPED_MAP_CALL()
-        then DAE.REDUCTION(
-          DAE.REDUCTIONINFO(
-            Function.name(NFBuiltinFuncs.ARRAY_FUNC),
-            Absyn.COMBINE(),
-            Type.toDAE(call.ty),
-            NONE(),
-            String(Util.getTempVariableIndex()),
-            String(Util.getTempVariableIndex()),
-            NONE()),
-          Expression.toDAE(call.exp),
-          list(iteratorToDAE(iter) for iter in call.iters));
+      case TYPED_ARRAY_CONSTRUCTOR()
+        algorithm
+          fold_id := Util.getTempVariableIndex();
+          res_id := Util.getTempVariableIndex();
+        then
+          DAE.REDUCTION(
+            DAE.REDUCTIONINFO(
+              Function.name(NFBuiltinFuncs.ARRAY_FUNC),
+              Absyn.COMBINE(),
+              Type.toDAE(call.ty),
+              NONE(),
+              fold_id,
+              res_id,
+              NONE()),
+            Expression.toDAE(call.exp),
+            list(iteratorToDAE(iter) for iter in call.iters));
+
+      case TYPED_REDUCTION()
+        algorithm
+          fold_id := Util.getTempVariableIndex();
+          res_id := Util.getTempVariableIndex();
+        then
+          DAE.REDUCTION(
+            DAE.REDUCTIONINFO(
+              Function.name(call.fn),
+              Absyn.COMBINE(),
+              Type.toDAE(call.ty),
+              SOME(Expression.toDAEValue(reductionDefaultValue(call))),
+              fold_id,
+              res_id,
+              Expression.toDAEOpt(reductionFoldExpression(call.fn, call.ty, call.var, fold_id, res_id))),
+            Expression.toDAE(call.exp),
+            list(iteratorToDAE(iter) for iter in call.iters));
 
       else
         algorithm
@@ -644,6 +727,88 @@ uniontype Call
           fail();
     end match;
   end toDAE;
+
+  function reductionDefaultValue
+    input Call call;
+    output Expression defaultValue;
+  protected
+    Function fn;
+    Type ty;
+  algorithm
+    TYPED_REDUCTION(fn = fn, ty = ty) := call;
+
+    defaultValue := match Absyn.pathFirstIdent(Function.name(fn))
+      case "sum" then Expression.makeZero(ty);
+      case "product" then Expression.makeOne(ty);
+      case "min" then Expression.makeMaxValue(ty);
+      case "max" then Expression.makeMinValue(ty);
+    end match;
+  end reductionDefaultValue;
+
+  function reductionFoldExpression
+    input Function reductionFn;
+    input Type reductionType;
+    input Variability reductionVar;
+    input String foldId;
+    input String resultId;
+    output Option<Expression> foldExp;
+  protected
+    Type ty;
+  algorithm
+    foldExp := match Absyn.pathFirstIdent(Function.name(reductionFn))
+      case "sum"
+        then SOME(Expression.BINARY(
+          reductionFoldIterator(resultId, reductionType),
+          Operator.makeAdd(reductionType),
+          reductionFoldIterator(foldId, reductionType)));
+
+      case "product"
+        then SOME(Expression.BINARY(
+          reductionFoldIterator(resultId, reductionType),
+          Operator.makeMul(reductionType),
+          reductionFoldIterator(foldId, reductionType)));
+
+      case "$array" then NONE();
+      case "array" then NONE();
+      case "list" then NONE();
+      case "listReverse" then NONE();
+
+      else
+        SOME(Expression.CALL(Call.makeTypedCall(reductionFn,
+          {reductionFoldIterator(foldId, reductionType),
+           reductionFoldIterator(resultId, reductionType)},
+          reductionVar, reductionType)));
+
+    end match;
+  end reductionFoldExpression;
+
+  function reductionFoldIterator
+    input String name;
+    input Type ty;
+    output Expression iterExp;
+  algorithm
+    iterExp := Expression.CREF(ty, ComponentRef.makeIterator(InstNode.NAME_NODE(name), ty));
+  end reductionFoldIterator;
+
+  function isVectorizeable
+    input Call call;
+    output Boolean isVect;
+  algorithm
+    isVect := match call
+      local
+        String name;
+
+      case TYPED_CALL(fn = Function.FUNCTION(path = Absyn.IDENT(name = name)))
+        then match name
+          case "der" then false;
+          case "pre" then false;
+          case "previous" then false;
+          else true;
+        end match;
+
+      else true;
+    end match;
+  end isVectorizeable;
 
 protected
   function instNormalCall
@@ -717,50 +882,27 @@ protected
     input SourceInfo info;
     output Expression callExp;
   protected
-    ComponentRef fn_ref, arr_fn_ref;
+    Absyn.ComponentRef fn_name;
+    ComponentRef fn_ref;
     Expression exp;
     list<tuple<InstNode, Expression>> iters;
-    Call call;
-    Boolean is_builtin_reduction, is_array;
+    Boolean is_array;
   algorithm
-    (is_builtin_reduction, is_array) := match Absyn.crefFirstIdent(functionName)
-      case "$array" then (false, true);
-      case "array" then (false, true);
-      case "min" then (true, false);
-      case "max" then (true, false);
-      case "sum" then (true, false);
-      case "product" then (true, false);
-      else (false, false);
+    // The parser turns {exp for i in ...} into $array(exp for i in ...), but we
+    // change it to just array here so we can handle array constructors uniformly.
+    fn_name := match functionName
+      case Absyn.CREF_IDENT("$array") then Absyn.CREF_IDENT("array", {});
+      else functionName;
     end match;
 
     (exp, iters) := instIteratorCallArgs(functionArgs, scope, info);
 
-    // If it is one of the builtin functions above the call operates as a "reduction"
-    // (think of it like just a call to the overload of the function that takes array as argument.)
-    // We handle it by making a call to the builtin function with an array as argument.
-    // Which is valid since all these builtin functions accept array arguments anyway.
-    if is_builtin_reduction then
-      // start by making an array map call.
-      call := UNTYPED_MAP_CALL(exp, iters);
-
-      // wrap the array call in the given function
-      // e.g. sum(array(i for i in ...)).
-      fn_ref := Function.instFunction(functionName, scope, info);
-      call := UNTYPED_CALL(fn_ref, {Expression.CALL(call)}, {}, scope);
+    if Absyn.crefFirstIdent(fn_name) == "array" then
+      callExp := Expression.CALL(UNTYPED_ARRAY_CONSTRUCTOR(exp, iters));
     else
-      // Otherwise, make an array call with the original function call as an argument.
-      // But only if the original function is not array() itself.
-      // e.g. Change myfunc(i for i in ...) TO array(myfunc(i) for i in ...).
-      if not is_array then
-      fn_ref := Function.instFunction(functionName, scope, info);
-        call := UNTYPED_CALL(fn_ref, {exp}, {}, scope);
-        exp := Expression.CALL(call);
-      end if;
-
-      call := UNTYPED_MAP_CALL(exp, iters);
+      fn_ref := Function.instFunction(fn_name, scope, info);
+      callExp := Expression.CALL(UNTYPED_REDUCTION(fn_ref, exp, iters));
     end if;
-
-    callExp := Expression.CALL(call);
   end instIteratorCall;
 
   function instIteratorCallArgs
@@ -802,7 +944,7 @@ protected
     outIters := listReverse(outIters);
   end instIterators;
 
-  function typeMapIteratorCall
+  function typeArrayConstructor
     input output Call call;
     input ExpOrigin.Type origin;
     input SourceInfo info;
@@ -811,23 +953,29 @@ protected
   protected
     Expression arg, range;
     Type iter_ty;
-    Binding binding;
     Variability iter_var;
     InstNode iter;
     list<Dimension> dims = {};
     list<tuple<InstNode, Expression>> iters = {};
     ExpOrigin.Type next_origin;
+    Boolean is_structural;
   algorithm
     (call, ty, variability) := match call
-      // This is always a call to the function array()/$array(). See instIteratorCall.
-      // Other mapping function calls are already wrapped by array() at this point.
-      case UNTYPED_MAP_CALL()
+      case UNTYPED_ARRAY_CONSTRUCTOR()
         algorithm
           variability := Variability.CONSTANT;
+          // The size of the expression must be known unless we're in a function.
+          is_structural := ExpOrigin.flagNotSet(origin, ExpOrigin.FUNCTION);
 
           for i in call.iters loop
             (iter, range) := i;
-            (range, iter_ty, iter_var) := Typing.typeIterator(iter, range, origin, structural = false);
+            (range, iter_ty, iter_var) := Typing.typeIterator(iter, range, origin, is_structural);
+
+            if is_structural then
+              range := Ceval.evalExp(range, Ceval.EvalTarget.RANGE(info));
+              iter_ty := Expression.typeOf(range);
+            end if;
+
             dims := listAppend(Type.arrayDims(iter_ty), dims);
             variability := Variability.variabilityMax(variability, iter_var);
             iters := (iter, range) :: iters;
@@ -839,7 +987,7 @@ protected
           (arg, ty) := Typing.typeExp(call.exp, next_origin, info);
           ty := Type.liftArrayLeftList(ty, dims);
         then
-          (TYPED_MAP_CALL(ty, variability, arg, iters), ty, variability);
+          (TYPED_ARRAY_CONSTRUCTOR(ty, variability, arg, iters), ty, variability);
 
       else
         algorithm
@@ -847,11 +995,53 @@ protected
         then
           fail();
     end match;
-  end typeMapIteratorCall;
+  end typeArrayConstructor;
+
+  function typeReduction
+    input output Call call;
+    input ExpOrigin.Type origin;
+    input SourceInfo info;
+          output Type ty;
+          output Variability variability;
+  protected
+    Expression range, arg;
+    InstNode iter;
+    Variability iter_var;
+    list<tuple<InstNode, Expression>> iters = {};
+    ExpOrigin.Type next_origin;
+    Function fn;
+  algorithm
+    (call, ty, variability) := match call
+      case UNTYPED_REDUCTION()
+        algorithm
+          variability := Variability.CONSTANT;
+
+          for i in call.iters loop
+            (iter, range) := i;
+            (range, _, iter_var) := Typing.typeIterator(iter, range, origin, structural = false);
+            variability := Variability.variabilityMax(variability, iter_var);
+            iters := (iter, range) :: iters;
+          end for;
+
+          iters := listReverseInPlace(iters);
+
+          // ExpOrigin.FOR is used here as a marker that this expression may contain iterators.
+          next_origin := intBitOr(origin, ExpOrigin.FOR);
+          (arg, ty) := Typing.typeExp(call.exp, next_origin, info);
+          {fn} := Function.typeRefCache(call.ref);
+        then
+          (TYPED_REDUCTION(fn, ty, variability, arg, iters), ty, variability);
+
+      else
+        algorithm
+          Error.assertion(false, getInstanceName() + " got invalid reduction call", sourceInfo());
+        then
+          fail();
+    end match;
+  end typeReduction;
 
   function typeArgs
     input output Call call;
-    input Boolean replaceConstants;
     input ExpOrigin.Type origin;
     input SourceInfo info;
   algorithm
@@ -863,12 +1053,15 @@ protected
         list<TypedArg> typedArgs;
         list<TypedNamedArg> typedNamedArgs;
         String name;
+        ExpOrigin.Type next_origin;
 
       case UNTYPED_CALL()
         algorithm
           typedArgs := {};
+          next_origin := ExpOrigin.setFlag(origin, ExpOrigin.SUBEXPRESSION);
+
           for arg in call.arguments loop
-            (arg, arg_ty, arg_var) := Typing.typeExp(arg, origin, info, replaceConstants = replaceConstants);
+            (arg, arg_ty, arg_var) := Typing.typeExp(arg, next_origin, info);
             typedArgs := (arg, arg_ty, arg_var) :: typedArgs;
           end for;
 
@@ -877,7 +1070,7 @@ protected
           typedNamedArgs := {};
           for narg in call.named_args loop
             (name,arg) := narg;
-            (arg, arg_ty, arg_var) := Typing.typeExp(arg, origin, info, replaceConstants = replaceConstants);
+            (arg, arg_ty, arg_var) := Typing.typeExp(arg, next_origin, info);
             typedNamedArgs := (name, arg, arg_ty, arg_var) :: typedNamedArgs;
           end for;
 
@@ -943,6 +1136,10 @@ protected
     if listLength(matchedFunctions) > 1 then
       exactMatches := MatchedFunction.getExactMatches(matchedFunctions);
 
+      if listEmpty(exactMatches) then
+        exactMatches := MatchedFunction.getExactVectorizedMatches(matchedFunctions);
+      end if;
+
       if listLength(exactMatches) > 1 then
         Error.addSourceMessage(Error.AMBIGUOUS_MATCHING_FUNCTIONS_NFINST,
           {typedString(call), Function.candidateFuncListString(list(mfn.func for mfn in matchedFunctions))}, info);
@@ -973,7 +1170,7 @@ protected
   algorithm
     (iter_node, iter_range) := iter;
     diter := DAE.REDUCTIONITER(InstNode.name(iter_node), Expression.toDAE(iter_range), NONE(),
-      Type.toDAE(Expression.typeOf(iter_range)));
+      Type.toDAE(InstNode.getType(iter_node)));
   end iteratorToDAE;
 
   function matchFunction
@@ -1007,6 +1204,7 @@ protected
     list<Boolean> arg_is_vected, b_list;
     Boolean b;
     list<Expression> vect_args;
+    Subscript sub;
   algorithm
     vectorized_call := match base_call
       case TYPED_CALL()
@@ -1032,12 +1230,14 @@ protected
             // Now that iterator is ready apply it, as a subscript, to each argument that is supposed to be vectorized
             // Make a cref expression from the iterator
             exp := Expression.CREF(Type.INTEGER(), ComponentRef.makeIterator(iter, Type.INTEGER()));
+            sub := Subscript.INDEX(exp);
+
             vect_args := {};
             b_list := arg_is_vected;
             for arg in base_call.arguments loop
               // If the argument is supposed to be vectorized
               b :: b_list := b_list;
-              vect_args := (if b then Expression.applyIndexSubscript(exp, arg) else arg) :: vect_args;
+              vect_args := (if b then Expression.applySubscript(sub, arg) else arg) :: vect_args;
             end for;
 
             base_call.arguments := listReverse(vect_args);
@@ -1046,7 +1246,7 @@ protected
 
           vect_ty := Type.liftArrayLeftList(base_call.ty, vect_dims);
         then
-          TYPED_MAP_CALL(vect_ty, base_call.var, Expression.CALL(base_call), iters);
+          TYPED_ARRAY_CONSTRUCTOR(vect_ty, base_call.var, Expression.CALL(base_call), iters);
 
      end match;
   end vectorizeCall;
@@ -1163,6 +1363,18 @@ protected
         then Type.arrayElementType(Expression.typeOf(Expression.unbox(listHead(args))));
       case Absyn.IDENT("product")
         then Type.arrayElementType(Expression.typeOf(Expression.unbox(listHead(args))));
+      case Absyn.IDENT("previous")
+        then Expression.typeOf(Expression.unbox(listHead(args)));
+      case Absyn.IDENT("shiftSample")
+        then Expression.typeOf(Expression.unbox(listHead(args)));
+      case Absyn.IDENT("backSample")
+        then Expression.typeOf(Expression.unbox(listHead(args)));
+      case Absyn.IDENT("hold")
+        then Expression.typeOf(Expression.unbox(listHead(args)));
+      case Absyn.IDENT("superSample")
+        then Expression.typeOf(Expression.unbox(listHead(args)));
+      case Absyn.IDENT("subSample")
+        then Expression.typeOf(Expression.unbox(listHead(args)));
       else
         algorithm
           Error.assertion(false, getInstanceName() + ": unhandled case for " +

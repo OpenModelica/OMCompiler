@@ -34,6 +34,7 @@ protected
   import Dimension = NFDimension;
   import Operator = NFOperator;
   import Prefixes = NFPrefixes;
+  import List;
 
 public
   import Absyn.{Exp, Path, Subscript};
@@ -100,13 +101,14 @@ public
                 fail();
           end match;
 
-      else Dimension.EXP(exp, var);
+      else EXP(exp, var);
     end match;
   end fromExp;
 
   function fromInteger
     input Integer n;
-    output Dimension dim = INTEGER(n, Variability.CONSTANT);
+    input Variability var = Variability.CONSTANT;
+    output Dimension dim = INTEGER(n, var);
   end fromInteger;
 
   function fromExpList
@@ -190,21 +192,10 @@ public
     end match;
   end isEqualKnown;
 
-  public function allEqualKnown
+  function allEqualKnown
     input list<Dimension> dims1;
     input list<Dimension> dims2;
-    output Boolean allEqual;
-  algorithm
-    allEqual := match(dims1, dims2)
-      local
-        Dimension dim1, dim2;
-        list<Dimension> rest1, rest2;
-
-      case ({}, {}) then true;
-      case (dim1::rest1, dim2::rest2) guard isEqualKnown(dim1, dim2)
-        then allEqualKnown(rest1, rest2);
-      else false;
-    end match;
+    output Boolean allEqual = List.isEqualOnTrue(dims1, dims2, isEqualKnown);
   end allEqualKnown;
 
   function isKnown
@@ -319,6 +310,35 @@ public
       case UNKNOWN() then Variability.CONTINUOUS;
     end match;
   end variability;
+
+  function mapExp
+    input Dimension dim;
+    input MapFunc func;
+    output Dimension outDim;
+
+    partial function MapFunc
+      input output Expression e;
+    end MapFunc;
+  algorithm
+    outDim := match dim
+      local
+        Expression e1, e2;
+
+      case UNTYPED(dimension = e1)
+        algorithm
+          e2 := Expression.map(e1, func);
+        then
+          if referenceEq(e1, e2) then dim else UNTYPED(e2, dim.isProcessing);
+
+      case EXP(exp = e1)
+        algorithm
+          e2 := Expression.map(e1, func);
+        then
+          if referenceEq(e1, e2) then dim else EXP(e2, dim.var);
+
+      else dim;
+    end match;
+  end mapExp;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFDimension;

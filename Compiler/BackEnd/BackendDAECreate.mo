@@ -424,6 +424,13 @@ algorithm
         then
           ();
 
+      // for equation
+      case DAE.FOR_EQUATION()
+        algorithm
+          (outEqns, outREqns, outIEqns) := lowerEqn(el, inFunctions, outEqns, outREqns, outIEqns, false);
+        then
+          ();
+
       // initial array equations
       case DAE.INITIAL_ARRAY_EQUATION()
         algorithm
@@ -434,7 +441,7 @@ algorithm
       // when equations
       case DAE.WHEN_EQUATION(condition = e, equations = dae_elts)
         algorithm
-          if intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33) and Types.isClockOrSubTypeClock(Expression.typeof(e)) then
+          if Config.synchronousFeaturesAllowed() and Types.isClockOrSubTypeClock(Expression.typeof(e)) then
 
             (outEqns, outVars, eq_attrs) := createWhenClock(whenClkCnt, e, outEqns, outVars);
             whenClkCnt := whenClkCnt + 1;
@@ -692,6 +699,7 @@ algorithm
       DAE.ComponentRef cr;
       DAE.ElementSource src;
       DAE.Exp e1, e2;
+      DAE.Dimensions dims;
       BackendDAE.EquationAttributes attr;
       BackendDAE.Var var;
       list<BackendDAE.Equation> assert_eqs;
@@ -710,7 +718,12 @@ algorithm
         outVars := lowerDynamicVar(inElement, inFunctions) :: outVars;
         e1 := Expression.crefExp(cr);
         attr := BackendDAE.EQ_ATTR_DEFAULT_BINDING;
-        outEqns := BackendDAE.EQUATION(e1, e2, src, attr) :: outEqns;
+        (_, dims) := ComponentReference.crefTypeFull2(cr);
+        if listEmpty(dims) then
+          outEqns := BackendDAE.EQUATION(e1, e2, src, attr) :: outEqns;
+        else
+          outEqns := BackendDAE.ARRAY_EQUATION(Expression.dimensionsSizes(dims), e1, e2, src, attr) :: outEqns;
+        end if;
       then
         ();
 
@@ -1295,8 +1308,14 @@ algorithm
 
     case DAE.EQUEQUATION(cr1 = cr1, cr2 = cr2,source = source)
       equation
-        e1 = Expression.crefExp(cr1);
-        e2 = Expression.crefExp(cr2);
+        if Flags.isSet(Flags.NF_SCALARIZE) then
+          e1 = Expression.crefExp(cr1);
+          e2 = Expression.crefExp(cr2);
+        else
+          // consider array dimensions
+          e1 = Expression.crefToExp(cr1);
+          e2 = Expression.crefToExp(cr2);
+        end if;
         eqns = lowerExtendedRecordEqn(e1,e2,source,BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC,functionTree,inEquations);
       then
        (eqns,inREquations,inIEquations);
@@ -1355,6 +1374,16 @@ algorithm
         eqns = lowerArrayEqn(dims,e1_1,e2_1,source,BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC,inIEquations);
       then
         (inEquations,inREquations,eqns);
+
+    case DAE.FOR_EQUATION(iter = s, range = e1, equations = eqnslst, source = source)
+      equation
+        // create one backend for-equation for each equation element in the loop
+        (eqns, reqns, ieqns) = lowerEqns(eqnslst, functionTree, {}, {}, {}, inInitialization);
+        eqns = listAppend(List.map2(eqns, lowerForEquation, s, e1), inEquations);
+        reqns = listAppend(List.map2(reqns, lowerForEquation, s, e1), inREquations);
+        ieqns = listAppend(List.map2(ieqns, lowerForEquation, s, e1), inIEquations);
+      then
+        (eqns, reqns, ieqns);
 
    // if equation that cannot be translated to if expression but have initial() as condition
     case DAE.IF_EQUATION(condition1 = {DAE.CALL(path=Absyn.IDENT("initial"))},equations2={eqnslst},equations3={})
@@ -1424,6 +1453,25 @@ algorithm
 
   end match;
 end lowerEqn;
+
+protected
+function lowerForEquation
+"Wrap one equation into a for-equation.
+ author: rfranke"
+  input BackendDAE.Equation eq;
+  input DAE.Ident iter;
+  input DAE.Exp range;
+  output BackendDAE.Equation forEq;
+protected
+  DAE.Exp iterExp, start, stop;
+  DAE.Type ty;
+algorithm
+  DAE.RANGE(ty=ty, start=start, stop=stop) := range;
+  iterExp := DAE.CREF(DAE.CREF_IDENT(iter, ty, {}), ty);
+  forEq := BackendDAE.FOR_EQUATION(iterExp, start, stop, eq,
+                                   BackendEquation.equationSource(eq),
+                                   BackendEquation.getEquationAttributes(eq));
+end lowerForEquation;
 
 protected function lowerIfEquation
   input list<DAE.Exp> conditions;

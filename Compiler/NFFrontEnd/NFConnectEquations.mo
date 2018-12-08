@@ -63,6 +63,8 @@ import NFBinding.Binding;
 import NFFunction.Function;
 import Global;
 import BuiltinCall = NFBuiltinCall;
+import ComplexType = NFComplexType;
+import ExpandExp = NFExpandExp;
 
 constant Expression EQ_ASSERT_STR =
   Expression.STRING("Connected constants/parameters must be equal");
@@ -100,13 +102,48 @@ algorithm
 end generateEquations;
 
 function evaluateOperators
-  input output Expression exp;
+  input Expression exp;
   input ConnectionSets.Sets sets;
   input array<list<Connector>> setsArray;
   input CardinalityTable.Table ctable;
+  output Expression evalExp;
 algorithm
-  exp := Expression.map(exp,
-    function evaluateOperatorExp(sets = sets, setsArray = setsArray, ctable = ctable));
+  evalExp := match exp
+    local
+      Call call;
+      Boolean expanded;
+
+    case Expression.CALL(call = call)
+      then match call
+        case Call.TYPED_CALL()
+          then match Function.name(call.fn)
+            case Absyn.IDENT("inStream")
+              then evaluateInStream(Expression.toCref(listHead(call.arguments)), sets, setsArray, ctable);
+            case Absyn.IDENT("actualStream")
+              then evaluateActualStream(Expression.toCref(listHead(call.arguments)), sets, setsArray, ctable);
+            case Absyn.IDENT("cardinality")
+              then CardinalityTable.evaluateCardinality(listHead(call.arguments), ctable);
+            else Expression.mapShallow(exp,
+              function evaluateOperators(sets = sets, setsArray = setsArray, ctable = ctable));
+          end match;
+
+        // inStream/actualStream can't handle non-literal subscripts, so reductions and array
+        // constructors containing such calls needs to expanded to get rid of the iterators.
+        case Call.TYPED_REDUCTION()
+          guard Expression.contains(call.exp, isStreamCall)
+          then evaluateOperatorIteratorExp(exp, sets, setsArray, ctable);
+
+        case Call.TYPED_ARRAY_CONSTRUCTOR()
+          guard Expression.contains(call.exp, isStreamCall)
+          then evaluateOperatorIteratorExp(exp, sets, setsArray, ctable);
+
+        else Expression.mapShallow(exp,
+          function evaluateOperators(sets = sets, setsArray = setsArray, ctable = ctable));
+      end match;
+
+    else Expression.mapShallow(exp,
+      function evaluateOperators(sets = sets, setsArray = setsArray, ctable = ctable));
+  end match;
 end evaluateOperators;
 
 protected
@@ -267,7 +304,7 @@ algorithm
     end for;
   end if;
 
-  equations := {Equation.EQUALITY(sum, Expression.REAL(0.0), Type.REAL(), src)};
+  equations := {Equation.EQUALITY(sum, Expression.REAL(0.0), c.ty, src)};
 end generateFlowEquations;
 
 function makeFlowExp
@@ -429,11 +466,11 @@ function streamFlowExp
   output Expression streamExp;
   output Expression flowExp;
 protected
-  ComponentRef flow_cr;
+  ComponentRef stream_cr;
 algorithm
-  Connector.CONNECTOR(associatedFlow = SOME(flow_cr)) := element;
-  streamExp := Expression.fromCref(element.name);
-  flowExp := Expression.fromCref(flow_cr);
+  stream_cr := Connector.name(element);
+  streamExp := Expression.fromCref(stream_cr);
+  flowExp := Expression.fromCref(associatedFlowCref(stream_cr));
 end streamFlowExp;
 
 function flowExp
@@ -443,7 +480,7 @@ function flowExp
 protected
   ComponentRef flow_cr;
 algorithm
-  Connector.CONNECTOR(associatedFlow = SOME(flow_cr)) := element;
+  flow_cr := associatedFlowCref(Connector.name(element));
   flowExp := Expression.fromCref(flow_cr);
 end flowExp;
 
@@ -528,7 +565,7 @@ protected
   Option<Expression> nominal_oexp;
   Expression nominal_exp, flow_threshold;
 algorithm
-  flow_node := ComponentRef.node(Connector.flowCref(element));
+  flow_node := ComponentRef.node(associatedFlowCref(Connector.name(element)));
   nominal_oexp := Class.lookupAttributeValue("nominal", InstNode.getClass(flow_node));
 
   if isSome(nominal_oexp) then
@@ -544,31 +581,44 @@ algorithm
   setGlobalRoot(Global.isInStream, SOME(true));
 end makePositiveMaxCall;
 
-function evaluateOperatorExp
+function isStreamCall
+  input Expression exp;
+  output Boolean streamCall;
+algorithm
+  streamCall := match exp
+    local
+      String name;
+
+    case Expression.CALL()
+      then match Function.name(Call.typedFunction(exp.call))
+        case Absyn.IDENT("inStream") then true;
+        case Absyn.IDENT("actualStream") then true;
+        else false;
+      end match;
+
+    else false;
+  end match;
+end isStreamCall;
+
+function evaluateOperatorIteratorExp
   input Expression exp;
   input ConnectionSets.Sets sets;
   input array<list<Connector>> setsArray;
   input CardinalityTable.Table ctable;
   output Expression evalExp;
+protected
+  Boolean expanded;
 algorithm
-  evalExp := match exp
-    local
-      Call call;
+  (evalExp, expanded) := ExpandExp.expand(exp);
 
-    case Expression.CALL(call = call as Call.TYPED_CALL())
-      then match Function.name(call.fn)
-        case Absyn.IDENT("inStream")
-          then evaluateInStream(Expression.toCref(listHead(call.arguments)), sets, setsArray, ctable);
-        //case Absyn.IDENT("actualStream")
-        //  then evaluateActualStream(Expression.toCref(listHead(call.arguments)), sets, setsArray);
-        case Absyn.IDENT("cardinality")
-          then CardinalityTable.evaluateCardinality(listHead(call.arguments), ctable);
-        else exp;
-      end match;
+  if not expanded then
+    Error.addInternalError(getInstanceName() +
+      " failed to expand call containing stream operator: " +
+      Expression.toString(exp), sourceInfo());
+  end if;
 
-    else exp;
-  end match;
-end evaluateOperatorExp;
+  evalExp := evaluateOperators(evalExp, sets, setsArray, ctable);
+end evaluateOperatorIteratorExp;
 
 function evaluateInStream
   "Evaluates the inStream operator with the given cref as argument."
@@ -583,7 +633,7 @@ protected
   Integer set;
 algorithm
   c := Connector.CONNECTOR(cref, Type.UNKNOWN(), Face.INSIDE,
-    ConnectorType.STREAM, NONE(), DAE.emptyElementSource);
+    ConnectorType.STREAM, DAE.emptyElementSource);
 
   try
     set := ConnectionSets.findSetArrayIndex(c, sets);
@@ -647,7 +697,7 @@ algorithm
         inside := removeStreamSetElement(streamCref, inside);
         exp := streamSumEquationExp(outside, inside, Expression.REAL(flowThreshold));
         // Evaluate any inStream calls that were generated.
-        exp := evaluateOperatorExp(exp, sets, setsArray, ctable);
+        exp := evaluateOperators(exp, sets, setsArray, ctable);
       then
         exp;
 
@@ -691,145 +741,78 @@ algorithm
   end if;
 end isZeroFlow;
 
-//protected function evaluateActualStream
-//  "This function evaluates the actualStream operator for a component reference,
-//  given the connection sets."
-//  input DAE.ComponentRef streamCref;
-//  input ConnectionSets.Sets sets;
-//  input array<list<Connector>> setsArray;
-//  input Expression flowThreshold;
-//  output DAE.Exp exp;
-//protected
-//  DAE.ComponentRef flow_cr;
-//  DAE.Exp e, flow_exp, stream_exp, instream_exp, rel_exp;
-//  DAE.Type ety;
-//  Integer flow_dir;
-//algorithm
-//  //flow_cr := getStreamFlowAssociation(streamCref, sets);
-//  //ety := ComponentReference.crefLastType(flow_cr);
-//  //flow_dir := evaluateFlowDirection(ety);
-//
-//  //// Select a branch if we know the flow direction, otherwise generate the whole
-//  //// if-equation.
-//  //if flow_dir == 1 then
-//  //  rel_exp := evaluateInStream(streamCref, sets, setsArray, flowThreshold);
-//  //elseif flow_dir == -1 then
-//  //  rel_exp := Expression.crefExp(streamCref);
-//  //else
-//  //  flow_exp := Expression.crefExp(flow_cr);
-//  //  stream_exp := Expression.crefExp(streamCref);
-//  //  instream_exp := evaluateInStream(streamCref, sets, setsArray, flowThreshold);
-//  //  rel_exp := DAE.IFEXP(
-//  //    DAE.RELATION(flow_exp, DAE.GREATER(ety), DAE.RCONST(0.0), -1, NONE()),
-//  //    instream_exp, stream_exp);
-//  //end if;
-//
-//  //// actualStream(stream_var) = smooth(0, if flow_var > 0 then inStream(stream_var)
-//  ////                                                      else stream_var);
-//  //exp := DAE.CALL(Absyn.IDENT("smooth"), {DAE.ICONST(0), rel_exp},
-//  //  DAE.callAttrBuiltinReal);
-//
-//  exp := DAE.ICONST(0);
-//end evaluateActualStream;
-//
-//protected function evaluateFlowDirection
-//  "Checks the min/max attributes of a flow variables type to try and determine
-//   the flow direction. If the flow is positive 1 is returned, if it is negative
-//   -1, otherwise 0 if the direction can't be decided."
-//  input DAE.Type ty;
-//  output Integer direction = 0;
-//protected
-//  list<DAE.Var> attr;
-//  Option<Values.Value> min_oval, max_oval;
-//  Real min_val, max_val;
-//algorithm
-//  attr := Types.getAttributes(ty);
-//  if listEmpty(attr) then return; end if;
-//
-//  min_oval := Types.lookupAttributeValue(attr, "min");
-//  max_oval := Types.lookupAttributeValue(attr, "max");
-//
-//  direction := match (min_oval, max_oval)
-//    // No attributes, flow direction can't be decided.
-//    case (NONE(), NONE()) then 0;
-//    // Flow is positive if min is positive.
-//    case (SOME(Values.REAL(min_val)), NONE())
-//      then if min_val >= 0 then 1 else 0;
-//    // Flow is negative if max is negative.
-//    case (NONE(), SOME(Values.REAL(max_val)))
-//      then if max_val <= 0 then -1 else 0;
-//    // Flow is positive if both min and max are positive, negative if they are
-//    // both negative, otherwise undecideable.
-//    case (SOME(Values.REAL(min_val)), SOME(Values.REAL(max_val)))
-//      then
-//        if min_val >= 0 and max_val >= min_val then 1
-//        elseif max_val <= 0 and min_val <= max_val then -1
-//        else 0;
-//    else 0;
-//  end match;
-//end evaluateFlowDirection;
-//
-//function evaluateCardinality
-//  input DAE.ComponentRef cref;
-//  input ConnectionSets.Sets sets;
-//  output DAE.Exp exp;
-//algorithm
-//  // TODO: Implement this.
-//  //exp := DAE.ICONST(getConnectCount(cref, sets.sets));
-//  exp := DAE.Exp.ICONST(0);
-//end evaluateCardinality;
-//
-//function simplifyDAEElements
-//"run this only if we have cardinality"
-//  input Boolean hasCardinality;
-//  input output list<DAE.Element> daeElements;
-//protected
-//  list<DAE.Element> accum = {};
-//algorithm
-//  if not hasCardinality then
-//    return;
-//  end if;
-//
-//  for e in daeElements loop
-//    accum := matchcontinue e
-//      case DAE.IF_EQUATION()
-//        then listAppend(simplifyDAEIfEquation(e.condition1, e.equations2, e.equations3), accum);
-//      case DAE.INITIAL_IF_EQUATION()
-//        then listAppend(simplifyDAEIfEquation(e.condition1, e.equations2, e.equations3), accum);
-//      case DAE.ASSERT(condition = DAE.BCONST(true)) then accum;
-//      else e :: accum;
-//    end matchcontinue;
-//  end for;
-//
-//  daeElements := listReverse(accum);
-//end simplifyDAEElements;
-//
-//protected function simplifyDAEIfEquation
-//  input list<DAE.Exp> conditions;
-//  input list<list<DAE.Element>> branches;
-//  input list<DAE.Element> elseBranch;
-//  output list<DAE.Element> elements;
-//protected
-//  Boolean cond_value;
-//  list<list<DAE.Element>> rest_branches = branches;
-//algorithm
-//  for cond in conditions loop
-//    DAE.BCONST(cond_value) := cond;
-//
-//    // Condition is true, substitute the if-equation with the branch contents.
-//    if cond_value == true then
-//      elements := listReverse(listHead(rest_branches));
-//      return;
-//    end if;
-//
-//    // Condition is false, discard the branch and continue with the other branches.
-//    rest_branches := listRest(rest_branches);
-//  end for;
-//
-//  // All conditions were false, substitute if-equation with else-branch contents.
-//  elements := listReverse(elseBranch);
-//end simplifyDAEIfEquation;
-//
+protected function evaluateActualStream
+  "This function evaluates the actualStream operator for a component reference,
+   given the connection sets."
+  input ComponentRef streamCref;
+  input ConnectionSets.Sets sets;
+  input array<list<Connector>> setsArray;
+  input CardinalityTable.Table ctable;
+  output Expression exp;
+protected
+  ComponentRef flow_cr;
+  Integer flow_dir;
+  Expression rel_exp, flow_exp, stream_exp, instream_exp;
+  Operator op;
+algorithm
+  flow_cr := associatedFlowCref(streamCref);
+  flow_dir := evaluateFlowDirection(flow_cr);
+
+  // Select a branch if we know the flow direction, otherwise generate the whole
+  // if-equation.
+  if flow_dir == 1 then
+    rel_exp := evaluateInStream(streamCref, sets, setsArray, ctable);
+  elseif flow_dir == -1 then
+    rel_exp := Expression.fromCref(streamCref);
+  else
+    flow_exp := Expression.fromCref(flow_cr);
+    stream_exp := Expression.fromCref(streamCref);
+    instream_exp := evaluateInStream(streamCref, sets, setsArray, ctable);
+    op := Operator.makeGreater(ComponentRef.nodeType(flow_cr));
+    rel_exp := Expression.IF(
+      Expression.RELATION(flow_exp, op, Expression.REAL(0.0)),
+      instream_exp, stream_exp);
+  end if;
+
+  // actualStream(stream_var) = smooth(0, if flow_var > 0 then inStream(stream_var)
+  //                                                      else stream_var);
+  exp := Expression.CALL(Call.makeTypedCall(NFBuiltinFuncs.SMOOTH,
+    {DAE.INTEGER(0), rel_exp}, Expression.variability(rel_exp)));
+end evaluateActualStream;
+
+function evaluateFlowDirection
+  input ComponentRef flowCref;
+  output Integer direction = 0;
+protected
+  Class flow_cls;
+  Option<Expression> omin, omax;
+  Real min_val, max_val;
+algorithm
+  flow_cls := InstNode.getClass(ComponentRef.node(flowCref));
+  omin := Class.lookupAttributeValue("min", flow_cls);
+  omax := Class.lookupAttributeValue("max", flow_cls);
+
+  direction := match (omin, omax)
+    // No attributes, flow direction can't be decided.
+    case (NONE(), NONE()) then 0;
+    // Flow is positive if min is positive.
+    case (SOME(Expression.REAL(min_val)), NONE())
+      then if min_val >= 0 then 1 else 0;
+    // Flow is negative if max is negative.
+    case (NONE(), SOME(Expression.REAL(max_val)))
+      then if max_val <= 0 then -1 else 0;
+    // Flow is positive if both min and max are positive, negative if they are
+    // both negative, otherwise undecideable.
+    case (SOME(Expression.REAL(min_val)), SOME(Expression.REAL(max_val)))
+      then
+        if min_val >= 0 and max_val >= min_val then 1
+        elseif max_val <= 0 and min_val <= max_val then -1
+        else 0;
+    // Flow is undecideable if either attribute is not a constant Real value.
+    else 0;
+  end match;
+end evaluateFlowDirection;
+
 protected function removeStreamSetElement
   "This function removes the given cref from a connection set."
   input ComponentRef cref;
@@ -847,6 +830,28 @@ protected function compareCrefStreamSet
 algorithm
   matches := ComponentRef.isEqual(cref, element.name);
 end compareCrefStreamSet;
+
+function associatedFlowCref
+  "Returns the flow cref that's declared in the same connector as the given
+   stream cref."
+  input ComponentRef streamCref;
+  output ComponentRef flowCref;
+protected
+  Type ty;
+  ComponentRef rest_cr;
+  InstNode flow_node;
+algorithm
+  ComponentRef.CREF(ty = ty, restCref = rest_cr) := streamCref;
+
+  flowCref := match Type.arrayElementType(ty)
+    // A connector with a single flow, append the flow node to the cref and return it.
+    case Type.COMPLEX(complexTy = ComplexType.CONNECTOR(flows = {flow_node}))
+      then ComponentRef.prefixCref(flow_node, InstNode.getType(flow_node), {}, streamCref);
+
+    // Otherwise, remove the first part of the cref and try again.
+    else associatedFlowCref(rest_cr);
+  end match;
+end associatedFlowCref;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFConnectEquations;

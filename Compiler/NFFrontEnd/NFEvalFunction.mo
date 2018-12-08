@@ -43,6 +43,7 @@ import NFComponent.Component;
 import Type = NFType;
 import Dimension = NFDimension;
 import NFClassTree.ClassTree;
+import Subscript = NFSubscript;
 
 protected
 import Ceval = NFCeval;
@@ -54,6 +55,7 @@ import System;
 import NFTyping.ExpOrigin;
 import SCode;
 import NFPrefixes.Variability;
+import EvalFunctionExt = NFEvalFunctionExt;
 
 encapsulated package ReplTree
   import BaseAvlTree;
@@ -80,7 +82,7 @@ encapsulated package ReplTree
   annotation(__OpenModelica_Interface="util");
 end ReplTree;
 
-type FlowControl = enumeration(NEXT, CONTINUE, BREAK, RETURN, FAIL);
+type FlowControl = enumeration(NEXT, CONTINUE, BREAK, RETURN, ASSERTION);
 
 public
 function evaluate
@@ -129,8 +131,14 @@ algorithm
     //       bindings of the function parameters. But they probably need to be
     //       sorted by dependencies first.
     fn_body := applyReplacements(repl, fn_body);
+    fn_body := optimizeBody(fn_body);
     ctrl := evaluateStatements(fn_body);
-    result := createResult(repl, fn.outputs);
+
+    if ctrl <> FlowControl.ASSERTION then
+      result := createResult(repl, fn.outputs);
+    else
+      fail();
+    end if;
   else
     // Make sure we always decrease the call counter even if the evaluation fails.
     Pointer.update(call_counter, call_count - 1);
@@ -148,8 +156,9 @@ protected
   String name, lang;
   ComponentRef output_ref;
   Option<SCode.Annotation> ann;
+  list<Expression> ext_args;
 algorithm
-  Sections.EXTERNAL(name = name, outputRef = output_ref, language = lang, ann = ann) :=
+  Sections.EXTERNAL(name = name, args = ext_args, outputRef = output_ref, language = lang, ann = ann) :=
     Class.getSections(InstNode.getClass(fn.node));
 
   if lang == "builtin" then
@@ -157,13 +166,19 @@ algorithm
     result := Ceval.evalBuiltinCall(fn, args, NFCeval.EvalTarget.IGNORE_ERRORS());
   elseif isKnownExternalFunc(name, ann) then
     // External functions that we know how to evaluate without generating code.
+    // TODO: Move this to EvalFunctionExt and unify evaluateKnownExternal and
+    //       evaluateExternal2. This requires handling of outputRef though.
     result := evaluateKnownExternal(name, args);
   else
-    // External functions that we would need to generate code for and execute.
-    Error.assertion(false, getInstanceName() +
-      " failed on " + Absyn.pathString(fn.path) +
-      ", evaluation of userdefined external functions not yet implemented", sourceInfo());
-    fail();
+    try
+      result := evaluateExternal2(name, fn, args, ext_args);
+    else
+      // External functions that we would need to generate code for and execute.
+      Error.assertion(false, getInstanceName() +
+        " failed on " + Absyn.pathString(fn.path) +
+        ", evaluation of userdefined external functions not yet implemented", sourceInfo());
+      fail();
+    end try;
   end if;
 end evaluateExternal;
 
@@ -179,13 +194,21 @@ protected
 algorithm
   repl := ReplTree.new();
 
+  // Add inputs to the replacement tree. Since they can't be assigned to the
+  // replacements don't need to be mutable.
   for i in fn.inputs loop
     arg :: rest_args := rest_args;
     repl := addInputReplacement(i, "", arg, repl);
   end for;
 
+  // Add outputs and local variables to the replacement tree. These do need to
+  // be mutable to allow assigning to them.
   repl := List.fold(fn.outputs, function addMutableReplacement(prefix = ""), repl);
   repl := List.fold(fn.locals, function addMutableReplacement(prefix = ""), repl);
+
+  // Apply the replacements to the replacements themselves. This is done after
+  // building the tree to make sure all the replacements are available.
+  repl := ReplTree.map(repl, function applyBindingReplacement(repl = repl));
 end createReplacements;
 
 function addMutableReplacement
@@ -197,7 +220,6 @@ protected
   Expression repl_exp;
 algorithm
   repl_exp := getBindingExp(node, repl);
-  repl_exp := Expression.map(repl_exp, function applyReplacements2(repl = repl));
   repl_exp := Expression.makeMutable(repl_exp);
   repl := ReplTree.add(repl, prefix + InstNode.name(node), repl_exp);
 end addMutableReplacement;
@@ -289,6 +311,15 @@ algorithm
   repl := ReplTree.add(repl, prefix + InstNode.name(node), argument);
 end addInputReplacement;
 
+function applyBindingReplacement
+  input String name;
+  input Expression exp;
+  input ReplTree.Tree repl;
+  output Expression outExp;
+algorithm
+  outExp := Expression.map(exp, function applyReplacements2(repl = repl));
+end applyBindingReplacement;
+
 function applyReplacements
   input ReplTree.Tree repl;
   input output list<Statement> fnBody;
@@ -358,6 +389,39 @@ algorithm
     end if;
   end if;
 end applyReplacementCref;
+
+function optimizeBody
+  input output list<Statement> body;
+algorithm
+  body := list(Statement.map(s, optimizeStatement) for s in body);
+end optimizeBody;
+
+function optimizeStatement
+  input output Statement stmt;
+algorithm
+  () := match stmt
+    local
+      Expression iter_exp;
+
+    // Replace iterators in for loops with mutable expressions, so we don't need
+    // to do it each time we enter a for loop during evaluation.
+    case Statement.FOR()
+      algorithm
+        // Make a mutable expression with a placeholder value.
+        iter_exp := Expression.makeMutable(Expression.EMPTY(Type.UNKNOWN()));
+        // Replace the iterator with the expression in the body of the for loop.
+        stmt.body := list(
+          Statement.mapExp(s, function Expression.replaceIterator(
+            iterator = stmt.iterator, iteratorValue = iter_exp))
+          for s in stmt.body);
+        // Replace the iterator node with the mutable expression too.
+        stmt.iterator := InstNode.EXP_NODE(iter_exp);
+      then
+        ();
+
+    else ();
+  end match;
+end optimizeStatement;
 
 function createResult
   input ReplTree.Tree repl;
@@ -429,7 +493,6 @@ algorithm
     case Statement.FOR()        then evaluateFor(stmt.iterator, stmt.range, stmt.body, stmt.source);
     case Statement.IF()         then evaluateIf(stmt.branches);
     case Statement.ASSERT()     then evaluateAssert(stmt.condition, stmt);
-    case Statement.TERMINATE()  then evaluateTerminate(stmt.message, stmt.source);
     case Statement.NORETCALL()  then evaluateNoRetCall(stmt.exp);
     case Statement.WHILE()      then evaluateWhile(stmt.condition, stmt.body, stmt.source);
     case Statement.RETURN()     then FlowControl.RETURN;
@@ -451,6 +514,7 @@ algorithm
   assignVariable(lhsExp, Ceval.evalExp(rhsExp));
 end evaluateAssignment;
 
+public
 function assignVariable
   input Expression variable;
   input Expression value;
@@ -492,40 +556,71 @@ algorithm
   end match;
 end assignVariable;
 
+protected
 function assignSubscriptedVariable
   input Mutable<Expression> variable;
-  input list<Expression> subscripts;
+  input list<Subscript> subscripts;
   input Expression value;
 protected
-  list<Expression> subs;
+  list<Subscript> subs;
 algorithm
-  subs := list(Ceval.evalExp(s) for s in subscripts);
+  subs := list(Subscript.eval(s) for s in subscripts);
   Mutable.update(variable, assignArrayElement(Mutable.access(variable), subs, value));
 end assignSubscriptedVariable;
 
 function assignArrayElement
   input Expression arrayExp;
-  input list<Expression> subscripts;
+  input list<Subscript> subscripts;
   input Expression value;
   output Expression result;
 protected
-  Expression sub;
-  list<Expression> rest_subs;
+  Expression sub, val;
+  list<Subscript> rest_subs;
   Integer idx;
+  list<Expression> subs, vals;
 algorithm
   result := match (arrayExp, subscripts)
-    case (Expression.ARRAY(), {sub}) guard Expression.isScalarLiteral(sub)
+    case (Expression.ARRAY(), Subscript.INDEX(sub) :: rest_subs) guard Expression.isScalarLiteral(sub)
       algorithm
         idx := Expression.toInteger(sub);
-        arrayExp.elements := List.set(arrayExp.elements, idx, value);
+
+        if listEmpty(rest_subs) then
+          arrayExp.elements := List.set(arrayExp.elements, idx, value);
+        else
+          arrayExp.elements := List.set(arrayExp.elements, idx,
+            assignArrayElement(listGet(arrayExp.elements, idx), rest_subs, value));
+        end if;
       then
         arrayExp;
 
-    case (Expression.ARRAY(), sub :: rest_subs) guard Expression.isScalarLiteral(sub)
+    case (Expression.ARRAY(), Subscript.SLICE(sub) :: rest_subs)
       algorithm
-        idx := Expression.toInteger(sub);
-        arrayExp.elements := List.set(arrayExp.elements, idx,
-          assignArrayElement(listGet(arrayExp.elements, idx), rest_subs, value));
+        subs := Expression.arrayElements(sub);
+        vals := Expression.arrayElements(value);
+
+        if listEmpty(rest_subs) then
+          for s in subs loop
+            val :: vals := vals;
+            idx := Expression.toInteger(s);
+            arrayExp.elements := List.set(arrayExp.elements, idx, val);
+          end for;
+        else
+          for s in subs loop
+            val :: vals := vals;
+            idx := Expression.toInteger(s);
+            arrayExp.elements := List.set(arrayExp.elements, idx,
+              assignArrayElement(listGet(arrayExp.elements, idx), rest_subs, val));
+          end for;
+        end if;
+      then
+        arrayExp;
+
+    case (Expression.ARRAY(), Subscript.WHOLE() :: rest_subs)
+      algorithm
+        if not listEmpty(rest_subs) then
+          arrayExp.elements := list(assignArrayElement(e, rest_subs, v) threaded for
+            e in arrayExp.elements, v in Expression.arrayElements(value));
+        end if;
       then
         arrayExp;
 
@@ -533,7 +628,7 @@ algorithm
       algorithm
         Error.assertion(false, getInstanceName() + ": unimplemented case for " +
           Expression.toString(arrayExp) +
-          List.toString(subscripts, Expression.toString, "", "[", ", ", "]", false) + " = " +
+          Subscript.toStringList(subscripts) + " = " +
           Expression.toString(value), sourceInfo());
       then
         fail();
@@ -618,14 +713,7 @@ algorithm
   range_iter := RangeIterator.fromExp(range_exp);
 
   if RangeIterator.hasNext(range_iter) then
-    // Replace the iterator with a mutable expression.
-    // TODO: If each iterator contained a mutable binding that we could update
-    //       this wouldn't be necessary, but the handling of for loops needs to
-    //       be fixed so we don't try to evaluate iterators when we shouldn't.
-    iter_exp := Mutable.create(Expression.INTEGER(0));
-    value := Expression.MUTABLE(iter_exp);
-    body := Statement.mapExpList(forBody,
-      function Expression.replaceIterator(iterator = iterator, iteratorValue = value));
+    InstNode.EXP_NODE(exp = Expression.MUTABLE(exp = iter_exp)) := iterator;
 
     // Loop through each value in the iteration range.
     while RangeIterator.hasNext(range_iter) loop
@@ -694,8 +782,9 @@ algorithm
       case (Expression.STRING(), Expression.ENUM_LITERAL(name = "error"))
         algorithm
           Error.addSourceMessage(Error.ASSERT_TRIGGERED_ERROR, {msg.value}, ElementSource.getInfo(source));
+          ctrl := FlowControl.ASSERTION;
         then
-          fail();
+          ();
 
       else
         algorithm
@@ -706,32 +795,6 @@ algorithm
     end match;
   end if;
 end evaluateAssert;
-
-function evaluateTerminate
-  input Expression message;
-  input DAE.ElementSource source;
-  output FlowControl dummy = FlowControl.NEXT;
-protected
-  Expression msg;
-algorithm
-  msg := Ceval.evalExp(message);
-
-  _ := match msg
-    case Expression.STRING()
-      algorithm
-        Error.addSourceMessage(Error.TERMINATE_TRIGGERED, {msg.value}, ElementSource.getInfo(source));
-      then
-        fail();
-
-    else
-      algorithm
-        Error.assertion(false, getInstanceName() + " failed to evaluate terminate(" +
-          Expression.toString(msg) + ")", sourceInfo());
-      then
-        fail();
-
-  end match;
-end evaluateTerminate;
 
 function evaluateNoRetCall
   input Expression callExp;
@@ -877,7 +940,7 @@ algorithm
       then
         Expression.INTEGER(0);
 
-    case ("ModelicaString_compare", {Expression.STRING(s1), Expression.STRING(s2), Expression.BOOLEAN(b)})
+    case ("ModelicaStrings_compare", {Expression.STRING(s1), Expression.STRING(s2), Expression.BOOLEAN(b)})
       algorithm
         i := ModelicaExternalC.Strings_compare(s1, s2, b);
       then
@@ -928,7 +991,7 @@ algorithm
         (n, strs) := System.regex(str, re, i, extended, insensitive);
         expl := list(Expression.STRING(s) for s in strs);
         strs_ty := Type.ARRAY(Type.STRING(), {Dimension.fromInteger(i)});
-        strs_exp := Expression.ARRAY(strs_ty, expl);
+        strs_exp := Expression.makeArray(strs_ty, expl, true);
       then
         Expression.TUPLE(Type.TUPLE({Type.INTEGER(), strs_ty}, NONE()),
                          {Expression.INTEGER(n), strs_exp});
@@ -941,6 +1004,45 @@ algorithm
         fail();
   end match;
 end evaluateOpenModelicaRegex;
+
+function evaluateExternal2
+  input String name;
+  input Function fn;
+  input list<Expression> args;
+  input list<Expression> extArgs;
+  output Expression result;
+protected
+  ReplTree.Tree repl;
+  list<Expression> ext_args;
+algorithm
+  repl := createReplacements(fn, args);
+  ext_args := list(Expression.map(e, function applyReplacements2(repl = repl)) for e in extArgs);
+  evaluateExternal3(name, ext_args);
+  result := createResult(repl, fn.outputs);
+end evaluateExternal2;
+
+function evaluateExternal3
+  input String name;
+  input list<Expression> args;
+algorithm
+  () := match name
+    case "dgeev"  algorithm EvalFunctionExt.Lapack_dgeev(args);  then ();
+    case "dgegv"  algorithm EvalFunctionExt.Lapack_dgegv(args);  then ();
+    case "dgels"  algorithm EvalFunctionExt.Lapack_dgels(args);  then ();
+    case "dgelsx" algorithm EvalFunctionExt.Lapack_dgelsx(args); then ();
+    case "dgelsy" algorithm EvalFunctionExt.Lapack_dgelsy(args); then ();
+    case "dgesv"  algorithm EvalFunctionExt.Lapack_dgesv(args);  then ();
+    case "dgglse" algorithm EvalFunctionExt.Lapack_dgglse(args); then ();
+    case "dgtsv"  algorithm EvalFunctionExt.Lapack_dgtsv(args);  then ();
+    case "dgbsv"  algorithm EvalFunctionExt.Lapack_dgtsv(args);  then ();
+    case "dgesvd" algorithm EvalFunctionExt.Lapack_dgesvd(args); then ();
+    case "dgetrf" algorithm EvalFunctionExt.Lapack_dgetrf(args); then ();
+    case "dgetrs" algorithm EvalFunctionExt.Lapack_dgetrs(args); then ();
+    case "dgetri" algorithm EvalFunctionExt.Lapack_dgetri(args); then ();
+    case "dgeqpf" algorithm EvalFunctionExt.Lapack_dgeqpf(args); then ();
+    case "dorgqr" algorithm EvalFunctionExt.Lapack_dorgqr(args); then ();
+  end match;
+end evaluateExternal3;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFEvalFunction;

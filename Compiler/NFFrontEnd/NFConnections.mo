@@ -33,10 +33,10 @@ encapsulated uniontype NFConnections
   import Connection = NFConnection;
   import Connector = NFConnector;
   import FlatModel = NFFlatModel;
+  import ComponentRef = NFComponentRef;
+  import Equation = NFEquation;
 
 protected
-  import Equation = NFEquation;
-  import ComponentRef = NFComponentRef;
   import Connections = NFConnections;
   import NFComponent.Component;
   import NFInstNode.InstNode;
@@ -47,13 +47,17 @@ protected
   import ExpandExp = NFExpandExp;
 
 public
+  type BrokenEdge = tuple<ComponentRef, ComponentRef, list<Equation>>;
+  type BrokenEdges = list<BrokenEdge>;
+
   record CONNECTIONS
     list<Connection> connections;
     list<Connector> flows;
+    BrokenEdges broken;
   end CONNECTIONS;
 
   function new
-    output Connections conns = CONNECTIONS({}, {});
+    output Connections conns = CONNECTIONS({}, {}, {});
   end new;
 
   function addConnection
@@ -69,6 +73,13 @@ public
   algorithm
     conns.flows := conn :: conns.flows;
   end addFlow;
+
+  function addBroken
+    input BrokenEdges broken;
+    input output Connections conns;
+  algorithm
+    conns.broken := broken;
+  end addBroken;
 
   function collect
     input output FlatModel flatModel;
@@ -129,9 +140,17 @@ public
     output list<Connector> connectors;
   protected
     Expression cref_exp;
+    ComponentRef cr;
     Boolean expanded;
   algorithm
-    cref_exp := Expression.CREF(ty, ComponentRef.simplifySubscripts(cref));
+    cr := ComponentRef.evaluateSubscripts(cref);
+
+    if not Flags.isSet(Flags.NF_SCALARIZE) then
+      connectors := {Connector.fromCref(cr, ComponentRef.getSubscriptedType(cr), source)};
+      return;
+    end if;
+
+    cref_exp := Expression.CREF(ComponentRef.getSubscriptedType(cr), cr);
     (cref_exp, expanded) := ExpandExp.expand(cref_exp);
 
     if expanded then

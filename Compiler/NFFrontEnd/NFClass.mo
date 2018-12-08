@@ -46,6 +46,7 @@ import Expression = NFExpression;
 protected
 import NFBinding.Binding;
 import ComplexType = NFComplexType;
+import System;
 
 public
 
@@ -205,6 +206,22 @@ uniontype Class
     (node, isImport) := ClassTree.lookupElement(name, classTree(cls));
   end lookupElement;
 
+  function lookupComponentIndex
+    input String name;
+    input Class cls;
+    output Integer index;
+  algorithm
+    index := ClassTree.lookupComponentIndex(name, classTree(cls));
+  end lookupComponentIndex;
+
+  function nthComponent
+    input Integer index;
+    input Class cls;
+    output InstNode component;
+  algorithm
+    component := ClassTree.nthComponent(index, classTree(cls));
+  end nthComponent;
+
   function lookupAttributeBinding
     input String name;
     input Class cls;
@@ -214,7 +231,7 @@ uniontype Class
   algorithm
     try
       attr_node := ClassTree.lookupElement(name, classTree(cls));
-      binding := Modifier.binding(Component.getModifier(InstNode.component(attr_node)));
+      binding := Component.getBinding(InstNode.component(attr_node));
     else
       binding := NFBinding.EMPTY_BINDING;
     end try;
@@ -266,6 +283,24 @@ uniontype Class
       case Class.INSTANCED_BUILTIN() algorithm cls.elements := tree; then ();
     end match;
   end setClassTree;
+
+  function classTreeApply
+    input output Class cls;
+    input FuncType func;
+
+    partial function FuncType
+      input output ClassTree tree;
+    end FuncType;
+  algorithm
+    () := match cls
+      case Class.PARTIAL_CLASS()     algorithm cls.elements := func(cls.elements); then ();
+      case Class.EXPANDED_CLASS()    algorithm cls.elements := func(cls.elements); then ();
+      case Class.PARTIAL_BUILTIN()   algorithm cls.elements := func(cls.elements); then ();
+      case Class.INSTANCED_CLASS()   algorithm cls.elements := func(cls.elements); then ();
+      case Class.INSTANCED_BUILTIN() algorithm cls.elements := func(cls.elements); then ();
+      else ();
+    end match;
+  end classTreeApply;
 
   function getModifier
     input Class cls;
@@ -468,6 +503,11 @@ uniontype Class
     output Boolean isConnector = Restriction.isConnector(restriction(cls));
   end isConnectorClass;
 
+  function isExpandableConnectorClass
+    input Class cls;
+    output Boolean isConnector = Restriction.isExpandableConnector(restriction(cls));
+  end isExpandableConnectorClass;
+
   function isExternalObject
     input Class cls;
     output Boolean isExternalObject = Restriction.isExternalObject(restriction(cls));
@@ -499,6 +539,8 @@ uniontype Class
   algorithm
     try
       lookupElement("equalityConstraint", cls);
+      // set the external flag that signals the presence of expandable connectors in the model
+      System.setHasOverconstrainedConnectors(true);
       isOverdetermined := true;
     else
       isOverdetermined := false;

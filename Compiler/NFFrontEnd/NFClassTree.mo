@@ -554,6 +554,10 @@ public
             // Copy the local classes into the new class array, and set the
             // class we're instantiating to be their parent.
             for c in old_clss loop
+              if not InstNode.isOperator(c) then
+                c := InstNode.clone(c);
+              end if;
+
               c := InstNode.setParent(clsNode, c);
 
               // If the class is outer, check that it's valid and link it with
@@ -703,6 +707,25 @@ public
 
       tree := FLAT_TREE(ltree, listArray({}), comps, listArray({}), DuplicateTree.new());
     end fromRecordConstructor;
+
+    function clone
+      input ClassTree tree;
+      output ClassTree outTree;
+    algorithm
+      outTree := match tree
+        local
+          array<InstNode> clss;
+
+        case EXPANDED_TREE()
+          algorithm
+            clss := arrayCopy(tree.classes);
+            clss := Array.mapNoCopy(clss, InstNode.clone);
+          then
+            EXPANDED_TREE(tree.tree, clss, tree.components, tree.exts, tree.imports, tree.duplicates);
+
+        else tree;
+      end match;
+    end clone;
 
     function mapRedeclareChains
       input ClassTree tree;
@@ -861,6 +884,19 @@ public
         LookupTree.get(lookupTree(tree), name);
     end lookupComponentIndex;
 
+    function nthComponent
+      input Integer index;
+      input ClassTree tree;
+      output InstNode component;
+    algorithm
+      component := match tree
+        case PARTIAL_TREE() then arrayGet(tree.components, index);
+        case EXPANDED_TREE() then arrayGet(tree.components, index);
+        case INSTANTIATED_TREE() then Mutable.access(arrayGet(tree.components, index));
+        case FLAT_TREE() then arrayGet(tree.components, index);
+      end match;
+    end nthComponent;
+
     function mapClasses
       input ClassTree tree;
       input FuncT func;
@@ -998,6 +1034,51 @@ public
             ();
       end match;
     end applyLocalComponents;
+
+    function applyComponents
+      input ClassTree tree;
+      input FuncT func;
+
+      partial function FuncT
+        input InstNode component;
+      end FuncT;
+    algorithm
+      () := match tree
+        case PARTIAL_TREE()
+          algorithm
+            for c in tree.components loop
+              func(c);
+            end for;
+          then
+            ();
+
+        case EXPANDED_TREE()
+          algorithm
+            for c in tree.components loop
+              func(c);
+            end for;
+          then
+            ();
+
+        case INSTANTIATED_TREE()
+          algorithm
+            for c in tree.components loop
+              func(Mutable.access(c));
+            end for;
+          then
+            ();
+
+        case FLAT_TREE()
+          algorithm
+            for c in tree.components loop
+              func(c);
+            end for;
+          then
+            ();
+
+        else ();
+      end match;
+    end applyComponents;
 
     function classCount
       input ClassTree tree;

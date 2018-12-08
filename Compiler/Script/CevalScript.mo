@@ -1062,6 +1062,12 @@ algorithm
       then
         (cache,Values.BOOL(b));
 
+    case (cache,_,"copy",{Values.STRING(str1),Values.STRING(str2)},_)
+      equation
+        b = System.copyFile(str1,str2);
+      then
+        (cache,Values.BOOL(b));
+
     case (cache,_,"remove",{Values.STRING(str)},_)
       equation
         b = System.removeDirectory(str);
@@ -2604,6 +2610,7 @@ algorithm
       case "dgegv" then ();
       case "dgels" then ();
       case "dgelsx" then ();
+      case "dgelsy" then ();
       case "dgeqpf" then ();
       case "dgesv" then ();
       case "dgesvd" then ();

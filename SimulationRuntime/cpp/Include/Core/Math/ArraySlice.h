@@ -101,14 +101,14 @@ class ArraySliceConst: public BaseArray<T> {
   ArraySliceConst(const BaseArray<T> &baseArray, const vector<Slice> &slice)
     : BaseArray<T>(baseArray.isStatic(), false)
     , _baseArray(baseArray)
-    , _isets(slice.size())
-    , _idxs(slice.size())
-    , _baseIdx(slice.size())
+    , _isets(baseArray.getNumDims())
+    , _idxs(baseArray.getNumDims())
+    , _baseIdx(baseArray.getNumDims())
     , _tmp_data(NULL) {
 
-    if (baseArray.getNumDims() != slice.size())
+    if (baseArray.getNumDims() < slice.size())
       throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
-                                    "Wrong dimensions for ArraySlice");
+                                    "Wrong slices exceeding array dimensions");
     // create an explicit index set per dimension,
     // except for all indices that are indicated with an empty index set
     size_t dim, size;
@@ -145,6 +145,11 @@ class ArraySliceConst: public BaseArray<T> {
         _dims.push_back(size);
       dit++;
     }
+    // use all indices of remaining dims
+    for (; dim <= baseArray.getNumDims(); dim++) {
+      _isets[dim - 1] = NULL;
+      _dims.push_back(_baseArray.getDim(dim));
+    }
   }
 
   virtual ~ArraySliceConst() {
@@ -171,6 +176,11 @@ class ArraySliceConst: public BaseArray<T> {
                                   "Can't assign array to ArraySliceConst");
   }
 
+  virtual void assign(const T& value) {
+    throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
+                                  "Can't assign value to ArraySliceConst");
+  }
+
   virtual std::vector<size_t> getDims() const {
     return _dims;
   }
@@ -188,7 +198,18 @@ class ArraySliceConst: public BaseArray<T> {
     if (n != getNumElems())
       throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
                                     "Wrong number of elements in getDataCopy");
-    getDataDim(_idxs.size(), data);
+    if (n > 0) {
+      const T* base_data = _baseArray.getData();
+      if (base_data <= data && data < base_data + n) {
+        // in-situ access requires an internal copy to avoid side effects,
+        // e.g. v = v[n:-1:1]
+        const T* slice_data = getData();
+        std::copy(slice_data, slice_data + n, data);
+      }
+      else
+        // direct access
+        getDataDim(_idxs.size(), data);
+    }
   }
 
   virtual const T* getData() const {
@@ -300,6 +321,18 @@ class ArraySlice: public ArraySliceConst<T> {
     , _baseIdx(ArraySliceConst<T>::_baseIdx) {
   }
 
+  ArraySlice<T>& operator=(const ArraySlice<T>& b)
+  {
+    this->assign(b);
+    return *this;
+  }
+
+  ArraySlice<T>& operator=(const BaseArray<T>& b)
+  {
+    this->assign(b);
+    return *this;
+  }
+
   virtual T& operator()(const vector<size_t> &idx) {
     return _baseArray(ArraySliceConst<T>::baseIdx(idx.size(), &idx[0]));
   }
@@ -310,6 +343,10 @@ class ArraySlice: public ArraySliceConst<T> {
 
   virtual void assign(const BaseArray<T>& otherArray) {
     setDataDim(_idxs.size(), otherArray.getData());
+  }
+
+  virtual void assign(const T& value) {
+    setEachDim(_idxs.size(), value);
   }
 
   virtual T& operator()(size_t i) {
@@ -361,6 +398,26 @@ class ArraySlice: public ArraySliceConst<T> {
         _baseArray(_baseIdx) = data[processed++];
     }
     return processed;
+  }
+
+  /**
+   * recursive method for muli-dimensional fill of each element
+   */
+  void setEachDim(size_t dim, const T& value) {
+    const BaseArray<int> *iset = ArraySliceConst<T>::_isets[dim - 1];
+    size_t size = iset? iset->getNumElems(): _idxs[dim - 1].size();
+    if (size == 0)
+      size = _baseArray.getDim(dim);
+    for (size_t i = 1; i <= size; i++) {
+      if (iset)
+        _baseIdx[dim - 1] = iset->getNumElems() > 0? (*iset)(i): i;
+      else
+        _baseIdx[dim - 1] = _idxs[dim - 1].size() > 0? _idxs[dim - 1][i - 1]: i;
+      if (dim > 1)
+        setEachDim(dim - 1, value);
+      else
+        _baseArray(_baseIdx) = value;
+    }
   }
 };
 /** @} */ // end of math

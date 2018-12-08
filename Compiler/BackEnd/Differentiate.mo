@@ -555,7 +555,7 @@ algorithm
 */
   (outDiffedExp, outFunctionTree) := match inExp
     local
-      Absyn.Path p;
+      Absyn.Path p, p1, p2;
       Boolean b;
       DAE.CallAttributes attr;
       DAE.Exp e1, e2, e3, actual, simplified;
@@ -566,6 +566,7 @@ algorithm
       Integer i;
       String s1, s2, stp;
       list<String> strLst;
+      list<DAE.Var> varLst;
       //String se1;
       list<DAE.Exp> sub, expl;
       list<list<DAE.Exp>> matrix, dmatrix;
@@ -684,15 +685,25 @@ algorithm
       then (res, functionTree);
 
 
-    // differentiate tsub
+    // differentiate rsub
     case e1 as DAE.RSUB()
       algorithm
         (res1, functionTree) := differentiateExp(e1.exp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
         if not referenceEq(e1.exp, res1) then
-          e1.exp := res1;
-          (e1,_) := ExpressionSimplify.simplify1(e1);
+          try
+            (expl, strLst) := match res1
+              case DAE.RECORD(exps=expl,comp=strLst) then (expl, strLst);
+              case DAE.CALL(path=p1,expLst=expl,attr=DAE.CALL_ATTR(ty=DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path=p2), varLst=varLst)))
+              guard Absyn.pathEqual(p1,p2)
+              then (expl, list(v.name for v in varLst));
+            end match;
+            res := listGet(expl, List.position1OnTrue(strLst, stringEq, e1.fieldName));
+          else
+            e1.exp := res1;
+            (res,_) := ExpressionSimplify.simplify1(e1);
+          end try;
         end if;
-      then (e1, functionTree);
+      then (res, functionTree);
 
     // differentiate tuple
     case DAE.TUPLE(PR=expl) equation
@@ -1056,6 +1067,7 @@ algorithm
     // case for arrays
     case ((e as DAE.CREF(ty = DAE.T_ARRAY())), _, _, diffType, _) guard ( match diffType case BackendDAE.GENERIC_GRADIENT() then false; else true; end match )
       equation
+        true = Flags.isSet(Flags.NF_SCALARIZE); // only expand if scalarize
         (e1,true) = Expression.extendArrExp(e,false);
         (res, outFunctionTree) = differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter);
       then
@@ -1070,7 +1082,7 @@ algorithm
     case (DAE.CREF(componentRef = cr, ty = tp), _, _, _, _)
       equation
         true = ComponentReference.crefEqual(cr, inDiffwrtCref);
-        one = Expression.makeConstOne(tp);
+        (one,_) = Expression.makeOneExpression(Expression.arrayDimension(tp));
       then
         (one, inFunctionTree);
 
@@ -1188,7 +1200,7 @@ algorithm
         //Take care! state means => der(state)
         false = BackendVariable.isStateVar(var);
 
-        cr = createDifferentiatedCrefName(cr, inDiffwrtCref, matrixName);
+        cr = ComponentReference.createDifferentiatedCrefName(cr, inDiffwrtCref, matrixName);
         res = DAE.CREF(cr, tp);
       then
         (res, inFunctionTree);
@@ -1200,7 +1212,7 @@ algorithm
         //Take care! state means => der(state)
         false = BackendVariable.isStateVar(var);
 
-        cr = createDifferentiatedCrefName(cr, inDiffwrtCref, matrixName);
+        cr = ComponentReference.createDifferentiatedCrefName(cr, inDiffwrtCref, matrixName);
         res = DAE.CREF(cr, tp);
       then
         (res, inFunctionTree);
@@ -1244,37 +1256,6 @@ algorithm
   outCref := ComponentReference.crefSetLastSubs(outCref, subs);
   outCref := ComponentReference.crefSetLastType(outCref, ComponentReference.crefLastType(inCref));
 end createDiffedCrefName;
-
-public function createDifferentiatedCrefName
-  input DAE.ComponentRef inCref;
-  input DAE.ComponentRef inX;
-  input String inMatrixName;
-  output DAE.ComponentRef outCref;
-protected
- list<DAE.Subscript> subs;
- constant Boolean debug = false;
-algorithm
-  if debug then print("inCref: " + ComponentReference.printComponentRefStr(inCref) +"\n"); end if;
-
-  // move subs and and type to lastCref, to move type replace by last type
-  // and move last cref type to the last cref.
-  subs := ComponentReference.crefLastSubs(inCref);
-  outCref := ComponentReference.crefStripLastSubs(inCref);
-  outCref := ComponentReference.replaceSubsWithString(outCref);
-  if debug then print("after full type  " + Types.printTypeStr(ComponentReference.crefTypeConsiderSubs(inCref)) + "\n"); end if;
-  outCref := ComponentReference.crefSetLastType(outCref, DAE.T_UNKNOWN_DEFAULT);
-  if debug then print("after strip: " + ComponentReference.printComponentRefListStr(ComponentReference.expandCref(outCref, true)) + "\n"); end if;
-
-  // join crefs
-  outCref := ComponentReference.joinCrefs(outCref, ComponentReference.makeCrefIdent(BackendDAE.partialDerivativeNamePrefix + inMatrixName, DAE.T_UNKNOWN_DEFAULT, {}));
-  outCref := ComponentReference.joinCrefs(outCref, inX);
-  if debug then print("after join: " + ComponentReference.printComponentRefListStr(ComponentReference.expandCref(outCref, true)) + "\n"); end if;
-
-  // fix subs and type of the last cref
-  outCref := ComponentReference.crefSetLastSubs(outCref, subs);
-  outCref := ComponentReference.crefSetLastType(outCref, ComponentReference.crefLastType(inCref));
-  if debug then print("outCref: " + ComponentReference.printComponentRefStr(outCref) +"\n"); end if;
-end createDifferentiatedCrefName;
 
 public function createSeedCrefName
   input DAE.ComponentRef inCref;
@@ -1370,7 +1351,7 @@ algorithm
         cr = Expression.expCref(e);
         tp = Expression.typeof(e);
         cr = ComponentReference.crefPrefixDer(cr);
-        cr = createDifferentiatedCrefName(cr, inDiffwrtCref, matrixName);
+        cr = ComponentReference.createDifferentiatedCrefName(cr, inDiffwrtCref, matrixName);
         res = Expression.makeCrefExp(cr, tp);
 
         b = ComponentReference.crefEqual(DAE.CREF_IDENT("$",DAE.T_REAL_DEFAULT,{}), inDiffwrtCref);
@@ -2392,15 +2373,21 @@ protected function createPartialArguments
 algorithm
   outExp := matchcontinue(outputType, inCall)
     local
-      Absyn.Path path;
+      Absyn.Path path, rPath;
       DAE.CallAttributes attr;
       list<DAE.Exp> expLst;
       DAE.Exp ezero, e;
       DAE.Dimensions dims;
       list<DAE.Type> tys;
+      list<DAE.Var> varLst;
+      list<String> varNames;
 
-    case (DAE.T_COMPLEX(complexClassType=ClassInf.RECORD()), DAE.CALL(path=path, attr=attr))
-    then DAE.CALL(path, listAppend(inOrginalExpl,inArgs), attr);
+    case (DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path=rPath),varLst=varLst), DAE.CALL(path=path, attr=attr))
+    equation
+      tys = list(DAEUtil.varType(v) for v in varLst);
+      varNames = list(DAEUtil.typeVarIdent(v) for v in varLst);
+      expLst = createPartialArgumentsRecord(tys, varNames, inArgs, inDiffedArgs, inOrginalExpl, inCall);
+    then DAE.RECORD(rPath, expLst, varNames, outputType);
 
     case (DAE.T_COMPLEX(complexClassType=ClassInf.RECORD()), DAE.TSUB(exp=DAE.CALL(path=path, attr=attr)))
     then DAE.CALL(path, listAppend(inOrginalExpl,inArgs), attr);
@@ -2436,6 +2423,19 @@ algorithm
                                            )
                      threaded  for tp in inTypesLst, number  in 1:listLength(inTypesLst));
 end createPartialArgumentsTuple;
+
+protected function createPartialArgumentsRecord
+  input list<DAE.Type> inTypesLst;
+  input list<DAE.String> inVarNames;
+  input list<DAE.Exp> inArgs;
+  input list<DAE.Exp> inDiffedArgs;
+  input list<DAE.Exp> inOrginalExpl;
+  input DAE.Exp inCall;
+  output list<DAE.Exp> outExpLst;
+algorithm
+  outExpLst := list( createPartialArguments(tp, inArgs, inDiffedArgs, inOrginalExpl, (DAE.RSUB(inCall, -1, name, tp)) )
+                     threaded  for tp in inTypesLst, name in inVarNames);
+end createPartialArgumentsRecord;
 
 protected function createPartialDifferentiatedExp
   "Generates an expression with a sum partial derivatives."
@@ -2517,8 +2517,12 @@ algorithm
          DAE.CallAttributes attr;
          DAE.Type ty;
          Integer ix;
+         String name;
 
-      case DAE.TSUB(exp=DAE.CALL(path=path, attr=attr), ix =ix, ty=ty)
+      case DAE.RSUB(exp=DAE.CALL(path=path, attr=attr), ix=ix, fieldName=name, ty=ty)
+        then DAE.RSUB(DAE.CALL(path, expLst, attr), ix, name, ty);
+
+      case DAE.TSUB(exp=DAE.CALL(path=path, attr=attr), ix=ix, ty=ty)
         then DAE.TSUB(DAE.CALL(path, expLst, attr), ix, ty);
 
       case DAE.CALL(path=path, attr=attr) equation

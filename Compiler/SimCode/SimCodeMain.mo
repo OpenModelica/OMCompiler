@@ -850,7 +850,7 @@ algorithm
       (dlow, initDAE, initDAE_lambda0, inlineData, removedInitialEquationLst) := BackendDAEUtil.getSolvedSystem(dlow,inFileNamePrefix,strPostOptModules=strOptPostOptModules);
 
       // generate derivatives
-      if isFMI2 then
+      if isFMI2 and not Flags.isSet(Flags.FMI20_DEPENDENCIES) then
         // activate symolic jacobains for fmi 2.0
         // to provide dependence information and partial derivatives
         (fmiDer, funcs) := SymbolicJacobian.createFMIModelDerivatives(dlow);
@@ -1146,7 +1146,7 @@ algorithm
     //initialEquations := listReverse(initialEquations);
 
     // generate equations for removed initial equations
-    (removedInitialEquations, uniqueEqIndex, tempVars) := SimCodeUtil.createNonlinearResidualEquations(inRemovedInitialEquationLst, uniqueEqIndex, tempVars);
+    (removedInitialEquations, uniqueEqIndex, tempVars) := SimCodeUtil.createNonlinearResidualEquations(inRemovedInitialEquationLst, uniqueEqIndex, tempVars, inBackendDAE.shared.functionTree);
     //removedInitialEquations := listReverse(removedInitialEquations);
 
     ExecStat.execStat("simCode: created initialization part");

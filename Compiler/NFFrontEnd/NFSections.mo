@@ -122,6 +122,35 @@ public
     end match;
   end prependEquation;
 
+  function prependAlgorithm
+    input Algorithm alg;
+    input output Sections sections;
+    input Boolean isInitial = false;
+  algorithm
+    sections := match sections
+      case SECTIONS()
+        algorithm
+          if isInitial then
+            sections.initialAlgorithms := alg :: sections.initialAlgorithms;
+          else
+            sections.algorithms := alg :: sections.algorithms;
+          end if;
+        then
+          sections;
+
+      case EMPTY()
+        then if isInitial then SECTIONS({}, {}, {}, {alg}) else SECTIONS({}, {}, {alg}, {});
+
+      else
+        algorithm
+          Error.assertion(false, getInstanceName() +
+            " got invalid Sections to prepend algorithm to", sourceInfo());
+        then
+          fail();
+
+    end match;
+  end prependAlgorithm;
+
   function append
     input list<Equation> equations;
     input list<Equation> initialEquations;
@@ -228,6 +257,37 @@ public
       else ();
     end match;
   end map1;
+
+  function mapExp
+    input output Sections sections;
+    input MapFn mapFn;
+
+    partial function MapFn
+      input output Expression exp;
+    end MapFn;
+  protected
+    list<Equation> eq, ieq;
+    list<Algorithm> alg, ialg;
+  algorithm
+    sections := match sections
+      case SECTIONS()
+        algorithm
+          eq := Equation.mapExpList(sections.equations, mapFn);
+          ieq := Equation.mapExpList(sections.initialEquations, mapFn);
+          alg := Algorithm.mapExpList(sections.algorithms, mapFn);
+          ialg := Algorithm.mapExpList(sections.initialAlgorithms, mapFn);
+        then
+          SECTIONS(eq, ieq, alg, ialg);
+
+      case EXTERNAL()
+        algorithm
+          sections.args := list(mapFn(e) for e in sections.args);
+        then
+          sections;
+
+      else sections;
+    end match;
+  end mapExp;
 
   function apply
     input Sections sections;
