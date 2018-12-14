@@ -1259,7 +1259,11 @@ package SimCodeFunctionUtil
     output String outdef;
   end generateSubPalceholders;
 
-
+  function getConstantSubscriptMemoryLocation
+    input list<DAE.Exp> indexes;
+    input DAE.Type ty;
+    output Option<Integer> outIndex;
+  end getConstantSubscriptMemoryLocation;
 
 end SimCodeFunctionUtil;
 

@@ -2626,6 +2626,40 @@ algorithm
   outdef := stringDelimitList(List.threadMap(List.fill("i_", nrdims), idxstrlst, stringAppend), ",");
 end generateSubPalceholders;
 
+public function getConstantSubscriptMemoryLocation "Returns SOME(ix) if the subscript or type is not constant.
+  For a subscript like [1,4] with dimensions [5,4] it returns 1*4 + 4 to match the C runtime"
+  input list<DAE.Exp> indexes;
+  input DAE.Type ty;
+  output Option<Integer> outIndex=NONE();
+protected
+  list<DAE.Dimension> dims;
+  list<Integer> dimsInt, ixInt;
+  Integer ndim, sz, ix, i, j;
+algorithm
+  if not Types.dimensionsKnown(ty) then
+    return;
+  end if;
+  dims := Types.getDimensions(ty);
+  ndim := Types.numberOfDimensions(ty);
+  if ndim <= 1 or ndim <> listLength(Types.getDimensions(ty)) or ndim <> listLength(indexes) then
+    return;
+  end if;
+  try
+    dimsInt := listReverse(Expression.dimensionSize(d) for d in dims);
+    ixInt := listReverse(Expression.expArrayIndex(index) for index in indexes);
+    ix := 0;
+    sz := 1;
+    while not listEmpty(ixInt) loop
+      i::ixInt := ixInt;
+      j::dimsInt := dimsInt;
+      ix := ix + (i-1)*sz;
+      sz := sz * j;
+    end while;
+    outIndex := SOME(ix);
+  else
+  end try;
+end getConstantSubscriptMemoryLocation;
+
 
 
 annotation(__OpenModelica_Interface="backendInterface");

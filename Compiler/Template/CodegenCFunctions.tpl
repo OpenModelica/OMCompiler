@@ -6399,15 +6399,40 @@ template daeExpAsub(Exp inExp, Context context, Text &preExp,
         arrayScalarRhs(ecr.ty, subs, arrName, context, &preExp, &varDecls, &auxFunction)
 
   case ASUB(exp=e, sub=indexes) then
-    let exp = daeExp(e, context, &preExp, &varDecls, &auxFunction)
     let typeShort = expTypeFromExpShort(e)
     match Expression.typeof(inExp)
     case T_ARRAY(__) then
       error(sourceInfo(),'ASUB non-scalar <%ExpressionDumpTpl.dumpExp(inExp,"\"")%>. The inner exp has type: <%unparseType(Expression.typeof(e))%>. After ASUB it is still an array: <%unparseType(Expression.typeof(inExp))%>.')
     else
-      let expIndexes = (indexes |> index => '<%daeExpASubIndex(index, context, &preExp, &varDecls, &auxFunction)%>' ;separator=", ")
-      '<%typeShort%>_get<%match listLength(indexes) case 1 then "" case i then '_<%i%>D'%>(<%exp%>, <%expIndexes%>)'
-
+      match getConstantSubscriptMemoryLocation(indexes, Expression.typeof(e))
+        case SOME(ix) then
+          let exp = daeExp(e, context, &preExp, &varDecls, &auxFunction)
+          '<%typeShort%>_get(<%exp%>, <%ix%>)'
+        else (match indexes
+        case {index} then
+          let exp = daeExp(e, context, &preExp, &varDecls, &auxFunction)
+          let ix = daeExpASubIndex(index, context, &preExp, &varDecls, &auxFunction)
+          '<%typeShort%>_get(<%exp%>, <%ix%>)'
+        else
+          let ix = tempDecl("int", &varDecls)
+          let sz = tempDecl("int", &varDecls)
+          let exp = daeExpAsLValue(e, context, &preExp, &varDecls, &auxFunction)
+          let expIndexes = (indexes |> index => '<%daeExpASubIndex(index, context, &preExp, &varDecls, &auxFunction)%>' ;separator=", ")
+          let tmp =
+            <<
+            <%ix%> = 0;
+            <%sz%> = 1;
+            <%
+            listReverse(indexes) |> index hasindex i1 fromindex 1 =>
+              <<
+              <%ix%> += <%daeExpASubIndex(index, context, &preExp, &varDecls, &auxFunction)%>;
+              <%sz%> *= <%exp%>.dim_size[<%intSub(listLength(indexes),i1)%>];
+              >> ; separator="\n"
+            %>
+            >>
+          let &preExp += tmp
+          '<%typeShort%>_get(<%exp%>, /*<%listLength(indexes)%>-dim*/ <%ix%>)'
+        )
   else
     error(sourceInfo(),'OTHER_ASUB <%ExpressionDumpTpl.dumpExp(inExp,"\"")%>')
 end daeExpAsub;

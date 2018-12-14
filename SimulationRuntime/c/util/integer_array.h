@@ -43,21 +43,6 @@ static OMC_INLINE modelica_integer integer_get(const integer_array_t a, size_t i
   return ((modelica_integer *) a.data)[i];
 }
 
-static OMC_INLINE modelica_integer integer_get_2D(const integer_array_t a, size_t i, size_t j)
-{
-  return integer_get(a, getIndex_2D(a.dim_size,i,j));
-}
-
-static OMC_INLINE modelica_integer integer_get_3D(const integer_array_t a, size_t i, size_t j, size_t k)
-{
-  return integer_get(a, getIndex_3D(a.dim_size,i,j,k));
-}
-
-static OMC_INLINE modelica_integer integer_get_4D(const integer_array_t a, size_t i, size_t j, size_t k, size_t l)
-{
-  return integer_get(a, getIndex_4D(a.dim_size,i,j,k,l));
-}
-
 /* Settings the fields of a integer_array */
 extern void integer_array_create(integer_array_t *dest, modelica_integer *data,
                                  int ndims, ...);
