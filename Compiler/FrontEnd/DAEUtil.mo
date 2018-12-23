@@ -128,6 +128,8 @@ public function topLevelInput "author: PA
 algorithm
   isTopLevel := match (inVarDirection, inComponentRef)
     case (DAE.INPUT(), DAE.CREF_IDENT()) then true;
+    // check for qualified component names
+    case (DAE.INPUT(), DAE.CREF_QUAL()) then true;
     case (DAE.INPUT(), _)
       guard(ConnectUtil.faceEqual(ConnectUtil.componentFaceType(inComponentRef), Connect.OUTSIDE()))
       then topLevelConnectorType(inConnectorType);
