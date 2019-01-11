@@ -819,7 +819,7 @@ algorithm
         ts = BackendDAEUtil.setTearingSelectAttribute(comment);
         hideResult = BackendDAEUtil.setHideResultAttribute(comment, b, name);
       then
-        (BackendDAE.VAR(name, kind_1, dir, prl, tp, NONE(), NONE(), dims, source, dae_var_attr, ts, hideResult, comment, ct, DAEUtil.toDAEInnerOuter(io), false));
+        (BackendDAE.VAR(name, kind_1, dir, prl, tp, NONE(), NONE(), dims, source, dae_var_attr, ts, hideResult, comment, ct, DAEUtil.toDAEInnerOuter(io), false, NONE()));
   end match;
 end lowerDynamicVar;
 
@@ -858,6 +858,7 @@ algorithm
       list<DAE.Statement> assrtLst;
       list<BackendDAE.Equation> eqLst;
       Absyn.InnerOuter io;
+
      case DAE.VAR(componentRef = name,
                   kind = kind,
                   direction = dir,
@@ -884,7 +885,7 @@ algorithm
         ts = NONE();
         hideResult = BackendDAEUtil.setHideResultAttribute(comment, b, name);
       then
-        (BackendDAE.VAR(name, kind_1, dir, prl, tp, bind, NONE(), dims, source, dae_var_attr, ts, hideResult, comment, ct, DAEUtil.toDAEInnerOuter(io), false), iInlineHT, eqLst);
+        (BackendDAE.VAR(name, kind_1, dir, prl, tp, bind, NONE(), dims, source, dae_var_attr, ts, hideResult, comment, ct, DAEUtil.toDAEInnerOuter(io), false, NONE()), iInlineHT, eqLst);
 
     else
       equation
@@ -1196,14 +1197,14 @@ algorithm
                   source = source,
                   variableAttributesOption = dae_var_attr,
                   comment = comment,
-                  innerOuter=io)
+                  innerOuter = io)
       equation
         kind_1 = lowerExtObjVarkind(t);
         tp = lowerType(t);
         ts = NONE();
         hideResult = DAE.BCONST(false);
       then
-        BackendDAE.VAR(name, kind_1, dir, prl, tp, bind, NONE(), dims, source, dae_var_attr, ts, hideResult, comment, ct, DAEUtil.toDAEInnerOuter(io), false);
+        BackendDAE.VAR(name, kind_1, dir, prl, tp, bind, NONE(), dims, source, dae_var_attr, ts, hideResult, comment, ct, DAEUtil.toDAEInnerOuter(io), false, NONE());
   end match;
 end lowerExtObjVar;
 
@@ -1906,7 +1907,7 @@ algorithm
                   arryDim = {}, source = DAE.emptyElementSource,
                   values = NONE(), tearingSelectOption = SOME(BackendDAE.DEFAULT()), hideResult = DAE.BCONST(false),
                   comment = NONE(), connectorType = DAE.NON_CONNECTOR(),
-                  innerOuter = DAE.NOT_INNER_OUTER(), unreplaceable = true ) :: inVars;
+                  innerOuter = DAE.NOT_INNER_OUTER(), unreplaceable = true, initialKind=NONE() ) :: inVars;
   outEqs := BackendDAE.EQUATION( exp = DAE.CREF(componentRef = cr, ty = DAE.T_CLOCK_DEFAULT),
                                 scalar = e,  source = DAE.emptyElementSource,
                                 attr = BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC ) :: inEqs;

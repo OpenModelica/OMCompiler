@@ -2297,7 +2297,7 @@ algorithm
        var1 = BackendDAE.VAR(DAE.CREF_IDENT(name1,DAE.T_REAL_DEFAULT,{}), BackendDAE.PARAM(),DAE.BIDIR(),DAE.NON_PARALLEL(),DAE.T_REAL_DEFAULT,NONE(),SOME(DAE.RCONST(1.0)),{},
                             DAE.emptyElementSource,
                             SOME(DAE.VAR_ATTR_REAL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE())),
-                            NONE(),DAE.ICONST(p),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false);
+                            NONE(),DAE.ICONST(p),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false,NONE());
 
       p=p+1;
 
@@ -2306,7 +2306,7 @@ algorithm
       var2 = BackendDAE.VAR(DAE.CREF_IDENT(name2,DAE.T_REAL_DEFAULT,{}), BackendDAE.PARAM(),DAE.BIDIR(),DAE.NON_PARALLEL(),DAE.T_REAL_DEFAULT,NONE(),SOME(DAE.RCONST(0.0)),{},
                             DAE.emptyElementSource,
                             SOME(DAE.VAR_ATTR_REAL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE())),
-                            NONE(),DAE.ICONST(p),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false);
+                            NONE(),DAE.ICONST(p),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false,NONE());
 
       list1={var1,var2};
       p=p+1;

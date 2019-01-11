@@ -247,8 +247,19 @@ uniontype Var "variables"
     .DAE.ConnectorType connectorType "flow, stream, unspecified or not connector.";
     .DAE.VarInnerOuter innerOuter "inner, outer, inner outer or unspecified";
     Boolean unreplaceable "indicates if it is allowed to replace this variable";
+    Option<InitialKind> initialKind "enumeration that defines how the variable is initialized";
   end VAR;
 end Var;
+
+public
+uniontype InitialKind "Enumeration that defines how the variable is initialized."
+  record EXACT "The variable is initialized with the start value."
+  end EXACT;
+  record APPROX "The variable is an iteration variable of an algebraic loop and the iteration at initialization starts with the start value."
+  end APPROX;
+  record CALCULATED "The variable is calculated from other variables during initialization. It is not allowed to provide a start value."
+  end CALCULATED;
+end InitialKind;
 
 public
 uniontype VarKind "variable kind"

@@ -507,11 +507,12 @@ algorithm
       Boolean b1,b2;
       DAE.VarInnerOuter io;
       Boolean unreplaceable;
+      Option<BackendDAE.InitialKind> initialKind;
 
-    case BackendDAE.VAR(varName,varKind,varDirection,varParallelism,varType,bind,tplExp,arrayDim,source,values,ts,hideResult,comment,ct,io,unreplaceable) equation
+    case BackendDAE.VAR(varName,varKind,varDirection,varParallelism,varType,bind,tplExp,arrayDim,source,values,ts,hideResult,comment,ct,io,unreplaceable,initialKind) equation
       (bind,source,b1) = Inline.inlineExpOpt(bind,inElementList,source);
       (values1,source,b2) = Inline.inlineStartAttribute(values,source,inElementList);
-    then (BackendDAE.VAR(varName,varKind,varDirection,varParallelism,varType,bind,tplExp,arrayDim,source,values1,ts,hideResult,comment,ct,io,unreplaceable), b1 or b2);
+    then (BackendDAE.VAR(varName,varKind,varDirection,varParallelism,varType,bind,tplExp,arrayDim,source,values1,ts,hideResult,comment,ct,io,unreplaceable,initialKind), b1 or b2);
 
     else (inVar, false);
   end match;

@@ -239,7 +239,7 @@ algorithm
           // add all $DER.x as additional variables
           for derVar in derVars loop
             var := listGet(BackendVariable.getVar(derVar, syst.orderedVars), 1);
-            var := BackendDAE.VAR(ComponentReference.crefPrefixDer(derVar), BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), var.varType, NONE(), NONE(), var.arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+            var := BackendDAE.VAR(ComponentReference.crefPrefixDer(derVar), BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), var.varType, NONE(), NONE(), var.arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false, NONE());
             syst.orderedVars := BackendVariable.addVar(var, syst.orderedVars);
           end for;
           // add defining equations for $DER.x, depending on solverMethod
@@ -2539,7 +2539,7 @@ protected function createVar
   input DAE.Type inType;
   output BackendDAE.Var outVar;
 algorithm
-  outVar := BackendDAE.VAR (
+  outVar := BackendDAE.VAR(
                   varName = inComp, varKind = BackendDAE.VARIABLE(),
                   varDirection = DAE.BIDIR(), varParallelism = DAE.NON_PARALLEL(),
                   varType = inType, bindExp = NONE(), tplExp = NONE(),
@@ -2547,7 +2547,7 @@ algorithm
                   values = NONE(), tearingSelectOption = SOME(BackendDAE.DEFAULT()),
                   hideResult = DAE.BCONST(false),
                   comment = NONE(), connectorType = DAE.NON_CONNECTOR(),
-                  innerOuter = DAE.NOT_INNER_OUTER(), unreplaceable = false );
+                  innerOuter = DAE.NOT_INNER_OUTER(), unreplaceable = false, initialKind = NONE());
 end createVar;
 
 protected function createEqVarPair

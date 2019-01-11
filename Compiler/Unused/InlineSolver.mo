@@ -158,7 +158,7 @@ protected
 algorithm
    BackendDAE.SHARED(knownVars=knownVars, externalObjects=externalObjects, aliasVars=aliasVars,initialEqs=initialEqs, removedEqs=removedEqs, constraints=constrs, classAttrs=clsAttrs, cache=cache, env=env, functionTree=functionTree, eventInfo=eventInfo, extObjClasses=extObjClasses, backendDAEType=backendDAEType, symjacs=symjacs, info = ei) := inShared;
    knownVars := BackendVariable.mergeVariables(invars, knownVars);
-   var := BackendDAE.VAR(DAE.CREF_IDENT("$dt", DAE.T_REAL_DEFAULT, {}), BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), DAE.NON_CONNECTOR());
+   var := BackendDAE.VAR(DAE.CREF_IDENT("$dt", DAE.T_REAL_DEFAULT, {}), BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), DAE.NON_CONNECTOR(), NONE());
    knownVars := BackendVariable.addVar(var, knownVars);
    outShared := BackendDAE.SHARED(knownVars, externalObjects, aliasVars,initialEqs, removedEqs, constrs, clsAttrs, cache, env, functionTree, eventInfo, extObjClasses, backendDAEType, symjacs, ei);
 end addKnowInitialValueForState;
@@ -559,7 +559,7 @@ protected function stringCrVar "author: vitalij"
   output BackendDAE.Var var;
 algorithm
   outCR := ComponentReference.crefPrefixString(varTyp, inCR);
-  var := BackendDAE.VAR(outCR, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.NON_CONNECTOR());
+  var := BackendDAE.VAR(outCR, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.NON_CONNECTOR(), NONE());
 end stringCrVar;
 
 end InlineSolver;

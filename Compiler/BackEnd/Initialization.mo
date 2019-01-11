@@ -1095,7 +1095,7 @@ algorithm
     case (BackendDAE.VAR(varName=cr, varKind=BackendDAE.DISCRETE(), varType=ty, arryDim=arryDim), vars) equation
       false = BackendVariable.varFixed(inVar);
       preCR = ComponentReference.crefPrefixPre(cr);  // cr => $PRE.cr
-      preVar = BackendDAE.VAR(preCR, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+      preVar = BackendDAE.VAR(preCR, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false, NONE());
       vars = BackendVariable.addVar(preVar, vars);
     then (inVar, vars);
 
@@ -2020,7 +2020,7 @@ algorithm
       startValue = BackendVariable.varStartValue(var);
 
       preCR = ComponentReference.crefPrefixPre(cr);  // cr => $PRE.cr
-      preVar = BackendDAE.VAR(preCR, BackendDAE.DISCRETE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+      preVar = BackendDAE.VAR(preCR, BackendDAE.DISCRETE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false, NONE());
       preVar = BackendVariable.setVarFixed(preVar, false);
       preVar = BackendVariable.setVarStartValueOption(preVar, SOME(startValue));
 
@@ -2036,7 +2036,7 @@ algorithm
       preUsed = BaseHashSet.has(cr, hs);
 
       preCR = ComponentReference.crefPrefixPre(cr);  // cr => $PRE.cr
-      preVar = BackendDAE.VAR(preCR, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+      preVar = BackendDAE.VAR(preCR, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), ty, NONE(), NONE(), arryDim, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false, NONE());
       preVar = BackendVariable.setVarFixed(preVar, false);
       preVar = BackendVariable.setVarStartValueOption(preVar, SOME(DAE.CREF(cr, ty)));
 
