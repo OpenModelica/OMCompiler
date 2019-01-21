@@ -8287,6 +8287,16 @@ algorithm
   varLst := List.flatten(List.map(globalKnownVars::List.map(eqs, BackendVariable.daeVars), BackendVariable.varList));
 end getAllVarLst;
 
+public function getOrderedVarsLst "retrieve all orderedVars variables of the dae by collecting them from each equation system"
+  input BackendDAE.BackendDAE dae;
+  output list<BackendDAE.Var> varLst;
+protected
+  BackendDAE.EqSystems eqs;
+algorithm
+  BackendDAE.DAE(eqs=eqs) := dae;
+  varLst := List.flatten(List.map(List.map(eqs, BackendVariable.daeVars), BackendVariable.varList));
+end getOrderedVarsLst;
+
 public function isClockedSyst
   input BackendDAE.EqSystem inSyst;
   output Boolean out;
