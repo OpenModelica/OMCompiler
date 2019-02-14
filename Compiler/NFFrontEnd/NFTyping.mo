@@ -442,7 +442,7 @@ algorithm
           end if;
           // Remove the prefix from the component, to avoid issues like a flow
           // equation being generated for it.
-          if not (InstNode.isEmpty(component) or InstNode.isInnerOuterNode(component)) then
+          if InstNode.isEmpty(component) then
             attr.connectorType := ConnectorType.NON_CONNECTOR;
             InstNode.componentApply(component, Component.setAttributes, attr);
           end if;
@@ -458,7 +458,7 @@ function checkConnectorType
   input InstNode node;
   output Boolean isConnector;
 algorithm
-  if InstNode.isEmpty(node) or InstNode.isInnerOuterNode(node) then
+  if InstNode.isEmpty(node) then
     isConnector := false;
   else
     isConnector := Class.isConnectorClass(InstNode.getClass(node)) or
