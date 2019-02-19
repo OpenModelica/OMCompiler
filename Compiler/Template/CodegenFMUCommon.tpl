@@ -482,7 +482,7 @@ match simVar
   let clockIndex = getClockIndex(simVar, simCode)
   let previous = match varKind case CLOCKED_STATE(__) then '<%getVariableIndex(cref2simvar(previousName, simCode))%>'
   let caus = getCausality2(causality, varKind, isValueChangeable)
-  let initial = getInitialType2(variability, caus, initialValue)
+  let initial = getInitialType2(variability, caus, initialValue, isFixed)
   <<
   name="<%System.stringReplace(crefStrNoUnderscore(name),"$", "_D_")%>"
   valueReference="<%valueReference%>"
@@ -540,7 +540,7 @@ match simCode
   else ""
 end getNumberOfEventIndicators;
 
-template getInitialType2(String variability, String causality, Option<DAE.Exp> initialValue)
+template getInitialType2(String variability, String causality, Option<DAE.Exp> initialValue, Boolean isFixed)
  "Returns the Initial Attribute of ScalarVariable."
 ::=
 match variability
@@ -561,8 +561,10 @@ match variability
     match causality
       case "output"
       case "local" then
-        match initialValue
-        case SOME(exp) then "exact"
+        //match initialValue
+        //case SOME(exp) then "exact"
+        match isFixed
+        case true then "exact"
         else "calculated"
       else ""
   else ""
@@ -599,7 +601,7 @@ template StartString2(SimVar simvar)
 match simvar
 case SIMVAR(aliasvar = SimCodeVar.ALIAS(__)) then
   ''
-case SIMVAR(initialValue = initialValue, varKind = varKind, causality = causality, type_ = type_, isValueChangeable = isValueChangeable) then
+case SIMVAR(initialValue = initialValue, varKind = varKind, causality = causality, type_ = type_, isValueChangeable = isValueChangeable, isFixed = isFixed) then
   match initialValue
     case SOME(e as ICONST(__)) then ' start="<%initValXml(e)%>"'
     case SOME(e as RCONST(__)) then ' start="<%initValXml(e)%>"'
@@ -609,7 +611,7 @@ case SIMVAR(initialValue = initialValue, varKind = varKind, causality = causalit
     else
       let variability = getVariability2(varKind, type_)
       let caus = getCausality2(causality, varKind, isValueChangeable)
-      let initial = getInitialType2(variability, caus, initialValue)
+      let initial = getInitialType2(variability, caus, initialValue, isFixed)
       if boolOr(stringEq(initial, "exact"), boolOr(stringEq(initial, "approx"), stringEq(caus, "input"))) then ' start="<%initDefaultValXml(type_)%>"'
       else ''
 end StartString2;
