@@ -15733,7 +15733,7 @@ algorithm
     if name == inName then
       cls := inFunc(cls);
       classes := List.append_reverse(acc, cls :: classes);
-      outProgram := Absyn.PROGRAM(classes, wi);
+      outProgram := updateProgram(Absyn.PROGRAM(classes, wi), inProgram);
       break;
     end if;
   end while;
