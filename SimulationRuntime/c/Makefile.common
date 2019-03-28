@@ -326,7 +326,7 @@ sourcedist_internal:
 	cp Makefile.objs $(builddir_inc)/c/
 	rm -r ./external_solvers
 
-RuntimeSources.mo: Makefile.common Makefile.objs RuntimeSources.mo.tpl
+RuntimeSources.mo: Makefile.common Makefile.objs RuntimeSources.mo.tpl sources.tmp headers.tmp
 	$(MAKE) sources.tmp OMC_FMI_RUNTIME=1 OMC_MINIMAL_RUNTIME=1 BUILDPATH=. OMC_NUM_NONLINEAR_SYSTEMS=0 OMC_NUM_LINEAR_SYSTEMS=0 OMC_NUM_MIXED_SYSTEMS=0
 	$(MAKE) headers.tmp OMC_FMI_RUNTIME=1 OMC_MINIMAL_RUNTIME=1 BUILDPATH=. OMC_NUM_NONLINEAR_SYSTEMS=0 OMC_NUM_LINEAR_SYSTEMS=0 OMC_NUM_MIXED_SYSTEMS=0
 	$(MAKE) headers.tmp OMC_FMI_RUNTIME=1 OMC_MINIMAL_RUNTIME=1 BUILDPATH=. OMC_NUM_NONLINEAR_SYSTEMS=0 OMC_NUM_LINEAR_SYSTEMS=0 OMC_NUM_MIXED_SYSTEMS=0
@@ -340,6 +340,7 @@ RuntimeSources.mo: Makefile.common Makefile.objs RuntimeSources.mo.tpl
 	    -e "s#MIXED_FILES#`echo $(SOLVER_OBJS_MIXED_SYSTEMS:%.o=\\\"./simulation/solver/%.c\\\") | tr " " ,`#" \
 	    RuntimeSources.mo.tpl > $@.tmp
 	mv $@.tmp $@
+
 sources.tmp: Makefile.common Makefile.objs
 	echo "$(FMI_ME_OBJS_BUILDPATH:%.o=\"%.c\")" | tr " " , > $@
 headers.tmp: Makefile.common Makefile.objs
