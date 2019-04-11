@@ -146,6 +146,7 @@ algorithm
   comp := match (zc1, zc2)
     local
       DAE.Exp e1, e2, e3, e4;
+      Integer i1, i2;
 
     case (BackendDAE.ZERO_CROSSING(relation_=DAE.CALL(path=Absyn.IDENT("sample"), expLst={e1, _, _})), BackendDAE.ZERO_CROSSING(relation_=DAE.CALL(path=Absyn.IDENT("sample"), expLst={e2, _, _})))
       then Expression.compare(e1,e2);
@@ -168,6 +169,10 @@ algorithm
       algorithm
         comp := Expression.compare(e1,e3);
       then if comp==0 then Expression.compare(e2, e4) else comp;
+
+    case (BackendDAE.ZERO_CROSSING(relation_=DAE.RELATION(index=i1)), BackendDAE.ZERO_CROSSING(relation_=DAE.RELATION(index=i2)))
+      guard not intEq(i1,i2)
+      then if (i1-i2) > 0 then -1 else 1;
 
     case (BackendDAE.ZERO_CROSSING(relation_=e1), BackendDAE.ZERO_CROSSING(relation_=e2))
       then Expression.compare(e1, e2);
