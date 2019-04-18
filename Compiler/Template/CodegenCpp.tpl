@@ -321,7 +321,8 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
     void setAMatrix(unsigned int index, DynArrayDim2<int>& A);
     bool getAMatrix(unsigned int index, DynArrayDim1<int>& A);
     void setAMatrix(unsigned int index, DynArrayDim1<int>& A);
-
+    bool stateSelection();
+    bool stateSelectionSet(int i);
   protected:
     void initialize();
   };
@@ -370,7 +371,8 @@ template getPreVarsCount(ModelInfo modelInfo)
 ::=
   match modelInfo
     case MODELINFO(varInfo=VARINFO(__)) then
-      let allVarCount = intAdd(stringInt(numRealvars(modelInfo)), intAdd(stringInt(numIntvars(modelInfo)), stringInt(numBoolvars(modelInfo))))
+      let allVarCount = intAdd(stringInt(
+   numRealvars(modelInfo)), intAdd(stringInt(numIntvars(modelInfo)), stringInt(numBoolvars(modelInfo))))
       <<
       <%allVarCount%>
       >>
@@ -696,6 +698,17 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
 
    <%functionDimStateSets(stateSets, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)%>
    <%functionStateSets(stateSets, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
+
+   bool <%lastIdentOfPath(modelInfo.name)%>StateSelection::stateSelection()
+   {
+      return SystemDefaultImplementation::stateSelection();
+   }
+
+   bool <%lastIdentOfPath(modelInfo.name)%>StateSelection::stateSelectionSet(int i)
+   {
+      return SystemDefaultImplementation::stateSelectionSet(i);
+   }
+
    >>
 end simulationStateSelectionCppFile;
 
@@ -3733,12 +3746,8 @@ match simCode
 
         <%partitionInit%>
 
-        //Initialize the state vector
-        SystemDefaultImplementation::initialize();
-        //Instantiate auxiliary object for event handling functionality
-        //_event_handling.getCondition =  boost::bind(&<%className%>::getCondition, this, _1);
 
-        //Todo: reindex all arrays removed  // arrayReindex(modelInfo,useFlatArrayNotation)
+
 
         _functions = new Functions(_simTime,__z,__zDot,_initial,_terminate);
         >>
@@ -5753,6 +5762,8 @@ case SIMCODE(modelInfo = MODELINFO(__),makefileParams = MAKEFILE_PARAMS(__))  th
 
    void <%lastIdentOfPath(modelInfo.name)%>Initialize::initializeMemory()
    {
+
+      SystemDefaultImplementation::initialize();
       _discrete_events = _event_handling->initialize(this,getSimVars());
 
       //create and initialize Algloopsolvers
@@ -8407,13 +8418,6 @@ template variableType(DAE.Type type)
   case T_ENUMERATION(__) then "int"
   case T_COMPLEX(complexClassType=EXTERNAL_OBJ(__)) then "void*"
 end variableType;
-
-template lastIdentOfPath(Path modelName) ::=
-  match modelName
-  case QUALIFIED(__) then lastIdentOfPath(path)
-  case IDENT(__)     then name
-  case FULLYQUALIFIED(__) then lastIdentOfPath(path)
-end lastIdentOfPath;
 
 template identOfPath(Path modelName) ::=
   match modelName

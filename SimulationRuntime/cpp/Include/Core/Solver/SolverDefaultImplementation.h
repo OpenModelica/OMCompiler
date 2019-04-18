@@ -3,7 +3,6 @@
  *
  *  @{
  */
-#include <Core/Solver/SystemStateSelection.h>
 #include <Core/Solver/SimulationMonitor.h>
 #ifdef RUNTIME_PROFILING
 #include <Core/Utils/extension/measure_time.hpp>
@@ -54,7 +53,6 @@ public:
 
   /// Called by solver after every successful integration step (calls writeOutput)
   void writeToFile(const int& stp, const double& t, const double& h);
-  virtual bool stateSelection();
 
 protected:
   // Member variables
@@ -65,7 +63,6 @@ protected:
   ISolverSettings
     *_settings;               ///< Settings for the solver
 
-  shared_ptr<SystemStateSelection> _state_selection;
   double
     _tInit,                   ///< (initiale) Startzeit (wird nicht vom Solver verändert)
     _tCurrent,                ///< current time (is changed by the solver)

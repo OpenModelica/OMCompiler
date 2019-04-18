@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.9)
 
 project(${SolverName})
 
-add_library(${SolverName} SolverDefaultImplementation.cpp AlgLoopSolverDefaultImplementation.cpp SolverSettings.cpp SystemStateSelection.cpp FactoryExport.cpp SimulationMonitor.cpp)
+add_library(${SolverName} SolverDefaultImplementation.cpp AlgLoopSolverDefaultImplementation.cpp SolverSettings.cpp FactoryExport.cpp SimulationMonitor.cpp)
 
 if(NOT BUILD_SHARED_LIBS)
   set_target_properties(${SolverName} PROPERTIES COMPILE_DEFINITIONS "RUNTIME_STATIC_LINKING;ENABLE_SUNDIALS_STATIC")
@@ -23,7 +23,6 @@ install(FILES
   ${CMAKE_SOURCE_DIR}/Include/Core/Solver/ISolverSettings.h
   ${CMAKE_SOURCE_DIR}/Include/Core/Solver/SolverSettings.h
   ${CMAKE_SOURCE_DIR}/Include/Core/Solver/SolverDefaultImplementation.h
-  ${CMAKE_SOURCE_DIR}/Include/Core/Solver/SystemStateSelection.h
   ${CMAKE_SOURCE_DIR}/Include/Core/Solver/SimulationMonitor.h
   ${CMAKE_SOURCE_DIR}/Include/Core/Solver/FactoryExport.h
   DESTINATION include/omc/cpp/Core/Solver)

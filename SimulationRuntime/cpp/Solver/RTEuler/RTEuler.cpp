@@ -37,6 +37,7 @@ void RTEuler::initialize()
     _event_system =  dynamic_cast<IEvent*>(_system);
     _mixed_system =  dynamic_cast<IMixedSystem*>(_system);
     _time_system =  dynamic_cast<ITime*>(_system);
+    _state_selection = dynamic_cast<IStateSelection*>(_system);
 
     _dimSys  = _continuous_system->getDimContinuousStates();
 
@@ -123,7 +124,7 @@ ISolver::SOLVERSTATUS RTEuler::getSolverStatus()
 
 bool RTEuler::stateSelection()
  {
-   return SolverDefaultImplementation::stateSelection();
+   return _state_selection->stateSelection();
  }
 
 void RTEuler::solve(const SOLVERCALL command)

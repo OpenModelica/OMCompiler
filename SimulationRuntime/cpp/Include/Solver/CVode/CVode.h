@@ -83,6 +83,7 @@ public:
 
   virtual int reportErrorMessage(std::ostream& messageStream);
   virtual bool stateSelection();
+  virtual bool stateSelectionSet(int i);
 private:
 
   // Solveraufruf
@@ -173,17 +174,14 @@ double
   int const* _jacobianAIndex;
   int const* _jacobianALeadindex;
 
-
-
-
   bool _cvode_initialized;
-
 
    ISystemProperties* _properties;
    IContinuous* _continuous_system;
    IEvent* _event_system;
    IMixedSystem* _mixed_system;
    ITime* _time_system;
+   IStateSelection* _state_selection;
 
    int _numberOfOdeEvaluations;
 

@@ -3,6 +3,9 @@
  *  Core module for all algebraic and ode systems
  *  @{
  */
+
+//#include <Core/System/SystemStateSelection.h>
+class SystemStateSelection;
 /*****************************************************************************/
 /**
 
@@ -158,6 +161,8 @@ public:
   virtual void setStringStartValue(string& var, string val, bool overwriteOldValue = false);
   virtual void setStringStartValue(BaseArray<string>& avar, string val, bool overwriteOldValue = true);
   virtual void setStringStartValue(BaseArray<string>& avar, const BaseArray<string>& aval, bool overwriteOldValue = true);
+  virtual bool stateSelection();
+  virtual bool stateSelectionSet(int i);
 protected:
     void Assert(bool cond, const string& msg);
     void Terminate(string msg);
@@ -168,6 +173,7 @@ protected:
     bool isConsistent();
 
     shared_ptr<ISimObjects> _simObjects;
+    shared_ptr<SystemStateSelection> _state_selection;
 
     double
         _simTime;             ///< current simulation time (given by the solver)
@@ -231,6 +237,7 @@ protected:
   bool _useAnalyticalJacobian;
 
   bool _freeVariablesLock; ///< modification status of independent variables
+
 };
 
 /// Mark free variables unchanged.

@@ -445,7 +445,7 @@ void CppDASSL::giveZeroVal(const double &t, const double *y, double *zeroValue)
 
 bool CppDASSL::stateSelection()
 {
-  return SolverDefaultImplementation::stateSelection();
+  return _state_selections[0]->stateSelection();
 }
 
 void CppDASSL::setTimeOut(unsigned int time_out)

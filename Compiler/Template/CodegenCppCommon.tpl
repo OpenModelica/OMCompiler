@@ -1724,6 +1724,9 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
   case CALL(path=IDENT(name="$getPart"), expLst={e1}) then
     daeExp(e1, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
 
+  case CALL(path=IDENT(name="$stateSelectionSet"), expLst=ICONST(integer=setIndex)::_) then
+    'SystemDefaultImplementation::stateSelectionSet(<%setIndex%>)'
+
   case CALL(path=IDENT(name="sample"), expLst={ICONST(integer=index), start, interval}) then
     let &preExp = buffer "" /*BUFD*/
     let eStart = daeExp(start, contextOther, &preExp, &varDecls, simCode, &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
@@ -3117,6 +3120,14 @@ template timeEventLength(SimCode simCode)
       <%vi.numTimeEvents%>
       >>
 end timeEventLength;
+
+template lastIdentOfPath(Path modelName)
+::=
+  match modelName
+  case QUALIFIED(__) then lastIdentOfPath(path)
+  case IDENT(__)     then name
+  case FULLYQUALIFIED(__) then lastIdentOfPath(path)
+end lastIdentOfPath;
 
 annotation(__OpenModelica_Interface="backend");
 end CodegenCppCommon;
