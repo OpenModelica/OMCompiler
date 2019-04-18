@@ -30,7 +30,7 @@ void Initialization::initializeSystem()
   //Initialization of continous equations and bounded parameters
 
   _system->initialize();
-  _solver->stateSelection();
+  _system->stateSelection();
   /*deactivated initialization loop*/
   //bool restart = true;
   //int iter = 0;
@@ -50,14 +50,14 @@ void Initialization::initializeSystem()
   event_system->saveAll();
   _system->setInitial(false);
 
-  if( _solver->stateSelection())
+  if( _system->stateSelection())
   {
     _system->initEquations();
 	continous_system->stepCompleted(0.0);
 
 
     /* report a warning about strange start values */
-    if(_solver->stateSelection())
+    if(_system->stateSelection())
       cout << "Cannot initialize the dynamic state selection in an unique way." << std::endl;
   }
   delete[] conditions0;

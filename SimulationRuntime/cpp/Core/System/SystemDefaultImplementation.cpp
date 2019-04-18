@@ -5,12 +5,12 @@
 #include <Core/ModelicaDefine.h>
 #include <Core/Modelica.h>
 
+#include <Core/System/SystemStateSelection.h>
 #include <Core/System/FactoryExport.h>
 #include <Core/Utils/extension/logger.hpp>
 #include <Core/System/EventHandling.h>
 #include <Core/System/SystemDefaultImplementation.h>
 #include <Core/System/AlgLoopSolverFactory.h>
-
 
 template <class T>
 void InitVars<T>::setStartValue(T& variable,T val,bool overwriteOldValue)
@@ -73,6 +73,7 @@ SystemDefaultImplementation::SystemDefaultImplementation(IGlobalSettings *global
   , _modelName(modelName)
   , _freeVariablesLock(false)
 {
+	_state_selection = shared_ptr<SystemStateSelection>(new SystemStateSelection(this));
 }
 
 SystemDefaultImplementation::SystemDefaultImplementation(SystemDefaultImplementation& instance)
@@ -114,6 +115,8 @@ SystemDefaultImplementation::SystemDefaultImplementation(SystemDefaultImplementa
   , _modelName(instance.getModelName())
   , _freeVariablesLock(false)
 {
+
+	_state_selection = shared_ptr<SystemStateSelection>(new SystemStateSelection(this));
 }
 
 /*
@@ -214,6 +217,7 @@ int SystemDefaultImplementation::getDimRHS() const
 /// (Re-) initialize the system of equations
 void SystemDefaultImplementation::initialize()
 {
+	_state_selection->initialize();
   _callType = IContinuous::CONTINUOUS;
 
   /*
@@ -802,6 +806,16 @@ double SystemDefaultImplementation::computeNextTimeEvents(double currTime, std::
     closestTimeEvent = std::min(closestTimeEvent, nextTimeEvent);
   }
   return closestTimeEvent;
+}
+
+bool SystemDefaultImplementation::stateSelection()
+{
+  return _state_selection->stateSelection(1);
+}
+
+bool SystemDefaultImplementation::stateSelectionSet(int i)
+{
+  return _state_selection->stateSelectionSet(1,i);
 }
 
 /** @} */ // end of coreSystem

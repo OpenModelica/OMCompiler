@@ -53,6 +53,7 @@ import CodegenFMUCpp.*;
 import CodegenCppHpcom.*;
 import CodegenUtil;
 import CodegenCpp;
+import CodegenCppCommon;
 import CodegenCppInit;
 
 template translateModel(SimCode simCode, String FMUVersion, String FMUType)
@@ -68,7 +69,7 @@ template translateModel(SimCode simCode, String FMUVersion, String FMUType)
       let &extraFuncsDecl = buffer "" /*BUFD*/
       let &complexStartExpressions = buffer ""
 
-      let className = CodegenCpp.lastIdentOfPath(modelInfo.name)
+      let className = CodegenCppCommon.lastIdentOfPath(modelInfo.name)
       let numRealVars = numRealvarsHpcom(modelInfo, hpcomData.hpcOmMemory)
       let numIntVars = numIntvarsHpcom(modelInfo, hpcomData.hpcOmMemory)
       let numBoolVars = numBoolvarsHpcom(modelInfo, hpcomData.hpcOmMemory)

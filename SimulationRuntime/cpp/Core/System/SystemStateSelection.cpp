@@ -4,13 +4,14 @@
  */
 #include <Core/ModelicaDefine.h>
 #include <Core/Modelica.h>
-#include <Core/Solver/FactoryExport.h>
-#include <Core/Solver/SystemStateSelection.h>
+#include <Core/System/FactoryExport.h>
+#include <Core/System/SystemDefaultImplementation.h>
+#include <Core/System/SystemStateSelection.h>
 #include <Core/Math/ArrayOperations.h>
 #include <Core/Math/Functions.h>
 
 
-SystemStateSelection::SystemStateSelection(IMixedSystem* system)
+SystemStateSelection::SystemStateSelection(SystemDefaultImplementation* system)
   :_system(system)
   ,_colPivot()
   ,_rowPivot()
@@ -18,9 +19,7 @@ SystemStateSelection::SystemStateSelection(IMixedSystem* system)
 
 {
 
-  _state_selection = dynamic_cast<IStateSelection*>(system);
-  if ( !_state_selection)
-    throw ModelicaSimulationError(MATH_FUNCTION,"No state selection system");
+
 
 }
 
@@ -28,7 +27,15 @@ void SystemStateSelection::initialize()
 {
 #if defined(__vxworks)
 #else
-  _dimStateSets = _state_selection->getDimStateSets();
+
+	_state_selection = dynamic_cast<IStateSelection*>(_system);
+	if (!_state_selection)
+		throw ModelicaSimulationError(MATH_FUNCTION, "No state selection system");
+
+	_mixed_selection = dynamic_cast<IMixedSystem*>(_system);
+	if (!_mixed_selection)
+		throw ModelicaSimulationError(MATH_FUNCTION, "No mixed system");
+	_dimStateSets = _state_selection->getDimStateSets();
 
   _dimStates.clear();
   _dimStateCanditates.clear();
@@ -66,23 +73,28 @@ SystemStateSelection::~SystemStateSelection()
 
 bool SystemStateSelection::stateSelection(int switchStates)
 {
-#if defined(__vxworks)
-return true;
+  #if defined(__vxworks)
+    return true;
+  #else
+    if(!_initialized)
+      initialize();
+    int changed = false;
+    for(int i=0; i<_dimStateSets; i++)
+    {
+	  changed = changed || stateSelectionSet(switchStates, i);
+    }
+    return changed;
+  #endif
+}
 
-#else
-  if(!_initialized)
-    initialize();
-  int res=0;
-  int changed = false;
-  for(int i=0; i<_dimStateSets; i++)
-  {
-    boost::shared_array<int> oldColPivot(new int[_dimStateCanditates[i]]);
-    boost::shared_array<int> oldRowPivot(new int[_dimDummyStates[i]]);
-    const matrix_t& stateset_matrix =  _system->getStateSetJacobian(i);
-
-    /* call pivoting function to select the states */
-
-
+bool SystemStateSelection::stateSelectionSet(int switchStates, int i)
+{
+	int res=0;
+	int changed = false;
+	boost::shared_array<int> oldColPivot(new int[_dimStateCanditates[i]]);
+	boost::shared_array<int> oldRowPivot(new int[_dimDummyStates[i]]);
+	const matrix_t& stateset_matrix = _mixed_selection->getStateSetJacobian(i);
+	/* call pivoting function to select the states */
 
     memcpy(oldColPivot.get(), _colPivot[i].get(), _dimStateCanditates[i]*sizeof(int));
     memcpy(oldRowPivot.get(), _rowPivot[i].get(), _dimDummyStates[i]*sizeof(int));
@@ -106,17 +118,13 @@ return true;
     {
       memcpy(_colPivot[i].get(), oldColPivot.get(), _dimStateCanditates[i]*sizeof(int));
       memcpy(_rowPivot[i].get(), oldRowPivot.get(), _dimDummyStates[i]*sizeof(int));
-
-
     }
     delete [] jac_;
     if(res)
       changed = true;
     else
       changed = false;
-  }
-  return changed;
-#endif
+    return changed;
 }
 
 void SystemStateSelection::setAMatrix(int* newEnable, unsigned int index)

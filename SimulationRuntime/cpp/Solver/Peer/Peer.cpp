@@ -89,6 +89,8 @@ void Peer::initialize()
     IContinuous *continuous_system = dynamic_cast<IContinuous*>(_system);
     ITime *time_system =  dynamic_cast<ITime*>(_system);
     IGlobalSettings* global_settings = dynamic_cast<ISolverSettings*>(_peersettings)->getGlobalSettings();
+    _state_selection = dynamic_cast<IStateSelection*>(_system);
+
     _numThreads=_peersettings->getGlobalSettings()->getSolverThreads();
     _hOut = global_settings->gethOutput();
 #ifdef MPIPEER
@@ -583,7 +585,7 @@ void Peer::writePeerOutput(const double &time, const double &h, const int &stp)
 
 bool Peer::stateSelection()
 {
-  return SolverDefaultImplementation::stateSelection();
+  return _state_selection->stateSelection();
 }
 
 void Peer::setTimeOut(unsigned int time_out)
