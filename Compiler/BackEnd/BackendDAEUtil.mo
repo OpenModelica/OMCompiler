@@ -7521,14 +7521,12 @@ end createGlobalKnownVarsEquations;
  ************************************************/
 
 public function getIndexReductionMethodString
-" function: getIndexReductionMethodString"
   output String strIndexReductionMethod;
 algorithm
   strIndexReductionMethod := Config.getIndexReductionMethod();
 end getIndexReductionMethodString;
 
 public function getIndexReductionMethod
-" function: getIndexReductionMethod"
   input Option<String> ostrIndexReductionMethod;
   output tuple<BackendDAEFunc.StructurallySingularSystemHandlerFunc,String,BackendDAEFunc.stateDeselectionFunc,String> IndexReductionMethod;
 protected
@@ -7545,7 +7543,6 @@ algorithm
 end getIndexReductionMethod;
 
 protected function selectIndexReductionMethod
-" function: selectIndexReductionMethod"
   input String strIndexReductionMethod;
   input list<tuple<Type_a,String,Type_b,String>> inIndexReductionMethods;
   output tuple<Type_a,String,Type_b,String> outIndexReductionMethod;
@@ -7582,14 +7579,12 @@ end selectIndexReductionMethod;
  ************************************************/
 
 public function getMatchingAlgorithmString
-" function: getMatchingAlgorithmString"
   output String strMatchingAlgorithm;
 algorithm
   strMatchingAlgorithm := Config.getMatchingAlgorithm();
 end getMatchingAlgorithmString;
 
 public function getMatchingAlgorithm
-" function: getIndexReductionMethod"
   input Option<String> ostrMatchingAlgorithm;
   output tuple<BackendDAEFunc.matchingAlgorithmFunc,String> matchingAlgorithm;
 protected
@@ -7621,7 +7616,6 @@ algorithm
 end getMatchingAlgorithm;
 
 protected function selectMatchingAlgorithm
-" function: selectMatchingAlgorithm"
   input String strMatchingAlgorithm;
   input list<tuple<Type_a,String>> inMatchingAlgorithms;
   output tuple<Type_a,String> outMatchingAlgorithm;
