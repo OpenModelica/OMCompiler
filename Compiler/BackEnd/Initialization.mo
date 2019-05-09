@@ -1337,7 +1337,7 @@ algorithm
     // modify incidence matrix for under-determined systems
     nAddEqs := intMax(nVars-nEqns + index, index);
     if debug then print("nAddEqs: " + intString(nAddEqs) + "\n"); end if;
-    m := fixUnderDeterminedSystem(m_, stateIndices, nEqns, nAddEqs);
+    m := fixUnderDeterminedSystem(m_, nEqns, nAddEqs);
 
     // modify incidence matrix for over-determined systems
     nAddVars := intMax(nEqns-nVars + index, index);
@@ -1410,12 +1410,11 @@ end fixInitialSystem;
 
 protected function fixUnderDeterminedSystem "author: lochel"
   input BackendDAE.IncidenceMatrix inM;
-  input list<Integer> inInitVarIndices;
   input Integer inNEqns;
   input Integer inNAddEqns;
   output BackendDAE.IncidenceMatrix outM;
 protected
-  list<Integer> newEqIndices;
+  list<Integer> newEqIndices,allVarIndices;
 algorithm
   if inNAddEqns < 0 then
     Error.addInternalError("function fixUnderDeterminedSystem failed due to invalid input", sourceInfo());
@@ -1426,7 +1425,8 @@ algorithm
     outM := arrayCreate(inNEqns+inNAddEqns, {});
     outM := Array.copy(inM, outM);
     newEqIndices := List.intRange2(inNEqns+1, inNEqns+inNAddEqns);
-    outM := List.fold1(newEqIndices, squareIncidenceMatrix1, inInitVarIndices, outM);
+    allVarIndices := List.intRange2(1,inNEqns+inNAddEqns);
+    outM := List.fold1(newEqIndices, squareIncidenceMatrix1, allVarIndices, outM);
   else
     outM := arrayCopy(inM) "deep copy";
   end if;
