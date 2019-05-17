@@ -426,7 +426,7 @@ protected function traverseEventInfoExps<T>
 algorithm
   arg := DoubleEndedList.mapFoldNoCopy(eventInfo.zeroCrossings.zc, function traverseZeroCrossingExps(func=func), arg);
   arg := DoubleEndedList.mapFoldNoCopy(eventInfo.samples.zc, function traverseZeroCrossingExps(func=func), arg);
-  arg := DoubleEndedList.mapFoldNoCopy(eventInfo.relations, function traverseZeroCrossingExps(func=func), arg);
+  arg := DoubleEndedList.mapFoldNoCopy(eventInfo.relations.zc, function traverseZeroCrossingExps(func=func), arg);
 end traverseEventInfoExps;
 
 protected function traverseZeroCrossingExps<T>

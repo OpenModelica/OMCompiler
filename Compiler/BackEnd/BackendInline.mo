@@ -523,12 +523,11 @@ protected function inlineEventInfo "inlines function calls in event info"
 algorithm
   _ := matchcontinue inEventInfo
     local
-      BackendDAE.ZeroCrossingSet zclst;
-      DoubleEndedList<BackendDAE.ZeroCrossing> relations;
+      BackendDAE.ZeroCrossingSet zclst, relations;
 
     case BackendDAE.EVENT_INFO(zeroCrossings=zclst, relations=relations) equation
       inlineZeroCrossings(zclst.zc, fns);
-      inlineZeroCrossings(relations, fns);
+      inlineZeroCrossings(relations.zc, fns);
     then ();
 
     else
