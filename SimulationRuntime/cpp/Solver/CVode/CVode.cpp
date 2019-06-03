@@ -136,6 +136,8 @@ void Cvode::initialize()
 	_event_system = dynamic_cast<IEvent*>(_system);
 	_mixed_system = dynamic_cast<IMixedSystem*>(_system);
 	_time_system = dynamic_cast<ITime*>(_system);
+    _state_selection = dynamic_cast<IStateSelection*>(_system);
+
 	IGlobalSettings* global_settings = dynamic_cast<ISolverSettings*>(_cvodesettings)->getGlobalSettings();
 	// Kennzeichnung, dass initialize()() (vor der Integration) aufgerufen wurde
 	_idid = 5000;
@@ -734,8 +736,14 @@ void Cvode::writeCVodeOutput(const double &time, const double &h, const int &stp
 
 bool Cvode::stateSelection()
 {
-	return SolverDefaultImplementation::stateSelection();
+	return _state_selection->stateSelection();
 }
+
+bool Cvode::stateSelectionSet(int i)
+{
+	return _state_selection->stateSelectionSet(i);
+}
+
 int Cvode::calcFunction(const double& time, const double* y, double* f)
 {
 #ifdef RUNTIME_PROFILING

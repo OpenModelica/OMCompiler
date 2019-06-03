@@ -185,6 +185,7 @@ double
    IEvent* _event_system;
    IMixedSystem* _mixed_system;
    ITime* _time_system;
+   IStateSelection* _state_selection;
 
    #ifdef RUNTIME_PROFILING
    std::vector<MeasureTimeData*> *measureTimeFunctionsArray;

@@ -191,5 +191,6 @@ private:
     IEvent* _event_system;
     IMixedSystem* _mixed_system;
     ITime* _time_system;
+    IStateSelection* _state_selection;
 };
 /** @} */ // end of solverEuler

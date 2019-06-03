@@ -1,21 +1,20 @@
 #pragma once
-/** @addtogroup coreSolver
+/** @addtogroup coreSystem
  *
  *  @{
  */
-#if defined(__TRICORE__) || defined(__vxworks)
-#define BOOST_EXTENSION_STATESELECT_DECL
-#endif
+
 
 #include <Core/System/IStateSelection.h>
 #include <boost/shared_array.hpp>
-
-class BOOST_EXTENSION_STATESELECT_DECL SystemStateSelection
+class SystemDefaultImplementation;
+class  SystemStateSelection
 {
 public:
-  SystemStateSelection(IMixedSystem* system);
+  SystemStateSelection(SystemDefaultImplementation* system);
   ~SystemStateSelection();
 
+  bool stateSelectionSet(int switchStates, int i);
   bool stateSelection(int switchStates);
   void initialize();
 
@@ -23,8 +22,9 @@ private:
   void setAMatrix(int* newEnable, unsigned int index);
   int comparePivot(int* oldPivot, int* newPivot, int switchStates, unsigned int index);
 
-  IMixedSystem* _system;
+  SystemDefaultImplementation* _system;
   IStateSelection* _state_selection;
+  IMixedSystem* _mixed_selection;
   vector<boost::shared_array<int> > _rowPivot;
   vector<boost::shared_array<int> > _colPivot;
   unsigned int _dimStateSets;

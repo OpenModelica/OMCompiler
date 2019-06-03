@@ -61,8 +61,9 @@ Euler::~Euler()
 
 bool Euler::stateSelection()
  {
-   return SolverDefaultImplementation::stateSelection();
+   return _state_selection->stateSelection();
  }
+
 void Euler::initialize()
 {
     // Kennzeichnung, dass assemble() (vor der Integration) aufgerufen wurde
@@ -73,6 +74,7 @@ void Euler::initialize()
     _event_system =  dynamic_cast<IEvent*>(_system);
     _mixed_system =  dynamic_cast<IMixedSystem*>(_system);
     _time_system =  dynamic_cast<ITime*>(_system);
+    _state_selection = dynamic_cast<IStateSelection*>(_system);
 
     //(Re-) Initialization of solver -> call default implementation service
     SolverDefaultImplementation::initialize();
