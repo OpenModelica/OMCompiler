@@ -2438,7 +2438,6 @@ algorithm
     // true case left with condition<>false
     case (_,_,_,_,_,_,_)
       equation
-        _ = countEquationsInBranches(theneqns,elseenqs,source);
         // simplify if eqution
         // if .. then a=.. elseif .. then a=... else a=.. end if;
         // to
@@ -2453,7 +2452,6 @@ algorithm
         eqns;
     case (_,_,_,_,_,_,_)
       equation
-        _ = countEquationsInBranches(theneqns,elseenqs,source);
         fbsExp = makeEquationLstToResidualExpLst(elseenqs);
         tbsExp = List.map(theneqns, makeEquationLstToResidualExpLst);
         eqns = makeEquationsFromResiduals(conditions, tbsExp, fbsExp, source, inEqAttr);
@@ -2687,55 +2685,6 @@ protected function makeIfExp
 algorithm
   oExp := DAE.IFEXP(cond,DAE.BCONST(true),else_);
 end makeIfExp;
-
-protected function countEquationsInBranches "
-Checks that the number of equations is the same in all branches
-of an if-equation"
-  input list<list<BackendDAE.Equation>> trueBranches;
-  input list<BackendDAE.Equation> falseBranch;
-  input DAE.ElementSource source;
-  output Integer nrOfEquations;
-algorithm
-  nrOfEquations := matchcontinue(trueBranches,falseBranch,source)
-    local
-      list<Boolean> b;
-      list<String> strs;
-      String str,eqstr;
-      list<Integer> nrOfEquationsBranches;
-
-    case (_, _, _)
-      equation
-        nrOfEquations = BackendEquation.equationLstSize(falseBranch);
-        nrOfEquationsBranches = List.map(trueBranches, BackendEquation.equationLstSize);
-        b = List.map1(nrOfEquationsBranches, intEq, nrOfEquations);
-        true = List.reduce(b,boolAnd);
-      then
-        nrOfEquations;
-
-    // An if-equation with non-parameter conditions must have an else-clause.
-    case (_, {}, _)
-      equation
-        Error.addSourceMessage(Error.IF_EQUATION_MISSING_ELSE, {},
-          ElementSource.getElementSourceFileInfo(source));
-      then
-        fail();
-
-    // If if-equation with non-parameter conditions must have the same number of
-    // equations in each branch.
-    case (_, _ :: _, _)
-      equation
-        nrOfEquations = BackendEquation.equationLstSize(falseBranch);
-        nrOfEquationsBranches = List.map(trueBranches, BackendEquation.equationLstSize);
-        eqstr = stringDelimitList(List.map(listAppend(trueBranches,{falseBranch}),BackendDump.dumpEqnsStr),"\n");
-        strs = List.map(nrOfEquationsBranches, intString);
-        str = stringDelimitList(strs,",");
-        str = "{" + str + "," + intString(nrOfEquations) + "}";
-        Error.addSourceMessage(Error.IF_EQUATION_UNBALANCED_2,{str,eqstr},ElementSource.getElementSourceFileInfo(source));
-      then
-        fail();
-
-  end matchcontinue;
-end countEquationsInBranches;
 
 protected function makeEquationLstToResidualExpLst
   input list<BackendDAE.Equation> eqLst;

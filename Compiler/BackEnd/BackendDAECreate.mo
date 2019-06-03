@@ -1520,6 +1520,7 @@ algorithm
         beqnslst = lowerEqnsLst(theneqns1,functionTree,{},false);
         (beqns,breqns,bieqns) = lowerEqns(elseenqs,functionTree,{},{},{},false);
         beqns = List.flatten({beqns,breqns,bieqns});
+        countEquationsInBranches(beqnslst, beqns, inSource);
       then
         BackendDAE.IF_EQUATION(explst, beqnslst, beqns, inSource, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN)::inEquations;
 
@@ -1531,6 +1532,55 @@ algorithm
         lowerIfEquation1(e,explst,eqns,eqnslst,elseenqs,conditions1,theneqns1,source,functionTree,inEquations);
   end matchcontinue;
 end lowerIfEquation;
+
+protected function countEquationsInBranches "
+Checks that the number of equations is the same in all branches
+of an if-equation"
+  input list<list<BackendDAE.Equation>> trueBranches;
+  input list<BackendDAE.Equation> falseBranch;
+  input DAE.ElementSource source;
+  output Integer nrOfEquations;
+algorithm
+  nrOfEquations := matchcontinue(trueBranches,falseBranch,source)
+    local
+      list<Boolean> b;
+      list<String> strs;
+      String str,eqstr;
+      list<Integer> nrOfEquationsBranches;
+
+    case (_, _, _)
+      equation
+        nrOfEquations = BackendEquation.equationLstSize(falseBranch);
+        nrOfEquationsBranches = List.map(trueBranches, BackendEquation.equationLstSize);
+        b = List.map1(nrOfEquationsBranches, intEq, nrOfEquations);
+        true = List.reduce(b,boolAnd);
+      then
+        nrOfEquations;
+
+    // An if-equation with non-parameter conditions must have an else-clause.
+    case (_, {}, _)
+      equation
+        Error.addSourceMessage(Error.IF_EQUATION_MISSING_ELSE, {},
+          ElementSource.getElementSourceFileInfo(source));
+      then
+        fail();
+
+    // If if-equation with non-parameter conditions must have the same number of
+    // equations in each branch.
+    case (_, _ :: _, _)
+      equation
+        nrOfEquations = BackendEquation.equationLstSize(falseBranch);
+        nrOfEquationsBranches = List.map(trueBranches, BackendEquation.equationLstSize);
+        eqstr = stringDelimitList(List.map(listAppend(trueBranches,{falseBranch}),BackendDump.dumpEqnsStr),"\n");
+        strs = List.map(nrOfEquationsBranches, intString);
+        str = stringDelimitList(strs,",");
+        str = "{" + str + "," + intString(nrOfEquations) + "}";
+        Error.addSourceMessage(Error.IF_EQUATION_UNBALANCED_2,{str,eqstr},ElementSource.getElementSourceFileInfo(source));
+      then
+        fail();
+
+  end matchcontinue;
+end countEquationsInBranches;
 
 protected function lowerIfEquation1
   input DAE.Exp cond;
