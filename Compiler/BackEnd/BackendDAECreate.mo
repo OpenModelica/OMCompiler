@@ -872,7 +872,7 @@ algorithm
                   comment = comment,
                   innerOuter = io)
       equation
-        kind_1 = lowerKnownVarkind(kind, name, dir, ct);
+        kind_1 = lowerKnownVarkind(kind, t, name, dir, ct);
         // bind = fixParameterStartBinding(bind, t, dae_var_attr, kind_1);
         tp = lowerType(t);
         b = DAEUtil.boolVarVisibility(protection);
@@ -1101,6 +1101,7 @@ algorithm
         match (inVarKind, inType)
           case (DAE.VARIABLE(), DAE.T_BOOL()) then BackendDAE.DISCRETE();
           case (DAE.VARIABLE(), DAE.T_INTEGER()) then BackendDAE.DISCRETE();
+          case (DAE.VARIABLE(), DAE.T_STRING()) then BackendDAE.DISCRETE();
           case (DAE.VARIABLE(), DAE.T_ENUMERATION()) then BackendDAE.DISCRETE();
           case (DAE.VARIABLE(), _) then BackendDAE.VARIABLE();
           case (DAE.DISCRETE(), _) then BackendDAE.DISCRETE();
@@ -1112,6 +1113,7 @@ protected function lowerKnownVarkind
 "Helper function to lowerKnownVar.
   NOTE: Fails for everything but parameters and constants and top level inputs"
   input DAE.VarKind inVarKind;
+  input DAE.Type inType;
   input DAE.ComponentRef inComponentRef;
   input DAE.VarDirection inVarDirection;
   input DAE.ConnectorType inConnectorType;
@@ -1125,7 +1127,15 @@ algorithm
       equation
         true = DAEUtil.topLevelInput(inComponentRef, inVarDirection, inConnectorType);
       then
-        BackendDAE.VARIABLE();
+        match (inVarKind, inType)
+          case (DAE.VARIABLE(), DAE.T_BOOL()) then BackendDAE.DISCRETE();
+          case (DAE.VARIABLE(), DAE.T_INTEGER()) then BackendDAE.DISCRETE();
+          case (DAE.VARIABLE(), DAE.T_STRING()) then BackendDAE.DISCRETE();
+          case (DAE.VARIABLE(), DAE.T_ENUMERATION()) then BackendDAE.DISCRETE();
+          case (DAE.VARIABLE(), _) then BackendDAE.VARIABLE();
+          case (DAE.DISCRETE(), _) then BackendDAE.DISCRETE();
+        end match;
+
     // adrpo: topLevelInput might fail!
     // case (DAE.VARIABLE(), cr, dir, flowPrefix)
     //  then
