@@ -41,7 +41,9 @@ int KINLapackCompletePivoting(void *kinmem, int N)
 	kin_mem->kin_linit  = KINLapackCompletePivotingInit;
 	kin_mem->kin_lsetup = KINLapackCompletePivotingSetup;
 	kin_mem->kin_lsolve = KINLapackCompletePivotingSolve;
-	kin_mem->kin_lfree  = KINLapackCompletePivotingFree;
+	#if(SUNDIALS_MAJOR_VERSION == 2 && SUNDIALS_MINOR_VERSION > 6)
+	    kin_mem->kin_lfree  = KINLapackCompletePivotingFree;
+	#endif
     kin_mem->kin_setupNonNull = TRUE;
 	linSysData* data = new linSysData();
 	data->jac              = new double[N*N];
