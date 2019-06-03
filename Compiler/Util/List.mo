@@ -748,13 +748,135 @@ algorithm
 end heapSortIntList;
 
 public function sort<T>
+  input list<T> inList;
+  input CompareFunc inCompFunc;
+  output list<T> outList;
+
+  partial function CompareFunc
+    input T inElement1;
+    input T inElement2;
+    output Boolean inRes;
+  end CompareFunc;
+algorithm
+  outList := rsort(inList, inCompFunc);
+end sort;
+
+protected function rsort<T>
+  input list<T> inList;
+  input CompareFunc inCompFunc;
+  output list<T> outList;
+
+  partial function CompareFunc
+    input T inElement1;
+    input T inElement2;
+    output Boolean inRes;
+  end CompareFunc;
+
+protected
+  list<list<T>> runs;
+  list<T> l1, l2;
+algorithm
+  if not listEmpty(inList) then
+    runs := splitRuns(inList, inCompFunc);
+    outList := rxsort(runs, inCompFunc);
+  else
+    outList := inList;
+  end if;
+end rsort;
+
+protected function splitRuns<T>
+  input list<T> inList;
+  input CompareFunc inCompFunc;
+  output list<list<T>> outList = {};
+
+  partial function CompareFunc
+    input T inElement1;
+    input T inElement2;
+    output Boolean inRes;
+  end CompareFunc;
+protected
+  T e1;
+  list<T> l = {}, rest;
+algorithm
+  if not listEmpty(inList) then
+    e1::rest := inList;
+    for e in rest loop
+      if inCompFunc(e1, e) then
+        if listEmpty(l) then
+          outList := {e1}::outList;
+        else
+          outList := listReverseInPlace(e1::l)::outList;
+          l := {};
+        end if;
+      else
+        l := e1 :: l;
+      end if;
+      e1 := e;
+    end for;
+    l := e1::l;
+    outList := listReverseInPlace(l)::outList;
+  end if;
+end splitRuns;
+
+protected function rxsort<T>
+  input list<list<T>> inList;
+  input CompareFunc inCompFunc;
+  output list<T> sorted = {};
+
+  partial function CompareFunc
+    input T inElement1;
+    input T inElement2;
+    output Boolean inRes;
+  end CompareFunc;
+protected
+  Integer len;
+  Integer middle;
+  list<list<T>> left = inList, right = {}, rest;
+  list<T> l1, l2, l3;
+algorithm
+  while true loop
+    if listEmpty(left) then
+      if listEmpty(right) then
+        return;
+      else
+        l1::rest := right;
+        if listEmpty(rest) then
+          sorted := l1;
+          return;
+        else
+          left := listReverseInPlace(right);
+          right := {};
+        end if;
+      end if;
+    else
+      l1::rest := left;
+      if listEmpty(rest) then
+        if listEmpty(right) then
+          sorted := l1;
+          return;
+        else
+          l2::rest := right;
+          l3 := merge(l2, l1, inCompFunc, {});
+          left := listReverseInPlace(l3::rest);
+          right := {};
+        end if;
+      else
+        l2::rest := rest;
+        left := rest;
+        right := merge(l1, l2, inCompFunc, {})::right;
+      end if;
+    end if;
+  end while;
+end rxsort;
+
+protected function mergesort<T>
   "Sorts a list given an ordering function with the mergesort algorithm.
     Example:
       sort({2, 1, 3}, intGt) => {1, 2, 3}
       sort({2, 1, 3}, intLt) => {3, 2, 1}"
   input list<T> inList;
   input CompareFunc inCompFunc;
-  output list<T> outList= {};
+  output list<T> outList = {};
 
   partial function CompareFunc
     input T inElement1;
@@ -778,13 +900,13 @@ algorithm
       else
         middle := intDiv(listLength(inList), 2);
         (left, right) := split(inList, middle);
-        left := sort(left, inCompFunc);
-        right := sort(right, inCompFunc);
+        left := mergesort(left, inCompFunc);
+        right := mergesort(right, inCompFunc);
         outList := merge(left, right, inCompFunc, {});
       end if;
     end if;
   end if;
-end sort;
+end mergesort;
 
 public function sortedDuplicates<T>
   "Returns a list of all duplicates in a sorted list, using the given comparison
@@ -947,7 +1069,7 @@ algorithm
     local
       Boolean b;
       T l, r, el;
-      list<T> l_rest, r_rest, res;
+      list<T> l_rest, r_rest;
 
     /* Tail recursive version */
     case (l :: l_rest, r :: r_rest)
@@ -1451,7 +1573,7 @@ public function sublist<T>
   output list<T> outList = {};
 protected
   T e;
-  list<T> rest = inList, res;
+  list<T> rest = inList;
 algorithm
   true := inOffset > 0;
   true := inLength >= 0;
