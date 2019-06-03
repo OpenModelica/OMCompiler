@@ -2434,6 +2434,7 @@ algorithm
     then eq;
 */
     else equation
+      true = Flags.isSet(Flags.FAILTRACE);
       BackendDump.dumpBackendDAEEqnList({eqn}, "function BackendEquation.solveEquation failed w.r.t " + ExpressionDump.printExpStr(crefExp), true);
       Error.addInternalError("function solveEquation failed", sourceInfo());
     then fail();
