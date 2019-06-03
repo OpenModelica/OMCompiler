@@ -2063,6 +2063,7 @@ protected function optimizeJacobianMatrix "author: wbraun"
 protected
   array<Integer> ea = listArray({});
   BackendDAE.Matching eMatching = BackendDAE.MATCHING(ea, ea, {});
+  list<String> postOptModules, preOptModules;
 algorithm
   outJacobian :=
     matchcontinue (inBackendDAE,inComRef1,inComRef2)
@@ -2094,21 +2095,21 @@ algorithm
             b = Flags.disableDebug(Flags.EXEC_STAT);
           end if;
 
-          backendDAE2 = BackendDAEUtil.getSolvedSystemforJacobians(backendDAE,
-                                                                   {"removeEqualFunctionCalls",
-                                                                    "removeSimpleEquations",
-                                                                    "evalFunc"},
-                                                                   NONE(),
-                                                                   NONE(),
-                                                                   {
-                                                                    "wrapFunctionCalls",
-                                                                    "inlineArrayEqn",
-                                                                    "constantLinearSystem",
-                                                                    "solveSimpleEquations",
-                                                                    "tearingSystem",
-                                                                    "calculateStrongComponentJacobians",
-                                                                    "removeConstants",
-                                                                    "simplifyTimeIndepFuncCalls"});
+          preOptModules = {"removeEqualFunctionCalls",
+                           "removeSimpleEquations",
+                           "evalFunc"};
+          postOptModules = {"wrapFunctionCalls",
+                            "inlineArrayEqn",
+                            "constantLinearSystem",
+                            "solveSimpleEquations",
+                            "tearingSystem",
+                            "calculateStrongComponentJacobians",
+                            "removeConstants",
+                            "simplifyTimeIndepFuncCalls"};
+         (_,preOptModules,_) = List.intersection1OnTrue(preOptModules,Flags.getConfigStringList(Flags.POST_OPT_MODULES_SUB),stringEq);
+         (_,postOptModules,_) = List.intersection1OnTrue(postOptModules,Flags.getConfigStringList(Flags.POST_OPT_MODULES_SUB),stringEq);
+         backendDAE2 = BackendDAEUtil.getSolvedSystemforJacobians(backendDAE,preOptModules,NONE(),NONE(),postOptModules);
+
           if Flags.isSet(Flags.JAC_DUMP) then
             BackendDump.bltdump("Symbolic Jacobian",backendDAE2);
           else
