@@ -38,6 +38,10 @@
 #include "../util/omc_mmap.h"
 #include "solver/model_help.h"
 
+#include <locale.h>
+
+#define MAX_DOUBLE_LEN 100
+
 static inline const char* skipSpace(const char* str)
 {
   do {
@@ -51,6 +55,37 @@ static inline const char* skipSpace(const char* str)
     default: return str;
     }
   } while (1);
+}
+
+static double strtod_c(const char *nptr, char **endptr)
+{
+  char loc_decimal_point = *localeconv()->decimal_point;
+  if (loc_decimal_point == '.') {
+    return strtod(nptr, endptr);
+  }
+
+  char buf[MAX_DOUBLE_LEN + 1];
+  strncpy(buf, nptr, MAX_DOUBLE_LEN);
+
+  // In case of integer number: [2, ...] -> [2] with ',' as a decimal separator
+  char *loc_decimal_point_in_buf = strchr(buf, loc_decimal_point);
+  if (loc_decimal_point_in_buf) {
+    *loc_decimal_point_in_buf = '\0';
+  }
+
+  // In case of real number: [2.1, ...] -> [2.1] -> [2,1]
+  char *point_in_buf = strchr(buf, '.');
+  if (point_in_buf) {
+    *point_in_buf = loc_decimal_point;
+  }
+
+  // Perform actual parsing
+  char *end;
+  double res = strtod(buf, &end);
+  if (endptr) {
+    *endptr = (char *)(nptr + (end - buf));
+  }
+  return res;
 }
 
 static const char* skipValue(const char* str);
@@ -135,7 +170,7 @@ static const char* skipValue(const char* str)
   case '9':
   {
     char *endptr = NULL;
-    strtod(str,&endptr);
+    strtod_c(str,&endptr);
     if (str == endptr) {
       fprintf(stderr, "Not a number, got %.20s\n", str);
        abort();
@@ -175,7 +210,7 @@ static inline const char* assertNumber(const char *str, double expected)
   char *endptr = NULL;
   double d;
   str = skipSpace(str);
-  d = strtod(str, &endptr);
+  d = strtod_c(str, &endptr);
   if (str == endptr) {
     fprintf(stderr, "Expected number, got: %.20s\n", str);
     abort();
